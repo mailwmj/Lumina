@@ -1,0 +1,10 @@
+D:\xjj20\Desktop\itv - 副本\src-tauri\./target_check\debug\deps\tracing_appender-3efd2048165930e2.d: C:\Users\xjj20\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tracing-appender-0.2.4\src\lib.rs C:\Users\xjj20\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tracing-appender-0.2.4\src\non_blocking.rs C:\Users\xjj20\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tracing-appender-0.2.4\src\rolling.rs C:\Users\xjj20\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tracing-appender-0.2.4\src\rolling\builder.rs C:\Users\xjj20\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tracing-appender-0.2.4\src\worker.rs C:\Users\xjj20\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tracing-appender-0.2.4\src\sync.rs
+
+D:\xjj20\Desktop\itv - 副本\src-tauri\./target_check\debug\deps\libtracing_appender-3efd2048165930e2.rmeta: C:\Users\xjj20\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tracing-appender-0.2.4\src\lib.rs C:\Users\xjj20\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tracing-appender-0.2.4\src\non_blocking.rs C:\Users\xjj20\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tracing-appender-0.2.4\src\rolling.rs C:\Users\xjj20\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tracing-appender-0.2.4\src\rolling\builder.rs C:\Users\xjj20\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tracing-appender-0.2.4\src\worker.rs C:\Users\xjj20\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tracing-appender-0.2.4\src\sync.rs
+
+C:\Users\xjj20\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tracing-appender-0.2.4\src\lib.rs:
+C:\Users\xjj20\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tracing-appender-0.2.4\src\non_blocking.rs:
+C:\Users\xjj20\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tracing-appender-0.2.4\src\rolling.rs:
+C:\Users\xjj20\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tracing-appender-0.2.4\src\rolling\builder.rs:
+C:\Users\xjj20\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tracing-appender-0.2.4\src\worker.rs:
+C:\Users\xjj20\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tracing-appender-0.2.4\src\sync.rs:

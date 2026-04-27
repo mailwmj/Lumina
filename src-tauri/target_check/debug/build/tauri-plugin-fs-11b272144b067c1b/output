@@ -1,0 +1,8 @@
+cargo:rerun-if-changed=permissions
+cargo:PERMISSION_FILES_PATH=D:\xjj20\Desktop\itv - 副本\src-tauri\./target_check\debug\build\tauri-plugin-fs-11b272144b067c1b\out\tauri-plugin-fs-permission-files
+cargo:rerun-if-env-changed=REMOVE_UNUSED_COMMANDS
+cargo:GLOBAL_SCOPE_SCHEMA_PATH=D:\xjj20\Desktop\itv - 副本\src-tauri\./target_check\debug\build\tauri-plugin-fs-11b272144b067c1b\out\global-scope.json
+cargo:GLOBAL_API_SCRIPT_PATH=\\?\C:\Users\xjj20\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\tauri-plugin-fs-2.4.5\api-iife.js
+cargo:rustc-check-cfg=cfg(mobile)
+cargo:rustc-check-cfg=cfg(desktop)
+cargo:rustc-cfg=desktop
