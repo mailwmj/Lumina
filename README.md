@@ -1,14 +1,19 @@
-<div align="center">
-  <img src="./src-tauri/icons/128x128@2x.png" width="100" height="100" alt="Storyboard Copilot" style="margin-bottom: -50px;">
-  <h1 style="color: ##111227;">分镜助手</h1>
-  <h3>基于节点画布的 AI 分镜工作台，一站式完成图片生成、编辑与分镜流程</h3>
-
-  [![Bilibili](https://img.shields.io/badge/bilibili-痕继痕迹-00AEEC?logo=bilibili)](https://space.bilibili.com/39337803)
-</div>
+# ITV - 智能视频生成工作台
 
 <div align="center">
-  <img src="./docs/imgs/readme/storyboard-copilot-homepage.webp" alt="Storyboard Copilot 首页截图" width="820" />
+  <img src="./src-tauri/icons/128x128@2x.png" width="100" height="100" alt="ITV" style="margin-bottom: -50px;">
+  <h1 style="color: ##111227;">ITV</h1>
+  <h3>基于节点画布的 AI 视频生成工具，支持 Seedance 系列模型，一站式完成素材上传、提示词生成与视频创作</h3>
 </div>
+
+## 基于项目
+
+本项目基于 [henjicc/Storyboard-Copilot](https://github.com/henjicc/Storyboard-Copilot) 修改，主要新增：
+
+- **Seedance 系列视频生成**：集成豆包 Seedance 2.0 / 2.0 Fast / 1.5 Pro 视频生成模型
+- **提示词润色**：支持图片和视频提示词的 AI 润色优化
+- **多模态参考**：支持图片、视频、音频多种素材参考输入
+- **交互优化**：改进节点交互和细节体验
 
 ## 下载
 
@@ -16,28 +21,7 @@
 Windows 用户请下载 <strong>.exe</strong> 文件，macOS 用户请下载 <strong>.dmg</strong> 文件
 
 Windows 用户如果在启动时遇到了报错，请尝试安装 [WebView2 运行时](https://developer.microsoft.com/zh-cn/Microsoft-edge/webview2#download)
-
-### Github 下载
-[![Download Latest Release](https://img.shields.io/github/v/release/henjicc/Storyboard-Copilot?style=for-the-badge&color=blue)](https://github.com/henjicc/Storyboard-Copilot/releases/latest)
-
-### 网盘下载
-**夸克网盘**：[https://pan.quark.cn/s/5b6733a8fc8e](https://pan.quark.cn/s/5b6733a8fc8e)
-
 </div>
-
-## 赞助
-
-<div align="center">
-  <div style="text-align: center; font-weight: 700; margin-bottom: 10px; font-size: 20px;">
-    <a href="https://platform.minimaxi.com/subscribe/token-plan?code=8XOI15IbO4&source=link" target="_blank" style="color: #f0440bff; text-decoration: none;">
-      MiniMax M2.7 Token Plan 专属 88 折优惠
-    </a>
-  </div>
-  <a href="https://platform.minimaxi.com/subscribe/token-plan?code=8XOI15IbO4&source=link" target="_blank">
-    <img src="./docs/imgs/readme/token_plan.webp" alt="MiniMax Coding Plan" width="720">
-  </a>
-</div>
-
 
 ## 技术栈
 
@@ -91,27 +75,27 @@ npm run build
 npm run tauri build
 ```
 
-## 一键发布（自动构建 + Release）
+## 功能特性
 
-本项目支持一条命令完成版本联动、触发 GitHub Actions 构建并发布 Release。
+### 节点画布
+- 拖拽式节点编辑
+- 多种 AI 节点类型：图片生成、视频生成、分镜生成等
+- 连线式工作流编排
 
-```bash
-# patch 递增（例如 0.1.0 -> 0.1.1），并写入本次更新说明
-npm run release -- patch "修复导出节点在大图下崩溃；优化启动速度"
+### 视频生成
+- **Seedance 2.0 / 2.0 Fast**：豆包最新视频生成模型
+- **Seedance 1.5 Pro**：支持样片模式（draft）
+- 支持多模态参考输入（图片 + 视频 + 音频）
+- 多种生成模式：多模态参考、编辑视频、延长拼接
 
-# 或指定版本号
-npm run release -- 0.2.0 "新增分镜批量裁剪工具"
-```
-
-命令会自动执行：
-- 同步版本号到 `package.json`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json`
-- 提交版本变更并创建带说明的 tag（如 `v0.2.0`）
-- 推送分支和 tag，触发 `.github/workflows/build.yml`
-- 由 Action 构建 Windows/macOS 安装包并发布到 GitHub Releases（说明显示为 tag 注释）
+### 提示词工具
+- AI 提示词润色优化
+- 支持图片和视频提示词
+- 参考素材自动标记（@图1、@视频1、@音频1）
 
 ## 项目结构（核心）
 
-```text
+```
 src/
   features/canvas/          # 画布主流程（节点、工具、模型、UI）
   stores/                   # 全局状态与自动持久化策略
@@ -123,15 +107,6 @@ src-tauri/src/
 docs/development-guides/    # 开发与扩展文档
 ```
 
-## 架构要点
-
-- 分层数据流：`UI -> Store -> Application Service -> Command/API -> Persistence`
-- 节点注册单一真相源：`src/features/canvas/domain/nodeRegistry.ts`
-- 工具体系分层：`tools/types.ts`、`tools/builtInTools.ts`、`ui/tool-editors/*`、`application/toolProcessor.ts`
-- 持久化双通道：
-  - 项目快照：`upsert_project_record`
-  - 视口快照：`update_project_viewport_record`
-
 ## 扩展开发
 
 ### 新增模型
@@ -139,13 +114,6 @@ docs/development-guides/    # 开发与扩展文档
 1. 在 `src/features/canvas/models/image/<provider>/` 新增模型文件
 2. 声明 `displayName`、`providerId`、分辨率/比例、默认参数
 3. 实现请求映射函数 `resolveRequest`
-
-### 新增工具
-
-1. 在 `src/features/canvas/tools/types.ts` 声明能力
-2. 在 `src/features/canvas/tools/builtInTools.ts` 注册
-3. 在 `src/features/canvas/ui/tool-editors/` 新增编辑器
-4. 在 `src/features/canvas/application/toolProcessor.ts` 接入执行
 
 ### 新增节点
 
@@ -156,13 +124,6 @@ docs/development-guides/    # 开发与扩展文档
 详细指南：
 - [项目开发环境与注意事项](./docs/development-guides/project-development-setup.md)
 - [供应商与模型扩展指南](./docs/development-guides/provider-and-model-extension.md)
-
-## 持久化与数据说明
-
-- 自动持久化由 `projectStore` 驱动，不需要手动保存
-- SQLite 文件位于 Tauri `app_data_dir/projects.db`
-- `projects` 表核心字段：`nodes_json`、`edges_json`、`viewport_json`、`history_json`、`node_count`
-- 图片字段通过 `imagePool + __img_ref__` 去重编码
 
 ## i18n 约定
 

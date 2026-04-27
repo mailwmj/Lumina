@@ -1,7 +1,7 @@
 {
   "app": {
-    "title": "分镜助手",
-    "subtitle": "Storyboard Copilot"
+    "title": "ITV",
+    "subtitle": "智能视频生成工作台"
   },
   "common": {
     "save": "保存",
@@ -302,12 +302,10 @@
     "getApiKeyLink": "点击这里获取密钥",
     "missingAnyApiKeyMessage": "您尚未配置任何密钥，请打开设置进行配置。",
     "openProvidersSettings": "打开设置",
-    "aboutAppName": "分镜助手",
-    "aboutIntro": "基于节点画布的 AI 分镜工作台，一站式完成图片生成、编辑与分镜流程。",
+    "aboutAppName": "ITV",
+    "aboutIntro": "基于节点画布的 AI 视频生成工具，支持 Seedance 系列模型，一站式完成素材上传、提示词生成与视频创作。",
     "aboutVersionLabel": "版本",
     "aboutVersionUnknown": "未知",
-    "aboutAuthorLabel": "作者",
-    "aboutAuthor": "痕继痕迹",
     "aboutRepositoryLabel": "项目仓库",
     "autoCheckUpdateOnLaunch": "启动时自动检查更新",
     "autoCheckUpdateOnLaunchDesc": "每次打开软件自动检查一次新版本。",

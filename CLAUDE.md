@@ -2,7 +2,7 @@
 
 ## 1. 项目目标与技术栈
 
-- 产品目标：基于节点画布进行图片上传、AI 生成/编辑、工具处理（裁剪/标注/分镜）。
+- 产品目标：基于节点画布进行图片/视频上传、AI 生成、提示词润色与视频创作流程。
 - 前端：React + TypeScript + Zustand + @xyflow/react + TailwindCSS。
 - 后端：Tauri 2 + Rust（命令式接口）+ SQLite（rusqlite，WAL）。
 - 关键原则：解耦、可扩展、可回归验证、自动持久化、交互性能优先。
