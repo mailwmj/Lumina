@@ -1,6 +1,6 @@
 {
   "app": {
-    "title": "ITV",
+    "title": "Storyboard-Copilot-Plus",
     "subtitle": "AI Video Generation Workbench"
   },
   "common": {
@@ -302,7 +302,7 @@
     "getApiKeyLink": "click here to get API key",
     "missingAnyApiKeyMessage": "You have not configured any API keys yet. Please open Settings to configure one.",
     "openProvidersSettings": "Open Settings",
-    "aboutAppName": "ITV",
+    "aboutAppName": "Storyboard-Copilot-Plus",
     "aboutIntro": "An AI video generation workbench based on node canvas, supporting Seedance models for video creation.",
     "aboutVersionLabel": "Version",
     "aboutVersionUnknown": "Unknown",

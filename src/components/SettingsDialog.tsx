@@ -1141,12 +1141,12 @@ export function SettingsDialog({
                     <p className="text-text-dark">
                       {t('settings.aboutRepositoryLabel')}:{' '}
                       <a
-                        href="https://github.com/xujunjiex/itv"
+                        href="https://github.com/xujunjiex/Storyboard-Copilot-Plus"
                         target="_blank"
                         rel="noreferrer"
                         className="text-accent hover:underline break-all"
                       >
-                        https://github.com/xujunjiex/itv
+                        https://github.com/xujunjiex/Storyboard-Copilot-Plus
                       </a>
                     </p>
                   </div>

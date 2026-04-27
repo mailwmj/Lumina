@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { UiButton, UiModal, UiSelect } from '@/components/ui';
 
-const GITHUB_RELEASES_URL = 'https://github.com/xujunjiex/itv/releases';
+const GITHUB_RELEASES_URL = 'https://github.com/xujunjiex/Storyboard-Copilot-Plus/releases';
 export type UpdateIgnoreMode = 'today-version' | 'forever-version' | 'forever-all';
 
 interface UpdateAvailableDialogProps {

@@ -1,8 +1,8 @@
-# ITV - 智能视频生成工作台
+# Storyboard-Copilot-Plus
 
 <div align="center">
-  <img src="./src-tauri/icons/128x128@2x.png" width="100" height="100" alt="ITV" style="margin-bottom: -50px;">
-  <h1 style="color: ##111227;">ITV</h1>
+  <img src="./src-tauri/icons/128x128@2x.png" width="100" height="100" alt="Storyboard-Copilot-Plus" style="margin-bottom: -50px;">
+  <h1 style="color: ##111227;">Storyboard-Copilot-Plus</h1>
   <h3>基于节点画布的 AI 视频生成工具，支持 Seedance 系列模型，一站式完成素材上传、提示词生成与视频创作</h3>
 </div>
 

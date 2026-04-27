@@ -2,8 +2,8 @@ import { getVersion } from '@tauri-apps/api/app';
 import { isTauri } from '@tauri-apps/api/core';
 import { checkLatestReleaseTag } from '../../../commands/update';
 
-const GITHUB_LATEST_RELEASE_API = 'https://api.github.com/repos/xujunjiex/itv/releases/latest';
-const VERSION_SUPPRESSION_STORAGE_KEY = 'itv:update-check:version-suppressions';
+const GITHUB_LATEST_RELEASE_API = 'https://api.github.com/repos/xujunjiex/Storyboard-Copilot-Plus/releases/latest';
+const VERSION_SUPPRESSION_STORAGE_KEY = 'storyboard-plus:update-check:version-suppressions';
 
 export interface UpdateCheckResult {
   hasUpdate: boolean;
