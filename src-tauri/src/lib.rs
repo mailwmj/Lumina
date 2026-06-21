@@ -62,6 +62,10 @@ fn setup_logging() {
     }
 
     info!("Storyboard Copilot starting...");
+
+    if let Some(log_dir) = resolve_log_dir() {
+        commands::cleanup::cleanup_old_logs(&log_dir);
+    }
 }
 
 fn show_main_window(app: &tauri::AppHandle) {
