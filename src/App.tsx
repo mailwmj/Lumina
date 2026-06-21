@@ -3,6 +3,8 @@ import { ReactFlowProvider } from '@xyflow/react';
 import { invoke } from '@tauri-apps/api/core';
 import { Canvas } from './features/canvas/Canvas';
 import { TitleBar } from './components/TitleBar';
+import { LogPanel } from '@/lib/logger/LogPanel';
+import { useLogPanelHotkey } from '@/lib/logger/useLogPanelHotkey';
 import { SettingsDialog } from './components/SettingsDialog';
 import { UpdateAvailableDialog, type UpdateIgnoreMode } from './components/UpdateAvailableDialog';
 import { GlobalErrorDialog } from './components/GlobalErrorDialog';
@@ -36,6 +38,7 @@ function toRgbCssValue(hexColor: string): string {
 }
 
 function App() {
+  useLogPanelHotkey();
   const { theme } = useThemeStore();
   const uiRadiusPreset = useSettingsStore((state) => state.uiRadiusPreset);
   const themeTonePreset = useSettingsStore((state) => state.themeTonePreset);
@@ -243,6 +246,7 @@ function App() {
           copyText={globalError?.copyText}
           onClose={() => setGlobalError(null)}
         />
+        {import.meta.env.DEV && <LogPanel />}
       </div>
     </ReactFlowProvider>
   );
