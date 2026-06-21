@@ -7,10 +7,21 @@ import { resolveNamespace } from './namespace';
 import { serializeFields } from './serialize';
 import { globalTransport } from './transport';
 
-function emit(level: Level, target: string, msg: string, fields?: LogFields): void {
+function collectFields(args: unknown[]): LogFields {
+  if (args.length === 0) return {};
+  if (args.length === 1 && args[0] && typeof args[0] === 'object' && !Array.isArray(args[0])) {
+    return args[0] as LogFields;
+  }
+  // 多个参数：作为 args 数组传入
+  return { args };
+}
+
+function emit(level: Level, target: string, msg: string, ...args: unknown[]): void {
   const config = loadConfig();
   const effective = resolveLevel(target, config);
   if (!isLevelEnabled(level, effective)) return;
+
+  const fields = collectFields(args);
 
   const message =
     fields && fields.err instanceof Error
@@ -30,10 +41,10 @@ function emit(level: Level, target: string, msg: string, fields?: LogFields): vo
 
 function makeLogger(target: string): Logger {
   return {
-    debug: (msg, f) => emit('debug', target, msg, f),
-    info: (msg, f) => emit('info', target, msg, f),
-    warn: (msg, f) => emit('warn', target, msg, f),
-    error: (msg, f) => emit('error', target, msg, f),
+    debug: (msg, ...args) => emit('debug', target, msg, ...args),
+    info: (msg, ...args) => emit('info', target, msg, ...args),
+    warn: (msg, ...args) => emit('warn', target, msg, ...args),
+    error: (msg, ...args) => emit('error', target, msg, ...args),
   };
 }
 

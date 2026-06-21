@@ -45,6 +45,7 @@ import { useCanvasStore } from '@/stores/canvasStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import type { VideoApiConfig } from '@/stores/settingsStore';
+import { logger } from '@/lib/logger';
 
 type VideoGenNodeProps = NodeProps & {
   id: string;
@@ -339,16 +340,16 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
 
   // Debug: log all edges connected to this node
   const connectedEdges = useMemo(() => edges.filter((e) => e.target === id), [edges, id]);
-  console.info('[VideoGenNode] nodeId:', id, 'type:', nodeType, 'isVideoFrame:', isVideoFrame);
-  console.info('[VideoGenNode] connected edges count:', connectedEdges.length);
+  logger.info('[VideoGenNode] nodeId:', id, 'type:', nodeType, 'isVideoFrame:', isVideoFrame);
+  logger.info('[VideoGenNode] connected edges count:', connectedEdges.length);
   connectedEdges.forEach((edge, idx) => {
-    console.info('[VideoGenNode] edge[' + idx + ']: source=' + edge.source + ', targetHandle=' + edge.targetHandle);
+    logger.info('[VideoGenNode] edge[' + idx + ']: source=' + edge.source + ', targetHandle=' + edge.targetHandle);
   });
 
   const incomingImages = useMemo(
     () => {
       const images = graphImageResolver.collectInputImages(id, nodes, edges);
-      console.info('[VideoGenNode] incomingImages count:', images.length);
+      logger.info('[VideoGenNode] incomingImages count:', images.length);
       return images;
     },
     [id, nodes, edges]
@@ -504,7 +505,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
   }, [commitPromptDraft, pickerCursor]);
 
   const handlePolish = useCallback(async () => {
-    console.info('[VideoGen Polish] === START ===', {
+    logger.info('[VideoGen Polish] === START ===', {
       incomingImagesCount: incomingImages.length,
       incomingImages: incomingImages.map((url, i) => `${i}: ${url.substring(0, 120)}`),
       isVideoFrame,
@@ -536,7 +537,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
       imageRefText = '参考图片';
     }
 
-    console.info('[VideoGen Polish] images to use:', {
+    logger.info('[VideoGen Polish] images to use:', {
       count: imagesToUse.length,
       urls: imagesToUse.map((url, i) => `${i}: ${url.substring(0, 120)}`),
       imageRefText,
@@ -556,21 +557,21 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
       }
     }
 
-    console.info('[VideoGen Polish] text to polish:', textToPolish);
-    console.info('[VideoGen Polish] images count:', imagesToUse.length);
-    console.info('[VideoGen Polish] image URLs:', imagesToUse.map((url, i) => `${i}: ${url.substring(0, 100)}`));
+    logger.info('[VideoGen Polish] text to polish:', textToPolish);
+    logger.info('[VideoGen Polish] images count:', imagesToUse.length);
+    logger.info('[VideoGen Polish] image URLs:', imagesToUse.map((url, i) => `${i}: ${url.substring(0, 100)}`));
 
     setIsPolishing(true);
     try {
       // Find the video API config that matches the selected model
       const selectedModel = data.model as string;
-      console.info('[VideoGen Polish] selectedModel:', selectedModel);
-      console.info('[VideoGen Polish] available videoApis:', videoApis.map(api => ({ modelId: api.modelId, name: api.name, hasPolishPrompt: !!api.polishPrompt, hasDefaultPolishPrompt: !!api.defaultPolishPrompt })));
+      logger.info('[VideoGen Polish] selectedModel:', selectedModel);
+      logger.info('[VideoGen Polish] available videoApis:', videoApis.map(api => ({ modelId: api.modelId, name: api.name, hasPolishPrompt: !!api.polishPrompt, hasDefaultPolishPrompt: !!api.defaultPolishPrompt })));
       const videoApiConfig = videoApis.find((api: VideoApiConfig) => api.modelId === selectedModel);
-      console.info('[VideoGen Polish] matched config:', videoApiConfig);
+      logger.info('[VideoGen Polish] matched config:', videoApiConfig);
       // Use per-model polish prompt if set, otherwise fall back to default
       const effectivePolishPrompt = videoApiConfig?.polishPrompt || videoApiConfig?.defaultPolishPrompt;
-      console.info('[VideoGen Polish] effectivePolishPrompt:', effectivePolishPrompt ? effectivePolishPrompt.substring(0, 100) + '...' : null);
+      logger.info('[VideoGen Polish] effectivePolishPrompt:', effectivePolishPrompt ? effectivePolishPrompt.substring(0, 100) + '...' : null);
 
       const result = await polishText({
         text: textToPolish,
@@ -590,7 +591,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
       setPromptDraft(result.polished);
       updateNodeData(id, { prompt: result.polished });
     } catch (err) {
-      console.error('[VideoGen Polish] failed with error:', err);
+      logger.error('[VideoGen Polish] failed with error:', err);
       let message = '润色失败';
       if (err instanceof Error) {
         message = err.message;
@@ -604,7 +605,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
           message = JSON.stringify(err);
         }
       }
-      console.error('[VideoGen Polish] error message:', message);
+      logger.error('[VideoGen Polish] error message:', message);
       void showErrorDialog(message, '润色失败');
     } finally {
       setIsPolishing(false);
@@ -612,16 +613,16 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
   }, [textApis, videoApis, promptDraft, incomingImages, isVideoFrame, maxImages, id, updateNodeData, data]);
 
   const handleGenerate = useCallback(async () => {
-    console.info('[VideoGen] handleGenerate called', { prompt: promptDraft, model: data.model, hasImages: incomingImages.length });
+    logger.info('[VideoGen] handleGenerate called', { prompt: promptDraft, model: data.model, hasImages: incomingImages.length });
     const prompt = promptDraft.replace(/@(?=图\d+)/g, '').trim();
     if (!prompt) {
-      console.warn('[VideoGen] No prompt, showing dialog');
+      logger.warn('[VideoGen] No prompt, showing dialog');
       showErrorDialog(t('node.imageEdit.promptRequired'), 'prompt');
       return;
     }
 
     if (!data.model) {
-      console.warn('[VideoGen] No model selected, showing dialog');
+      logger.warn('[VideoGen] No model selected, showing dialog');
       setError('请先选择视频模型');
       showErrorDialog('请先选择视频模型', 'model');
       return;
@@ -630,22 +631,22 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
     // 首尾帧模式必须恰好有2张有效图片，单图模式至少需要1张
     if (isVideoFrame) {
       if (incomingImages.length !== 2) {
-        console.warn('[VideoGen] 首尾帧模式需要2张图片，当前只有', incomingImages.length, '张');
+        logger.warn('[VideoGen] 首尾帧模式需要2张图片，当前只有', incomingImages.length, '张');
         setError(`首尾帧模式需要2张参考图片，当前只有${incomingImages.length}张。请确保首帧和尾帧都已连接有效的图片节点。`);
         return;
       }
     } else {
       if (incomingImages.length < 1) {
-        console.warn('[VideoGen] 单图模式需要至少1张图片');
+        logger.warn('[VideoGen] 单图模式需要至少1张图片');
         setError(`请先连接至少1张参考图片。`);
         return;
       }
       if (incomingImages.length > 1) {
-        console.warn('[VideoGen] 单图模式将使用第一张图片');
+        logger.warn('[VideoGen] 单图模式将使用第一张图片');
       }
     }
 
-    console.info('[VideoGen] Starting generation process');
+    logger.info('[VideoGen] Starting generation process');
 
     // Get API key from videoApis based on selected model
     const modelStr = (data.model as string) || '';
@@ -662,7 +663,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
     const providerApiKey = configuredVideoApi?.apiKey ?? '';
 
     // Debug log
-    console.info('[VideoGen] API key lookup:', {
+    logger.info('[VideoGen] API key lookup:', {
       modelStr,
       videoApisCount: videoApis.length,
       hasModelMatch: !!matchingApi,
@@ -672,7 +673,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
 
     if (!providerApiKey) {
       const errorMsg = `视频API密钥未配置：请在设置→视频API中配置 ${modelStr} 的API密钥`;
-      console.error('[VideoGen] API key not configured!');
+      logger.error('[VideoGen] API key not configured!');
       setError(errorMsg);
       // Don't create node if no API key
       return;
@@ -711,7 +712,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
       }
     );
     addEdge(id, newNodeId);
-    console.info('[VideoGen] Export node created:', newNodeId);
+    logger.info('[VideoGen] Export node created:', newNodeId);
 
     try {
       const extraParams: Record<string, unknown> = {};
@@ -730,16 +731,16 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
       const providerId = 'volcvideo';
 
       // Set API key before submitting job
-      console.info('[VideoGen] Setting API key and submitting job...', { providerId, providerApiKeyLength: providerApiKey.length });
+      logger.info('[VideoGen] Setting API key and submitting job...', { providerId, providerApiKeyLength: providerApiKey.length });
       try {
         await canvasAiGateway.setApiKey(providerId, providerApiKey);
-        console.info('[VideoGen] API key set successfully');
+        logger.info('[VideoGen] API key set successfully');
       } catch (e) {
-        console.error('[VideoGen] setApiKey failed:', e);
+        logger.error('[VideoGen] setApiKey failed:', e);
         throw e;
       }
 
-      console.info('[VideoGen] Submitting job...', {
+      logger.info('[VideoGen] Submitting job...', {
         model: data.model,
         promptLength: prompt.length,
         isVideoFrame,
@@ -760,7 +761,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
           projectId,
         });
 
-        console.info('[VideoGen] Job submitted successfully', { jobId, model: data.model });
+        logger.info('[VideoGen] Job submitted successfully', { jobId, model: data.model });
 
         // Update the export node with job info
         updateNodeData(newNodeId, {
@@ -768,11 +769,11 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
           generationProviderId: providerId,
         });
       } catch (e) {
-        console.error('[VideoGen] submitGenerateImageJob failed:', e);
+        logger.error('[VideoGen] submitGenerateImageJob failed:', e);
         throw e;
       }
     } catch (err) {
-      console.error('[VideoGen] Generation error caught:', err);
+      logger.error('[VideoGen] Generation error caught:', err);
       const errorDetail = err instanceof Error ? err.message : String(err);
       // Provide specific guidance based on error type
       let guidance = '';
@@ -795,7 +796,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
         guidance = errorDetail;
       }
       const message = guidance;
-      console.error('[VideoGen] Updating node with error:', message);
+      logger.error('[VideoGen] Updating node with error:', message);
       updateNodeData(newNodeId, {
         isGenerating: false,
         generationStartedAt: null,

@@ -34,6 +34,7 @@ import { useProjectStore } from '@/stores/projectStore';
 import { UI_POPOVER_TRANSITION_MS } from '@/components/ui/motion';
 import { sanitizeStoryboardText } from '@/features/canvas/application/storyboardText';
 import { buildGenerationErrorReport } from '@/features/canvas/application/generationErrorReport';
+import { logger } from '@/lib/logger';
 import {
   NODE_TOOLBAR_ALIGN,
   NODE_TOOLBAR_CLASS,
@@ -211,7 +212,7 @@ export const NodeActionToolbar = memo(({ node }: NodeActionToolbarProps) => {
     try {
       await copyImageSourceToClipboard(imageSource);
     } catch (error) {
-      console.error('Failed to copy image to clipboard', error);
+      logger.error('Failed to copy image to clipboard', error);
     }
   }, [imageSource]);
 
@@ -256,7 +257,7 @@ export const NodeActionToolbar = memo(({ node }: NodeActionToolbarProps) => {
     try {
       await navigator.clipboard.writeText(storyboardText);
     } catch (error) {
-      console.error('Failed to copy storyboard text', error);
+      logger.error('Failed to copy storyboard text', error);
     }
   }, [storyboardText]);
 
@@ -277,7 +278,7 @@ export const NodeActionToolbar = memo(({ node }: NodeActionToolbarProps) => {
     try {
       await navigator.clipboard.writeText(generationErrorReport);
     } catch (error) {
-      console.error('Failed to copy generation error report', error);
+      logger.error('Failed to copy generation error report', error);
     }
   }, [canCopyGenerationError, generationErrorReport]);
 
@@ -303,7 +304,7 @@ export const NodeActionToolbar = memo(({ node }: NodeActionToolbarProps) => {
           }
         } catch (err) {
           // Non-critical: just log, don't block deletion
-          console.warn('[NodeActionToolbar] Failed to delete upload file:', err);
+          logger.warn('[NodeActionToolbar] Failed to delete upload file:', err);
         }
       }
     }
@@ -329,7 +330,7 @@ export const NodeActionToolbar = memo(({ node }: NodeActionToolbarProps) => {
       await saveImageSourceToPath(imageSource, selectedPath);
       closeDownloadMenu();
     } catch (error) {
-      console.error('Failed to save image with save-as', error);
+      logger.error('Failed to save image with save-as', error);
     }
   }, [closeDownloadMenu, imageSource, node.id]);
 
@@ -342,7 +343,7 @@ export const NodeActionToolbar = memo(({ node }: NodeActionToolbarProps) => {
         await saveImageSourceToDirectory(imageSource, targetDir, `node-${node.id}`);
         closeDownloadMenu();
       } catch (error) {
-        console.error('Failed to save image to preset dir', error);
+        logger.error('Failed to save image to preset dir', error);
       }
     },
     [closeDownloadMenu, imageSource, node.id]
@@ -361,15 +362,15 @@ export const NodeActionToolbar = memo(({ node }: NodeActionToolbarProps) => {
         filters: [{ name: 'Video', extensions: ['mp4'] }],
         title: '保存视频',
       });
-      console.info('[VideoDownload] save dialog returned:', selectedPath);
+      logger.info('[VideoDownload] save dialog returned:', selectedPath);
       if (!selectedPath || Array.isArray(selectedPath)) {
-        console.info('[VideoDownload] save cancelled or invalid path');
+        logger.info('[VideoDownload] save cancelled or invalid path');
         return;
       }
       await saveVideoSourceToPath(videoSource, selectedPath);
       closeDownloadMenu();
     } catch (error) {
-      console.error('Failed to save video with save-as', error);
+      logger.error('Failed to save video with save-as', error);
     }
   }, [closeDownloadMenu, videoSource, node.id]);
 
@@ -383,7 +384,7 @@ export const NodeActionToolbar = memo(({ node }: NodeActionToolbarProps) => {
         await saveVideoSourceToPath(videoSource, targetPath);
         closeDownloadMenu();
       } catch (error) {
-        console.error('Failed to save video to preset dir', error);
+        logger.error('Failed to save video to preset dir', error);
       }
     },
     [closeDownloadMenu, videoSource, node.id]

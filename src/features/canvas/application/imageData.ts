@@ -1,11 +1,11 @@
 import { convertFileSrc, isTauri } from '@tauri-apps/api/core';
+import { logger } from '@/lib/logger';
 
 import {
   loadImage,
   prepareNodeImageBinary,
   persistImageSource,
   prepareNodeImageSource,
-  logFrontendDebug,
 } from '@/commands/image';
 
 export function parseAspectRatio(value: string): number {
@@ -342,18 +342,14 @@ export async function prepareNodeImageFromFile(
     && (isLikelyLocalImagePath(normalizedPath) || normalizedPath.toLowerCase().startsWith('file://'));
 
   // Debug logging
-  try {
-    await logFrontendDebug(
-      `prepareNodeImageFromFile: name=${file.name}, type=${file.type}, size=${file.size}, canUseLocalPath=${canUseLocalPath}, normalizedPath=${normalizedPath.substring(0, 100)}, projectId=${projectId ?? 'none'}`,
-      'imageData.prepareNodeImageFromFile'
-    );
-  } catch (e) {
-    console.warn('[imageData] Failed to log frontend debug:', e);
-  }
+  logger.debug(
+    `prepareNodeImageFromFile: name=${file.name}, type=${file.type}, size=${file.size}, canUseLocalPath=${canUseLocalPath}, normalizedPath=${normalizedPath.substring(0, 100)}, projectId=${projectId ?? 'none'}`,
+    { context: 'imageData.prepareNodeImageFromFile' }
+  );
 
   if (canUseLocalPath) {
     const prepared = await prepareNodeImage(normalizedPath, maxPreviewDimension, projectId);
-    console.info(
+    logger.info(
       `[upload-perf][imageData] prepareNodeImageFromFile path-mode name="${file.name}" size=${file.size}B elapsed=${Math.round(performance.now() - started)}ms`
     );
     return prepared;
@@ -367,30 +363,22 @@ export async function prepareNodeImageFromFile(
     const extension = resolveFileExtension(file);
 
     // Debug logging
-    try {
-      await logFrontendDebug(
-        `prepareNodeImageFromFile binary-mode: name=${file.name}, type=${file.type}, size=${file.size}, extension=${extension}, bytes.length=${bytes.length}`,
-        'imageData.prepareNodeImageFromFile'
-      );
-    } catch (e) {
-      console.warn('[imageData] Failed to log frontend debug:', e);
-    }
+    logger.debug(
+      `prepareNodeImageFromFile binary-mode: name=${file.name}, type=${file.type}, size=${file.size}, extension=${extension}, bytes.length=${bytes.length}`,
+      { context: 'imageData.prepareNodeImageFromFile' }
+    );
 
     const tauriStarted = performance.now();
     const prepared = await prepareNodeImageBinary(bytes, extension, safeMaxDimension, projectId);
     const tauriElapsed = Math.round(performance.now() - tauriStarted);
 
     // Debug logging
-    try {
-      await logFrontendDebug(
-        `prepareNodeImageFromFile binary-mode result: imageUrl=${prepared.imagePath}, previewImageUrl=${prepared.previewImagePath}`,
-        'imageData.prepareNodeImageFromFile'
-      );
-    } catch (e) {
-      console.warn('[imageData] Failed to log frontend debug:', e);
-    }
+    logger.debug(
+      `prepareNodeImageFromFile binary-mode result: imageUrl=${prepared.imagePath}, previewImageUrl=${prepared.previewImagePath}`,
+      { context: 'imageData.prepareNodeImageFromFile' }
+    );
 
-    console.info(
+    logger.info(
       `[upload-perf][imageData] prepareNodeImageFromFile binary-mode name="${file.name}" size=${file.size}B readArrayBuffer=${readElapsed}ms tauriPrepare=${tauriElapsed}ms total=${Math.round(performance.now() - started)}ms`
     );
     return {
@@ -404,7 +392,7 @@ export async function prepareNodeImageFromFile(
   const source = await readFileAsDataUrl(file);
   const dataUrlElapsed = Math.round(performance.now() - dataUrlStarted);
   const prepared = await prepareNodeImage(source, maxPreviewDimension, projectId);
-  console.info(
+  logger.info(
     `[upload-perf][imageData] prepareNodeImageFromFile dataurl-fallback name="${file.name}" size=${file.size}B readDataUrl=${dataUrlElapsed}ms total=${Math.round(performance.now() - started)}ms`
   );
   return prepared;
@@ -488,7 +476,7 @@ export async function prepareNodeImage(
     try {
       const tauriStarted = performance.now();
       const prepared = await prepareNodeImageSource(trimmedImageUrl, safeMaxDimension, projectId);
-      console.info(
+      logger.info(
         `[upload-perf][imageData] prepareNodeImage tauri-source elapsed=${Math.round(performance.now() - tauriStarted)}ms total=${Math.round(performance.now() - started)}ms`
       );
       return {
@@ -497,7 +485,7 @@ export async function prepareNodeImage(
         aspectRatio: prepared.aspectRatio,
       };
     } catch (error) {
-      console.warn('[imageData] prepareNodeImage tauri-source failed, fallback to browser path', {
+      logger.warn('[imageData] prepareNodeImage tauri-source failed, fallback to browser path', {
         source: trimmedImageUrl,
         error,
       });
@@ -516,7 +504,7 @@ export async function prepareNodeImage(
         ? persistedImagePath
         : await persistImageLocally(previewDataUrl, projectId);
 
-    console.info(
+    logger.info(
       `[upload-perf][imageData] prepareNodeImage browser-fallback total=${Math.round(performance.now() - started)}ms`
     );
     return {

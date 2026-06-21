@@ -1,5 +1,6 @@
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import type { TextApiConfig } from '@/stores/settingsStore';
+import { logger } from '@/lib/logger';
 
 export interface TextPolishPayload {
   text: string;
@@ -44,7 +45,7 @@ async function blobToDataUrl(blobUrl: string): Promise<string> {
       reader.readAsDataURL(blob);
     });
   } catch (err) {
-    console.warn('[TextPolish] Failed to convert blob to data URL:', err);
+    logger.warn('[TextPolish] Failed to convert blob to data URL:', err);
     return blobUrl; // fallback to original
   }
 }
@@ -59,19 +60,19 @@ async function convertImageToDataUrl(imageUrl: string): Promise<string> {
 
   // Already a data URL - return as-is
   if (lower.startsWith('data:')) {
-    console.info('[TextPolish] Already data URL, using directly');
+    logger.info('[TextPolish] Already data URL, using directly');
     return imageUrl;
   }
 
   // Blob URL - convert to data URL via fetch
   if (lower.startsWith('blob:')) {
-    console.info('[TextPolish] Converting blob URL to data URL');
+    logger.info('[TextPolish] Converting blob URL to data URL');
     return await blobToDataUrl(imageUrl);
   }
 
   // HTTP(S) URL - return as-is (should be publicly accessible)
   if (lower.startsWith('http://') || lower.startsWith('https://')) {
-    console.info('[TextPolish] Using HTTP URL directly');
+    logger.info('[TextPolish] Using HTTP URL directly');
     return imageUrl;
   }
 
@@ -79,19 +80,19 @@ async function convertImageToDataUrl(imageUrl: string): Promise<string> {
   // For text polishing, we use data URL format which text APIs can accept directly
   if (lower.startsWith('asset://') || lower.startsWith('file://') || lower.startsWith('app://') ||
       lower.match(/^[a-z]:/) || lower.startsWith('/') || lower.startsWith('\\')) {
-    console.info('[TextPolish] Converting local image to data URL via Tauri command');
+    logger.info('[TextPolish] Converting local image to data URL via Tauri command');
     try {
       const dataUrl = await invoke<string>('convert_image_to_data_url', { source: imageUrl });
-      console.info('[TextPolish] Converted to data URL, length:', dataUrl.length);
+      logger.info('[TextPolish] Converted to data URL, length:', dataUrl.length);
       return dataUrl;
     } catch (err) {
-      console.error('[TextPolish] Failed to convert local image:', err);
+      logger.error('[TextPolish] Failed to convert local image:', err);
       throw err;
     }
   }
 
   // Unknown format - return as-is
-  console.warn('[TextPolish] Unknown image URL format, using as-is:', imageUrl.substring(0, 80));
+  logger.warn('[TextPolish] Unknown image URL format, using as-is:', imageUrl.substring(0, 80));
   return imageUrl;
 }
 
@@ -104,18 +105,18 @@ async function processReferenceImages(images: string[] | undefined): Promise<str
 
   const processedImages: string[] = [];
   for (const img of images) {
-    console.info('[TextPolish] Processing image URL:', img.substring(0, 80));
+    logger.info('[TextPolish] Processing image URL:', img.substring(0, 80));
     try {
       const dataUrl = await convertImageToDataUrl(img);
       processedImages.push(dataUrl);
-      console.info('[TextPolish] Image processed successfully, data URL length:', dataUrl.length);
+      logger.info('[TextPolish] Image processed successfully, data URL length:', dataUrl.length);
     } catch (err) {
-      console.error('[TextPolish] Failed to process image:', err);
+      logger.error('[TextPolish] Failed to process image:', err);
       // Skip image on failure
-      console.warn('[TextPolish] Skipping image due to error');
+      logger.warn('[TextPolish] Skipping image due to error');
     }
   }
-  console.info('[TextPolish] Final processed images count:', processedImages.length);
+  logger.info('[TextPolish] Final processed images count:', processedImages.length);
   return processedImages;
 }
 
@@ -138,7 +139,7 @@ export async function polishText(
   // Process reference images to convert blob URLs
   const processedImages = await processReferenceImages(payload.referenceImages);
 
-  console.info('[TextPolish] polishing text', {
+  logger.info('[TextPolish] polishing text', {
     textLength: payload.text.length,
     apiConfig: {
       id: apiConfig.id,
@@ -171,13 +172,13 @@ export async function polishText(
       },
     });
 
-    console.info('[TextPolish] success', {
+    logger.info('[TextPolish] success', {
       resultLength: result.length,
     });
 
     return { polished: result };
   } catch (error) {
-    console.error('[TextPolish] failed', error);
+    logger.error('[TextPolish] failed', error);
     // 提取更详细的错误信息
     let message = '润色失败';
     if (error instanceof Error) {
@@ -195,7 +196,7 @@ export async function polishText(
         message = JSON.stringify(error);
       }
     }
-    console.error('[TextPolish] error message:', message);
+    logger.error('[TextPolish] error message:', message);
     throw new Error(message);
   }
 }
@@ -215,7 +216,7 @@ export async function testTextApi(
     throw new Error('请先配置API地址');
   }
 
-  console.info('[TextPolish] testing API', {
+  logger.info('[TextPolish] testing API', {
     apiConfig: {
       id: apiConfig.id,
       name: apiConfig.name,
@@ -236,10 +237,10 @@ export async function testTextApi(
       },
     });
 
-    console.info('[TextPolish] test success', result);
+    logger.info('[TextPolish] test success', result);
     return { success: true, message: result };
   } catch (error) {
-    console.error('[TextPolish] test failed', error);
+    logger.error('[TextPolish] test failed', error);
     const message = error instanceof Error ? error.message : '测试失败';
     throw new Error(message);
   }

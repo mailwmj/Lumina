@@ -2153,47 +2153,6 @@ pub async fn open_in_edge(url: String) -> Result<(), String> {
     }
 }
 
-/// Write frontend debug log to a separate file
-#[tauri::command]
-pub async fn log_frontend_debug(message: String, context: String) -> Result<(), String> {
-    // Resolve log directory - same logic as in lib.rs
-    let mut candidates = Vec::new();
-    #[cfg(target_os = "macos")]
-    if let Ok(home) = std::env::var("HOME") {
-        candidates.push(PathBuf::from(home).join("Library/Logs/storyboard-copilot"));
-    }
-    candidates.push(std::env::temp_dir().join("storyboard-copilot/logs"));
-    if let Ok(current_dir) = std::env::current_dir() {
-        candidates.push(current_dir.join("logs"));
-    }
-
-    let log_dir = candidates.into_iter().find(|d| std::fs::create_dir_all(d).is_ok());
-
-    let log_dir = match log_dir {
-        Some(d) => d,
-        None => return Err("Failed to resolve log directory".to_string()),
-    };
-
-    let debug_log_path = log_dir.join("frontend_debug.log");
-
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-    let log_entry = format!("[{}] [{}] {}\n", timestamp, context, message);
-
-    std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&debug_log_path)
-        .map_err(|e| format!("Failed to open debug log: {}", e))?
-        .write_all(log_entry.as_bytes())
-        .map_err(|e| format!("Failed to write debug log: {}", e))?;
-
-    info!("[frontend_debug] [{}] {}", context, message);
-    Ok(())
-}
-
 /// Delete an image file from the project's uploads directory.
 /// This is called when an upload node is deleted to clean up orphaned files.
 /// Only deletes files within the project's uploads directory for safety.

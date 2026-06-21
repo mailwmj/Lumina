@@ -1,4 +1,5 @@
 import { invoke, isTauri } from '@tauri-apps/api/core';
+import { logger } from '@/lib/logger';
 
 export interface RuntimeSystemInfo {
   osName: string;
@@ -14,19 +15,7 @@ export async function getRuntimeSystemInfo(): Promise<RuntimeSystemInfo | null> 
   try {
     return await invoke<RuntimeSystemInfo>('get_runtime_system_info');
   } catch (error) {
-    console.warn('failed to get runtime system info from tauri', error);
+    logger.warn('failed to get runtime system info from tauri', error);
     return null;
-  }
-}
-
-export async function writeDebugLog(message: string): Promise<void> {
-  if (!isTauri()) {
-    return;
-  }
-
-  try {
-    await invoke('write_debug_log', { message });
-  } catch (error) {
-    console.warn('failed to write debug log', error);
   }
 }

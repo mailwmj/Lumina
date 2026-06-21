@@ -252,7 +252,3 @@ export async function deleteProjectUploadFile(
 export async function openInEdge(url: string): Promise<void> {
   await invoke('open_in_edge', { url });
 }
-
-export async function logFrontendDebug(message: string, context: string): Promise<void> {
-  await invoke('log_frontend_debug', { message, context });
-}

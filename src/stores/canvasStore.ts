@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { logger } from '@/lib/logger';
 import {
   Connection,
   EdgeChange,
@@ -668,12 +669,12 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     const sourceHandle = normalizeHandleId(connection.sourceHandle) ?? 'source';
     const targetHandle = normalizeHandleId(connection.targetHandle) ?? 'target';
 
-    console.info('[CanvasStore onConnect] connection:', JSON.stringify({
+    logger.info('[CanvasStore onConnect] connection:', {
       source: connection.source,
       target: connection.target,
       sourceHandle: connection.sourceHandle,
       targetHandle: connection.targetHandle,
-    }));
+    });
 
     set((state) => {
       // 限制首尾帧节点（videoFrame）的每个 targetHandle 只能连接一条边

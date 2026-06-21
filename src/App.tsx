@@ -12,6 +12,7 @@ import { ProjectManager } from './features/project/ProjectManager';
 import { useThemeStore } from './stores/themeStore';
 import { useProjectStore } from './stores/projectStore';
 import { useSettingsStore } from './stores/settingsStore';
+import { logger } from '@/lib/logger';
 import {
   checkForUpdate,
   isUpdateVersionSuppressed,
@@ -123,7 +124,7 @@ function App() {
         }
 
         if (attempt === 1 || attempt % 10 === 0) {
-          console.warn('failed to notify frontend readiness', error);
+          logger.warn('failed to notify frontend readiness', error);
         }
 
         const retryDelayMs = Math.min(500, 80 * attempt);

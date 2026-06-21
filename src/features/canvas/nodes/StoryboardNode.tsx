@@ -59,6 +59,7 @@ import {
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { logger } from '@/lib/logger';
 
 type StoryboardNodeProps = NodeProps & {
   id: string;
@@ -711,7 +712,7 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
 
     const traceId = `${id}-${Date.now()}`;
     const traceStart = performance.now();
-    console.info(`${EXPORT_TRACE_PREFIX} start`, {
+    logger.info(`${EXPORT_TRACE_PREFIX} start`, {
       traceId,
       nodeId: id,
       rows: gridRows,
@@ -730,7 +731,7 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
       if (frameSources.every((source) => !source)) {
         throw new Error('没有可导出的图片');
       }
-      console.info(`${EXPORT_TRACE_PREFIX} frame-sources-ready`, {
+      logger.info(`${EXPORT_TRACE_PREFIX} frame-sources-ready`, {
         traceId,
         elapsedMs: Math.round(performance.now() - stageFrameStart),
         nonEmptyFrames: frameSources.filter((source) => source.length > 0).length,
@@ -753,7 +754,7 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
         } catch {
           // Keep fallback size when reference frame cannot be read.
         }
-        console.info(`${EXPORT_TRACE_PREFIX} font-reference-resolved`, {
+        logger.info(`${EXPORT_TRACE_PREFIX} font-reference-resolved`, {
           traceId,
           elapsedMs: Math.round(performance.now() - fontProbeStart),
           referenceFrameHeight,
@@ -790,7 +791,7 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
         frameNotes: orderedFrames.map((frame) => frame.note ?? ''),
         projectId,
       });
-      console.info(`${EXPORT_TRACE_PREFIX} merge-done`, {
+      logger.info(`${EXPORT_TRACE_PREFIX} merge-done`, {
         traceId,
         elapsedMs: Math.round(performance.now() - mergeStart),
         canvasWidth: mergeResult.canvasWidth,
@@ -813,7 +814,7 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
           gridCols,
           mergeResult
         );
-        console.info(`${EXPORT_TRACE_PREFIX} overlay-done`, {
+        logger.info(`${EXPORT_TRACE_PREFIX} overlay-done`, {
           traceId,
           elapsedMs: Math.round(performance.now() - overlayStart),
           dataUrlLength: mergedBlob.length,
@@ -821,7 +822,7 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
         const persistStart = performance.now();
         finalImagePath = await persistImageLocally(mergedBlob);
         finalPreviewPath = finalImagePath;
-        console.info(`${EXPORT_TRACE_PREFIX} overlay-persisted`, {
+        logger.info(`${EXPORT_TRACE_PREFIX} overlay-persisted`, {
           traceId,
           elapsedMs: Math.round(performance.now() - persistStart),
           persistedPath: finalImagePath,
@@ -835,12 +836,12 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
         gridCols,
         frameNotes: metadataFrameNotes,
       }).catch((error) => {
-        console.warn('[StoryboardMetadata] embed failed on storyboard export', error);
+        logger.warn('[StoryboardMetadata] embed failed on storyboard export', error);
         return finalImagePath;
       });
       finalImagePath = imagePathWithMetadata;
       finalPreviewPath = imagePathWithMetadata;
-      console.info(`${EXPORT_TRACE_PREFIX} metadata-embedded`, {
+      logger.info(`${EXPORT_TRACE_PREFIX} metadata-embedded`, {
         traceId,
         elapsedMs: Math.round(performance.now() - metadataStart),
         imagePath: finalImagePath,
@@ -857,7 +858,7 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
           resultKind: 'storyboardSplitExport',
         }
       );
-      console.info(`${EXPORT_TRACE_PREFIX} derived-node-created`, {
+      logger.info(`${EXPORT_TRACE_PREFIX} derived-node-created`, {
         traceId,
         elapsedMs: Math.round(performance.now() - createNodeStart),
         createdNodeId,
@@ -866,12 +867,12 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
       if (createdNodeId) {
         addEdge(id, createdNodeId);
       }
-      console.info(`${EXPORT_TRACE_PREFIX} done`, {
+      logger.info(`${EXPORT_TRACE_PREFIX} done`, {
         traceId,
         totalElapsedMs: Math.round(performance.now() - traceStart),
       });
     } catch (error) {
-      console.error(`${EXPORT_TRACE_PREFIX} failed`, {
+      logger.error(`${EXPORT_TRACE_PREFIX} failed`, {
         traceId,
         elapsedMs: Math.round(performance.now() - traceStart),
         error,

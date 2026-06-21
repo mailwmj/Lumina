@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { writeDebugLog } from '@/commands/system';
+import { logger } from '@/lib/logger';
 import {
   DEFAULT_GRSAI_CREDIT_TIER_ID,
   PRICE_DISPLAY_CURRENCY_MODES,
@@ -484,7 +484,7 @@ export const useSettingsStore = create<SettingsState>()(
       videoApis: PRESET_VIDEO_APIS,
       activeVideoApiId: null,
       setVideoApis: (apis) => {
-        writeDebugLog(`[settingsStore] setVideoApis called with: ${JSON.stringify(apis?.map(a => a.modelId))}`);
+        logger.debug(`[settingsStore] setVideoApis called with: ${JSON.stringify(apis?.map(a => a.modelId))}`);
         set({ videoApis: apis });
       },
       setActiveVideoApiId: (id) => set({ activeVideoApiId: id }),
@@ -495,7 +495,7 @@ export const useSettingsStore = create<SettingsState>()(
       onRehydrateStorage: () => {
         return (_state, error) => {
           if (error) {
-            console.error('failed to hydrate settings storage', error);
+            logger.error('failed to hydrate settings storage', error);
           }
           useSettingsStore.setState({ isHydrated: true });
         };

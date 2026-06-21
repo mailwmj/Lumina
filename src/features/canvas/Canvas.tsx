@@ -58,6 +58,7 @@ import { CanvasToolbar } from './CanvasToolbar';
 import { NodeToolDialog } from './ui/NodeToolDialog';
 import { ImageViewerModal } from './ui/ImageViewerModal';
 import { MissingApiKeyHint } from '@/features/settings/MissingApiKeyHint';
+import { logger } from '@/lib/logger';
 
 const DEFAULT_VIEWPORT: Viewport = { x: 0, y: 0, zoom: 1 };
 
@@ -475,7 +476,7 @@ export function Canvas() {
               const providerApiKey = apiKeys[generationProviderId] ?? '';
               if (providerApiKey) {
                 await canvasAiGateway.setApiKey(generationProviderId, providerApiKey).catch((error) => {
-                  console.warn('[GenerationJob] set_api_key failed before poll', {
+                  logger.warn('[GenerationJob] set_api_key failed before poll', {
                     nodeId: pendingNode.id,
                     generationProviderId,
                     error,
@@ -485,7 +486,7 @@ export function Canvas() {
             }
 
             const status = await canvasAiGateway.getGenerateImageJob(jobId).catch((error) => {
-              console.warn('[GenerationJob] poll failed', { nodeId: pendingNode.id, jobId, error });
+              logger.warn('[GenerationJob] poll failed', { nodeId: pendingNode.id, jobId, error });
               return null;
             });
             if (!status) {
@@ -503,9 +504,9 @@ export function Canvas() {
               if (projectId) {
                 try {
                   localImagePath = await autoSaveImageToProject(status.result, projectId);
-                  console.info('[GenerationJob] Generated image auto-saved to project directory:', localImagePath);
+                  logger.info('[GenerationJob] Generated image auto-saved to project directory:', localImagePath);
                 } catch (e) {
-                  console.warn('[GenerationJob] Failed to auto-save image to project directory, using URL:', e);
+                  logger.warn('[GenerationJob] Failed to auto-save image to project directory, using URL:', e);
                 }
               }
               const storyboardMetadataRaw = currentData.generationStoryboardMetadata as GenerationStoryboardMetadata | undefined;
@@ -522,7 +523,7 @@ export function Canvas() {
                   gridCols: Math.max(1, Math.round(storyboardMetadataRaw.gridCols)),
                   frameNotes: storyboardMetadataRaw.frameNotes,
                 }, projectId).catch((error) => {
-                  console.warn('[GenerationJob] embed storyboard metadata failed', {
+                  logger.warn('[GenerationJob] embed storyboard metadata failed', {
                     nodeId: pendingNode.id,
                     error,
                   });
@@ -632,7 +633,7 @@ export function Canvas() {
               }
               if (providerApiKey) {
                 await canvasAiGateway.setApiKey(generationProviderId, providerApiKey).catch((error) => {
-                  console.warn('[VideoJob] set_api_key failed before poll', {
+                  logger.warn('[VideoJob] set_api_key failed before poll', {
                     nodeId: pendingNode.id,
                     generationProviderId,
                     error,
@@ -642,13 +643,13 @@ export function Canvas() {
             }
 
             const status = await canvasAiGateway.getGenerateImageJob(jobId).catch((error) => {
-              console.warn('[VideoJob] poll failed', { nodeId: pendingNode.id, jobId, error });
+              logger.warn('[VideoJob] poll failed', { nodeId: pendingNode.id, jobId, error });
               return null;
             });
             if (!status) {
               pollFailureCount++;
               if (pollFailureCount >= MAX_POLL_FAILURES) {
-                console.error('[VideoJob] poll failed repeatedly, showing error on node', {
+                logger.error('[VideoJob] poll failed repeatedly, showing error on node', {
                   nodeId: pendingNode.id,
                   jobId,
                   failures: pollFailureCount,
@@ -671,7 +672,7 @@ export function Canvas() {
             if (status.status === 'queued' || status.status === 'running') {
               // Check if there's an error message even when status is running
               if (status.error) {
-                console.warn('[VideoJob] poll returned error:', { nodeId: pendingNode.id, jobId, error: status.error, status: status.status });
+                logger.warn('[VideoJob] poll returned error:', { nodeId: pendingNode.id, jobId, error: status.error, status: status.status });
                 updateNodeData(pendingNode.id, {
                   isGenerating: false,
                   generationStartedAt: null,
@@ -687,7 +688,7 @@ export function Canvas() {
 
             // Handle cancelled status - task was successfully cancelled
             if (status.status === 'cancelled') {
-              console.info('[VideoJob] Task was cancelled:', { nodeId: pendingNode.id, jobId });
+              logger.info('[VideoJob] Task was cancelled:', { nodeId: pendingNode.id, jobId });
               // Keep the error message that was set when cancel was clicked, or use default
               const currentNode = useCanvasStore.getState().nodes.find((node) => node.id === pendingNode.id);
               const existingError = (currentNode?.data as Record<string, unknown>)?.generationError as string | undefined;
@@ -709,9 +710,9 @@ export function Canvas() {
               if (projectId) {
                 try {
                   localVideoPath = await autoSaveVideoToProject(status.result, projectId);
-                  console.info('[VideoJob] Video auto-saved to project directory:', localVideoPath);
+                  logger.info('[VideoJob] Video auto-saved to project directory:', localVideoPath);
                 } catch (e) {
-                  console.warn('[VideoJob] Failed to auto-save video to project directory, using URL:', e);
+                  logger.warn('[VideoJob] Failed to auto-save video to project directory, using URL:', e);
                 }
               }
               // If seed is returned from API, use it to update the node
@@ -727,12 +728,12 @@ export function Canvas() {
               // If this was a draft video, preserve the external task ID (not internal jobId) for generating final video
               if (isDraft && status.external_task_id) {
                 updateData.draftTaskId = status.external_task_id;
-                console.info('[VideoJob] Draft video completed, preserving externalTaskId:', status.external_task_id);
+                logger.info('[VideoJob] Draft video completed, preserving externalTaskId:', status.external_task_id);
               }
               // If API returned a seed value, use it; otherwise keep existing seed
               if (status.seed !== undefined && status.seed !== null) {
                 updateData.seed = status.seed;
-                console.info('[VideoJob] Received seed from API:', status.seed);
+                logger.info('[VideoJob] Received seed from API:', status.seed);
               }
               updateNodeData(pendingNode.id, updateData);
               break;
@@ -1356,7 +1357,7 @@ export function Canvas() {
             currentX += (newNode.measured?.width ?? DEFAULT_NODE_WIDTH) + 40;
           }
         } catch (error) {
-          console.error('Failed to process dropped image:', error);
+          logger.error('Failed to process dropped image:', error);
         }
       }
 
@@ -1377,7 +1378,7 @@ export function Canvas() {
           void newNodeId;
           currentX += 240;
         } catch (error) {
-          console.error('Failed to process dropped audio:', error);
+          logger.error('Failed to process dropped audio:', error);
         }
       }
 
@@ -1398,7 +1399,7 @@ export function Canvas() {
           void newNodeId;
           currentX += 260;
         } catch (error) {
-          console.error('Failed to process dropped video:', error);
+          logger.error('Failed to process dropped video:', error);
         }
       }
     },
@@ -1939,7 +1940,7 @@ export function Canvas() {
           const targetHandleId = pendingConnectStart.handleType === 'target' && pendingConnectStart.handleId
             ? pendingConnectStart.handleId
             : defaultTargetHandle;
-          console.info('[handleConnectEnd] connecting:', {
+          logger.info('[handleConnectEnd] connecting:', {
             source: sourceNode.id,
             target: targetNode.id,
             sourceHandle: 'source',

@@ -7,7 +7,7 @@ import {
   type CanvasNode,
 } from '../domain/canvasNodes';
 import type { GraphImageResolver } from './ports';
-import { logFrontendDebug } from '@/commands/image';
+import { logger } from '@/lib/logger';
 
 export class DefaultGraphImageResolver implements GraphImageResolver {
   collectInputImages(nodeId: string, nodes: CanvasNode[], edges: CanvasEdge[]): string[] {
@@ -17,10 +17,10 @@ export class DefaultGraphImageResolver implements GraphImageResolver {
 
     // Debug logging - use setTimeout to avoid blocking
     setTimeout(() => {
-      logFrontendDebug(
+      logger.debug(
         `collectInputImages: nodeId=${nodeId}, isVideoFrame=${isVideoFrame}, total edges=${edges.length}`,
-        'graphImageResolver.collectInputImages'
-      ).catch(console.warn);
+        { context: 'graphImageResolver.collectInputImages' }
+      );
     }, 0);
 
     // Collect edges targeting this node with their handle IDs

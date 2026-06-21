@@ -1,4 +1,5 @@
 import { invoke, isTauri } from '@tauri-apps/api/core';
+import { logger } from '@/lib/logger';
 
 export interface GenerateRequest {
   prompt: string;
@@ -116,7 +117,7 @@ function createErrorWithDetails(message: string, details?: string): ErrorWithDet
 }
 
 export async function setApiKey(provider: string, apiKey: string): Promise<void> {
-  console.info('[AI] set_api_key', {
+  logger.info('[AI] set_api_key', {
     provider,
     apiKeyMasked: apiKey ? `${apiKey.slice(0, 4)}***${apiKey.slice(-2)}` : '',
     tauri: isTauri(),
@@ -129,7 +130,7 @@ export async function setApiKey(provider: string, apiKey: string): Promise<void>
 
 export async function generateImage(request: GenerateRequest): Promise<string> {
   const startedAt = performance.now();
-  console.info('[AI] generate_image request', {
+  logger.info('[AI] generate_image request', {
     ...sanitizeGenerateRequestForLog(request),
     tauri: isTauri(),
   });
@@ -160,7 +161,7 @@ export async function generateImage(request: GenerateRequest): Promise<string> {
       throw createErrorWithDetails('Generation returned empty image source');
     }
     const elapsedMs = Math.round(performance.now() - startedAt);
-    console.info('[AI] generate_image success', {
+    logger.info('[AI] generate_image success', {
       elapsedMs,
       resultPreview: truncateText(result, 220),
     });
@@ -168,7 +169,7 @@ export async function generateImage(request: GenerateRequest): Promise<string> {
   } catch (error) {
     const elapsedMs = Math.round(performance.now() - startedAt);
     const normalizedError = normalizeInvokeError(error);
-    console.error('[AI] generate_image failed', {
+    logger.error('[AI] generate_image failed', {
       elapsedMs,
       request: sanitizeGenerateRequestForLog(request),
       error,
@@ -181,7 +182,7 @@ export async function generateImage(request: GenerateRequest): Promise<string> {
 }
 
 export async function submitGenerateImageJob(request: GenerateRequest): Promise<string> {
-  console.info('[AI] submit_generate_image_job request', {
+  logger.info('[AI] submit_generate_image_job request', {
     ...sanitizeGenerateRequestForLog(request),
     tauri: isTauri(),
   });

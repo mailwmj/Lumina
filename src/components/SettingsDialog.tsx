@@ -19,6 +19,7 @@ import { GRSAI_NANO_BANANA_PRO_MODEL_OPTIONS } from '@/features/canvas/models/pr
 import { GRSAI_CREDIT_TIERS } from '@/features/canvas/pricing/types';
 import providerGuideMarkdown from '../../docs/settings/provider-guide.md?raw';
 import type { SettingsCategory } from '@/features/settings/settingsEvents';
+import { logger } from '@/lib/logger';
 
 interface SettingsDialogProps {
   isOpen: boolean;
@@ -370,7 +371,7 @@ export function SettingsDialog({
         return [...previous, selected].slice(0, 8);
       });
     } catch (error) {
-      console.error('Failed to pick download path', error);
+      logger.error('Failed to pick download path', error);
     }
   }, []);
 

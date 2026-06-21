@@ -24,6 +24,7 @@ import { FormToolEditor } from './tool-editors/FormToolEditor';
 import { CropToolEditor } from './tool-editors/CropToolEditor';
 import { AnnotateToolEditor } from './tool-editors/AnnotateToolEditor';
 import { SplitStoryboardToolEditor } from './tool-editors/SplitStoryboardToolEditor';
+import { logger } from '@/lib/logger';
 
 export function NodeToolDialog() {
   const { t } = useTranslation();
@@ -121,7 +122,7 @@ export function NodeToolDialog() {
           cols: nextCols,
         }));
       } catch (error) {
-        console.warn('[StoryboardMetadata] read failed on split dialog init', error);
+        logger.warn('[StoryboardMetadata] read failed on split dialog init', error);
       }
     })();
 

@@ -21,8 +21,8 @@ import { NodeResizeHandle } from '@/features/canvas/ui/NodeResizeHandle';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { submitGenerateImageJob, setApiKey } from '@/commands/ai';
-import { logFrontendDebug } from '@/commands/image';
 import { resolveVideoDisplayUrl } from '@/features/canvas/application/imageData';
+import { logger } from '@/lib/logger';
 
 type VideoResultNodeProps = NodeProps & {
   id: string;
@@ -66,7 +66,7 @@ export const VideoResultNode = memo(({ id, data, selected, width, height }: Vide
     try {
       await navigator.clipboard.writeText(generationError);
     } catch (error) {
-      console.error('Failed to copy error to clipboard', error);
+      logger.error('Failed to copy error to clipboard', error);
     }
     setTimeout(() => setIsCopySuccess(false), 1100);
   }, [generationError]);
@@ -77,7 +77,7 @@ export const VideoResultNode = memo(({ id, data, selected, width, height }: Vide
     try {
       await navigator.clipboard.writeText(data.videoUrl);
     } catch (error) {
-      console.error('Failed to copy video URL to clipboard', error);
+      logger.error('Failed to copy video URL to clipboard', error);
     }
     setTimeout(() => setIsCopySuccess(false), 1100);
   }, [data.videoUrl]);
@@ -88,7 +88,7 @@ export const VideoResultNode = memo(({ id, data, selected, width, height }: Vide
     try {
       await navigator.clipboard.writeText(data.prompt);
     } catch (error) {
-      console.error('Failed to copy prompt to clipboard', error);
+      logger.error('Failed to copy prompt to clipboard', error);
     }
     setTimeout(() => setIsCopySuccess(false), 1100);
   }, [data.prompt]);
@@ -96,8 +96,7 @@ export const VideoResultNode = memo(({ id, data, selected, width, height }: Vide
   // Handle "Generate Final" button for draft videos
   const handleGenerateFinal = useCallback(async () => {
     const log = (msg: string) => {
-      console.info('[VideoResult] ' + msg);
-      logFrontendDebug(msg, 'VideoResult.handleGenerateFinal').catch(console.warn);
+      logger.info('[VideoResult] ' + msg);
     };
 
     log('handleGenerateFinal called. draftTaskId=' + data.draftTaskId + ', model=' + data.model);
