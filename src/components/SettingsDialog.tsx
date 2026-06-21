@@ -7,6 +7,8 @@ import remarkBreaks from 'remark-breaks';
 import { getVersion } from '@tauri-apps/api/app';
 import { open } from '@tauri-apps/plugin-dialog';
 import { openUrl } from '@tauri-apps/plugin-opener';
+import { getLogConfig, setLogConfig, resetLogConfig, useLogStore } from '@/lib/logger';
+import { invoke } from '@tauri-apps/api/core';
 import { useSettingsStore, type TextApiConfig, type VideoApiConfig, DEFAULT_TEXT_API_PROMPT, DEFAULT_VIDEO_SD10_POLISH_PROMPT, DEFAULT_VIDEO_SD15_PROMPT } from '@/stores/settingsStore';
 import { testTextApi } from '@/features/canvas/infrastructure/textPolishService';
 import { UiCheckbox, UiSelect } from '@/components/ui';
@@ -536,6 +538,20 @@ export function SettingsDialog({
               `}
               >
                 <span className="text-sm">{t('settings.videoApis')}</span>
+              </button>
+
+              <button
+                onClick={() => setActiveCategory('logging')}
+                className={`
+                w-full flex items-center gap-3 px-4 py-2.5 text-left
+                transition-colors
+                ${activeCategory === 'logging'
+                    ? 'bg-accent/10 text-text-dark border-l-2 border-accent'
+                    : 'text-text-muted hover:bg-bg-dark hover:text-text-dark'
+                  }
+              `}
+              >
+                <span className="text-sm">日志</span>
               </button>
             </nav>
           </div>
@@ -1580,6 +1596,20 @@ export function SettingsDialog({
                 </div>
               </>
             )}
+
+            {activeCategory === 'logging' && (
+              <>
+                <div className="px-6 py-5 border-b border-border-dark">
+                  <h2 className="text-lg font-semibold text-text-dark">
+                    日志设置
+                  </h2>
+                </div>
+
+                <div className="ui-scrollbar flex-1 space-y-4 overflow-y-auto p-6">
+                  <LoggingSettings />
+                </div>
+              </>
+            )}
           </div>
         </div>
         {activeCategory === 'imageApis' && !hideProviderGuidePopover && (
@@ -1611,6 +1641,133 @@ export function SettingsDialog({
             </div>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function LoggingSettings(): JSX.Element {
+  const [config, setLocal] = useState(getLogConfig());
+  const [moduleText, setModuleText] = useState(
+    Object.entries(config.moduleLevels).map(([k, v]) => `${k}=${v}`).join(',')
+  );
+
+  function commitModuleText(text: string) {
+    setModuleText(text);
+    const out: Record<string, 'debug' | 'info' | 'warn' | 'error'> = {};
+    for (const part of text.split(',').map((s) => s.trim()).filter(Boolean)) {
+      const [k, v] = part.split('=');
+      if (k && (v === 'debug' || v === 'info' || v === 'warn' || v === 'error')) {
+        out[k] = v;
+      }
+    }
+    setLogConfig({ moduleLevels: out });
+    setLocal(getLogConfig());
+  }
+
+  return (
+    <div className="space-y-4">
+      <h3 className="text-lg font-semibold">日志配置</h3>
+
+      <div>
+        <label className="text-sm">全局级别</label>
+        <select
+          className="ml-2 bg-zinc-800 px-2 py-1 rounded"
+          value={config.level}
+          onChange={(e) => {
+            setLogConfig({ level: e.target.value as 'debug' | 'info' | 'warn' | 'error' });
+            setLocal(getLogConfig());
+          }}
+        >
+          <option value="debug">debug</option>
+          <option value="info">info</option>
+          <option value="warn">warn</option>
+          <option value="error">error</option>
+        </select>
+      </div>
+
+      <div>
+        <label className="text-sm">模块级别覆盖</label>
+        <input
+          type="text"
+          className="ml-2 bg-zinc-800 px-2 py-1 rounded w-96"
+          value={moduleText}
+          onChange={(e) => commitModuleText(e.target.value)}
+          placeholder="canvas=debug,ai=warn"
+        />
+        <p className="text-xs text-zinc-500 mt-1">格式: 模块前缀=级别,逗号分隔。最长前缀优先匹配。</p>
+      </div>
+
+      <div className="flex gap-4">
+        <label className="text-sm">
+          <input
+            type="checkbox"
+            checked={config.console}
+            onChange={(e) => {
+              setLogConfig({ console: e.target.checked });
+              setLocal(getLogConfig());
+            }}
+          />
+          <span className="ml-2">控制台输出</span>
+        </label>
+        <label className="text-sm">
+          <input
+            type="checkbox"
+            checked={config.persist}
+            onChange={(e) => {
+              setLogConfig({ persist: e.target.checked });
+              setLocal(getLogConfig());
+            }}
+          />
+          <span className="ml-2">持久化到文件</span>
+        </label>
+        <label className="text-sm">
+          <input
+            type="checkbox"
+            checked={config.consoleTimestamps}
+            onChange={(e) => {
+              setLogConfig({ consoleTimestamps: e.target.checked });
+              setLocal(getLogConfig());
+            }}
+          />
+          <span className="ml-2">控制台时间戳</span>
+        </label>
+      </div>
+
+      <div className="flex gap-2">
+        <button
+          className="px-3 py-1 bg-zinc-800 rounded text-sm"
+          onClick={async () => {
+            try {
+              await invoke('open_log_dir');
+            } catch {
+              alert('无法打开日志目录');
+            }
+          }}
+        >
+          打开日志目录
+        </button>
+        <button
+          className="px-3 py-1 bg-zinc-800 rounded text-sm"
+          onClick={() => {
+            const entries = useLogStore.getState().snapshot().slice(-100);
+            navigator.clipboard.writeText(
+              entries.map((e) => `[${e.level}] ${e.target}: ${e.message}`).join('\n')
+            );
+          }}
+        >
+          复制最近100条
+        </button>
+        <button
+          className="px-3 py-1 bg-zinc-800 rounded text-sm"
+          onClick={() => {
+            resetLogConfig();
+            setLocal(getLogConfig());
+            setModuleText('');
+          }}
+        >
+          重置
+        </button>
       </div>
     </div>
   );

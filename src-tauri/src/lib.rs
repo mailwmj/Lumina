@@ -18,7 +18,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 const MAIN_WINDOW_LABEL: &str = "main";
 const FRONTEND_READY_TIMEOUT_MS: u64 = 3_500;
 
-fn resolve_log_dir() -> Option<PathBuf> {
+pub(crate) fn resolve_log_dir() -> Option<PathBuf> {
     let mut candidates = Vec::new();
 
     #[cfg(target_os = "macos")]
@@ -211,6 +211,7 @@ pub fn run() {
             system::write_debug_log,
             update::check_latest_release_tag,
             logging::append_frontend_log,
+            logging::open_log_dir,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

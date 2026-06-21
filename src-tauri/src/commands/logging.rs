@@ -34,3 +34,13 @@ pub async fn append_frontend_log(app: AppHandle, entry: FrontendLogEntry) -> Res
     }
     Ok(())
 }
+
+#[tauri::command]
+pub async fn open_log_dir(app: AppHandle) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let dir = crate::resolve_log_dir().ok_or_else(|| "no log dir".to_string())?;
+    app.opener()
+        .open_path(dir.to_string_lossy().to_string(), None::<&str>)
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
