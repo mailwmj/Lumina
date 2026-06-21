@@ -1648,6 +1648,7 @@ export function SettingsDialog({
 }
 
 function LoggingSettings(): JSX.Element {
+  const { t } = useTranslation();
   const [config, setLocal] = useState(getLogConfig());
   const [moduleText, setModuleText] = useState(
     Object.entries(config.moduleLevels).map(([k, v]) => `${k}=${v}`).join(',')
@@ -1668,10 +1669,10 @@ function LoggingSettings(): JSX.Element {
 
   return (
     <div className="space-y-4">
-      <h3 className="text-lg font-semibold">日志配置</h3>
+      <h3 className="text-lg font-semibold">{t('logger.settings.title')}</h3>
 
       <div>
-        <label className="text-sm">全局级别</label>
+        <label className="text-sm">{t('logger.settings.globalLevel')}</label>
         <select
           className="ml-2 bg-zinc-800 px-2 py-1 rounded"
           value={config.level}
@@ -1688,15 +1689,15 @@ function LoggingSettings(): JSX.Element {
       </div>
 
       <div>
-        <label className="text-sm">模块级别覆盖</label>
+        <label className="text-sm">{t('logger.settings.moduleOverride')}</label>
         <input
           type="text"
           className="ml-2 bg-zinc-800 px-2 py-1 rounded w-96"
           value={moduleText}
           onChange={(e) => commitModuleText(e.target.value)}
-          placeholder="canvas=debug,ai=warn"
+          placeholder={t('logger.settings.moduleOverridePlaceholder')}
         />
-        <p className="text-xs text-zinc-500 mt-1">格式: 模块前缀=级别,逗号分隔。最长前缀优先匹配。</p>
+        <p className="text-xs text-zinc-500 mt-1">{t('logger.settings.moduleOverrideHint')}</p>
       </div>
 
       <div className="flex gap-4">
@@ -1709,7 +1710,7 @@ function LoggingSettings(): JSX.Element {
               setLocal(getLogConfig());
             }}
           />
-          <span className="ml-2">控制台输出</span>
+          <span className="ml-2">{t('logger.settings.consoleOutput')}</span>
         </label>
         <label className="text-sm">
           <input
@@ -1720,7 +1721,7 @@ function LoggingSettings(): JSX.Element {
               setLocal(getLogConfig());
             }}
           />
-          <span className="ml-2">持久化到文件</span>
+          <span className="ml-2">{t('logger.settings.persist')}</span>
         </label>
         <label className="text-sm">
           <input
@@ -1731,7 +1732,7 @@ function LoggingSettings(): JSX.Element {
               setLocal(getLogConfig());
             }}
           />
-          <span className="ml-2">控制台时间戳</span>
+          <span className="ml-2">{t('logger.settings.consoleTimestamps')}</span>
         </label>
       </div>
 
@@ -1742,11 +1743,11 @@ function LoggingSettings(): JSX.Element {
             try {
               await invoke('open_log_dir');
             } catch {
-              alert('无法打开日志目录');
+              alert(t('logger.settings.openFolderError'));
             }
           }}
         >
-          打开日志目录
+          {t('logger.settings.openFolder')}
         </button>
         <button
           className="px-3 py-1 bg-zinc-800 rounded text-sm"
@@ -1757,7 +1758,7 @@ function LoggingSettings(): JSX.Element {
             );
           }}
         >
-          复制最近100条
+          {t('logger.settings.copyAll')}
         </button>
         <button
           className="px-3 py-1 bg-zinc-800 rounded text-sm"
@@ -1767,7 +1768,7 @@ function LoggingSettings(): JSX.Element {
             setModuleText('');
           }}
         >
-          重置
+          {t('logger.settings.reset')}
         </button>
       </div>
     </div>

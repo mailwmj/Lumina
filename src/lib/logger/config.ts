@@ -1,7 +1,7 @@
 import type { LogConfig } from './types';
 import { DEFAULT_LOG_CONFIG } from './types';
 
-export const STORAGE_KEY = 'log_config';
+export const STORAGE_KEY = 'itv.log.config';
 
 /**
  * Load log config from localStorage, falling back to defaults.
@@ -24,7 +24,11 @@ export function loadConfig(): LogConfig {
 export function saveConfig(partial: Partial<LogConfig>): void {
   const current = loadConfig();
   const next: LogConfig = { ...current, ...partial };
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+  } catch {
+    // ignore quota/privacy mode errors
+  }
 }
 
 /**

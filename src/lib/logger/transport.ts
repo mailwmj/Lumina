@@ -30,7 +30,9 @@ export class Transport {
   }
 
   private isTauri(): boolean {
-    return typeof (window as any).__TAURI_INTERNALS__ !== 'undefined';
+    return typeof globalThis !== 'undefined'
+      && typeof (globalThis as any).window !== 'undefined'
+      && typeof (globalThis as any).window.__TAURI_INTERNALS__ !== 'undefined';
   }
 
   private writeConsole(entry: LogEntry, config: LogConfig): void {

@@ -1,3 +1,4 @@
+import { logger } from '@/lib/logger';
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
 import type { Viewport } from '@xyflow/react';
@@ -316,7 +317,7 @@ function fromProjectRecord(record: ProjectRecord): Project {
     : {};
 
   if (!shouldRestoreHistory) {
-    console.warn(
+    logger.warn(
       `Skip restoring oversized history payload (${record.historyJson.length} chars) for project ${record.id}`
     );
   }
@@ -443,7 +444,7 @@ function flushProjectUpsert(projectId: string, options?: FlushProjectUpsertOptio
     const record = toProjectRecord(project);
     void upsertProjectRecord(record)
       .catch((error) => {
-        console.error('Failed to persist project record', error);
+        logger.error('Failed to persist project record', error);
       })
       .finally(settle);
   };
@@ -500,7 +501,7 @@ function flushViewportUpsert(projectId: string): void {
 
   void updateProjectViewportRecord(projectId, viewportJson)
     .catch((error) => {
-      console.error('Failed to persist project viewport', error);
+      logger.error('Failed to persist project viewport', error);
     })
     .finally(() => {
       viewportUpsertsInFlight.delete(projectId);
@@ -562,7 +563,7 @@ function persistProjectDelete(projectId: string): void {
 
     void deleteProjectRecord(projectId)
       .catch((error) => {
-        console.error('Failed to delete project record', error);
+        logger.error('Failed to delete project record', error);
       })
       .finally(() => {
         deletingProjectIds.delete(projectId);
@@ -627,7 +628,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         isHydrated: true,
       });
     } catch (error) {
-      console.error('Failed to hydrate project summaries from SQLite', error);
+      logger.error('Failed to hydrate project summaries from SQLite', error);
       set({
         projects: [],
         currentProjectId: null,
@@ -660,7 +661,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     }));
     persistProject(project, { immediate: true });
     void createProjectDirs(id, name).catch((error) => {
-      console.error('Failed to create project directories', error);
+      logger.error('Failed to create project directories', error);
     });
     return id;
   },
@@ -710,7 +711,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     }
 
     void renameProjectRecord(id, name, now).catch((error) => {
-      console.error('Failed to rename project record', error);
+      logger.error('Failed to rename project record', error);
     });
   },
 
@@ -747,7 +748,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         if (reqSeq !== openProjectRequestSeq) {
           return;
         }
-        console.error('Failed to open project', error);
+        logger.error('Failed to open project', error);
         set({ isOpeningProject: false });
       }
     })();

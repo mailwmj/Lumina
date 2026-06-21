@@ -39,16 +39,18 @@ function emit(level: Level, target: string, msg: string, ...args: unknown[]): vo
   globalTransport.send(entry, config);
 }
 
-function makeLogger(target: string): Logger {
+function makeLogger(target: string | null): Logger {
+  // If target is null, resolve at call time (for the default `logger` export)
+  const getTarget = (): string => target ?? resolveNamespace(2);
   return {
-    debug: (msg, ...args) => emit('debug', target, msg, ...args),
-    info: (msg, ...args) => emit('info', target, msg, ...args),
-    warn: (msg, ...args) => emit('warn', target, msg, ...args),
-    error: (msg, ...args) => emit('error', target, msg, ...args),
+    debug: (msg, ...args) => emit('debug', getTarget(), msg, ...args),
+    info: (msg, ...args) => emit('info', getTarget(), msg, ...args),
+    warn: (msg, ...args) => emit('warn', getTarget(), msg, ...args),
+    error: (msg, ...args) => emit('error', getTarget(), msg, ...args),
   };
 }
 
-export const logger: Logger = makeLogger(resolveNamespace(2));
+export const logger: Logger = makeLogger(null);
 
 export function getLogger(ns: string): Logger {
   return makeLogger(ns);

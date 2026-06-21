@@ -12,6 +12,20 @@
       "close": "Close",
       "minimize": "Minimize",
       "level": "Level"
+    },
+    "settings": {
+      "title": "Logging Settings",
+      "globalLevel": "Global level",
+      "moduleOverride": "Module level override",
+      "moduleOverrideHint": "Format: module-prefix=level, comma-separated. Longest prefix wins.",
+      "moduleOverridePlaceholder": "canvas=debug,ai=warn",
+      "consoleOutput": "Console output",
+      "persist": "Persist to file",
+      "consoleTimestamps": "Console timestamps",
+      "openFolderError": "Failed to open log directory",
+      "openFolder": "Open log directory",
+      "copyAll": "Copy last 100",
+      "reset": "Reset"
     }
   },
   "app": {
@@ -406,4 +420,3 @@
     "copyReport": "Copy error report"
   }
 }
-
