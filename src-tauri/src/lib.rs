@@ -1,5 +1,6 @@
 pub mod ai;
 pub mod commands;
+pub mod session;
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -137,6 +138,9 @@ pub fn run() {
             }
 
             let app_handle = app.handle().clone();
+            let session_id = session::SessionId::new();
+            info!("session_id = {}", session_id.0);
+            app.manage(session_id);
             tauri::async_runtime::spawn(async move {
                 tokio::time::sleep(Duration::from_millis(FRONTEND_READY_TIMEOUT_MS)).await;
 
