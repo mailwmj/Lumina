@@ -16,6 +16,24 @@ dist-ssr
 
 # Tauri/Rust
 src-tauri/target/
+src-tauri/gen/
+
+# TypeScript
+*.tsbuildinfo
+
+# Env / secrets (defense in depth — never commit)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.secret
+
+# Test artifacts
+coverage/
+playwright-report/
+test-results/
+.nyc_output/
 
 # Editor directories and files
 .vscode/*
@@ -28,11 +46,24 @@ src-tauri/target/
 *.sln
 *.sw?
 
+# Backup / temp files
+*.tmp
+*.bak
+*.orig
+*.rej
+*~
+.DS_Store
+Thumbs.db
+
 # Project specific
 ComfyUI/
 ComfyUI_frontend/
 Henji-AI/
 rustup_init.exe
+rustup-init.exe
 
 # Claude Code
 .agents/
+
+# Superpowers skill workflow (local-only progress files)
+.superpowers/
