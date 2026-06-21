@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use commands::ai as ai_commands;
 use commands::image;
+use commands::logging;
 use commands::project_state;
 use commands::system;
 use commands::update;
@@ -205,6 +206,7 @@ pub fn run() {
             system::get_runtime_system_info,
             system::write_debug_log,
             update::check_latest_release_tag,
+            logging::append_frontend_log,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
