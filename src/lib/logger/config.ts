@@ -21,6 +21,19 @@ export function loadConfig(): LogConfig {
 /**
  * Persist log config to localStorage.
  */
-export function saveConfig(config: LogConfig): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
+export function saveConfig(partial: Partial<LogConfig>): void {
+  const current = loadConfig();
+  const next: LogConfig = { ...current, ...partial };
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+}
+
+/**
+ * Reset log config to defaults.
+ */
+export function resetConfig(): void {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // ignore
+  }
 }

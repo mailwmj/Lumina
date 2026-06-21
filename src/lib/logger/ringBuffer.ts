@@ -45,6 +45,10 @@ export class RingBuffer {
     return result;
   }
 
+  entries(): LogEntry[] {
+    return this.toArray();
+  }
+
   clear(): void {
     this.head = 0;
     this.count = 0;

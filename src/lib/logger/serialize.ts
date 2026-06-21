@@ -2,7 +2,6 @@ import type { LogFields } from './types';
 
 const MAX_FIELD_BYTES = 10 * 1024;
 const CIRCULAR_MARKER = '<circular>';
-const TRUNCATED_MARKER = '<truncated>';
 
 export function serializeFields(fields: LogFields | undefined): LogFields {
   if (!fields) return {};
