@@ -16,7 +16,7 @@ export function resolveNamespace(depth: number = 3): string {
   return fileToNamespace(match[1]);
 }
 
-function fileToNamespace(filePath: string): string {
+export function fileToNamespace(filePath: string): string {
   // 去掉 query / hash (Vite 风格的 `?t=123`)
   const clean = filePath.split('?')[0].split('#')[0];
   // 找到 src/ 之后的部分；如果是 node_modules 内文件则直接保留
