@@ -1,4 +1,19 @@
 {
+  "logger": {
+    "panel": {
+      "title": "日志面板",
+      "empty": "暂无日志",
+      "openFolder": "打开日志目录",
+      "copyAll": "复制最近 100 条",
+      "clear": "清空",
+      "export": "导出",
+      "search": "搜索…",
+      "noResults": "没有匹配的日志",
+      "close": "关闭",
+      "minimize": "最小化",
+      "level": "级别"
+    }
+  },
   "app": {
     "title": "Storyboard-Copilot-Plus",
     "subtitle": "智能视频生成工作台"

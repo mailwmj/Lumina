@@ -1,4 +1,19 @@
 {
+  "logger": {
+    "panel": {
+      "title": "Log Panel",
+      "empty": "No logs yet",
+      "openFolder": "Open log directory",
+      "copyAll": "Copy last 100",
+      "clear": "Clear",
+      "export": "Export",
+      "search": "Search…",
+      "noResults": "No matching logs",
+      "close": "Close",
+      "minimize": "Minimize",
+      "level": "Level"
+    }
+  },
   "app": {
     "title": "Storyboard-Copilot-Plus",
     "subtitle": "AI Video Generation Workbench"
