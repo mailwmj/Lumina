@@ -1,6 +1,7 @@
 import { UiButton, UiModal } from '@/components/ui';
 import { useTranslation } from 'react-i18next';
 import { useCallback, useState } from 'react';
+import { logger } from '@/lib/logger';
 
 interface GlobalErrorDialogProps {
   isOpen: boolean;
@@ -31,7 +32,7 @@ export function GlobalErrorDialog({
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1200);
     } catch (error) {
-      console.error('Failed to copy global error text', error);
+      logger.error('Failed to copy global error text', error);
     }
   }, [copyText, details, message]);
 

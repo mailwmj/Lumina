@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { logger } from '@/lib/logger';
 import {
   type PromptTemplate,
   createPromptTemplate,
@@ -59,7 +60,7 @@ export const usePromptTemplateStore = create<PromptTemplateState>()(
       onRehydrateStorage: () => {
         return (_state, error) => {
           if (error) {
-            console.error('failed to hydrate prompt template storage', error);
+            logger.error('failed to hydrate prompt template storage', error);
           }
           usePromptTemplateStore.setState({ isHydrated: true });
         };
