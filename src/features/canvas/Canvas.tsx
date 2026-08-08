@@ -2039,7 +2039,7 @@ export function Canvas() {
         selectionKeyCode={null}
         nodesDraggable={interactionMode === 'select'}
         nodesConnectable={interactionMode === 'select'}
-        elementsSelectable={interactionMode === 'select'}
+        elementsSelectable
         deleteKeyCode={null}
         onlyRenderVisibleElements
         zoomOnDoubleClick={false}
