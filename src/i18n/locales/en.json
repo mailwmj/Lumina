@@ -62,11 +62,17 @@
     "emptyHintTitle": "Double-click to add a node",
     "emptyHintSubtitle": "Double-click to add a node",
     "toolbar": {
+      "selectMode": "Select Tool (V)",
+      "panMode": "Hand Tool (H)",
       "zoomIn": "Zoom In",
       "zoomOut": "Zoom Out",
       "fitView": "Fit View",
       "lock": "Lock Canvas",
       "unlock": "Unlock Canvas"
+    },
+    "multiConnect": {
+      "dragHandle": "Drag to connect selection",
+      "invalidTarget": "Not all selected nodes can connect to this target"
     }
   },
   "tool": {

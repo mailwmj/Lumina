@@ -48,9 +48,11 @@ import {
   resolveReferenceAwareDeleteRange,
 } from '@/features/canvas/application/referenceTokenEditing';
 import {
+  IMAGE_GENERATION_ASPECT_RATIO_OPTIONS,
+  IMAGE_GENERATION_RESOLUTION_OPTIONS,
   listConfiguredImageModels,
-  resolveImageModelResolution,
-  resolveImageModelResolutions,
+  pickClosestImageGenerationAspectRatio,
+  resolveImageGenerationResolution,
   resolveConfiguredImageModel,
   UNCONFIGURED_IMAGE_MODEL,
 } from '@/features/canvas/models';
@@ -203,26 +205,6 @@ function renderPromptWithHighlights(
   return segments;
 }
 
-function pickClosestAspectRatio(
-  targetRatio: number,
-  supportedAspectRatios: string[]
-): string {
-  const supported = supportedAspectRatios.length > 0 ? supportedAspectRatios : ['1:1'];
-  let bestValue = supported[0];
-  let bestDistance = Number.POSITIVE_INFINITY;
-
-  for (const aspectRatio of supported) {
-    const ratio = parseAspectRatio(aspectRatio);
-    const distance = Math.abs(Math.log(ratio / targetRatio));
-    if (distance < bestDistance) {
-      bestDistance = distance;
-      bestValue = aspectRatio;
-    }
-  }
-
-  return bestValue;
-}
-
 function buildAiResultNodeTitle(prompt: string, fallbackTitle: string): string {
   const normalizedPrompt = prompt.trim();
   if (!normalizedPrompt) {
@@ -316,22 +298,19 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
     () => ({ ...(data.extraParams ?? {}) }),
     [data.extraParams]
   );
-  const resolutionOptions = useMemo(
-    () => resolveImageModelResolutions(selectedModel, { extraParams: effectiveExtraParams }),
-    [effectiveExtraParams, selectedModel]
-  );
+  const resolutionOptions = IMAGE_GENERATION_RESOLUTION_OPTIONS;
 
   const selectedResolution = useMemo(
-    () => resolveImageModelResolution(selectedModel, data.size, { extraParams: effectiveExtraParams }),
-    [data.size, effectiveExtraParams, selectedModel]
+    () => resolveImageGenerationResolution(data.size),
+    [data.size]
   );
 
   const aspectRatioOptions = useMemo<AspectRatioChoice[]>(
     () => [{
       value: AUTO_REQUEST_ASPECT_RATIO,
       label: t('modelParams.autoAspectRatio'),
-    }, ...selectedModel.aspectRatios],
-    [selectedModel.aspectRatios, t]
+    }, ...IMAGE_GENERATION_ASPECT_RATIO_OPTIONS],
+    [t]
   );
 
   const selectedAspectRatio = useMemo(
@@ -344,11 +323,6 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
   const requestResolution = selectedModel.resolveRequest({
     referenceImageCount: incomingImages.length,
   });
-
-  const supportedAspectRatioValues = useMemo(
-    () => selectedModel.aspectRatios.map((item) => item.value),
-    [selectedModel.aspectRatios]
-  );
 
   const resolvedTitle = useMemo(
     () => resolveNodeDisplayName(CANVAS_NODE_TYPES.imageEdit, data),
@@ -561,15 +535,14 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
           try {
             const sourceAspectRatio = await detectAspectRatio(incomingImages[0]);
             const sourceAspectRatioValue = parseAspectRatio(sourceAspectRatio);
-            resolvedRequestAspectRatio = pickClosestAspectRatio(
-              sourceAspectRatioValue,
-              supportedAspectRatioValues
+            resolvedRequestAspectRatio = pickClosestImageGenerationAspectRatio(
+              sourceAspectRatioValue
             );
           } catch {
-            resolvedRequestAspectRatio = pickClosestAspectRatio(1, supportedAspectRatioValues);
+            resolvedRequestAspectRatio = pickClosestImageGenerationAspectRatio(1);
           }
         } else {
-          resolvedRequestAspectRatio = pickClosestAspectRatio(1, supportedAspectRatioValues);
+          resolvedRequestAspectRatio = pickClosestImageGenerationAspectRatio(1);
         }
       }
 
@@ -665,7 +638,6 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
     selectedModel.expectedDurationMs,
     selectedModel.providerId,
     selectedResolution.value,
-    supportedAspectRatioValues,
     t,
     updateNodeData,
   ]);

@@ -1,6 +1,8 @@
 import { memo, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
+  Hand,
+  MousePointer2,
   ZoomIn,
   ZoomOut,
   Maximize2,
@@ -13,9 +15,17 @@ import { useSettingsStore } from '@/stores/settingsStore';
 
 interface CanvasToolbarProps {
   isLocked?: boolean;
+  interactionMode: CanvasInteractionMode;
+  onInteractionModeChange: (mode: CanvasInteractionMode) => void;
 }
 
-export const CanvasToolbar = memo(({ isLocked = false }: CanvasToolbarProps) => {
+export type CanvasInteractionMode = 'select' | 'pan';
+
+export const CanvasToolbar = memo(({
+  isLocked = false,
+  interactionMode,
+  onInteractionModeChange,
+}: CanvasToolbarProps) => {
   const { t } = useTranslation();
   const { zoomIn, zoomOut, fitView } = useReactFlow();
   const clearCanvas = useCanvasStore((state) => state.clearCanvas);
@@ -40,6 +50,37 @@ export const CanvasToolbar = memo(({ isLocked = false }: CanvasToolbarProps) => 
   return (
     <>
       <div className="absolute left-1/2 top-4 z-10 flex -translate-x-1/2 items-center gap-2 rounded-lg border border-border-dark bg-surface-dark px-2 py-1.5 shadow-lg">
+        <div className="flex items-center gap-1 rounded-full bg-bg-dark/70 p-1">
+          <button
+            type="button"
+            onClick={() => onInteractionModeChange('select')}
+            className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors ${interactionMode === 'select'
+              ? 'bg-[var(--canvas-selection-active-bg)] text-[var(--canvas-selection-accent)]'
+              : 'text-text-muted hover:bg-surface-dark'
+            }`}
+            title={t('canvas.toolbar.selectMode')}
+            aria-label={t('canvas.toolbar.selectMode')}
+            aria-pressed={interactionMode === 'select'}
+          >
+            <MousePointer2 className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => onInteractionModeChange('pan')}
+            className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors ${interactionMode === 'pan'
+              ? 'bg-[var(--canvas-selection-active-bg)] text-[var(--canvas-selection-accent)]'
+              : 'text-text-muted hover:bg-surface-dark'
+            }`}
+            title={t('canvas.toolbar.panMode')}
+            aria-label={t('canvas.toolbar.panMode')}
+            aria-pressed={interactionMode === 'pan'}
+          >
+            <Hand className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="h-6 w-px bg-border-dark" />
+
         <button
           onClick={() => zoomIn()}
           disabled={isLocked}

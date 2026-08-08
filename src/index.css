@@ -17,6 +17,10 @@
   --text-muted-rgb: 102 102 102;
   --accent: #3B82F6;
   --accent-rgb: 59 130 246;
+  --canvas-selection-accent: #7ce600;
+  --canvas-selection-active-bg: #263b13;
+  --canvas-selection-connector: #8b5cf6;
+  --canvas-selection-connector-border: #c4a8ff;
   --ui-surface-panel: rgba(255, 255, 255, 0.96);
   --ui-surface-field: rgba(248, 250, 252, 0.95);
   --ui-border-soft: rgba(15, 23, 42, 0.12);
@@ -244,6 +248,25 @@ html[data-platform='macos'] #root {
 
 .canvas-minimap .react-flow__minimap-mask:active {
   cursor: grabbing;
+}
+
+.canvas-mode-select .react-flow__pane {
+  cursor: default;
+}
+
+.canvas-mode-pan .react-flow__pane,
+.canvas-mode-pan .react-flow__node {
+  cursor: grab;
+}
+
+.canvas-mode-pan .react-flow__pane:active,
+.canvas-mode-pan .react-flow__node:active {
+  cursor: grabbing;
+}
+
+.canvas-multi-select-active .react-flow__node.selected .react-flow__handle.source {
+  opacity: 0;
+  pointer-events: none;
 }
 
 @keyframes canvas-edge-flow {

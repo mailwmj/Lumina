@@ -44,6 +44,12 @@ import {
 import { showErrorDialog } from '@/features/canvas/application/errorDialog';
 import { resolveImageProviderRuntime } from '@/features/canvas/application/imageProviderRuntime';
 import {
+  buildBatchConnectionPlan,
+  canNodeBeManualConnectionSource,
+  canNodeTypeBeManualConnectionSource,
+  isCanvasConnectionValid,
+} from '@/features/canvas/application/canvasConnection';
+import {
   getConnectMenuNodeTypes,
   nodeHasSourceHandle,
   nodeHasTargetHandle,
@@ -54,7 +60,8 @@ import { nodeTypes } from './nodes';
 import { edgeTypes } from './edges';
 import { NodeSelectionMenu } from './NodeSelectionMenu';
 import { SelectedNodeOverlay } from './ui/SelectedNodeOverlay';
-import { CanvasToolbar } from './CanvasToolbar';
+import { CanvasToolbar, type CanvasInteractionMode } from './CanvasToolbar';
+import { MultiSelectionConnector } from './ui/MultiSelectionConnector';
 import { NodeToolDialog } from './ui/NodeToolDialog';
 import { ImageViewerModal } from './ui/ImageViewerModal';
 import { logger } from '@/lib/logger';
@@ -200,28 +207,6 @@ function resolveAllowedNodeTypes(handleType: HandleType, sourceType?: CanvasNode
   return getConnectMenuNodeTypes(handleType);
 }
 
-function canNodeTypeBeManualConnectionSource(type: CanvasNodeType): boolean {
-  return (
-    type === CANVAS_NODE_TYPES.upload ||
-    type === CANVAS_NODE_TYPES.audioUpload ||
-    type === CANVAS_NODE_TYPES.videoUpload ||
-    type === CANVAS_NODE_TYPES.audioUploadRef ||
-    type === CANVAS_NODE_TYPES.videoUploadRef ||
-    type === CANVAS_NODE_TYPES.exportImage ||
-    type === CANVAS_NODE_TYPES.imageEdit ||
-    type === CANVAS_NODE_TYPES.videoFrame ||
-    type === CANVAS_NODE_TYPES.videoSingle
-  );
-}
-
-function canNodeBeManualConnectionSource(nodeId: string | null | undefined, nodes: CanvasNode[]): boolean {
-  if (!nodeId) {
-    return false;
-  }
-  const node = nodes.find((item) => item.id === nodeId);
-  return node ? canNodeTypeBeManualConnectionSource(node.type) : false;
-}
-
 function getClientPosition(event: MouseEvent | TouchEvent): { x: number; y: number } | null {
   if ('clientX' in event && 'clientY' in event) {
     return { x: event.clientX, y: event.clientY };
@@ -274,6 +259,7 @@ export function Canvas() {
   );
   const [previewConnectionVisual, setPreviewConnectionVisual] =
     useState<PreviewConnectionVisual | null>(null);
+  const [interactionMode, setInteractionMode] = useState<CanvasInteractionMode>('select');
 
   const isRestoringCanvasRef = useRef(true);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -306,6 +292,7 @@ export function Canvas() {
   const applyNodesChange = useCanvasStore((state) => state.onNodesChange);
   const applyEdgesChange = useCanvasStore((state) => state.onEdgesChange);
   const connectNodes = useCanvasStore((state) => state.onConnect);
+  const connectNodesBatch = useCanvasStore((state) => state.onConnectBatch);
   const setCanvasData = useCanvasStore((state) => state.setCanvasData);
   const updateNodeData = useCanvasStore((state) => state.updateNodeData);
   const addNode = useCanvasStore((state) => state.addNode);
@@ -321,6 +308,7 @@ export function Canvas() {
   const closeToolDialog = useCanvasStore((state) => state.closeToolDialog);
   const setViewportState = useCanvasStore((state) => state.setViewportState);
   const setCanvasViewportSize = useCanvasStore((state) => state.setCanvasViewportSize);
+  const currentViewport = useCanvasStore((state) => state.currentViewport);
   const imageViewer = useCanvasStore((state) => state.imageViewer);
   const closeImageViewer = useCanvasStore((state) => state.closeImageViewer);
   const navigateImageViewer = useCanvasStore((state) => state.navigateImageViewer);
@@ -843,95 +831,8 @@ export function Canvas() {
     event.stopPropagation();
   }, []);
 
-  // 验证连接是否有效
-  // 验证连接是否有效
   const isValidConnection = useCallback(
-    (connection: Connection | { source?: string; target?: string; sourceHandle?: string | null; targetHandle?: string | null }) => {
-      const sourceId = connection.source;
-      const targetId = connection.target;
-
-      if (!sourceId || !targetId) {
-        return false;
-      }
-
-      if (!canNodeBeManualConnectionSource(sourceId, nodes)) {
-        return false;
-      }
-
-      const sourceNode = nodes.find((n) => n.id === sourceId);
-      const targetNode = nodes.find((n) => n.id === targetId);
-      if (!sourceNode || !targetNode) {
-        return false;
-      }
-
-      const sourceIsAudioUpload = sourceNode.type === CANVAS_NODE_TYPES.audioUpload
-        || sourceNode.type === CANVAS_NODE_TYPES.audioUploadRef;
-      const sourceIsVideoUpload = sourceNode.type === CANVAS_NODE_TYPES.videoUpload
-        || sourceNode.type === CANVAS_NODE_TYPES.videoUploadRef;
-
-      if (sourceIsAudioUpload || sourceIsVideoUpload) {
-        if (targetNode.type !== CANVAS_NODE_TYPES.sd2VideoGen) {
-          return false;
-        }
-      }
-
-      if (targetNode.type === CANVAS_NODE_TYPES.sd2VideoGen) {
-        const mode = ((targetNode.data as { generationMode?: string }).generationMode ?? 'multimodal') as
-          'multimodal' | 'edit' | 'extend' | 'websearch';
-        const targetHandle = connection.targetHandle ?? 'target-images';
-        const limits: Record<'multimodal' | 'edit' | 'extend' | 'websearch', { images: number; audios: number; videos: number }> = {
-          multimodal: { images: 9, audios: 3, videos: 3 },
-          edit: { images: 9, audios: 0, videos: 1 },
-          extend: { images: 0, audios: 0, videos: 3 },
-          websearch: { images: 0, audios: 0, videos: 0 },
-        };
-        const modeLimit = limits[mode];
-
-        if (sourceNode.type === CANVAS_NODE_TYPES.upload) {
-          if (targetHandle !== 'target-images' || modeLimit.images <= 0) {
-            return false;
-          }
-          const count = edges.filter((edge) =>
-            edge.target === targetId
-            && (edge.targetHandle ?? 'target-images') === 'target-images'
-          ).length;
-          return count < modeLimit.images;
-        }
-
-        if (sourceIsAudioUpload) {
-          if (targetHandle !== 'target-audios' || modeLimit.audios <= 0) {
-            return false;
-          }
-          const count = edges.filter((edge) =>
-            edge.target === targetId
-            && (edge.targetHandle ?? '') === 'target-audios'
-          ).length;
-          return count < modeLimit.audios;
-        }
-
-        if (sourceIsVideoUpload) {
-          if (targetHandle !== 'target-videos' || modeLimit.videos <= 0) {
-            return false;
-          }
-          const count = edges.filter((edge) =>
-            edge.target === targetId
-            && (edge.targetHandle ?? '') === 'target-videos'
-          ).length;
-          return count < modeLimit.videos;
-        }
-
-        return false;
-      }
-
-      if (targetNode.type === CANVAS_NODE_TYPES.videoFrame) {
-        const targetHandle = connection.targetHandle;
-        if (targetHandle !== 'target-first' && targetHandle !== 'target-last') {
-          return false;
-        }
-      }
-
-      return true;
-    },
+    (connection: Connection | CanvasEdge) => isCanvasConnectionValid(connection, nodes, edges),
     [edges, nodes]
   );
 
@@ -1099,6 +1000,58 @@ export function Canvas() {
     () => nodes.filter((node) => Boolean(node.selected)).map((node) => node.id),
     [nodes]
   );
+  const selectedConnectSourceNodeIds = useMemo(
+    () =>
+      nodes
+        .filter(
+          (node) =>
+            Boolean(node.selected) &&
+            nodeHasSourceHandle(node.type) &&
+            canNodeTypeBeManualConnectionSource(node.type)
+        )
+        .map((node) => node.id),
+    [nodes]
+  );
+  const hasMultiSelectionConnector =
+    interactionMode === 'select' && selectedConnectSourceNodeIds.length >= 2;
+
+  const handleMultiConnectEnd = useCallback(
+    (
+      sourceNodeIds: string[],
+      clientPosition: { x: number; y: number },
+      explicitTargetHandle?: string
+    ) => {
+      const targetNodeElement = document
+        .elementFromPoint(clientPosition.x, clientPosition.y)
+        ?.closest<HTMLElement>('.react-flow__node[data-id]');
+      const targetNodeId = targetNodeElement?.dataset.id;
+      if (!targetNodeId) {
+        return;
+      }
+
+      const plan = buildBatchConnectionPlan(
+        sourceNodeIds,
+        targetNodeId,
+        nodes,
+        edges,
+        explicitTargetHandle
+      );
+      if (plan.invalidSourceIds.length > 0) {
+        void showErrorDialog(
+          t('canvas.multiConnect.invalidTarget'),
+          t('common.error')
+        );
+        return;
+      }
+
+      const addedCount = connectNodesBatch(plan.connections);
+      if (addedCount > 0) {
+        scheduleCanvasPersist(0);
+      }
+    },
+    [connectNodesBatch, edges, nodes, scheduleCanvasPersist, t]
+  );
+
   const selectedUploadNodeId = useMemo(() => {
     if (selectedNodeIds.length !== 1) {
       return null;
@@ -1162,6 +1115,12 @@ export function Canvas() {
       const isGroup = commandPressed && key === 'g';
       const isCopy = commandPressed && key === 'c' && !event.shiftKey;
       const isPaste = commandPressed && key === 'v' && !event.shiftKey;
+
+      if (!commandPressed && !event.altKey && !event.shiftKey && (key === 'v' || key === 'h')) {
+        event.preventDefault();
+        setInteractionMode(key === 'v' ? 'select' : 'pan');
+        return;
+      }
 
       if (isCopy) {
         if (selectedNodeIds.length === 0) {
@@ -2042,7 +2001,7 @@ export function Canvas() {
   return (
     <div
       ref={wrapperRef}
-      className="relative h-full w-full"
+      className={`relative h-full w-full canvas-mode-${interactionMode} ${hasMultiSelectionConnector ? 'canvas-multi-select-active' : ''}`}
       onDrop={handleCanvasDrop}
       onDragOver={handleCanvasDragOver}
     >
@@ -2072,10 +2031,15 @@ export function Canvas() {
         maxZoom={5}
         snapGrid={snapToGridEnabled ? [snapGridSize, snapGridSize] : undefined}
         snapToGrid={snapToGridEnabled}
-        selectionOnDrag
+        panOnDrag={interactionMode === 'pan'}
+        panActivationKeyCode="Space"
+        selectionOnDrag={interactionMode === 'select'}
         selectionMode={SelectionMode.Partial}
-        multiSelectionKeyCode={['Control', 'Meta']}
-        selectionKeyCode={['Control', 'Meta']}
+        multiSelectionKeyCode={['Shift', 'Control', 'Meta']}
+        selectionKeyCode={null}
+        nodesDraggable={interactionMode === 'select'}
+        nodesConnectable={interactionMode === 'select'}
+        elementsSelectable={interactionMode === 'select'}
         deleteKeyCode={null}
         onlyRenderVisibleElements
         zoomOnDoubleClick={false}
@@ -2101,7 +2065,20 @@ export function Canvas() {
         <SelectedNodeOverlay />
       </ReactFlow>
 
-      <CanvasToolbar />
+      <MultiSelectionConnector
+        enabled={hasMultiSelectionConnector}
+        nodes={nodes}
+        selectedNodeIds={selectedNodeIds}
+        sourceNodeIds={selectedConnectSourceNodeIds}
+        viewport={currentViewport}
+        wrapperRef={wrapperRef}
+        onConnectEnd={handleMultiConnectEnd}
+      />
+
+      <CanvasToolbar
+        interactionMode={interactionMode}
+        onInteractionModeChange={setInteractionMode}
+      />
 
       {nodes.length === 0 && emptyHint}
       {showNodeMenu && previewConnectionVisual && (

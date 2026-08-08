@@ -58,9 +58,11 @@ import {
   type ReferenceTokenMatch,
 } from '@/features/canvas/application/referenceTokenEditing';
 import {
+  IMAGE_GENERATION_ASPECT_RATIO_OPTIONS,
+  IMAGE_GENERATION_RESOLUTION_OPTIONS,
   listConfiguredImageModels,
-  resolveImageModelResolution,
-  resolveImageModelResolutions,
+  pickClosestImageGenerationAspectRatio,
+  resolveImageGenerationResolution,
   resolveConfiguredImageModel,
   UNCONFIGURED_IMAGE_MODEL,
 } from '@/features/canvas/models';
@@ -99,10 +101,6 @@ interface PickerAnchor {
   top: number;
 }
 
-const AUTO_ASPECT_RATIO_OPTION: AspectRatioChoice = {
-  value: AUTO_REQUEST_ASPECT_RATIO,
-  label: '自动',
-};
 const PICKER_FALLBACK_ANCHOR: PickerAnchor = { left: 8, top: 8 };
 
 const STORYBOARD_NODE_HORIZONTAL_PADDING_PX = 24;
@@ -373,26 +371,6 @@ function GridStepperControl({
   );
 }
 
-function pickClosestAspectRatio(
-  targetRatio: number,
-  supportedAspectRatios: string[]
-): string {
-  const supported = supportedAspectRatios.length > 0 ? supportedAspectRatios : ['1:1'];
-  let bestValue = supported[0];
-  let bestDistance = Number.POSITIVE_INFINITY;
-
-  for (const aspectRatio of supported) {
-    const ratio = parseAspectRatio(aspectRatio);
-    const distance = Math.abs(Math.log(ratio / targetRatio));
-    if (distance < bestDistance) {
-      bestDistance = distance;
-      bestValue = aspectRatio;
-    }
-  }
-
-  return bestValue;
-}
-
 function ratioValueToAspectRatioString(ratioValue: number): string {
   if (!Number.isFinite(ratioValue) || ratioValue <= 0) {
     return DEFAULT_ASPECT_RATIO;
@@ -415,12 +393,31 @@ function ratioValueToAspectRatioString(ratioValue: number): string {
   return `${Math.round(scaledWidth / divisor)}:${Math.round(scaledHeight / divisor)}`;
 }
 
+function pickClosestAspectRatioFromCandidates(
+  targetRatio: number,
+  candidates: readonly string[]
+): string {
+  let closest = candidates[0] ?? DEFAULT_ASPECT_RATIO;
+  let closestDistance = Number.POSITIVE_INFINITY;
+  for (const candidate of candidates) {
+    const distance = Math.abs(Math.log(parseAspectRatio(candidate) / targetRatio));
+    if (distance < closestDistance) {
+      closest = candidate;
+      closestDistance = distance;
+    }
+  }
+  return closest;
+}
+
 function formatFriendlyAspectRatio(ratioValue: number): string {
   if (!Number.isFinite(ratioValue) || ratioValue <= 0) {
     return DEFAULT_ASPECT_RATIO;
   }
 
-  const snapped = pickClosestAspectRatio(ratioValue, FRIENDLY_ASPECT_RATIO_CANDIDATES);
+  const snapped = pickClosestAspectRatioFromCandidates(
+    ratioValue,
+    FRIENDLY_ASPECT_RATIO_CANDIDATES
+  );
   const snappedValue = parseAspectRatio(snapped);
   const snapDistance = Math.abs(Math.log(snappedValue / ratioValue));
   if (snapDistance <= Math.log(1.04)) {
@@ -678,20 +675,18 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
     () => ({ ...(nodeData.extraParams ?? {}) }),
     [nodeData.extraParams]
   );
-  const resolutionOptions = useMemo(
-    () => resolveImageModelResolutions(selectedModel, { extraParams: effectiveExtraParams }),
-    [effectiveExtraParams, selectedModel]
-  );
+  const resolutionOptions = IMAGE_GENERATION_RESOLUTION_OPTIONS;
 
   const selectedResolution = useMemo((): AspectRatioChoice => {
-    return resolveImageModelResolution(selectedModel, nodeData.size, {
-      extraParams: effectiveExtraParams,
-    });
-  }, [effectiveExtraParams, nodeData.size, selectedModel]);
+    return resolveImageGenerationResolution(nodeData.size);
+  }, [nodeData.size]);
 
   const aspectRatioOptions = useMemo<AspectRatioChoice[]>(
-    () => [AUTO_ASPECT_RATIO_OPTION, ...selectedModel.aspectRatios],
-    [selectedModel.aspectRatios]
+    () => [{
+      value: AUTO_REQUEST_ASPECT_RATIO,
+      label: t('modelParams.autoAspectRatio'),
+    }, ...IMAGE_GENERATION_ASPECT_RATIO_OPTIONS],
+    [t]
   );
 
   const selectedAspectRatio = useMemo((): AspectRatioChoice => {
@@ -700,7 +695,7 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
     if (found) {
       return found;
     }
-    return AUTO_ASPECT_RATIO_OPTION;
+    return aspectRatioOptions[0];
   }, [aspectRatioOptions, nodeData.requestAspectRatio]);
 
   const ratioControlMode: StoryboardRatioControlMode = showStoryboardGenAdvancedRatioControls
@@ -773,19 +768,6 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
   const requestResolution = selectedModel.resolveRequest({
     referenceImageCount: incomingImages.length,
   });
-  const supportedAspectRatioValues = useMemo(
-    () => selectedModel.aspectRatios.map((item) => item.value),
-    [selectedModel.aspectRatios]
-  );
-  const mappedOverallRequestAspectRatio = useMemo(
-    () =>
-      pickClosestAspectRatio(
-        resolvedAspectRatios.overallRatioValue,
-        supportedAspectRatioValues
-      ),
-    [resolvedAspectRatios.overallRatioValue, supportedAspectRatioValues]
-  );
-
   const totalFrames = useMemo(
     () => (nodeData.gridRows ?? 1) * (nodeData.gridCols ?? 1),
     [nodeData.gridRows, nodeData.gridCols]
@@ -1043,7 +1025,7 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
     const safeRows = Math.max(1, nodeData.gridRows);
     const safeCols = Math.max(1, nodeData.gridCols);
     if (selectedAspectRatio.value !== AUTO_REQUEST_ASPECT_RATIO) {
-      return mappedOverallRequestAspectRatio;
+      return selectedAspectRatio.value;
     }
 
     let autoControlRatioValue = 1;
@@ -1062,18 +1044,13 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
       safeRows,
       safeCols
     );
-    return pickClosestAspectRatio(
-      autoResolvedRatios.overallRatioValue,
-      supportedAspectRatioValues
-    );
+    return pickClosestImageGenerationAspectRatio(autoResolvedRatios.overallRatioValue);
   }, [
     incomingImages,
-    mappedOverallRequestAspectRatio,
     nodeData.gridCols,
     nodeData.gridRows,
     ratioControlMode,
     selectedAspectRatio.value,
-    supportedAspectRatioValues,
   ]);
 
   const handlePolishFrame = useCallback(async (frameIndex: number) => {
@@ -1198,7 +1175,7 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
         prompt: '',
         model: selectedModel.id,
         size: selectedResolution.value as ImageSize,
-        requestAspectRatio: mappedOverallRequestAspectRatio,
+        requestAspectRatio: resolvedRequestAspectRatio,
       }
     );
 
@@ -1317,7 +1294,6 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
     selectedModel.expectedDurationMs,
     selectedModel.id,
     selectedModel.providerId,
-    supportedAspectRatioValues,
     setSelectedNode,
     selectedAspectRatio.value,
     selectedResolution.value,
@@ -1327,7 +1303,6 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
     selectedModel.id,
     findNodePosition,
     updateNodeData,
-    mappedOverallRequestAspectRatio,
     resolveEffectiveRequestAspectRatio,
     t,
     ignoreAtTagWhenCopyingAndGenerating,
@@ -1986,7 +1961,6 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
             paramsChipClassName={NODE_CONTROL_PARAMS_CHIP_CLASS}
             modelPanelAlign="center"
             paramsPanelAlign="center"
-            modelPanelClassName="inline-block min-w-[300px] max-w-[calc(100vw-32px)] p-2"
             paramsPanelClassName="w-[420px] p-3"
           />
         ) : (

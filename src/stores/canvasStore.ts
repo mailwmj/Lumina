@@ -102,6 +102,7 @@ interface CanvasState {
   onNodesChange: (changes: NodeChange<CanvasNode>[]) => void;
   onEdgesChange: (changes: EdgeChange<CanvasEdge>[]) => void;
   onConnect: (connection: Connection) => void;
+  onConnectBatch: (connections: Connection[]) => number;
 
   setCanvasData: (nodes: CanvasNode[], edges: CanvasEdge[], history?: CanvasHistoryState) => void;
   addNode: (
@@ -728,6 +729,54 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         dragHistorySnapshot: null,
       };
     });
+  },
+
+  onConnectBatch: (connections) => {
+    if (connections.length === 0) {
+      return 0;
+    }
+
+    let addedCount = 0;
+    set((state) => {
+      let nextEdges = state.edges;
+
+      for (const connection of connections) {
+        if (!connection.source || !connection.target) {
+          continue;
+        }
+
+        const sourceHandle = normalizeHandleId(connection.sourceHandle) ?? 'source';
+        const targetHandle = normalizeHandleId(connection.targetHandle) ?? 'target';
+        const beforeCount = nextEdges.length;
+        nextEdges = addEdge<CanvasEdge>(
+          {
+            ...connection,
+            sourceHandle,
+            targetHandle,
+            type: 'disconnectableEdge',
+          },
+          nextEdges
+        );
+        if (nextEdges.length > beforeCount) {
+          addedCount += 1;
+        }
+      }
+
+      if (addedCount === 0) {
+        return state;
+      }
+
+      return {
+        edges: nextEdges,
+        history: {
+          past: pushSnapshot(state.history.past, createSnapshot(state.nodes, state.edges)),
+          future: [],
+        },
+        dragHistorySnapshot: null,
+      };
+    });
+
+    return addedCount;
   },
 
   setCanvasData: (nodes, edges, history) => {

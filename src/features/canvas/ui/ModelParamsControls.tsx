@@ -50,14 +50,15 @@ interface ModelParamsControlsProps {
 interface PanelAnchor {
   left: number;
   top: number;
+  bottom: number;
 }
 
 const OTHER_PARAMS_PANEL_CLASS_NAME = 'w-[280px] p-3';
-const DEFAULT_MODEL_PANEL_CLASS_NAME = 'inline-block min-w-[320px] max-w-[calc(100vw-32px)] p-2';
+const DEFAULT_MODEL_PANEL_CLASS_NAME = 'w-full p-2';
 const DEFAULT_PROVIDER_OPTION_CLASS_NAME =
-  'min-w-[92px] px-3 text-center';
+  'w-full min-w-0 px-3 text-center';
 const DEFAULT_MODEL_OPTION_CLASS_NAME =
-  'min-h-9 min-w-[128px] max-w-full justify-center px-3 py-2 text-center';
+  'min-h-9 w-full min-w-0 max-w-full justify-center px-3 py-2 text-center';
 
 function NanoBananaIcon({ className = '' }: { className?: string }) {
   return (
@@ -350,22 +351,36 @@ export const ModelParamsControls = memo(({
     return {
       left: align === 'center' ? rect.left + anchorWidth / 2 : rect.left,
       top: rect.top - 8,
+      bottom: rect.bottom + 8,
     };
   };
 
   const buildPanelStyle = (
     anchor: PanelAnchor | null,
-    align: 'center' | 'start'
+    align: 'center' | 'start',
+    preferredWidth: number,
+    preferredHeight: number
   ): React.CSSProperties | undefined => {
     if (!anchor) {
       return undefined;
     }
 
-    const xTransform = align === 'center' ? 'translateX(-50%) ' : '';
+    const viewportWidth = Math.max(0, window.innerWidth);
+    const viewportHeight = Math.max(0, window.innerHeight);
+    const panelWidth = Math.min(preferredWidth, Math.max(0, viewportWidth - 24));
+    const idealLeft = align === 'center' ? anchor.left - panelWidth / 2 : anchor.left;
+    const maxLeft = Math.max(12, viewportWidth - panelWidth - 12);
+    const left = Math.min(Math.max(idealLeft, 12), maxLeft);
+    const availableAbove = anchor.top - 12;
+    const availableBelow = viewportHeight - anchor.bottom - 12;
+    const showBelow =
+      availableAbove < Math.min(preferredHeight, 220) && availableBelow > availableAbove;
+
     return {
-      left: anchor.left,
-      top: anchor.top,
-      transform: `${xTransform}translateY(-100%)`,
+      left,
+      top: showBelow ? anchor.bottom : anchor.top,
+      width: panelWidth,
+      transform: showBelow ? undefined : 'translateY(-100%)',
     };
   };
 
@@ -457,15 +472,18 @@ export const ModelParamsControls = memo(({
           ref={modelPanelRef}
           className={`fixed z-[80] transition-opacity duration-200 ease-out ${isPanelVisible ? 'opacity-100' : 'pointer-events-none opacity-0'
             }`}
-          style={buildPanelStyle(modelPanelAnchor, modelPanelAlign)}
+          style={buildPanelStyle(modelPanelAnchor, modelPanelAlign, 760, 400)}
         >
-          <UiPanel className={modelPanelClassName}>
-            <div className="ui-scrollbar max-h-[340px] space-y-4 overflow-y-auto p-1">
+          <UiPanel
+            className={modelPanelClassName}
+            style={{ width: '100%', minWidth: 0, maxWidth: '100%' }}
+          >
+            <div className="ui-scrollbar max-h-[min(420px,calc(100vh-24px))] space-y-4 overflow-x-hidden overflow-y-auto p-1">
               <section>
                 <div className="mb-2 text-xs font-medium text-text-muted">
                   {t('modelParams.provider')}
                 </div>
-                <div className="flex flex-wrap gap-2">
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
                   {providerOptions.map((provider) => {
                     const active = provider.id === panelProviderId;
                     return (
@@ -497,7 +515,7 @@ export const ModelParamsControls = memo(({
                 <div className="mb-2 text-xs font-medium text-text-muted">
                   {t('modelParams.model')}
                 </div>
-                <div className="flex flex-wrap gap-2">
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
                   {modelGroups.map((group) => {
                     const active = group.models.some((model) => model.id === selectedModel.id);
                     const targetModel = group.models.find((model) => model.id === selectedModel.id)
@@ -505,17 +523,18 @@ export const ModelParamsControls = memo(({
                     return (
                       <button
                         key={group.name}
-                        className={`inline-flex max-w-full items-center rounded-lg border text-xs leading-4 transition-colors ${modelOptionClassName} ${active
+                        className={`inline-flex w-full min-w-0 max-w-full items-center rounded-lg border text-xs leading-4 transition-colors ${modelOptionClassName} ${active
                           ? 'border-accent/50 bg-accent/15 text-text-dark shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]'
                           : 'border-[rgba(255,255,255,0.12)] bg-bg-dark/65 text-text-muted hover:border-[rgba(255,255,255,0.2)] hover:bg-[rgba(255,255,255,0.05)]'
                           }`}
+                        style={{ width: '100%', minWidth: 0, maxWidth: '100%' }}
                         onClick={(event) => {
                           event.stopPropagation();
                           onModelChange(targetModel.id);
                           setOpenPanel(null);
                         }}
                       >
-                        <span className="max-w-full break-words text-center">{group.name}</span>
+                        <span className="min-w-0 max-w-full break-words text-center">{group.name}</span>
                       </button>
                     );
                   })}
@@ -532,12 +551,15 @@ export const ModelParamsControls = memo(({
           ref={paramsPanelRef}
           className={`fixed z-[80] transition-opacity duration-200 ease-out ${isPanelVisible ? 'opacity-100' : 'pointer-events-none opacity-0'
             }`}
-          style={buildPanelStyle(paramsPanelAnchor, paramsPanelAlign)}
+          style={buildPanelStyle(paramsPanelAnchor, paramsPanelAlign, 420, 460)}
         >
-          <UiPanel className={paramsPanelClassName}>
+          <UiPanel
+            className={paramsPanelClassName}
+            style={{ width: '100%', minWidth: 0, maxWidth: '100%' }}
+          >
             <div>
               <div className="mb-2 text-xs text-text-muted">{t('modelParams.quality')}</div>
-              <div className="grid grid-cols-4 gap-1 rounded-xl border border-[rgba(255,255,255,0.1)] bg-bg-dark/65 p-1">
+              <div className="grid grid-cols-3 gap-1 rounded-xl border border-[rgba(255,255,255,0.1)] bg-bg-dark/65 p-1">
                 {resolutionOptions.map((item) => {
                   const active = item.value === selectedResolution.value;
                   return (
@@ -699,9 +721,12 @@ export const ModelParamsControls = memo(({
           ref={otherParamsPanelRef}
           className={`fixed z-[80] transition-opacity duration-200 ease-out ${isPanelVisible ? 'opacity-100' : 'pointer-events-none opacity-0'
             }`}
-          style={buildPanelStyle(otherParamsPanelAnchor, 'center')}
+          style={buildPanelStyle(otherParamsPanelAnchor, 'center', 280, 260)}
         >
-          <UiPanel className={OTHER_PARAMS_PANEL_CLASS_NAME}>
+          <UiPanel
+            className={OTHER_PARAMS_PANEL_CLASS_NAME}
+            style={{ width: '100%', minWidth: 0, maxWidth: '100%' }}
+          >
             <div className="space-y-3">
               {showWebSearchToggle && (
                 <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-[rgba(255,255,255,0.08)] bg-bg-dark/65 px-3 py-2">

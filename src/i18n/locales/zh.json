@@ -62,11 +62,17 @@
     "emptyHintTitle": "双击鼠标添加节点",
     "emptyHintSubtitle": "Double-click to add a node",
     "toolbar": {
+      "selectMode": "选择工具 (V)",
+      "panMode": "托手工具 (H)",
       "zoomIn": "放大",
       "zoomOut": "缩小",
       "fitView": "适应视图",
       "lock": "锁定画布",
       "unlock": "解锁画布"
+    },
+    "multiConnect": {
+      "dragHandle": "拖动以批量连接",
+      "invalidTarget": "所选节点无法全部连接到该目标"
     }
   },
   "tool": {
