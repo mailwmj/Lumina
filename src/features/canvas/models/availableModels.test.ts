@@ -44,10 +44,26 @@ describe('available image models', () => {
     ]);
   });
 
-  it('uses the last selection for a new node and leaves an unavailable node unresolved', () => {
+  it('uses the last selection when a new or previously selected model is unavailable', () => {
     const settings = createSettings();
 
     expect(resolveConfiguredImageModel(settings, undefined)?.id).toBe('chaomo/gpt-image2-4K');
-    expect(resolveConfiguredImageModel(settings, 'ai-media/gpt-image-2')).toBeNull();
+    expect(resolveConfiguredImageModel(settings, 'ai-media/gpt-image-2')?.id).toBe(
+      'chaomo/gpt-image2-4K'
+    );
+  });
+
+  it('falls back to Chaomo when it is the only configured provider', () => {
+    const settings = createSettings();
+    settings.openAiImageApi = {
+      apiKey: '',
+      baseUrl: 'https://example.test/v1',
+      modelCatalog: null,
+      selectedModelIds: [],
+    };
+
+    expect(resolveConfiguredImageModel(settings, 'ai-media/gpt-image-2')?.id).toBe(
+      'chaomo/gpt-image2-4K'
+    );
   });
 });

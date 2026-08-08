@@ -122,8 +122,8 @@ export function resolveConfiguredImageModel(
   const selectedByNode = normalizedRequestedId
     ? models.find((model) => model.id === normalizedRequestedId)
     : undefined;
-  if (normalizedRequestedId) {
-    return selectedByNode ?? null;
+  if (selectedByNode) {
+    return selectedByNode;
   }
 
   const lastSelection = settings.lastImageModelSelection;
