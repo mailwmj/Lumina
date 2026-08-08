@@ -9,7 +9,7 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
-import { Loader2, Video, Wand2, X, ChevronDown } from 'lucide-react';
+import { Loader2, Video, Wand2, X, ChevronDown } from '@/components/ui/icons';
 import { useTranslation } from 'react-i18next';
 
 import {
@@ -22,6 +22,7 @@ import {
 import { resolveNodeDisplayName } from '@/features/canvas/domain/nodeDisplay';
 import { NodeHeader, NODE_HEADER_FLOATING_POSITION_CLASS } from '@/features/canvas/ui/NodeHeader';
 import { NodeResizeHandle } from '@/features/canvas/ui/NodeResizeHandle';
+import { resolveNodeSurfaceStateClass } from '@/features/canvas/ui/nodeSurfaceStyles';
 import {
   canvasAiGateway,
   graphImageResolver,
@@ -40,7 +41,7 @@ import {
   NODE_CONTROL_PARAMS_CHIP_CLASS,
   NODE_CONTROL_PRIMARY_BUTTON_CLASS,
 } from '@/features/canvas/ui/nodeControlStyles';
-import { UiButton } from '@/components/ui';
+import { UiButton, UiTooltip } from '@/components/ui';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -267,7 +268,7 @@ function renderPromptWithHighlights(
         data-highlight-ref="true"
         data-image-url={imageUrl || ''}
         data-index={token.value}
-        className="relative z-0 text-white [text-shadow:0.24px_0_currentColor,-0.24px_0_currentColor] before:absolute before:-inset-x-[4px] before:-inset-y-[1px] before:-z-10 before:rounded-[7px] before:bg-accent/55 before:content-['']"
+        className="relative z-0 text-[var(--accent-foreground)] before:absolute before:-inset-x-[4px] before:-inset-y-[1px] before:-z-10 before:rounded-[7px] before:bg-accent/85 before:content-['']"
       >
         {matchText}
       </span>
@@ -956,11 +957,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
   return (
     <div
       ref={rootRef}
-      className={`group relative flex h-full flex-col overflow-visible rounded-[var(--node-radius)] border bg-surface-dark/90 p-2 transition-colors duration-150 ${
-        selected
-          ? 'border-accent shadow-[0_0_0_1px_rgba(59,130,246,0.32)]'
-          : 'border-[rgba(15,23,42,0.22)] hover:border-[rgba(15,23,42,0.34)] dark:border-[rgba(255,255,255,0.22)] dark:hover:border-[rgba(255,255,255,0.34)]'
-      }`}
+      className={`group relative flex h-full flex-col overflow-visible rounded-[var(--node-radius)] border bg-surface-dark/90 p-2 transition-colors duration-150 ${resolveNodeSurfaceStateClass(selected)}`}
       style={{
         width: `${resolvedWidth}px`,
         height: `${resolvedHeight}px`,
@@ -979,11 +976,11 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
       {/* 首尾帧模式需要2个输入Handle（首帧35%，尾帧65%），单图使用单个Handle */}
       {isVideoFrame ? (
         <>
-          <Handle type="target" id="target-first" position={Position.Left} className="!h-2 !w-2 !border-surface-dark !bg-accent" style={{ top: '35%' }} />
-          <Handle type="target" id="target-last" position={Position.Left} className="!h-2 !w-2 !border-surface-dark !bg-accent" style={{ top: '65%' }} />
+          <Handle type="target" id="target-first" position={Position.Left} className="!h-2 !w-2 !border-surface-dark !bg-[var(--edge)]" style={{ top: '35%' }} />
+          <Handle type="target" id="target-last" position={Position.Left} className="!h-2 !w-2 !border-surface-dark !bg-[var(--edge)]" style={{ top: '65%' }} />
         </>
       ) : (
-        <Handle type="target" id="target" position={Position.Left} className="!h-2 !w-2 !border-surface-dark !bg-accent" />
+        <Handle type="target" id="target" position={Position.Left} className="!h-2 !w-2 !border-surface-dark !bg-[var(--edge)]" />
       )}
 
       <div className="flex h-full flex-col gap-2 overflow-y-auto">
@@ -996,13 +993,16 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
               className="h-full w-full object-contain"
               playsInline
             />
-            <button
-              className="absolute right-1 top-1 rounded bg-black/50 p-1 text-white hover:bg-black/70"
-              onClick={handleRemoveVideo}
-              title={t('common.delete')}
-            >
-              <X size={14} />
-            </button>
+            <UiTooltip content={t('common.delete')}>
+              <button
+                type="button"
+                aria-label={t('common.delete')}
+                className="absolute right-1 top-1 rounded bg-black/50 p-1 text-white hover:bg-black/70"
+                onClick={handleRemoveVideo}
+              >
+                <X size={14} />
+              </button>
+            </UiTooltip>
           </div>
         ) : isGenerating ? (
           <div className="flex h-32 w-full flex-shrink-0 items-center justify-center rounded-[var(--node-radius)] bg-bg-dark">
@@ -1025,7 +1025,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
                     className="h-full w-full object-cover"
                   />
                 </div>
-                <span className="text-center text-xs text-text-muted dark:text-white/60">
+                <span className="text-center text-xs text-text-muted">
                   {isVideoFrame ? (idx === 0 ? '首帧' : '尾帧') : `图${idx + 1}`}
                 </span>
               </div>
@@ -1034,7 +1034,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
         )}
 
         {/* Prompt Input */}
-        <div className="relative min-h-0 flex-1 rounded-lg border border-[rgba(255,255,255,0.1)] bg-bg-dark/45 p-2">
+        <div className="relative min-h-0 flex-1 rounded-lg border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] p-2">
           <div className="relative h-full min-h-0">
             <div
               ref={promptHighlightRef}
@@ -1066,26 +1066,29 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
               style={{ scrollbarGutter: 'stable' }}
             />
             {/* Polish Button */}
-            <button
-              className="absolute bottom-2 right-2 z-20 rounded p-1 text-muted-foreground hover:bg-accent/20 hover:text-accent disabled:opacity-50"
-              onClick={(e) => {
-                e.stopPropagation();
-                void handlePolish();
-              }}
-              disabled={isPolishing}
-              title={t('node.imageEdit.polishPrompt')}
-            >
-              {isPolishing ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Wand2 className="h-4 w-4" />
-              )}
-            </button>
+            <UiTooltip content={t('node.imageEdit.polishPrompt')}>
+              <button
+                type="button"
+                aria-label={t('node.imageEdit.polishPrompt')}
+                className="absolute bottom-2 right-2 z-20 rounded p-1 text-text-muted hover:bg-accent/20 hover:text-accent disabled:opacity-50"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void handlePolish();
+                }}
+                disabled={isPolishing}
+              >
+                {isPolishing ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Wand2 className="h-4 w-4" />
+                )}
+              </button>
+            </UiTooltip>
           </div>
 
           {showImagePicker && incomingImageItems.length > 0 && (
             <div
-              className="nowheel absolute z-30 w-[120px] overflow-hidden rounded-xl border border-[rgba(255,255,255,0.16)] bg-surface-dark shadow-xl"
+              className="nowheel absolute z-30 w-[120px] overflow-hidden rounded-[10px] border border-[var(--ui-border-soft)] bg-[var(--ui-surface-elevated)] shadow-[var(--ui-shadow-panel)]"
               style={{ left: pickerAnchor.left, top: pickerAnchor.top }}
               onMouseDown={(event) => event.stopPropagation()}
               onWheelCapture={(event) => event.stopPropagation()}
@@ -1103,8 +1106,8 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
                       insertImageReference(index);
                     }}
                     onMouseEnter={() => setPickerActiveIndex(index)}
-                    className={`flex w-full items-center gap-2 border border-transparent bg-bg-dark/70 px-2 py-2 text-left text-sm text-text-dark transition-colors hover:border-[rgba(255,255,255,0.18)] ${pickerActiveIndex === index
-                        ? 'border-[rgba(255,255,255,0.24)] bg-bg-dark'
+                    className={`flex w-full items-center gap-2 border border-transparent bg-transparent px-2 py-2 text-left text-sm text-text-dark transition-colors hover:bg-[var(--ui-hover)] ${pickerActiveIndex === index
+                        ? 'border-accent/45 bg-accent/10'
                         : ''
                       }`}
                   >
@@ -1123,7 +1126,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
 
           {referenceHover && typeof document !== 'undefined' && createPortal(
             <div
-              className="pointer-events-none fixed z-[9999] overflow-hidden rounded-lg border border-[rgba(255,255,255,0.16)] bg-surface-dark shadow-xl"
+              className="pointer-events-none fixed z-[9999] overflow-hidden rounded-lg border border-[var(--ui-border-soft)] bg-[var(--ui-surface-elevated)] shadow-[var(--ui-shadow-tooltip)]"
               style={{
                 left: Math.max(10, referenceHover.anchorRect.left + referenceHover.anchorRect.width / 2 - 75),
                 top: referenceHover.anchorRect.bottom + 10,
@@ -1146,7 +1149,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
         <div className="flex flex-col gap-2">
           <div className="flex flex-wrap gap-2">
             <select
-              className={`${NODE_CONTROL_CHIP_CLASS} bg-bg-dark border-border text-text dark:bg-black/30 dark:border-white/20 dark:text-white`}
+              className={`${NODE_CONTROL_CHIP_CLASS} border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] font-mono text-text-dark`}
               value={data.model}
               onChange={handleModelChange}
             >
@@ -1159,7 +1162,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
             </select>
 
             <select
-              className={`${NODE_CONTROL_CHIP_CLASS} bg-bg-dark border-border text-text dark:bg-black/30 dark:border-white/20 dark:text-white`}
+              className={`${NODE_CONTROL_CHIP_CLASS} border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] font-mono text-text-dark`}
               value={data.resolution}
               onChange={handleResolutionChange}
             >
@@ -1171,7 +1174,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
             </select>
 
             <select
-              className={`${NODE_CONTROL_CHIP_CLASS} bg-bg-dark border-border text-text dark:bg-black/30 dark:border-white/20 dark:text-white`}
+              className={`${NODE_CONTROL_CHIP_CLASS} border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] font-mono text-text-dark`}
               value={data.duration}
               onChange={(e) => handleDurationChange(parseInt(e.target.value, 10))}
             >
@@ -1184,24 +1187,25 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
           </div>
 
           {/* 视频元信息：镜头、景别、角度、速度 - 可折叠选项 */}
-          <div className="rounded border border-border-dark bg-surface-dark/50 dark:border-white/10">
+          <div className="rounded-lg border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)]">
             <button
               type="button"
-              className="flex w-full items-center justify-between px-2 py-1.5 text-xs text-text-muted dark:text-white/50"
+              className="flex w-full items-center justify-between px-2 py-1.5 text-xs text-text-muted transition-colors hover:bg-[var(--ui-hover)]"
               onClick={() => setShowAdvancedOptions(!showAdvancedOptions)}
             >
               <span>{t('node.videoGen.advancedOptions') || '视频参数预设'}</span>
               <ChevronDown className={`h-3.5 w-3.5 transition-transform ${showAdvancedOptions ? 'rotate-180' : ''}`} />
             </button>
             {showAdvancedOptions && (
-              <div className="flex flex-wrap gap-3 border-t border-border-dark px-2 py-2 dark:border-white/10">
+              <div className="flex flex-wrap gap-3 border-t border-[var(--ui-border-soft)] px-2 py-2">
                 {/* 镜头类型 */}
                 <div className="flex flex-wrap gap-1 items-center">
-                  <span className="text-xs text-text-muted dark:text-white/50 mr-1">镜头:</span>
+                  <span className="mr-1 text-xs text-text-muted">镜头:</span>
                   {SHOT_TYPE_OPTIONS.filter(o => o.value).map((opt) => (
                     <button
                       key={opt.value}
                       type="button"
+                      aria-pressed={data.shotType === opt.value}
                       onClick={() => {
                         const newValue = data.shotType === opt.value ? '' : opt.value;
                         updateNodeData(id, { shotType: newValue });
@@ -1211,8 +1215,8 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
                       }}
                       className={`px-2 py-0.5 text-xs rounded border transition-colors ${
                         data.shotType === opt.value
-                          ? 'bg-accent text-white border-accent'
-                          : 'bg-bg-dark text-text border-border-dark dark:bg-black/30 dark:border-white/20 dark:text-white hover:border-accent'
+                          ? 'bg-accent text-[var(--accent-foreground)] border-accent'
+                          : 'border-[var(--ui-border-soft)] bg-[var(--ui-surface-panel)] text-text-dark hover:border-accent/45'
                       }`}
                     >
                       {opt.label}
@@ -1222,11 +1226,12 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
 
                 {/* 景别 */}
                 <div className="flex flex-wrap gap-1 items-center">
-                  <span className="text-xs text-text-muted dark:text-white/50 mr-1">景别:</span>
+                  <span className="mr-1 text-xs text-text-muted">景别:</span>
                   {SHOT_SIZE_OPTIONS.filter(o => o.value).map((opt) => (
                     <button
                       key={opt.value}
                       type="button"
+                      aria-pressed={data.shotSize === opt.value}
                       onClick={() => {
                         const newValue = data.shotSize === opt.value ? '' : opt.value;
                         updateNodeData(id, { shotSize: newValue });
@@ -1236,8 +1241,8 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
                       }}
                       className={`px-2 py-0.5 text-xs rounded border transition-colors ${
                         data.shotSize === opt.value
-                          ? 'bg-accent text-white border-accent'
-                          : 'bg-bg-dark text-text border-border-dark dark:bg-black/30 dark:border-white/20 dark:text-white hover:border-accent'
+                          ? 'bg-accent text-[var(--accent-foreground)] border-accent'
+                          : 'border-[var(--ui-border-soft)] bg-[var(--ui-surface-panel)] text-text-dark hover:border-accent/45'
                       }`}
                     >
                       {opt.label}
@@ -1247,11 +1252,12 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
 
                 {/* 角度 */}
                 <div className="flex flex-wrap gap-1 items-center">
-                  <span className="text-xs text-text-muted dark:text-white/50 mr-1">角度:</span>
+                  <span className="mr-1 text-xs text-text-muted">角度:</span>
                   {ANGLE_OPTIONS.filter(o => o.value).map((opt) => (
                     <button
                       key={opt.value}
                       type="button"
+                      aria-pressed={data.angle === opt.value}
                       onClick={() => {
                         const newValue = data.angle === opt.value ? '' : opt.value;
                         updateNodeData(id, { angle: newValue });
@@ -1261,8 +1267,8 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
                       }}
                       className={`px-2 py-0.5 text-xs rounded border transition-colors ${
                         data.angle === opt.value
-                          ? 'bg-accent text-white border-accent'
-                          : 'bg-bg-dark text-text border-border-dark dark:bg-black/30 dark:border-white/20 dark:text-white hover:border-accent'
+                          ? 'bg-accent text-[var(--accent-foreground)] border-accent'
+                          : 'border-[var(--ui-border-soft)] bg-[var(--ui-surface-panel)] text-text-dark hover:border-accent/45'
                       }`}
                     >
                       {opt.label}
@@ -1272,11 +1278,12 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
 
                 {/* 运镜速度 */}
                 <div className="flex flex-wrap gap-1 items-center">
-                  <span className="text-xs text-text-muted dark:text-white/50 mr-1">速度:</span>
+                  <span className="mr-1 text-xs text-text-muted">速度:</span>
                   {CAMERA_SPEED_OPTIONS.filter(o => o.value).map((opt) => (
                     <button
                       key={opt.value}
                       type="button"
+                      aria-pressed={data.cameraSpeed === opt.value}
                       onClick={() => {
                         const newValue = data.cameraSpeed === opt.value ? '' : opt.value;
                         updateNodeData(id, { cameraSpeed: newValue });
@@ -1286,8 +1293,8 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
                       }}
                       className={`px-2 py-0.5 text-xs rounded border transition-colors ${
                         data.cameraSpeed === opt.value
-                          ? 'bg-accent text-white border-accent'
-                          : 'bg-bg-dark text-text border-border-dark dark:bg-black/30 dark:border-white/20 dark:text-white hover:border-accent'
+                          ? 'bg-accent text-[var(--accent-foreground)] border-accent'
+                          : 'border-[var(--ui-border-soft)] bg-[var(--ui-surface-panel)] text-text-dark hover:border-accent/45'
                       }`}
                     >
                       {opt.label}
@@ -1300,7 +1307,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
 
           <div className="flex flex-wrap gap-2">
             {/* hasAudio - 支持 SD 2.0, SD 1.5 pro */}
-            <label className={`${NODE_CONTROL_PARAMS_CHIP_CLASS} text-text dark:text-white/80 ${!modelCapabilities.supportsGenerateAudio ? 'opacity-50' : ''}`}>
+            <label className={`${NODE_CONTROL_PARAMS_CHIP_CLASS} border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] text-text-dark ${!modelCapabilities.supportsGenerateAudio ? 'opacity-50' : ''}`}>
               <input
                 type="checkbox"
                 checked={data.hasAudio ?? true}
@@ -1311,7 +1318,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
               <span>{t('node.videoGen.hasAudio')}</span>
             </label>
             {/* camerafixed - SD 1.5 pro 和早期模型支持，SD 2.0 暂不支持 */}
-            <label className={`${NODE_CONTROL_PARAMS_CHIP_CLASS} text-text dark:text-white/80 ${modelCapabilities.isSD2 ? 'opacity-50' : ''}`}>
+            <label className={`${NODE_CONTROL_PARAMS_CHIP_CLASS} border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] text-text-dark ${modelCapabilities.isSD2 ? 'opacity-50' : ''}`}>
               <input
                 type="checkbox"
                 checked={data.camerafixed ?? false}
@@ -1321,7 +1328,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
               />
               <span>{t('node.videoGen.camerafixed')}</span>
             </label>
-            <label className={`${NODE_CONTROL_PARAMS_CHIP_CLASS} text-text dark:text-white/80`}>
+            <label className={`${NODE_CONTROL_PARAMS_CHIP_CLASS} border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] text-text-dark`}>
               <input
                 type="checkbox"
                 checked={data.watermark ?? false}
@@ -1331,7 +1338,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
             </label>
             {/* draft - 仅 SD 1.5 pro 支持 */}
             {modelCapabilities.supportsDraft && (
-              <label className={`${NODE_CONTROL_PARAMS_CHIP_CLASS} text-text dark:text-white/80`}>
+              <label className={`${NODE_CONTROL_PARAMS_CHIP_CLASS} border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] text-text-dark`}>
                 <input
                   type="checkbox"
                   checked={data.draft ?? false}
@@ -1342,7 +1349,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
             )}
             {/* 联网搜索 - 仅 SD 2.0 支持 */}
             {modelCapabilities.supportsWebSearch && (
-              <label className={`${NODE_CONTROL_PARAMS_CHIP_CLASS} text-text dark:text-white/80`}>
+              <label className={`${NODE_CONTROL_PARAMS_CHIP_CLASS} border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] text-text-dark`}>
                 <input
                   type="checkbox"
                   checked={data.enableWebSearch ?? false}
@@ -1354,10 +1361,10 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="text-xs text-text-muted dark:text-white/50">{t('node.videoGen.seed')}:</span>
+            <span className="text-xs text-text-muted">{t('node.videoGen.seed')}:</span>
             <input
               type="number"
-              className="w-24 rounded border border-border bg-bg-dark/50 px-2 py-1 text-xs text-text placeholder:text-text-muted/50 focus:border-accent focus:outline-none dark:bg-black/30 dark:border-white/20 dark:text-white dark:placeholder:text-white/40 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              className="w-24 rounded border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] px-2 py-1 font-mono text-xs text-text-dark placeholder:text-text-muted/50 focus:border-accent focus:outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
               value={data.seed ?? ''}
               onChange={handleSeedChange}
               placeholder="Auto"
@@ -1391,7 +1398,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
         </div>
       </div>
 
-      <Handle type="source" id="source" position={Position.Right} className="!h-2 !w-2 !border-surface-dark !bg-accent" />
+      <Handle type="source" id="source" position={Position.Right} className="!h-2 !w-2 !border-surface-dark !bg-[var(--edge)]" />
 
       <NodeResizeHandle
         minWidth={VIDEO_GEN_NODE_MIN_WIDTH}

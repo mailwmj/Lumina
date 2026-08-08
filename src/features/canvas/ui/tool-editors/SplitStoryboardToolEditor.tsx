@@ -201,7 +201,7 @@ function NumberStepper({ label, value, min, max, onChange }: NumberStepperProps)
       <div className="flex items-center gap-2">
         <button
           type="button"
-          className="h-9 w-9 rounded-lg border border-[rgba(255,255,255,0.14)] bg-bg-dark/60 text-sm text-text-dark transition-colors hover:bg-bg-dark disabled:cursor-not-allowed disabled:opacity-45"
+          className="h-9 w-9 rounded-lg border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] font-mono text-sm text-text-dark transition-colors hover:bg-[var(--ui-hover)] disabled:cursor-not-allowed disabled:opacity-45"
           onClick={() => onChange(value - 1)}
           disabled={decreaseDisabled}
         >
@@ -218,7 +218,7 @@ function NumberStepper({ label, value, min, max, onChange }: NumberStepperProps)
         />
         <button
           type="button"
-          className="h-9 w-9 rounded-lg border border-[rgba(255,255,255,0.14)] bg-bg-dark/60 text-sm text-text-dark transition-colors hover:bg-bg-dark disabled:cursor-not-allowed disabled:opacity-45"
+          className="h-9 w-9 rounded-lg border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] font-mono text-sm text-text-dark transition-colors hover:bg-[var(--ui-hover)] disabled:cursor-not-allowed disabled:opacity-45"
           onClick={() => onChange(value + 1)}
           disabled={increaseDisabled}
         >
@@ -363,13 +363,13 @@ export function SplitStoryboardToolEditor({ sourceImageUrl, options, onOptionsCh
         </div>
 
         <div
-          className={`ui-scrollbar flex ${PREVIEW_VIEWPORT_HEIGHT} items-center justify-center overflow-auto rounded-xl border border-[rgba(255,255,255,0.12)] bg-bg-dark/70 p-3`}
+          className={`ui-scrollbar flex ${PREVIEW_VIEWPORT_HEIGHT} items-center justify-center overflow-auto rounded-[10px] border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] p-3`}
         >
           <div className="relative inline-flex items-center justify-center">
             <img
               src={displaySourceImageUrl}
               alt="split-preview"
-              className="max-h-full w-auto max-w-full rounded-lg border border-[rgba(255,255,255,0.08)] object-contain"
+              className="max-h-full w-auto max-w-full rounded-lg border border-[var(--ui-border-soft)] object-contain"
               onLoad={(event) => {
                 const target = event.currentTarget;
                 setNaturalSize({
@@ -419,7 +419,7 @@ export function SplitStoryboardToolEditor({ sourceImageUrl, options, onOptionsCh
         </div>
       </div>
 
-      <div className="space-y-4 rounded-xl border border-[rgba(255,255,255,0.12)] bg-bg-dark/75 p-3.5">
+      <div className="space-y-4 rounded-[10px] border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] p-3.5">
         <div className="text-sm font-medium text-text-dark">切割参数</div>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-1">
@@ -454,7 +454,7 @@ export function SplitStoryboardToolEditor({ sourceImageUrl, options, onOptionsCh
             step={0.1}
             value={lineThicknessPercent}
             onChange={(event) => updateOptions({ lineThicknessPercent: Number(event.target.value) })}
-            className="h-2 w-full cursor-pointer appearance-none rounded-full bg-white/15"
+            className="h-2 w-full cursor-pointer appearance-none rounded-full bg-[var(--ui-border-strong)] accent-accent"
           />
           <UiInput
             type="number"
@@ -467,7 +467,7 @@ export function SplitStoryboardToolEditor({ sourceImageUrl, options, onOptionsCh
           />
         </div>
 
-        <div className="rounded-lg border border-[rgba(255,255,255,0.12)] bg-bg-dark/80 px-3 py-2 text-xs text-text-muted">
+        <div className="rounded-lg border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] px-3 py-2 font-mono text-xs text-text-muted">
           <div className="flex items-center justify-between">
             <span>输出小格数量</span>
             <span className="font-medium text-text-dark">{rows * cols}</span>

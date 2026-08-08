@@ -51,6 +51,7 @@ export function UpdateAvailableDialog({
       isOpen={isOpen}
       onClose={onClose}
       title={t('update.dialogTitle')}
+      closeLabel={t('common.close')}
       footer={(
         <>
           <UiButton variant="muted" onClick={onClose}>

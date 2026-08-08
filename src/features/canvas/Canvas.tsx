@@ -1961,8 +1961,8 @@ export function Canvas() {
             end: { x: endX, y: endY },
             handleType: pendingConnectStart.handleType,
           }),
-          stroke: 'rgba(255,255,255,0.9)',
-          strokeWidth: 1,
+          stroke: 'var(--accent)',
+          strokeWidth: 2.5,
           strokeLinecap: 'round',
           left: 0,
           top: 0,
@@ -2026,6 +2026,12 @@ export function Canvas() {
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         defaultEdgeOptions={{ type: 'disconnectableEdge' }}
+        connectionLineStyle={{
+          stroke: 'var(--accent)',
+          strokeWidth: 2.5,
+          strokeDasharray: '10 7',
+          strokeLinecap: 'round',
+        }}
         defaultViewport={DEFAULT_VIEWPORT}
         minZoom={0.1}
         maxZoom={5}
@@ -2047,17 +2053,17 @@ export function Canvas() {
         className="bg-bg-dark"
       >
         <Background
-          variant={snapToGridEnabled ? BackgroundVariant.Lines : BackgroundVariant.Dots}
+          variant={BackgroundVariant.Dots}
           gap={snapGridSize}
           size={1}
-          color={snapToGridEnabled ? "rgba(59, 130, 246, 0.15)" : "#2a2a2a"}
+          color={snapToGridEnabled ? 'rgb(var(--accent-rgb) / 0.16)' : 'var(--canvas-dot)'}
           lineWidth={0.5}
         />
         <MiniMap
           className="canvas-minimap nopan nowheel !border-border-dark !bg-surface-dark"
           style={{ pointerEvents: 'all', zIndex: 10000 }}
-          nodeColor="rgba(120, 120, 120, 0.92)"
-          maskColor="rgba(0, 0, 0, 0.62)"
+          nodeColor="rgb(var(--text-muted-rgb) / 0.72)"
+          maskColor="rgb(var(--bg-rgb) / 0.72)"
           pannable
           zoomable
         />

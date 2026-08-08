@@ -1,9 +1,13 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { logger } from '@/lib/logger';
+import {
+  DEFAULT_ACCENT_COLOR,
+  migrateAppearanceSettings,
+  migrateAccentColor,
+  normalizeAccentColor,
+} from '@/features/settings/application/accentColor';
 
-export type UiRadiusPreset = 'compact' | 'default' | 'large';
-export type ThemeTonePreset = 'neutral' | 'warm' | 'cool';
 export type CanvasEdgeRoutingMode = 'spline' | 'orthogonal' | 'smartOrthogonal';
 export type ImageProviderId = 'ai-media' | 'chaomo';
 
@@ -288,8 +292,6 @@ interface SettingsState {
   ignoreAtTagWhenCopyingAndGenerating: boolean;
   enableStoryboardGenGridPreviewShortcut: boolean;
   showStoryboardGenAdvancedRatioControls: boolean;
-  uiRadiusPreset: UiRadiusPreset;
-  themeTonePreset: ThemeTonePreset;
   accentColor: string;
   canvasEdgeRoutingMode: CanvasEdgeRoutingMode;
   snapToGridEnabled: boolean;
@@ -313,8 +315,6 @@ interface SettingsState {
   setIgnoreAtTagWhenCopyingAndGenerating: (enabled: boolean) => void;
   setEnableStoryboardGenGridPreviewShortcut: (enabled: boolean) => void;
   setShowStoryboardGenAdvancedRatioControls: (enabled: boolean) => void;
-  setUiRadiusPreset: (preset: UiRadiusPreset) => void;
-  setThemeTonePreset: (preset: ThemeTonePreset) => void;
   setAccentColor: (color: string) => void;
   setCanvasEdgeRoutingMode: (mode: CanvasEdgeRoutingMode) => void;
   setSnapToGridEnabled: (enabled: boolean) => void;
@@ -326,16 +326,6 @@ interface SettingsState {
   setImagePolishPrompt: (prompt: string) => void;
   setVideoApis: (apis: VideoApiConfig[]) => void;
   setActiveVideoApiId: (id: string | null) => void;
-}
-
-const HEX_COLOR_PATTERN = /^#?[0-9a-fA-F]{6}$/;
-
-function normalizeHexColor(input: string): string {
-  const trimmed = input.trim();
-  if (!HEX_COLOR_PATTERN.test(trimmed)) {
-    return '#3B82F6';
-  }
-  return trimmed.startsWith('#') ? trimmed.toUpperCase() : `#${trimmed.toUpperCase()}`;
 }
 
 function normalizeApiKey(input: string): string {
@@ -459,9 +449,7 @@ export const useSettingsStore = create<SettingsState>()(
       ignoreAtTagWhenCopyingAndGenerating: true,
       enableStoryboardGenGridPreviewShortcut: false,
       showStoryboardGenAdvancedRatioControls: false,
-      uiRadiusPreset: 'default',
-      themeTonePreset: 'neutral',
-      accentColor: '#3B82F6',
+      accentColor: DEFAULT_ACCENT_COLOR,
       canvasEdgeRoutingMode: 'spline',
       snapToGridEnabled: false,
       snapGridSize: 20,
@@ -504,9 +492,7 @@ export const useSettingsStore = create<SettingsState>()(
         set({ enableStoryboardGenGridPreviewShortcut: enabled }),
       setShowStoryboardGenAdvancedRatioControls: (enabled) =>
         set({ showStoryboardGenAdvancedRatioControls: enabled }),
-      setUiRadiusPreset: (uiRadiusPreset) => set({ uiRadiusPreset }),
-      setThemeTonePreset: (themeTonePreset) => set({ themeTonePreset }),
-      setAccentColor: (color) => set({ accentColor: normalizeHexColor(color) }),
+      setAccentColor: (color) => set({ accentColor: normalizeAccentColor(color) }),
       setCanvasEdgeRoutingMode: (canvasEdgeRoutingMode) =>
         set({ canvasEdgeRoutingMode: normalizeCanvasEdgeRoutingMode(canvasEdgeRoutingMode) }),
       setSnapToGridEnabled: (enabled: boolean) => set({ snapToGridEnabled: enabled }),
@@ -532,7 +518,7 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: 'settings-storage',
-      version: 17,
+      version: 18,
       onRehydrateStorage: () => {
         return (_state, error) => {
           if (error) {
@@ -542,7 +528,7 @@ export const useSettingsStore = create<SettingsState>()(
         };
       },
       migrate: (persistedState: unknown) => {
-        const state = (persistedState ?? {}) as Record<string, unknown> & {
+        const state = migrateAppearanceSettings(persistedState) as Record<string, unknown> & {
           openAiImageApi?: Partial<OpenAiImageApiConfig>;
           chaomoImageApi?: Partial<ChaomoImageApiConfig>;
           canvasEdgeRoutingMode?: CanvasEdgeRoutingMode | string;
@@ -552,6 +538,7 @@ export const useSettingsStore = create<SettingsState>()(
           videoApis?: VideoApiConfig[];
           activeVideoApiId?: string | null;
           lastImageModelSelection?: ImageModelSelection | null;
+          accentColor?: unknown;
         };
         const {
           apiKey: _legacyApiKey,
@@ -572,6 +559,7 @@ export const useSettingsStore = create<SettingsState>()(
           openAiImageApi: normalizeOpenAiImageApiConfig(state.openAiImageApi),
           chaomoImageApi: normalizeChaomoImageApiConfig(state.chaomoImageApi),
           canvasEdgeRoutingMode: normalizeCanvasEdgeRoutingMode(state.canvasEdgeRoutingMode),
+          accentColor: migrateAccentColor(state.accentColor),
           textApis: state.textApis ?? PRESET_TEXT_APIS,
           activeTextApiId: state.activeTextApiId ?? null,
           imagePolishPrompt: state.imagePolishPrompt ?? DEFAULT_TEXT_API_PROMPT,

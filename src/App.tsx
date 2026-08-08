@@ -26,23 +26,15 @@ import {
   subscribeOpenSettingsDialog,
   type SettingsCategory,
 } from './features/settings/settingsEvents';
-
-function toRgbCssValue(hexColor: string): string {
-  const hex = hexColor.replace('#', '');
-  if (!/^[0-9a-fA-F]{6}$/.test(hex)) {
-    return '59 130 246';
-  }
-  const r = Number.parseInt(hex.slice(0, 2), 16);
-  const g = Number.parseInt(hex.slice(2, 4), 16);
-  const b = Number.parseInt(hex.slice(4, 6), 16);
-  return `${r} ${g} ${b}`;
-}
+import {
+  getAccentForeground,
+  hexToRgbChannels,
+  normalizeAccentColor,
+} from './features/settings/application/accentColor';
 
 function App() {
   useLogPanelHotkey();
   const { theme } = useThemeStore();
-  const uiRadiusPreset = useSettingsStore((state) => state.uiRadiusPreset);
-  const themeTonePreset = useSettingsStore((state) => state.themeTonePreset);
   const accentColor = useSettingsStore((state) => state.accentColor);
   const autoCheckAppUpdateOnLaunch = useSettingsStore((state) => state.autoCheckAppUpdateOnLaunch);
   const enableUpdateDialog = useSettingsStore((state) => state.enableUpdateDialog);
@@ -65,16 +57,6 @@ function App() {
 
   useEffect(() => {
     const root = document.documentElement;
-    root.dataset.uiRadius = uiRadiusPreset;
-  }, [uiRadiusPreset]);
-
-  useEffect(() => {
-    const root = document.documentElement;
-    root.dataset.themeTone = themeTonePreset;
-  }, [themeTonePreset]);
-
-  useEffect(() => {
-    const root = document.documentElement;
     const isMac =
       typeof navigator !== 'undefined'
       && /(Mac|iPhone|iPad|iPod)/i.test(`${navigator.platform} ${navigator.userAgent}`);
@@ -83,9 +65,10 @@ function App() {
 
   useEffect(() => {
     const root = document.documentElement;
-    const normalized = accentColor.startsWith('#') ? accentColor : `#${accentColor}`;
+    const normalized = normalizeAccentColor(accentColor);
     root.style.setProperty('--accent', normalized);
-    root.style.setProperty('--accent-rgb', toRgbCssValue(normalized));
+    root.style.setProperty('--accent-rgb', hexToRgbChannels(normalized));
+    root.style.setProperty('--accent-foreground', getAccentForeground(normalized));
   }, [accentColor]);
 
   useEffect(() => {

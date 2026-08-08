@@ -1,11 +1,11 @@
 import { useState, useCallback } from 'react';
-import { X, Plus, Trash2, Edit2 } from 'lucide-react';
+import { X, Plus, Trash2, Edit2 } from '@/components/ui/icons';
 import { useTranslation } from 'react-i18next';
 import { usePromptTemplateStore } from '@/stores/promptTemplateStore';
 import { type PromptTemplate } from '@/features/canvas/domain/promptTemplate';
 import { UI_DIALOG_TRANSITION_MS } from '@/components/ui/motion';
 import { useDialogTransition } from '@/components/ui/useDialogTransition';
-import { UiButton } from '@/components/ui';
+import { UiButton, UiIconButton } from '@/components/ui';
 
 interface TemplateManagerDialogProps {
   isOpen: boolean;
@@ -124,17 +124,18 @@ export function TemplateManagerDialog({
       onClick={onClose}
     >
       <div
-        className="max-h-[80vh] w-[560px] overflow-hidden rounded-xl border border-border-dark bg-surface-dark shadow-2xl"
+        className="max-h-[80vh] w-[min(560px,calc(100vw-24px))] overflow-hidden rounded-[10px] border border-[var(--ui-border-soft)] bg-[var(--ui-surface-panel)] shadow-[var(--ui-shadow-panel)]"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-border-dark px-6 py-4">
-          <h2 className="text-lg font-semibold text-text-dark">{t('template.manage', '模板管理')}</h2>
-          <button
+        <div className="flex items-center justify-between border-b border-[var(--ui-border-soft)] px-5 py-3.5">
+          <h2 className="text-base font-semibold text-text-dark">{t('template.manage', '模板管理')}</h2>
+          <UiIconButton
+            label={t('common.close')}
             onClick={onClose}
-            className="rounded p-1 transition-colors hover:bg-bg-dark"
+            className="h-8 w-8 border-transparent bg-transparent"
           >
             <X className="h-5 w-5 text-text-muted" />
-          </button>
+          </UiIconButton>
         </div>
 
         <div className="max-h-[60vh] overflow-y-auto p-6">
@@ -212,7 +213,7 @@ export function TemplateManagerDialog({
                       className={`flex-1 rounded-lg border px-3 py-2 text-sm transition-colors ${
                         formData.detail === opt.value
                           ? 'border-accent bg-accent/20 text-accent'
-                          : 'border-border-dark bg-bg-dark text-text-muted hover:border-[rgba(255,255,255,0.2)]'
+                          : 'border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] text-text-muted hover:border-[var(--ui-border-strong)]'
                       }`}
                     >
                       {opt.label}
@@ -248,7 +249,7 @@ export function TemplateManagerDialog({
               {templates.map((template) => (
                 <div
                   key={template.id}
-                  className="flex items-center justify-between rounded-lg border border-border-dark bg-bg-dark/50 p-4 transition-colors hover:bg-bg-dark"
+                  className="flex items-center justify-between rounded-lg border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] p-4 transition-colors hover:bg-[var(--ui-hover)]"
                 >
                   <div className="flex-1">
                     <div className="font-medium text-text-dark">{template.name}</div>
@@ -275,28 +276,28 @@ export function TemplateManagerDialog({
                   </div>
                   <div className="flex gap-1">
                     {onSelectTemplate && (
-                      <button
+                      <UiIconButton
+                        label={t('common.select', '选择')}
                         onClick={() => onSelectTemplate(template)}
-                        className="rounded p-2 text-text-muted transition-colors hover:bg-accent/20 hover:text-accent"
-                        title={t('common.select', '选择')}
+                        className="h-8 w-8 border-transparent bg-transparent hover:text-accent"
                       >
                         <Plus className="h-4 w-4" />
-                      </button>
+                      </UiIconButton>
                     )}
-                    <button
+                    <UiIconButton
+                      label={t('common.edit', '编辑')}
                       onClick={() => handleEdit(template)}
-                      className="rounded p-2 text-text-muted transition-colors hover:bg-bg-dark hover:text-text-dark"
-                      title={t('common.edit', '编辑')}
+                      className="h-8 w-8 border-transparent bg-transparent"
                     >
                       <Edit2 className="h-4 w-4" />
-                    </button>
-                    <button
+                    </UiIconButton>
+                    <UiIconButton
+                      label={t('common.delete', '删除')}
                       onClick={() => handleDelete(template.id)}
-                      className="rounded p-2 text-text-muted transition-colors hover:bg-red-500/20 hover:text-red-500"
-                      title={t('common.delete', '删除')}
+                      className="h-8 w-8 border-transparent bg-transparent hover:!bg-red-500/10 hover:!text-red-500"
                     >
                       <Trash2 className="h-4 w-4" />
-                    </button>
+                    </UiIconButton>
                   </div>
                 </div>
               ))}

@@ -16,15 +16,17 @@ import {
   type TextareaHTMLAttributes,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ChevronDown, X } from 'lucide-react';
+import { Cancel01Icon, CheckmarkCircle02Icon, ChevronDownIcon } from '@hugeicons/core-free-icons';
 import {
   UI_CONTENT_OVERLAY_INSET_CLASS,
   UI_DIALOG_TRANSITION_MS,
   UI_POPOVER_TRANSITION_MS,
 } from './motion';
 import { useDialogTransition } from './useDialogTransition';
+import { UiIcon } from './Icon';
+import { UiTooltip } from './Tooltip';
 
-type ButtonVariant = 'primary' | 'muted' | 'ghost';
+type ButtonVariant = 'primary' | 'muted' | 'ghost' | 'danger';
 
 type ButtonSize = 'sm' | 'md';
 
@@ -35,6 +37,8 @@ interface UiButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 interface UiIconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   active?: boolean;
+  label: string;
+  tooltip?: string;
 }
 
 interface UiChipButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -62,18 +66,23 @@ interface UiModalProps {
   footer?: ReactNode;
   widthClassName?: string;
   containerClassName?: string;
+  closeLabel?: string;
 }
 
 function resolveButtonVariant(variant: ButtonVariant): string {
   if (variant === 'primary') {
-    return 'bg-accent text-white hover:bg-accent/85';
+    return 'bg-accent text-[var(--accent-foreground)] hover:bg-accent/85';
   }
 
   if (variant === 'ghost') {
-    return 'bg-transparent text-text-dark hover:bg-[rgba(15,23,42,0.08)] dark:hover:bg-bg-dark/70';
+    return 'bg-transparent text-text-dark hover:bg-[var(--ui-hover)]';
   }
 
-  return 'bg-[rgba(15,23,42,0.08)] text-text-dark hover:bg-[rgba(15,23,42,0.14)] dark:bg-bg-dark/80 dark:hover:bg-bg-dark';
+  if (variant === 'danger') {
+    return 'bg-red-500 text-white hover:bg-red-600';
+  }
+
+  return 'border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] text-text-dark hover:bg-[var(--ui-hover)]';
 }
 
 function resolveButtonSize(size: ButtonSize): string {
@@ -88,18 +97,29 @@ export function UiButton({
 }: UiButtonProps) {
   return (
     <button
-      className={`inline-flex items-center justify-center rounded-lg font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${resolveButtonVariant(variant)} ${resolveButtonSize(size)} ${className}`}
+      className={`inline-flex items-center justify-center rounded-lg font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/45 disabled:cursor-not-allowed disabled:opacity-50 ${resolveButtonVariant(variant)} ${resolveButtonSize(size)} ${className}`}
       {...props}
     />
   );
 }
 
-export function UiIconButton({ className = '', active = false, ...props }: UiIconButtonProps) {
+export function UiIconButton({
+  className = '',
+  active = false,
+  label,
+  tooltip = label,
+  type = 'button',
+  ...props
+}: UiIconButtonProps) {
   return (
-    <button
-      className={`inline-flex h-10 w-10 items-center justify-center border ui-field transition-colors ${active ? 'border-accent/45 bg-accent/18 text-text-dark' : 'text-text-muted hover:bg-[rgba(15,23,42,0.08)] dark:hover:bg-bg-dark'} ${className}`}
-      {...props}
-    />
+    <UiTooltip content={tooltip}>
+      <button
+        type={type}
+        aria-label={label}
+        className={`inline-flex h-10 w-10 items-center justify-center border ui-field transition-colors ${active ? 'border-accent/45 bg-accent/18 text-accent' : 'text-text-muted hover:bg-[var(--ui-hover)] hover:text-text-dark'} ${className}`}
+        {...props}
+      />
+    </UiTooltip>
   );
 }
 
@@ -107,7 +127,7 @@ export const UiChipButton = forwardRef<HTMLButtonElement, UiChipButtonProps>(
   ({ className = '', active = false, ...props }, ref) => (
     <button
       ref={ref}
-      className={`inline-flex h-10 items-center gap-2 border ui-field px-3 text-sm transition-colors ${active ? 'border-accent/45 bg-accent/15 text-text-dark' : 'text-text-dark hover:bg-[rgba(15,23,42,0.08)] dark:hover:bg-bg-dark'} ${className}`}
+      className={`inline-flex h-10 items-center gap-2 border ui-field px-3 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/45 ${active ? 'border-accent/45 bg-accent/15 text-text-dark' : 'text-text-dark hover:bg-[var(--ui-hover)]'} ${className}`}
       {...props}
     />
   )
@@ -167,7 +187,7 @@ export const UiCheckbox = forwardRef<HTMLButtonElement, UiCheckboxProps>(
       className={`inline-flex h-5 w-5 items-center justify-center rounded border transition-colors ${
         checked
           ? 'border-accent/60 bg-accent/20 text-accent'
-          : 'border-[rgba(255,255,255,0.2)] bg-bg-dark/60 text-transparent hover:border-[rgba(255,255,255,0.32)]'
+          : 'border-[var(--ui-border-strong)] bg-[var(--ui-surface-field)] text-transparent hover:border-accent/45'
       } ${className}`}
       onClick={(event) => {
         onClick?.(event);
@@ -177,7 +197,7 @@ export const UiCheckbox = forwardRef<HTMLButtonElement, UiCheckboxProps>(
       }}
       {...props}
     >
-      <Check className="h-3.5 w-3.5" />
+      <UiIcon icon={CheckmarkCircle02Icon} className="h-3.5 w-3.5" />
     </button>
   )
 );
@@ -395,7 +415,8 @@ export function UiSelect({ className = '', children, ...props }: UiSelectProps) 
       >
         <span className="min-w-0 truncate pr-3">{selectedOption?.label ?? ''}</span>
         <span className="flex h-4 w-4 shrink-0 items-center justify-center text-text-muted transition-colors group-hover:text-text-dark group-focus-visible:text-accent">
-          <ChevronDown
+          <UiIcon
+            icon={ChevronDownIcon}
             className={`h-3.5 w-3.5 transition-transform ${isOpen ? 'rotate-180' : ''}`}
             style={{ transitionDuration: `${UI_POPOVER_TRANSITION_MS}ms` }}
           />
@@ -432,8 +453,8 @@ export function UiSelect({ className = '', children, ...props }: UiSelectProps) 
                         option.disabled
                           ? 'cursor-not-allowed opacity-40'
                           : isSelected
-                            ? 'bg-accent text-white'
-                            : 'text-text-dark hover:bg-[rgba(255,255,255,0.08)] dark:hover:bg-white/[0.06]'
+                            ? 'bg-accent text-[var(--accent-foreground)]'
+                            : 'text-text-dark hover:bg-[var(--ui-hover)]'
                       }`}
                       onClick={() => {
                         if (option.disabled) {
@@ -445,7 +466,7 @@ export function UiSelect({ className = '', children, ...props }: UiSelectProps) 
                       }}
                     >
                       <span className="truncate">{option.label}</span>
-                      {isSelected ? <Check className="ml-3 h-3.5 w-3.5 shrink-0 text-white" /> : null}
+                      {isSelected ? <UiIcon icon={CheckmarkCircle02Icon} className="ml-3 h-3.5 w-3.5 shrink-0" /> : null}
                     </button>
                   );
                 })}
@@ -466,6 +487,7 @@ export function UiModal({
   footer,
   widthClassName = 'w-[460px]',
   containerClassName = '',
+  closeLabel = 'Close',
 }: UiModalProps) {
   const { shouldRender, isVisible } = useDialogTransition(isOpen, UI_DIALOG_TRANSITION_MS);
 
@@ -482,17 +504,17 @@ export function UiModal({
       <UiPanel
         className={`relative transition-opacity duration-200 ${isVisible ? 'opacity-100' : 'opacity-0'} ${widthClassName}`}
       >
-        <div className="flex items-center justify-between border-b border-[rgba(255,255,255,0.1)] px-4 py-3">
+        <div className="flex items-center justify-between border-b border-[var(--ui-border-soft)] px-4 py-3">
           <h2 className="text-sm font-medium text-text-dark">{title}</h2>
-          <UiIconButton className="h-8 w-8" onClick={onClose}>
-            <X className="h-4 w-4" />
+          <UiIconButton label={closeLabel} className="h-8 w-8" onClick={onClose}>
+            <UiIcon icon={Cancel01Icon} className="h-4 w-4" />
           </UiIconButton>
         </div>
 
         <div className="px-4 py-4">{children}</div>
 
         {footer && (
-          <div className="flex justify-end gap-2 border-t border-[rgba(255,255,255,0.1)] px-4 py-3">
+          <div className="flex justify-end gap-2 border-t border-[var(--ui-border-soft)] px-4 py-3">
             {footer}
           </div>
         )}

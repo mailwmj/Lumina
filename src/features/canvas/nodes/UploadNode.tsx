@@ -16,7 +16,7 @@ import {
   useViewport,
   type NodeProps,
 } from '@xyflow/react';
-import { Upload } from 'lucide-react';
+import { Upload } from '@/components/ui/icons';
 import { useTranslation } from 'react-i18next';
 
 import {
@@ -36,6 +36,7 @@ import {
 import { canvasEventBus } from '@/features/canvas/application/canvasServices';
 import { NodeHeader, NODE_HEADER_FLOATING_POSITION_CLASS } from '@/features/canvas/ui/NodeHeader';
 import { NodeResizeHandle } from '@/features/canvas/ui/NodeResizeHandle';
+import { resolveNodeSurfaceStateClass } from '@/features/canvas/ui/nodeSurfaceStyles';
 import {
   prepareNodeImageFromFile,
   resolveImageDisplayUrl,
@@ -423,9 +424,7 @@ export const UploadNode = memo(({ id, data, selected, width, height }: UploadNod
     <div
       className={`
         group relative overflow-visible rounded-[var(--node-radius)] border bg-surface-dark/85 p-0 transition-colors duration-150
-        ${selected
-          ? 'border-accent shadow-[0_0_0_1px_rgba(59,130,246,0.32)]'
-          : 'border-[rgba(15,23,42,0.22)] hover:border-[rgba(15,23,42,0.34)] dark:border-[rgba(255,255,255,0.22)] dark:hover:border-[rgba(255,255,255,0.34)]'}
+        ${resolveNodeSurfaceStateClass(selected)}
       `}
       style={{ width: resolvedWidth, height: resolvedHeight }}
       onClick={handleNodeClick}
@@ -462,7 +461,7 @@ export const UploadNode = memo(({ id, data, selected, width, height }: UploadNod
                   void handlePolishImageDescription();
                 }}
                 disabled={isPolishing}
-                className="inline-flex h-7 items-center justify-center rounded bg-accent/90 px-3 text-xs font-medium text-white shadow-sm transition-colors hover:bg-accent disabled:opacity-50"
+                className="inline-flex h-7 items-center justify-center rounded bg-accent/90 px-3 text-xs font-medium text-[var(--accent-foreground)] shadow-sm transition-colors hover:bg-accent disabled:opacity-50"
               >
                 {isPolishing ? (
                   <>
@@ -498,7 +497,7 @@ export const UploadNode = memo(({ id, data, selected, width, height }: UploadNod
         type="source"
         id="source"
         position={Position.Right}
-        className="!h-2 !w-2 !border-surface-dark !bg-accent"
+        className="!h-2 !w-2 !border-surface-dark !bg-[var(--edge)]"
       />
       <NodeResizeHandle
         minWidth={resizeMinWidth}

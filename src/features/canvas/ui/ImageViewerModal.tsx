@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ChevronLeft, ChevronRight, RotateCcw, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, RotateCcw, X } from '@/components/ui/icons';
 import { UI_CONTENT_OVERLAY_INSET_CLASS } from '@/components/ui/motion';
 import { useImageViewerTransform } from '../hooks/useImageViewerTransform';
+import { UiTooltip } from '@/components/ui';
 
 export interface ImageViewerModalProps {
   open: boolean;
@@ -23,7 +24,7 @@ export function ImageViewerModal({
 }: ImageViewerModalProps): JSX.Element | null {
   const { t } = useTranslation();
   const viewerControlClass =
-    'inline-flex h-10 items-center justify-center rounded-full border border-white/20 bg-black/60 px-4 text-sm text-white backdrop-blur-xl';
+    'inline-flex h-9 items-center justify-center rounded-full border border-[var(--ui-border-soft)] bg-[var(--ui-surface-panel)] px-3 text-xs text-text-dark shadow-[var(--ui-shadow-toolbar)]';
   const [isVisible, setIsVisible] = useState(false);
   const [overlayOpacity, setOverlayOpacity] = useState(0);
   const [displayImageUrl, setDisplayImageUrl] = useState(imageUrl);
@@ -119,7 +120,7 @@ export function ImageViewerModal({
 
   return (
     <div
-      className={`fixed ${UI_CONTENT_OVERLAY_INSET_CLASS} z-[100] overflow-hidden bg-black/90 backdrop-blur-lg`}
+      className={`fixed ${UI_CONTENT_OVERLAY_INSET_CLASS} z-[100] overflow-hidden bg-black/95`}
       style={{
         opacity: overlayOpacity,
         transition: 'opacity 400ms ease',
@@ -141,7 +142,7 @@ export function ImageViewerModal({
           <img
             ref={imageRef}
             src={displayImageUrl}
-            alt={t('viewer.imageAlt', '图片')}
+            alt={t('viewer.imageAlt')}
             className="select-none transition-opacity duration-300"
             style={{
               opacity: viewerOpacity * overlayOpacity,
@@ -167,22 +168,28 @@ export function ImageViewerModal({
         <div className="absolute bottom-8 left-1/2 flex -translate-x-1/2 flex-col items-center gap-3">
           {imageList.length > 1 && (
             <div className="flex items-center gap-3">
-              <button
-                onClick={() => onNavigate('prev')}
-                disabled={currentIndex <= 0}
-                className="rounded-full bg-zinc-800/80 p-2 text-white backdrop-blur-sm transition-all duration-200 hover:bg-zinc-700/80 disabled:cursor-not-allowed disabled:opacity-50"
-                title={t('viewer.prev', '上一张')}
-              >
-                <ChevronLeft className="h-5 w-5" />
-              </button>
-              <button
-                onClick={() => onNavigate('next')}
-                disabled={currentIndex >= imageList.length - 1}
-                className="rounded-full bg-zinc-800/80 p-2 text-white backdrop-blur-sm transition-all duration-200 hover:bg-zinc-700/80 disabled:cursor-not-allowed disabled:opacity-50"
-                title={t('viewer.next', '下一张')}
-              >
-                <ChevronRight className="h-5 w-5" />
-              </button>
+              <UiTooltip content={t('viewer.prev')}>
+                <button
+                  type="button"
+                  aria-label={t('viewer.prev')}
+                  onClick={() => onNavigate('prev')}
+                  disabled={currentIndex <= 0}
+                  className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--ui-border-soft)] bg-[var(--ui-surface-panel)] text-text-dark transition-colors hover:bg-[var(--ui-surface-elevated)] disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+              </UiTooltip>
+              <UiTooltip content={t('viewer.next')}>
+                <button
+                  type="button"
+                  aria-label={t('viewer.next')}
+                  onClick={() => onNavigate('next')}
+                  disabled={currentIndex >= imageList.length - 1}
+                  className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--ui-border-soft)] bg-[var(--ui-surface-panel)] text-text-dark transition-colors hover:bg-[var(--ui-surface-elevated)] disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </UiTooltip>
             </div>
           )}
 
@@ -198,20 +205,26 @@ export function ImageViewerModal({
             >
               100%
             </div>
-            <button
-              onClick={resetView}
-              className={`${viewerControlClass} transition-colors hover:bg-white/10`}
-              title={t('viewer.reset', '重置视图')}
-            >
-              <RotateCcw className="h-4 w-4" />
-            </button>
-            <button
-              onClick={onClose}
-              className={`${viewerControlClass} transition-colors hover:bg-white/10`}
-              title={t('common.close', '关闭')}
-            >
-              <X className="h-4 w-4" />
-            </button>
+            <UiTooltip content={t('viewer.reset')}>
+              <button
+                type="button"
+                aria-label={t('viewer.reset')}
+                onClick={resetView}
+                className={`${viewerControlClass} w-9 px-0 transition-colors hover:bg-[var(--ui-surface-elevated)]`}
+              >
+                <RotateCcw className="h-4 w-4" />
+              </button>
+            </UiTooltip>
+            <UiTooltip content={t('common.close')}>
+              <button
+                type="button"
+                aria-label={t('common.close')}
+                onClick={onClose}
+                className={`${viewerControlClass} w-9 px-0 transition-colors hover:bg-[var(--ui-surface-elevated)]`}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </UiTooltip>
           </div>
         </div>
       </div>

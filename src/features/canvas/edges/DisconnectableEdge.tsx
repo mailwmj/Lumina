@@ -1,4 +1,6 @@
 import { memo, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
+import { CancelCircleIcon } from '@hugeicons/core-free-icons';
 import {
   BaseEdge,
   EdgeLabelRenderer,
@@ -11,6 +13,7 @@ import { CANVAS_NODE_TYPES } from '@/features/canvas/domain/canvasNodes';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { buildOrthogonalRoute } from './edgeRouting';
+import { UiIcon, UiTooltip } from '@/components/ui';
 
 export const DisconnectableEdge = memo(function DisconnectableEdge(props: EdgeProps) {
   const {
@@ -27,6 +30,7 @@ export const DisconnectableEdge = memo(function DisconnectableEdge(props: EdgePr
     markerEnd,
     style,
   } = props;
+  const { t } = useTranslation();
   const deleteEdge = useCanvasStore((state) => state.deleteEdge);
   const nodes = useCanvasStore((state) => state.nodes);
   const canvasEdgeRoutingMode = useSettingsStore((state) => state.canvasEdgeRoutingMode);
@@ -105,8 +109,9 @@ export const DisconnectableEdge = memo(function DisconnectableEdge(props: EdgePr
     return (sourceNode?.selected || targetNode?.selected) ?? false;
   }, [nodes, source, target]);
 
-  const processingStroke = 'rgb(var(--accent-rgb) / 0.94)';
-  const processingDashStroke = 'rgb(var(--accent-rgb) / 1)';
+  const edgeStroke = 'rgb(var(--edge-rgb) / 0.68)';
+  const processingStroke = 'rgb(var(--edge-rgb) / 0.84)';
+  const processingDashStroke = 'rgb(var(--edge-rgb) / 1)';
   const baseStrokeWidth = isProcessingEdge
     ? (selected ? 2.7 : 2.2)
     : (selected ? 2.4 : 1.9);
@@ -129,7 +134,7 @@ export const DisconnectableEdge = memo(function DisconnectableEdge(props: EdgePr
         <path
           d={edgePath}
           fill="none"
-          stroke="#22C55E"
+          stroke="rgb(var(--edge-rgb) / 0.96)"
           strokeWidth={selected ? 2.5 : 2.1}
           strokeLinecap="round"
           strokeDasharray="6 4"
@@ -142,35 +147,36 @@ export const DisconnectableEdge = memo(function DisconnectableEdge(props: EdgePr
         path={edgePath}
         markerEnd={markerEnd}
         style={{
-          stroke: isProcessingEdge ? processingStroke : style?.stroke,
-          strokeWidth: baseStrokeWidth,
           ...style,
+          stroke: isProcessingEdge ? processingStroke : edgeStroke,
+          strokeWidth: baseStrokeWidth,
+          strokeDasharray: isProcessingEdge ? '8 10' : '5 7',
+          strokeLinecap: 'round',
         }}
       />
       {selected && (
         <EdgeLabelRenderer>
-          <button
-            type="button"
-            className="nodrag nopan absolute flex h-6 w-6 items-center justify-center text-text-muted transition-colors hover:text-text-dark"
+          <div
+            className="nodrag nopan absolute"
             style={{
               transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
               pointerEvents: 'all',
             }}
-            onClick={(event) => {
-              event.stopPropagation();
-              deleteEdge(id);
-            }}
-            aria-label="断开连线"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24">
-              <path
-                fill="currentColor"
-                fillRule="evenodd"
-                d="M2 12C2 6.477 6.477 2 12 2s10 4.477 10 10s-4.477 10-10 10S2 17.523 2 12m7.707-3.707a1 1 0 0 0-1.414 1.414L10.586 12l-2.293 2.293a1 1 0 1 0 1.414 1.414L12 13.414l2.293 2.293a1 1 0 0 0 1.414-1.414L13.414 12l2.293-2.293a1 1 0 0 0-1.414-1.414L12 10.586z"
-                clipRule="evenodd"
-              />
-            </svg>
-          </button>
+            <UiTooltip content={t('canvas.disconnectEdge')}>
+              <button
+                type="button"
+                className="flex h-7 w-7 items-center justify-center rounded-full border border-[var(--ui-border-soft)] bg-[var(--ui-surface-elevated)] text-text-muted shadow-sm transition-colors hover:border-red-500/35 hover:text-red-400"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  deleteEdge(id);
+                }}
+                aria-label={t('canvas.disconnectEdge')}
+              >
+                <UiIcon icon={CancelCircleIcon} className="h-4 w-4" />
+              </button>
+            </UiTooltip>
+          </div>
         </EdgeLabelRenderer>
       )}
     </>

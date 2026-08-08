@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Maximize2, Minus, X } from '@/components/ui/icons';
+import { UiTooltip } from '@/components/ui';
 import { useLogStore } from './store';
 import type { Level, LogEntry } from './types';
 
@@ -51,36 +53,40 @@ export function LogPanel(): JSX.Element | null {
   return (
     <div
       data-testid="log-panel"
-      className="fixed bottom-4 right-4 z-[9999] w-[480px] bg-zinc-900 text-zinc-100 rounded-lg shadow-2xl flex flex-col"
+      className="fixed bottom-4 right-4 z-[9999] flex w-[min(480px,calc(100vw-32px))] flex-col rounded-[10px] border border-[var(--ui-border-soft)] bg-[var(--ui-surface-panel)] text-text-dark shadow-[var(--ui-shadow-panel)]"
       style={{ height: minimized ? 40 : 320 }}
     >
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-zinc-700">
+      <div className="flex items-center gap-2 border-b border-[var(--ui-border-soft)] px-3 py-2">
         <span className="text-sm font-semibold flex-1">{t('logger.panel.title')}</span>
-        <button
-          onClick={() => setMinimized(!minimized)}
-          className="text-xs px-2 py-1 hover:bg-zinc-800 rounded"
-          aria-label={t('logger.panel.minimize')}
-        >
-          {minimized ? '▢' : '—'}
-        </button>
-        <button
-          onClick={() => setOpen(false)}
-          className="text-xs px-2 py-1 hover:bg-zinc-800 rounded"
-          aria-label={t('logger.panel.close')}
-        >
-          ×
-        </button>
+        <UiTooltip content={t('logger.panel.minimize')}>
+          <button
+            onClick={() => setMinimized(!minimized)}
+            className="flex h-7 w-7 items-center justify-center rounded text-text-muted hover:bg-[var(--ui-hover)] hover:text-text-dark"
+            aria-label={t('logger.panel.minimize')}
+          >
+            {minimized ? <Maximize2 className="h-3.5 w-3.5" /> : <Minus className="h-3.5 w-3.5" />}
+          </button>
+        </UiTooltip>
+        <UiTooltip content={t('logger.panel.close')}>
+          <button
+            onClick={() => setOpen(false)}
+            className="flex h-7 w-7 items-center justify-center rounded text-text-muted hover:bg-[var(--ui-hover)] hover:text-text-dark"
+            aria-label={t('logger.panel.close')}
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </UiTooltip>
       </div>
 
       {!minimized && (
         <>
-          <div className="flex items-center gap-1 px-2 py-1 border-b border-zinc-700 text-xs">
+          <div className="flex items-center gap-1 border-b border-[var(--ui-border-soft)] px-2 py-1 text-xs">
             {ALL_LEVELS.map((lv) => (
               <button
                 key={lv}
                 onClick={() => toggleLevelFilter(lv)}
                 className={`px-2 py-0.5 rounded ${
-                  levelFilter.has(lv) ? LEVEL_COLOR[lv] + ' bg-zinc-800' : 'text-zinc-600 bg-zinc-900'
+                  levelFilter.has(lv) ? LEVEL_COLOR[lv] + ' bg-[var(--ui-hover)]' : 'text-text-muted/45'
                 }`}
               >
                 {lv}
@@ -91,20 +97,20 @@ export function LogPanel(): JSX.Element | null {
               value={textQuery}
               onChange={(e) => setTextQuery(e.target.value)}
               placeholder={t('logger.panel.search')}
-              className="ml-auto px-2 py-0.5 bg-zinc-800 rounded text-xs w-32"
+              className="ml-auto w-32 rounded border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] px-2 py-0.5 text-xs outline-none focus:border-accent"
             />
             <button
               onClick={clearBuffer}
-              className="px-2 py-0.5 hover:bg-zinc-800 rounded text-xs"
+              className="rounded px-2 py-0.5 text-xs hover:bg-[var(--ui-hover)]"
             >
               {t('logger.panel.clear')}
             </button>
           </div>
 
-          <div className="flex flex-wrap gap-1 px-2 py-1 border-b border-zinc-700 text-[10px] max-h-12 overflow-y-auto">
+          <div className="flex max-h-12 flex-wrap gap-1 overflow-y-auto border-b border-[var(--ui-border-soft)] px-2 py-1 font-mono text-[10px]">
             <button
               onClick={() => setNamespaceFilter(null)}
-              className={`px-1.5 py-0.5 rounded ${namespaceFilter === null ? 'bg-zinc-700' : 'hover:bg-zinc-800'}`}
+              className={`rounded px-1.5 py-0.5 ${namespaceFilter === null ? 'bg-accent/15 text-accent' : 'hover:bg-[var(--ui-hover)]'}`}
             >
               all
             </button>
@@ -113,7 +119,7 @@ export function LogPanel(): JSX.Element | null {
                 key={ns}
                 onClick={() => setNamespaceFilter(ns)}
                 className={`px-1.5 py-0.5 rounded ${
-                  namespaceFilter === ns ? 'bg-zinc-700' : 'hover:bg-zinc-800'
+                  namespaceFilter === ns ? 'bg-accent/15 text-accent' : 'hover:bg-[var(--ui-hover)]'
                 }`}
               >
                 {ns}
@@ -123,7 +129,7 @@ export function LogPanel(): JSX.Element | null {
 
           <div className="flex-1 overflow-y-auto font-mono text-[11px] leading-tight">
             {visible.length === 0 ? (
-              <div className="text-zinc-500 text-center py-8">
+              <div className="py-8 text-center text-text-muted">
                 {allEntries.length === 0 ? t('logger.panel.empty') : t('logger.panel.noResults')}
               </div>
             ) : (
@@ -138,16 +144,16 @@ export function LogPanel(): JSX.Element | null {
 
 function LogLine({ entry }: { entry: LogEntry }) {
   return (
-    <div className="px-2 py-1 border-b border-zinc-800 hover:bg-zinc-800">
+    <div className="border-b border-[var(--ui-border-soft)] px-2 py-1 hover:bg-[var(--ui-hover)]">
       <span className={`font-bold ${LEVEL_COLOR[entry.level]}`}>
         {entry.level.toUpperCase().padEnd(5)}
       </span>
-      <span className="text-zinc-500 ml-2">{entry.target}</span>
+      <span className="ml-2 text-text-muted">{entry.target}</span>
       <span className="ml-2">{entry.message}</span>
       {Object.keys(entry.fields).length > 0 && (
         <details className="ml-2 mt-1">
-          <summary className="text-zinc-500 cursor-pointer">fields</summary>
-          <pre className="text-zinc-400 ml-4 whitespace-pre-wrap break-all">
+          <summary className="cursor-pointer text-text-muted">fields</summary>
+          <pre className="ml-4 whitespace-pre-wrap break-all text-text-muted">
             {JSON.stringify(entry.fields, null, 2)}
           </pre>
         </details>

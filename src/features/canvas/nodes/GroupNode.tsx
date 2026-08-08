@@ -1,8 +1,9 @@
 import { memo, useMemo } from 'react';
-import { LayoutGrid } from 'lucide-react';
+import { LayoutGrid } from '@/components/ui/icons';
 
 import { NodeHeader, NODE_HEADER_FLOATING_POSITION_CLASS } from '@/features/canvas/ui/NodeHeader';
 import { NodeResizeHandle } from '@/features/canvas/ui/NodeResizeHandle';
+import { resolveNodeSurfaceStateClass } from '@/features/canvas/ui/nodeSurfaceStyles';
 import { CANVAS_NODE_TYPES, type GroupNodeData } from '@/features/canvas/domain/canvasNodes';
 import { resolveNodeDisplayName } from '@/features/canvas/domain/nodeDisplay';
 import { useCanvasStore } from '@/stores/canvasStore';
@@ -22,10 +23,7 @@ export const GroupNode = memo(({ id, data, selected }: GroupNodeProps) => {
 
   return (
     <div
-      className={`group relative h-full w-full overflow-visible rounded-[18px] border ${selected
-        ? 'border-accent shadow-[0_0_0_1px_rgba(59,130,246,0.35)]'
-        : 'border-[rgba(15,23,42,0.2)] dark:border-[rgba(255,255,255,0.26)]'
-        }`}
+      className={`group relative h-full w-full overflow-visible rounded-[var(--node-radius)] border ${resolveNodeSurfaceStateClass(selected)}`}
       style={{
         backgroundColor: 'var(--group-node-bg)',
       }}

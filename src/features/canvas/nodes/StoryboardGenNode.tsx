@@ -11,7 +11,7 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { Handle, Position, useUpdateNodeInternals, useViewport } from '@xyflow/react';
-import { Loader2, Minus, Plus, Sparkles, Wand2 } from 'lucide-react';
+import { Loader2, Minus, Plus, Sparkles, Wand2 } from '@/components/ui/icons';
 import { useTranslation } from 'react-i18next';
 
 import {
@@ -71,9 +71,11 @@ import { resolveImageProviderRuntime } from '@/features/canvas/application/image
 import { CanvasNodeImage } from '@/features/canvas/ui/CanvasNodeImage';
 import {
   UiButton,
+  UiTooltip,
 } from '@/components/ui';
 import { NodeHeader, NODE_HEADER_FLOATING_POSITION_CLASS } from '@/features/canvas/ui/NodeHeader';
 import { NodeResizeHandle } from '@/features/canvas/ui/NodeResizeHandle';
+import { resolveNodeSurfaceStateClass } from '@/features/canvas/ui/nodeSurfaceStyles';
 import {
   NODE_CONTROL_CHIP_CLASS,
   NODE_CONTROL_ICON_CLASS,
@@ -116,12 +118,12 @@ const STORYBOARD_GLOBAL_PROMPT_MARGIN_PX = 8; // mb-2 = 0.5rem = 8px
 const STORYBOARD_GEN_HEADER_ADJUST = { x: 0, y: 0, scale: 1 };
 const STORYBOARD_GEN_ICON_ADJUST = { x: 0, y: 0, scale: 0.95 };
 const STORYBOARD_GEN_TITLE_ADJUST = { x: 0, y: 0, scale: 1 };
-const GRID_CONTROL_CONTAINER_CLASS = 'flex h-5 items-center gap-0.5 rounded-full border border-[rgba(255,255,255,0.14)] bg-[rgba(255,255,255,0.04)] px-1';
+const GRID_CONTROL_CONTAINER_CLASS = 'flex h-5 items-center gap-0.5 rounded-full border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] px-1';
 const GRID_CONTROL_LABEL_CLASS = 'text-[9px] text-text-muted';
-const GRID_CONTROL_BUTTON_CLASS = 'flex h-3 w-3 items-center justify-center rounded text-text-muted transition-colors hover:bg-white/10 hover:text-text-dark';
+const GRID_CONTROL_BUTTON_CLASS = 'flex h-3 w-3 items-center justify-center rounded text-text-muted transition-colors hover:bg-[var(--ui-hover)] hover:text-text-dark';
 const GRID_CONTROL_ICON_CLASS = 'h-1.5 w-1.5';
 const GRID_CONTROL_VALUE_CLASS = 'min-w-[14px] text-center text-[9px] font-semibold text-text-dark';
-const GRID_SUMMARY_CLASS = 'flex h-5 items-center rounded-full border border-[rgba(255,255,255,0.14)] bg-[rgba(255,255,255,0.05)] px-1.5 text-[9px] text-text-muted';
+const GRID_SUMMARY_CLASS = 'flex h-5 items-center rounded-full border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] px-1.5 font-mono text-[9px] text-text-muted';
 const FRAME_GRID_GAP_PX = 2;
 const CONTROL_ROW_HEIGHT_PX = 20;
 const CONTROL_ROW_MARGIN_BOTTOM_PX = 10;
@@ -253,7 +255,7 @@ function FrameDescriptionHighlightSpan({ token, imageUrl }: FrameDescriptionHigh
       data-highlight-ref="true"
       data-image-url={imageUrl || ''}
       data-index={token.value}
-      className="pointer-events-auto relative z-0 cursor-default text-white [text-shadow:0.24px_0_currentColor,-0.24px_0_currentColor] before:absolute before:-inset-x-[4px] before:-inset-y-[1px] before:-z-10 before:rounded-[7px] before:bg-accent/55 before:content-['']"
+      className="pointer-events-auto relative z-0 cursor-default text-[var(--accent-foreground)] before:absolute before:-inset-x-[4px] before:-inset-y-[1px] before:-z-10 before:rounded-[7px] before:bg-accent/85 before:content-['']"
     >
       {token.token}
     </span>
@@ -343,30 +345,40 @@ function GridStepperControl({
   onDecrease,
   onIncrease,
 }: GridStepperControlProps) {
+  const { t } = useTranslation();
+  const decreaseLabel = t('common.decrease', { name: label });
+  const increaseLabel = t('common.increase', { name: label });
+
   return (
     <div className={GRID_CONTROL_CONTAINER_CLASS}>
       <span className={GRID_CONTROL_LABEL_CLASS}>{label}</span>
-      <button
-        type="button"
-        className={GRID_CONTROL_BUTTON_CLASS}
-        onClick={(event) => {
-          event.stopPropagation();
-          onDecrease();
-        }}
-      >
-        <Minus className={GRID_CONTROL_ICON_CLASS} />
-      </button>
+      <UiTooltip content={decreaseLabel}>
+        <button
+          type="button"
+          aria-label={decreaseLabel}
+          className={GRID_CONTROL_BUTTON_CLASS}
+          onClick={(event) => {
+            event.stopPropagation();
+            onDecrease();
+          }}
+        >
+          <Minus className={GRID_CONTROL_ICON_CLASS} />
+        </button>
+      </UiTooltip>
       <span className={GRID_CONTROL_VALUE_CLASS}>{value}</span>
-      <button
-        type="button"
-        className={GRID_CONTROL_BUTTON_CLASS}
-        onClick={(event) => {
-          event.stopPropagation();
-          onIncrease();
-        }}
-      >
-        <Plus className={GRID_CONTROL_ICON_CLASS} />
-      </button>
+      <UiTooltip content={increaseLabel}>
+        <button
+          type="button"
+          aria-label={increaseLabel}
+          className={GRID_CONTROL_BUTTON_CLASS}
+          onClick={(event) => {
+            event.stopPropagation();
+            onIncrease();
+          }}
+        >
+          <Plus className={GRID_CONTROL_ICON_CLASS} />
+        </button>
+      </UiTooltip>
     </div>
   );
 }
@@ -1602,10 +1614,7 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
       ref={rootRef}
       className={`
         group relative flex h-full flex-col overflow-visible rounded-[var(--node-radius)] border bg-surface-dark/95 p-3 transition-colors duration-150
-        ${selected
-          ? 'border-accent shadow-[0_0_0_1px_rgba(59,130,246,0.32)]'
-          : 'border-[rgba(15,23,42,0.22)] hover:border-[rgba(15,23,42,0.34)] dark:border-[rgba(255,255,255,0.22)] dark:hover:border-[rgba(255,255,255,0.34)]'
-        }
+        ${resolveNodeSurfaceStateClass(selected)}
       `}
       style={{
         width: `${resolvedNodeWidth}px`,
@@ -1643,21 +1652,21 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
         </div>
 
         {showStoryboardGenAdvancedRatioControls && (
-          <div className="min-w-0 flex-1 rounded-full border border-[rgba(255,255,255,0.12)] bg-[rgba(255,255,255,0.04)] px-2 py-0.5 text-center text-[10px] text-text-muted">
+          <div className="min-w-0 flex-1 rounded-full border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] px-2 py-0.5 text-center font-mono text-[10px] text-text-muted">
             <span>{t('node.storyboardGen.cellAspectRatio')}: {resolvedAspectRatios.cellAspectRatioLabel}</span>
-            <span className="mx-1 text-[rgba(255,255,255,0.22)]">|</span>
+            <span className="mx-1 text-[var(--ui-border-strong)]">|</span>
             <span>{t('node.storyboardGen.overallAspectRatio')}: {resolvedAspectRatios.overallAspectRatioLabel}</span>
           </div>
         )}
 
         <div className="flex items-center gap-1">
           {showStoryboardGenAdvancedRatioControls && (
-            <div className="flex h-5 items-center rounded-full border border-[rgba(255,255,255,0.14)] bg-[rgba(255,255,255,0.04)] p-0.5">
+            <div className="flex h-5 items-center rounded-full border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] p-0.5">
               <button
                 type="button"
                 className={`${RATIO_CONTROL_MODE_BUTTON_CLASS} ${ratioControlMode === 'overall'
                   ? 'border-accent/55 bg-accent/18 text-text-dark'
-                  : 'border-transparent bg-transparent text-text-muted hover:bg-white/5'
+                  : 'border-transparent bg-transparent text-text-muted hover:bg-[var(--ui-hover)]'
                   }`}
                 onClick={(event) => {
                   event.stopPropagation();
@@ -1670,7 +1679,7 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
                 type="button"
                 className={`${RATIO_CONTROL_MODE_BUTTON_CLASS} ${ratioControlMode === 'cell'
                   ? 'border-accent/55 bg-accent/18 text-text-dark'
-                  : 'border-transparent bg-transparent text-text-muted hover:bg-white/5'
+                  : 'border-transparent bg-transparent text-text-muted hover:bg-[var(--ui-hover)]'
                   }`}
                 onClick={(event) => {
                   event.stopPropagation();
@@ -1696,7 +1705,7 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
         }}
       >
         <div
-          className="relative overflow-hidden rounded border border-[rgba(255,255,255,0.06)] bg-bg-dark/40"
+          className="relative overflow-hidden rounded border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)]"
           style={{
             width: `${frameLayout.paramsRowWidth}px`,
             height: '100%',
@@ -1781,7 +1790,7 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
               <div
                 key={frame.id}
                 data-frame-cell
-                className="relative overflow-hidden rounded border border-[rgba(255,255,255,0.06)] bg-bg-dark/40"
+                className="relative overflow-hidden rounded border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)]"
                 style={{ aspectRatio: frameLayout.cellAspectRatio }}
               >
                 <div
@@ -1835,22 +1844,24 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
                   className="ui-scrollbar nodrag nowheel relative z-10 h-full w-full resize-none overflow-y-auto overflow-x-hidden bg-transparent px-1.5 py-1 text-left text-[10px] leading-4 text-transparent caret-text-dark placeholder:text-text-muted/40 focus:border-accent/50 focus:outline-none whitespace-pre-wrap break-words"
                   style={{ scrollbarGutter: 'stable' }}
                 />
-                <button
-                  type="button"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    void handlePolishFrame(index);
-                  }}
-                  disabled={polishingFrameIndex === index}
-                  className="absolute right-0.5 top-0.5 z-20 rounded bg-bg-dark/80 p-0.5 opacity-0 transition-opacity hover:bg-surface-dark hover:opacity-100 focus:opacity-100 group-hover:opacity-100"
-                  title={t('canvas.polishPrompt')}
-                >
-                  {polishingFrameIndex === index ? (
-                    <Loader2 className="h-3 w-3 animate-spin text-accent" />
-                  ) : (
-                    <Wand2 className="h-3 w-3 text-text-muted" />
-                  )}
-                </button>
+                <UiTooltip content={t('node.imageEdit.polishPrompt')}>
+                  <button
+                    type="button"
+                    aria-label={t('node.imageEdit.polishPrompt')}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void handlePolishFrame(index);
+                    }}
+                    disabled={polishingFrameIndex === index}
+                    className="absolute right-0.5 top-0.5 z-20 rounded bg-[var(--ui-surface-elevated)] p-0.5 opacity-0 transition-opacity hover:bg-[var(--ui-hover)] hover:opacity-100 focus:opacity-100 group-hover:opacity-100"
+                  >
+                    {polishingFrameIndex === index ? (
+                      <Loader2 className="h-3 w-3 animate-spin text-accent" />
+                    ) : (
+                      <Wand2 className="h-3 w-3 text-text-muted" />
+                    )}
+                  </button>
+                </UiTooltip>
               </div>
             );
           })}
@@ -1859,7 +1870,7 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
 
       {showImagePicker && incomingImageItems.length > 0 && (
         <div
-          className="nowheel absolute z-30 w-[120px] overflow-hidden rounded-xl border border-[rgba(255,255,255,0.16)] bg-surface-dark shadow-xl"
+          className="nowheel absolute z-30 w-[120px] overflow-hidden rounded-[10px] border border-[var(--ui-border-soft)] bg-[var(--ui-surface-elevated)] shadow-[var(--ui-shadow-panel)]"
           style={{ left: pickerAnchor.left, top: pickerAnchor.top }}
           onMouseDown={(event) => event.stopPropagation()}
           onWheelCapture={(event) => event.stopPropagation()}
@@ -1877,8 +1888,8 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
                   insertImageReference(imageIndex);
                 }}
                 onMouseEnter={() => setPickerActiveIndex(imageIndex)}
-                className={`flex w-full items-center gap-2 border border-transparent bg-bg-dark/70 px-2 py-2 text-left text-sm text-text-dark transition-colors hover:border-[rgba(255,255,255,0.18)] ${pickerActiveIndex === imageIndex
-                  ? 'border-[rgba(255,255,255,0.24)] bg-bg-dark'
+                className={`flex w-full items-center gap-2 border border-transparent bg-transparent px-2 py-2 text-left text-sm text-text-dark transition-colors hover:bg-[var(--ui-hover)] ${pickerActiveIndex === imageIndex
+                  ? 'border-accent/45 bg-accent/10'
                   : ''
                   }`}
               >
@@ -1899,7 +1910,7 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
 
       {referenceHover && typeof document !== 'undefined' && createPortal(
         <div
-          className="pointer-events-none fixed z-[9999] overflow-hidden rounded-lg border border-[rgba(255,255,255,0.16)] bg-surface-dark shadow-xl"
+          className="pointer-events-none fixed z-[9999] overflow-hidden rounded-lg border border-[var(--ui-border-soft)] bg-[var(--ui-surface-elevated)] shadow-[var(--ui-shadow-tooltip)]"
           style={{
             left: Math.max(10, referenceHover.anchorRect.left + referenceHover.anchorRect.width / 2 - 75),
             top: referenceHover.anchorRect.bottom + 10,
@@ -1994,13 +2005,13 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
         type="target"
         id="target"
         position={Position.Left}
-        className="!h-2 !w-2 !border-surface-dark !bg-accent"
+        className="!h-2 !w-2 !border-surface-dark !bg-[var(--edge)]"
       />
       <Handle
         type="source"
         id="source"
         position={Position.Right}
-        className="!h-2 !w-2 !border-surface-dark !bg-accent"
+        className="!h-2 !w-2 !border-surface-dark !bg-[var(--edge)]"
       />
       <NodeResizeHandle
         minWidth={baseFrameLayout.nodeWidth}

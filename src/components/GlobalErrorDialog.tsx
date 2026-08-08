@@ -40,6 +40,7 @@ export function GlobalErrorDialog({
     <UiModal
       isOpen={isOpen}
       title={title}
+      closeLabel={t('common.close')}
       onClose={onClose}
       widthClassName="w-[560px]"
       footer={(
@@ -62,7 +63,7 @@ export function GlobalErrorDialog({
       <div className="space-y-3">
         <p className="text-sm text-text-dark">{message}</p>
         {details && (
-          <div className="rounded-lg border border-[rgba(255,255,255,0.12)] bg-bg-dark/60 p-3">
+          <div className="rounded-lg border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] p-3">
             <div className="mb-2 text-xs font-medium text-text-muted">{t('errorDialog.detailsTitle')}</div>
             <pre className="ui-scrollbar max-h-[280px] overflow-auto whitespace-pre-wrap break-words text-xs text-text-dark">
               {details}

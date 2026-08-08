@@ -14,10 +14,11 @@ import {
   useViewport,
   type NodeProps,
 } from '@xyflow/react';
-import { Download, FolderOpen, ImagePlus, SlidersHorizontal, SquareArrowOutUpRight } from 'lucide-react';
+import { Download, FolderOpen, ImagePlus, Scissors, SlidersHorizontal, SquareArrowOutUpRight } from '@/components/ui/icons';
 import { open } from '@tauri-apps/plugin-dialog';
 import { openPath, revealItemInDir } from '@tauri-apps/plugin-opener';
 import { join } from '@tauri-apps/api/path';
+import { useTranslation } from 'react-i18next';
 
 import {
   embedStoryboardImageMetadata,
@@ -27,6 +28,7 @@ import {
 } from '@/commands/image';
 import { NodeHeader, NODE_HEADER_FLOATING_POSITION_CLASS } from '@/features/canvas/ui/NodeHeader';
 import { NodeResizeHandle } from '@/features/canvas/ui/NodeResizeHandle';
+import { resolveNodeSurfaceStateClass } from '@/features/canvas/ui/nodeSurfaceStyles';
 import { CanvasNodeImage } from '@/features/canvas/ui/CanvasNodeImage';
 import type {
   CanvasNode,
@@ -50,7 +52,7 @@ import {
   resolveImageDisplayUrl,
   shouldUseOriginalImageByZoom,
 } from '@/features/canvas/application/imageData';
-import { UiButton, UiCheckbox, UiChipButton, UiInput, UiPanel, UiSelect } from '@/components/ui';
+import { UiButton, UiCheckbox, UiChipButton, UiInput, UiPanel, UiSelect, UiTooltip } from '@/components/ui';
 import {
   NODE_CONTROL_CHIP_CLASS,
   NODE_CONTROL_ICON_CLASS,
@@ -75,20 +77,6 @@ const EXPORT_TRACE_PREFIX = '[StoryboardExport]';
 const STORYBOARD_SPLIT_HEADER_ADJUST = { x: 0, y: 0, scale: 1 };
 const STORYBOARD_SPLIT_ICON_ADJUST = { x: 0, y: 0, scale: 1 };
 const STORYBOARD_SPLIT_TITLE_ADJUST = { x: 0, y: 0, scale: 1 };
-
-function SplitResultIcon({ className }: { className?: string }) {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 20 20"
-      fill="currentColor"
-      className={className}
-      aria-hidden="true"
-    >
-      <path d="M10 0c1.66 0 3 1.34 3 3v3l2.4-1.5a3.003 3.003 0 0 1 3 5.2a3.003 3.003 0 0 1-4.452-2.051l-.952.55v6.8h-2v-5.65l-4.01 2.32l-.988-1.73l5-2.94v-1.17a2.996 2.996 0 0 1-4-2.829c0-1.66 1.34-3 3-3zM9 3a1 1 0 0 0 2 0a1 1 0 0 0-2 0m7 4a1 1 0 0 0 2 0a1 1 0 0 0-2 0M2.97 19h2v-2h-2V9h3V7h-3c-1.1 0-2 .895-2 2v8c0 1.1.895 2 2 2m6 0h-2v-2h2zm4-2c0 1.1-.895 2-2 2v-2z" />
-    </svg>
-  );
-}
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
@@ -309,6 +297,7 @@ const FrameCard = memo(
     onTogglePicker,
     onEditFrame,
   }: FrameCardProps) => {
+    const { t } = useTranslation();
     const updateStoryboardFrame = useCanvasStore((state) => state.updateStoryboardFrame);
     const { zoom } = useViewport();
 
@@ -372,31 +361,35 @@ const FrameCard = memo(
             </div>
           )}
 
-          <button
-            type="button"
-            className="absolute right-1 top-1 rounded bg-black/60 p-1 text-white opacity-0 transition-all duration-150 hover:bg-black/75 group-hover/frame:opacity-100"
-            onPointerDown={(event) => event.stopPropagation()}
-            onClick={(event) => {
-              event.stopPropagation();
-              onEditFrame(frame);
-            }}
-            title="单独编辑此格"
-          >
-            <SquareArrowOutUpRight className="h-3 w-3" />
-          </button>
+          <UiTooltip content={t('common.edit')}>
+            <button
+              type="button"
+              aria-label={t('common.edit')}
+              className="absolute right-1 top-1 rounded bg-black/60 p-1 text-white opacity-0 transition-all duration-150 hover:bg-black/75 group-hover/frame:opacity-100"
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation();
+                onEditFrame(frame);
+              }}
+            >
+              <SquareArrowOutUpRight className="h-3 w-3" />
+            </button>
+          </UiTooltip>
 
-          <button
-            type="button"
-            className="absolute bottom-1 right-1 rounded bg-black/60 p-1 text-white opacity-0 transition-all duration-150 hover:bg-black/75 group-hover/frame:opacity-100"
-            onPointerDown={(event) => event.stopPropagation()}
-            onClick={(event) => {
-              event.stopPropagation();
-              onTogglePicker(frame.id, event.clientX, event.clientY);
-            }}
-            title="从输入图片替换"
-          >
-            <ImagePlus className="h-3 w-3" />
-          </button>
+          <UiTooltip content={t('common.replace')}>
+            <button
+              type="button"
+              aria-label={t('common.replace')}
+              className="absolute bottom-1 right-1 rounded bg-black/60 p-1 text-white opacity-0 transition-all duration-150 hover:bg-black/75 group-hover/frame:opacity-100"
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation();
+                onTogglePicker(frame.id, event.clientX, event.clientY);
+              }}
+            >
+              <ImagePlus className="h-3 w-3" />
+            </button>
+          </UiTooltip>
         </div>
 
         <textarea
@@ -409,8 +402,8 @@ const FrameCard = memo(
           }}
           onMouseDown={(event) => event.stopPropagation()}
           onWheelCapture={(event) => event.stopPropagation()}
-          placeholder={`分镜 ${String(index + 1).padStart(2, '0')} 描述`}
-          className="ui-scrollbar nodrag nowheel h-10 w-full resize-none overflow-y-auto border-0 border-t border-[rgba(255,255,255,0.12)] bg-bg-dark/90 px-2 py-1 text-[10px] text-text-dark outline-none focus:border-accent"
+          placeholder={t('node.storyboardGen.framePlaceholder', { index: String(index + 1).padStart(2, '0') })}
+          className="ui-scrollbar nodrag nowheel h-10 w-full resize-none overflow-y-auto border-0 border-t border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] px-2 py-1 text-[10px] text-text-dark outline-none focus:border-accent"
         />
       </div>
     );
@@ -1022,16 +1015,14 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
       ref={rootRef}
       className={`
         group relative flex h-full flex-col overflow-visible rounded-[var(--node-radius)] border bg-surface-dark/90 p-2 transition-colors duration-150
-        ${selected
-          ? 'border-accent shadow-[0_0_0_1px_rgba(59,130,246,0.32)]'
-          : 'border-[rgba(15,23,42,0.22)] hover:border-[rgba(15,23,42,0.34)] dark:border-[rgba(255,255,255,0.22)] dark:hover:border-[rgba(255,255,255,0.34)]'}
+        ${resolveNodeSurfaceStateClass(selected)}
       `}
       style={{ width: `${resolvedNodeWidth}px`, height: `${resolvedNodeHeight}px` }}
       onClick={() => setSelectedNode(id)}
     >
       <NodeHeader
         className={NODE_HEADER_FLOATING_POSITION_CLASS}
-        icon={<SplitResultIcon className="h-3.5 w-3.5" />}
+        icon={<Scissors className="h-3.5 w-3.5" />}
         titleText={resolvedTitle}
         headerAdjust={STORYBOARD_SPLIT_HEADER_ADJUST}
         iconAdjust={STORYBOARD_SPLIT_ICON_ADJUST}
@@ -1045,7 +1036,7 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
         onWheelCapture={(event) => event.stopPropagation()}
       >
         <div
-          className="grid overflow-hidden rounded-lg border border-[rgba(255,255,255,0.16)] bg-[rgba(255,255,255,0.14)]"
+          className="grid overflow-hidden rounded-lg border border-[var(--ui-border-soft)] bg-[var(--ui-border-soft)]"
           style={{
             gap: `${STORYBOARD_GRID_GAP_PX}px`,
             gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))`,
@@ -1077,7 +1068,7 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
         ? createPortal(
           <div
             ref={pickerMenuRef}
-            className="nowheel fixed z-[140] w-[120px] overflow-hidden rounded-xl border border-[rgba(255,255,255,0.16)] bg-surface-dark shadow-xl"
+            className="nowheel fixed z-[140] w-[120px] overflow-hidden rounded-[10px] border border-[var(--ui-border-soft)] bg-[var(--ui-surface-elevated)] shadow-[var(--ui-shadow-panel)]"
             style={{ left: `${pickerState.x}px`, top: `${pickerState.y}px` }}
             onMouseDown={(event) => event.stopPropagation()}
             onWheelCapture={(event) => event.stopPropagation()}
@@ -1091,7 +1082,7 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
                   <button
                     key={`${pickerState.frameId}-${item.imageUrl}`}
                     type="button"
-                    className="flex w-full items-center gap-2 border border-transparent bg-bg-dark/70 px-2 py-2 text-left text-sm text-text-dark transition-colors hover:border-[rgba(255,255,255,0.18)]"
+                    className="flex w-full items-center gap-2 border border-transparent bg-transparent px-2 py-2 text-left text-sm text-text-dark transition-colors hover:bg-[var(--ui-hover)]"
                     onClick={(event) => {
                       event.stopPropagation();
                       handleReplaceFromInput(pickerState.frameId, item.imageUrl);
@@ -1195,6 +1186,7 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
             <div className="space-y-2 text-xs text-text-muted">
               <label className="flex items-center gap-2">
                 <UiCheckbox
+                  aria-label="显示分镜序号"
                   checked={exportOptions.showFrameIndex}
                   onCheckedChange={(checked) => patchExportOptions({ showFrameIndex: checked })}
                 />
@@ -1203,6 +1195,7 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
 
               <label className="flex items-center gap-2">
                 <UiCheckbox
+                  aria-label="显示分镜描述"
                   checked={exportOptions.showFrameNote}
                   onCheckedChange={(checked) => patchExportOptions({ showFrameNote: checked })}
                 />
@@ -1285,7 +1278,7 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
                     type="color"
                     value={exportOptions.backgroundColor}
                     onChange={(event) => patchExportOptions({ backgroundColor: event.target.value })}
-                    className="h-7 w-full rounded border border-[rgba(255,255,255,0.14)] bg-transparent"
+                    className="h-7 w-full rounded border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)]"
                   />
                 </label>
                 <label className="flex items-center gap-2">
@@ -1294,7 +1287,7 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
                     type="color"
                     value={exportOptions.textColor}
                     onChange={(event) => patchExportOptions({ textColor: event.target.value })}
-                    className="h-7 w-full rounded border border-[rgba(255,255,255,0.14)] bg-transparent"
+                    className="h-7 w-full rounded border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)]"
                   />
                 </label>
               </div>
@@ -1310,13 +1303,13 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
         type="target"
         id="target"
         position={Position.Left}
-        className="!h-2 !w-2 !border-surface-dark !bg-accent"
+        className="!h-2 !w-2 !border-surface-dark !bg-[var(--edge)]"
       />
       <Handle
         type="source"
         id="source"
         position={Position.Right}
-        className="!h-2 !w-2 !border-surface-dark !bg-accent"
+        className="!h-2 !w-2 !border-surface-dark !bg-[var(--edge)]"
       />
       <NodeResizeHandle
         minWidth={STORYBOARD_NODE_WIDTH_PX}
@@ -1332,7 +1325,7 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
             <UiPanel className="relative w-[440px] p-4">
               <div className="text-sm font-medium text-text-dark">导出完成</div>
               <div className="mt-2 text-xs text-text-muted">图片已导出到以下路径：</div>
-              <div className="mt-1 break-all rounded border border-[rgba(255,255,255,0.12)] bg-bg-dark/70 px-2 py-1.5 text-xs text-text-dark">
+              <div className="mt-1 break-all rounded border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] px-2 py-1.5 font-mono text-xs text-text-dark">
                 {packOutputDir}
               </div>
               <div className="mt-4 flex justify-end gap-2">

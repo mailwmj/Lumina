@@ -15,7 +15,7 @@ import {
   useUpdateNodeInternals,
   type NodeProps,
 } from '@xyflow/react';
-import { Sparkles, Video, Image as ImageIcon, Music } from 'lucide-react';
+import { Sparkles, Video, Image as ImageIcon, Music } from '@/components/ui/icons';
 import { useTranslation } from 'react-i18next';
 
 import {
@@ -26,6 +26,7 @@ import {
 import { useCanvasStore } from '@/stores/canvasStore';
 import { NodeHeader, NODE_HEADER_FLOATING_POSITION_CLASS } from '@/features/canvas/ui/NodeHeader';
 import { NodeResizeHandle } from '@/features/canvas/ui/NodeResizeHandle';
+import { resolveNodeSurfaceStateClass } from '@/features/canvas/ui/nodeSurfaceStyles';
 import { resolveImageDisplayUrl, resolveVideoDisplayUrl, resolveAudioDisplayUrl } from '@/features/canvas/application/imageData';
 import {
   findReferenceTokens,
@@ -194,7 +195,7 @@ function renderPromptWithHighlights(
         data-ref-index={token.value}
         data-preview-url={previewUrl}
         data-preview-label={previewLabel}
-        className="relative z-0 text-white [text-shadow:0.24px_0_currentColor,-0.24px_0_currentColor] before:absolute before:-inset-x-[4px] before:-inset-y-[1px] before:-z-10 before:rounded-[7px] before:bg-accent/55 before:content-['']"
+        className="relative z-0 text-[var(--accent-foreground)] before:absolute before:-inset-x-[4px] before:-inset-y-[1px] before:-z-10 before:rounded-[7px] before:bg-accent/85 before:content-['']"
       >
         {matchText}
       </span>
@@ -587,9 +588,7 @@ export const SD2VideoGenNode = memo(({ id, data, selected, width, height }: SD2V
       ref={rootRef}
       className={`
         group relative flex h-full flex-col overflow-visible rounded-[var(--node-radius)] border bg-surface-dark/90 p-2 transition-colors duration-150
-        ${selected
-          ? 'border-accent shadow-[0_0_0_1px_rgba(59,130,246,0.32)]'
-          : 'border-[rgba(15,23,42,0.22)] hover:border-[rgba(15,23,42,0.34)] dark:border-[rgba(255,255,255,0.22)] dark:hover:border-[rgba(255,255,255,0.34)]'}
+        ${resolveNodeSurfaceStateClass(selected)}
       `}
       style={{
         width: resolvedWidth,
@@ -612,7 +611,7 @@ export const SD2VideoGenNode = memo(({ id, data, selected, width, height }: SD2V
           type="target"
           id="target-images"
           position={Position.Left}
-          className="!h-2 !w-2 !border-surface-dark !bg-blue-500"
+          className="!h-2 !w-2 !border-surface-dark !bg-[var(--edge)]"
           style={{ top: '15%' }}
         />
       )}
@@ -621,7 +620,7 @@ export const SD2VideoGenNode = memo(({ id, data, selected, width, height }: SD2V
           type="target"
           id="target-audios"
           position={Position.Left}
-          className="!h-2 !w-2 !border-surface-dark !bg-green-500"
+          className="!h-2 !w-2 !border-surface-dark !bg-[var(--edge)]"
           style={{ top: '50%' }}
         />
       )}
@@ -630,7 +629,7 @@ export const SD2VideoGenNode = memo(({ id, data, selected, width, height }: SD2V
           type="target"
           id="target-videos"
           position={Position.Left}
-          className="!h-2 !w-2 !border-surface-dark !bg-purple-500"
+          className="!h-2 !w-2 !border-surface-dark !bg-[var(--edge)]"
           style={{ top: '85%' }}
         />
       )}
@@ -647,8 +646,8 @@ export const SD2VideoGenNode = memo(({ id, data, selected, width, height }: SD2V
               className={`
                 inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-medium transition-colors
                 ${generationMode === mode.value
-                  ? 'bg-accent text-white'
-                  : 'bg-bg-dark text-text-muted hover:bg-accent/20 hover:text-text'}
+                  ? 'bg-accent text-[var(--accent-foreground)]'
+                  : 'border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] text-text-muted hover:bg-[var(--ui-hover)] hover:text-text-dark'}
               `}
             >
               {mode.icon}
@@ -661,7 +660,7 @@ export const SD2VideoGenNode = memo(({ id, data, selected, width, height }: SD2V
         <div className="flex items-center gap-2">
           <span className="text-xs text-text-muted">{t('node.videoGen.model')}:</span>
           <select
-            className="flex-1 rounded border border-border bg-bg-dark px-2 py-1 text-xs text-text dark:border-white/20 dark:bg-black/30 dark:text-white"
+            className="flex-1 rounded border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] px-2 py-1 font-mono text-xs text-text-dark"
             value={currentModel}
             onChange={handleModelChange}
           >
@@ -672,7 +671,7 @@ export const SD2VideoGenNode = memo(({ id, data, selected, width, height }: SD2V
 
         {/* 参考素材预览区 */}
         {(connectedImageNodes.length > 0 || connectedVideoNodes.length > 0 || connectedAudioNodes.length > 0) && (
-          <div className="flex flex-wrap gap-2 p-2 rounded-lg bg-bg-dark/50 border border-[rgba(255,255,255,0.1)]">
+          <div className="flex flex-wrap gap-2 rounded-lg border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] p-2">
             {/* 图片预览 */}
             {connectedImageNodes.map((node, idx) => {
               const nodeData = node!.data as { imageUrl?: string; previewImageUrl?: string };
@@ -684,7 +683,7 @@ export const SD2VideoGenNode = memo(({ id, data, selected, width, height }: SD2V
                     alt={`图${idx + 1}`}
                     className="h-14 w-14 object-cover rounded border border-border"
                   />
-                  <span className="absolute -bottom-1 -right-1 bg-accent text-white text-[10px] px-1 rounded">
+                  <span className="absolute -bottom-1 -right-1 bg-accent text-[var(--accent-foreground)] text-[10px] px-1 rounded">
                     图{idx + 1}
                   </span>
                 </div>
@@ -701,7 +700,7 @@ export const SD2VideoGenNode = memo(({ id, data, selected, width, height }: SD2V
                     src={displayUrl}
                     className="h-14 w-14 object-cover rounded border border-border"
                   />
-                  <span className="absolute -bottom-1 -right-1 bg-green-500 text-white text-[10px] px-1 rounded">
+                  <span className="absolute -bottom-1 -right-1 rounded bg-accent px-1 text-[10px] text-[var(--accent-foreground)]">
                     视频{idx + 1}
                   </span>
                 </div>
@@ -714,13 +713,13 @@ export const SD2VideoGenNode = memo(({ id, data, selected, width, height }: SD2V
               return (
                 <div
                   key={node!.id}
-                  className="relative flex h-14 w-14 flex-col items-center justify-center gap-0.5 overflow-hidden rounded border border-border bg-purple-500/20 p-0.5"
+                  className="relative flex h-14 w-14 flex-col items-center justify-center gap-0.5 overflow-hidden rounded border border-[rgb(var(--edge-rgb)/0.45)] bg-[rgb(var(--edge-rgb)/0.16)] p-0.5"
                 >
-                  <Music className="h-5 w-5 shrink-0 text-purple-400" />
-                  <span className="w-full truncate text-center text-[9px] leading-tight text-purple-300">
+                  <Music className="h-5 w-5 shrink-0 text-[var(--edge)]" />
+                  <span className="w-full truncate text-center text-[9px] leading-tight text-[var(--edge)]">
                     {nodeData.sourceFileName || `音频${idx + 1}`}
                   </span>
-                  <span className="absolute -bottom-0.5 -right-0.5 bg-purple-600 text-white text-[10px] px-1 rounded">
+                  <span className="absolute -bottom-0.5 -right-0.5 rounded bg-[var(--edge)] px-1 text-[10px] text-white">
                     音频{idx + 1}
                   </span>
                 </div>
@@ -754,7 +753,7 @@ export const SD2VideoGenNode = memo(({ id, data, selected, width, height }: SD2V
           <div className="flex items-center gap-1">
             <span className="text-xs text-text-muted">{t('node.videoGen.resolution')}:</span>
             <select
-              className="rounded border border-border bg-bg-dark px-2 py-1 text-xs text-text dark:border-white/20 dark:bg-black/30 dark:text-white"
+              className="rounded border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] px-2 py-1 font-mono text-xs text-text-dark"
               value={currentResolution}
               onChange={handleResolutionChange}
             >
@@ -768,7 +767,7 @@ export const SD2VideoGenNode = memo(({ id, data, selected, width, height }: SD2V
           <div className="flex items-center gap-1">
             <span className="text-xs text-text-muted">{t('node.videoGen.duration')}:</span>
             <select
-              className="rounded border border-border bg-bg-dark px-2 py-1 text-xs text-text dark:border-white/20 dark:bg-black/30 dark:text-white"
+              className="rounded border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] px-2 py-1 font-mono text-xs text-text-dark"
               value={data.duration || 5}
               onChange={handleDurationChange}
             >
@@ -782,7 +781,7 @@ export const SD2VideoGenNode = memo(({ id, data, selected, width, height }: SD2V
           <div className="flex items-center gap-1">
             <span className="text-xs text-text-muted">{t('node.imageNode.aspectRatio')}:</span>
             <select
-              className="rounded border border-border bg-bg-dark px-2 py-1 text-xs text-text dark:border-white/20 dark:bg-black/30 dark:text-white"
+              className="rounded border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] px-2 py-1 font-mono text-xs text-text-dark"
               value={data.aspectRatio || '16:9'}
               onChange={handleAspectRatioChange}
             >
@@ -821,7 +820,7 @@ export const SD2VideoGenNode = memo(({ id, data, selected, width, height }: SD2V
         </div>
 
         {/* 提示词输入 */}
-        <div ref={promptInputContainerRef} className="relative min-h-0 flex-1 rounded-lg border border-[rgba(255,255,255,0.1)] bg-bg-dark/45 p-2">
+        <div ref={promptInputContainerRef} className="relative min-h-0 flex-1 rounded-lg border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] p-2">
           <div className="relative h-full min-h-0">
             <div
               ref={promptHighlightRef}
@@ -857,7 +856,7 @@ export const SD2VideoGenNode = memo(({ id, data, selected, width, height }: SD2V
 
           {showReferencePicker && referencePickerItems.length > 0 && (
             <div
-              className="nowheel absolute z-30 w-[120px] overflow-hidden rounded-xl border border-[rgba(255,255,255,0.16)] bg-surface-dark shadow-xl"
+              className="nowheel absolute z-30 w-[120px] overflow-hidden rounded-[10px] border border-[var(--ui-border-soft)] bg-[var(--ui-surface-elevated)] shadow-[var(--ui-shadow-panel)]"
               style={{ left: pickerAnchor.left, top: pickerAnchor.top }}
               onMouseDown={(event) => event.stopPropagation()}
               onMouseDownCapture={(event) => event.stopPropagation()}
@@ -876,9 +875,9 @@ export const SD2VideoGenNode = memo(({ id, data, selected, width, height }: SD2V
                       insertReference(item.type, item.index);
                     }}
                     onMouseEnter={() => setPickerActiveIndex(index)}
-                    className={`flex w-full items-center gap-2 border border-transparent bg-bg-dark/70 px-2 py-2 text-left text-sm text-text-dark transition-colors hover:border-[rgba(255,255,255,0.18)] ${
+                    className={`flex w-full items-center gap-2 border border-transparent bg-transparent px-2 py-2 text-left text-sm text-text-dark transition-colors hover:bg-[var(--ui-hover)] ${
                       pickerActiveIndex === index
-                        ? 'border-white/40 bg-bg-dark ring-1 ring-white/20'
+                        ? 'border-accent/45 bg-accent/10'
                         : ''
                     }`}
                   >
@@ -898,8 +897,8 @@ export const SD2VideoGenNode = memo(({ id, data, selected, width, height }: SD2V
                       />
                     )}
                     {item.type === 'audio' && (
-                      <div className="flex h-8 w-8 items-center justify-center rounded bg-purple-500/20">
-                        <Music className="h-4 w-4 text-purple-400" />
+                      <div className="flex h-8 w-8 items-center justify-center rounded bg-[rgb(var(--edge-rgb)/0.16)]">
+                        <Music className="h-4 w-4 text-[var(--edge)]" />
                       </div>
                     )}
                     <span>{item.label}</span>
@@ -911,7 +910,7 @@ export const SD2VideoGenNode = memo(({ id, data, selected, width, height }: SD2V
 
           {referenceHover && typeof document !== 'undefined' && createPortal(
             <div
-              className="pointer-events-none fixed z-[9999] overflow-hidden rounded-lg border border-[rgba(255,255,255,0.16)] bg-surface-dark shadow-xl"
+              className="pointer-events-none fixed z-[9999] overflow-hidden rounded-lg border border-[var(--ui-border-soft)] bg-[var(--ui-surface-elevated)] shadow-[var(--ui-shadow-tooltip)]"
               style={{
                 left: Math.max(10, referenceHover.anchorRect.left + referenceHover.anchorRect.width / 2 - 75),
                 top: referenceHover.anchorRect.bottom + 10,
@@ -935,12 +934,12 @@ export const SD2VideoGenNode = memo(({ id, data, selected, width, height }: SD2V
                 />
               )}
               {referenceHover.refType === 'audio' && (
-                <div className="relative flex h-full w-full items-center justify-center bg-purple-500/20">
-                  <Music className="h-12 w-12 text-purple-400" />
-                  <span className="absolute bottom-1 right-1 rounded bg-purple-600 px-1.5 py-0.5 text-[10px] font-medium text-white">
+                <div className="relative flex h-full w-full items-center justify-center bg-[rgb(var(--edge-rgb)/0.16)]">
+                  <Music className="h-12 w-12 text-[var(--edge)]" />
+                  <span className="absolute bottom-1 right-1 rounded bg-[var(--edge)] px-1.5 py-0.5 text-[10px] font-medium text-white">
                     音频{referenceHover.index}
                   </span>
-                  <span className="absolute bottom-1 left-1 right-1 truncate text-center text-[10px] text-purple-300" title={referenceHover.previewUrl}>
+                  <span className="absolute bottom-1 left-1 right-1 truncate text-center text-[10px] text-[var(--edge)]" title={referenceHover.previewUrl}>
                     {referenceHover.previewUrl}
                   </span>
                 </div>
@@ -957,8 +956,8 @@ export const SD2VideoGenNode = memo(({ id, data, selected, width, height }: SD2V
           className={`
             w-full rounded py-2 text-xs font-medium transition-colors
             ${data.isGenerating
-              ? 'bg-accent/50 text-white cursor-not-allowed'
-              : 'bg-accent text-white hover:bg-accent/90'}
+              ? 'bg-accent/50 text-[var(--accent-foreground)] cursor-not-allowed'
+              : 'bg-accent text-[var(--accent-foreground)] hover:bg-accent/90'}
             ${!promptDraft.trim() ? 'opacity-50 cursor-not-allowed' : ''}
           `}
         >
@@ -971,7 +970,7 @@ export const SD2VideoGenNode = memo(({ id, data, selected, width, height }: SD2V
         type="source"
         id="source"
         position={Position.Right}
-        className="!h-2 !w-2 !border-surface-dark !bg-accent"
+        className="!h-2 !w-2 !border-surface-dark !bg-[var(--edge)]"
       />
 
       {/* 拖动改变大小 */}

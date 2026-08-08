@@ -1,4 +1,4 @@
-import { Music } from 'lucide-react';
+import { Music } from '@/components/ui/icons';
 import type { ReferenceItem, PickerAnchor } from '@/features/canvas/hooks/useReferencePicker';
 
 interface ReferencePickerProps {
@@ -20,7 +20,7 @@ export function ReferencePicker({
 
   return (
     <div
-      className="nowheel absolute z-30 w-[120px] overflow-hidden rounded-xl border border-[rgba(255,255,255,0.16)] bg-surface-dark shadow-xl"
+      className="nowheel absolute z-30 w-[120px] overflow-hidden rounded-[10px] border border-[var(--ui-border-soft)] bg-[var(--ui-surface-elevated)] shadow-[var(--ui-shadow-panel)]"
       style={{ left: pickerAnchor.left, top: pickerAnchor.top }}
       onMouseDown={(e) => e.stopPropagation()}
       onMouseDownCapture={(e) => e.stopPropagation()}
@@ -39,9 +39,9 @@ export function ReferencePicker({
               onItemClick(item.type, item.index);
             }}
             onMouseEnter={() => onItemHover(index)}
-            className={`flex w-full items-center gap-2 border border-transparent bg-bg-dark/70 px-2 py-2 text-left text-sm text-text-dark transition-colors hover:border-[rgba(255,255,255,0.18)] ${
+            className={`flex w-full items-center gap-2 border border-transparent bg-transparent px-2 py-2 text-left text-sm text-text-dark transition-colors hover:bg-[var(--ui-hover)] ${
               pickerActiveIndex === index
-                ? 'border-[rgba(255,255,255,0.24)] bg-bg-dark'
+                ? 'border-accent/45 bg-accent/10'
                 : ''
             }`}
           >

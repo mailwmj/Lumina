@@ -1,10 +1,9 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus, FolderOpen, Pencil, Trash2, AlertTriangle } from 'lucide-react';
+import { Plus, FolderOpen, Pencil, Trash2, AlertTriangle } from '@/components/ui/icons';
 import { useProjectStore } from '@/stores/projectStore';
-import { UI_CONTENT_OVERLAY_INSET_CLASS, UI_DIALOG_TRANSITION_MS } from '@/components/ui/motion';
-import { useDialogTransition } from '@/components/ui/useDialogTransition';
-import { UiButton, UiSelect } from '@/components/ui/primitives';
+import { UI_CONTENT_OVERLAY_INSET_CLASS } from '@/components/ui/motion';
+import { UiButton, UiModal, UiSelect, UiTooltip } from '@/components/ui';
 import { RenameDialog } from './RenameDialog';
 
 type ProjectSortField = 'name' | 'createdAt' | 'updatedAt';
@@ -24,53 +23,36 @@ function DeleteConfirmDialog({
   onConfirm,
 }: DeleteConfirmDialogProps) {
   const { t } = useTranslation();
-  const { shouldRender, isVisible } = useDialogTransition(isOpen, UI_DIALOG_TRANSITION_MS);
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Escape') {
-      onClose();
-    }
-  };
-
-  if (!shouldRender) return null;
 
   return (
-    <div className={`fixed ${UI_CONTENT_OVERLAY_INSET_CLASS} z-[100] flex items-center justify-center`}>
-      <div
-        className={`absolute inset-0 bg-black/50 transition-opacity duration-200 ${isVisible ? 'opacity-100' : 'opacity-0'}`}
-        onClick={onClose}
-      />
-      <div
-        className={`relative w-96 rounded-lg border border-border-dark bg-surface-dark p-6 shadow-xl transition-opacity duration-200 ${isVisible ? 'opacity-100' : 'opacity-0'}`}
-        onKeyDown={handleKeyDown}
-      >
-        <div className="flex items-center gap-3 mb-4">
-          <AlertTriangle className="w-6 h-6 text-red-500 shrink-0" />
-          <h2 className="text-lg font-semibold text-text-dark">
-            {t('project.deleteConfirmTitle')}
-          </h2>
-        </div>
-        <p className="text-sm text-text-muted mb-6 leading-relaxed">
-          {t('project.deleteConfirmMessage', { name: projectName })}
-        </p>
-        <div className="flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 text-text-muted hover:text-text-dark transition-colors"
-          >
-            {t('common.cancel')}
-          </button>
-          <button
-            type="button"
-            onClick={() => { onConfirm(); onClose(); }}
-            className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-500 transition-colors"
+    <UiModal
+      isOpen={isOpen}
+      title={t('project.deleteConfirmTitle')}
+      closeLabel={t('common.close')}
+      onClose={onClose}
+      widthClassName="w-[420px] max-w-[calc(100vw-24px)]"
+      footer={(
+        <>
+          <UiButton onClick={onClose}>{t('common.cancel')}</UiButton>
+          <UiButton
+            variant="danger"
+            onClick={() => {
+              onConfirm();
+              onClose();
+            }}
           >
             {t('project.deleteConfirmButton')}
-          </button>
-        </div>
+          </UiButton>
+        </>
+      )}
+    >
+      <div className="flex items-start gap-3">
+        <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-red-500" />
+        <p className="text-sm leading-6 text-text-muted">
+          {t('project.deleteConfirmMessage', { name: projectName })}
+        </p>
       </div>
-    </div>
+    </UiModal>
   );
 }
 
@@ -141,17 +123,17 @@ export function ProjectManager() {
   }, [projects, sortDirection, sortField]);
 
   return (
-    <div className="ui-scrollbar h-full w-full overflow-auto p-8">
-      <div className="max-w-5xl mx-auto">
-        <div className="flex items-center justify-between mb-8">
+    <div className="ui-scrollbar h-full w-full overflow-auto bg-bg-dark px-6 py-5">
+      <div className="mx-auto max-w-5xl">
+        <div className="mb-5 flex items-center justify-between gap-4 border-b border-[var(--ui-border-soft)] pb-4">
           <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold text-text-dark">{t('project.title')}</h1>
+            <h1 className="text-lg font-semibold text-text-dark">{t('project.title')}</h1>
             <div className="flex items-center gap-2">
               <UiSelect
                 aria-label={t('project.sortBy')}
                 value={sortField}
                 onChange={(event) => setSortField(event.target.value as ProjectSortField)}
-                className="h-9 w-[100px] rounded-lg text-sm"
+                className="h-8 w-[112px] text-xs"
               >
                 <option value="name">{t('project.sortByName')}</option>
                 <option value="createdAt">{t('project.sortByCreatedAt')}</option>
@@ -161,7 +143,7 @@ export function ProjectManager() {
                 aria-label={t('project.sortDirection')}
                 value={sortDirection}
                 onChange={(event) => setSortDirection(event.target.value as SortDirection)}
-                className="h-9 w-[60px] rounded-lg text-sm"
+                className="h-8 w-[72px] text-xs"
               >
                 <option value="asc">{t('project.sortAsc')}</option>
                 <option value="desc">{t('project.sortDesc')}</option>
@@ -169,49 +151,53 @@ export function ProjectManager() {
             </div>
           </div>
           <UiButton type="button" variant="primary" onClick={handleCreateProject} className="gap-2">
-            <Plus className="w-5 h-5" />
+            <Plus className="h-4 w-4" />
             {t('project.newProject')}
           </UiButton>
         </div>
 
         {projects.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-text-muted">
-            <FolderOpen className="w-16 h-16 mb-4 opacity-50" />
-            <p className="text-lg">{t('project.empty')}</p>
-            <p className="text-sm mt-2">{t('project.emptyHint')}</p>
+          <div className="flex flex-col items-center justify-center py-24 text-text-muted">
+            <FolderOpen className="mb-4 h-10 w-10 opacity-45" />
+            <p className="text-sm font-medium text-text-dark">{t('project.empty')}</p>
+            <p className="mt-1 text-xs">{t('project.emptyHint')}</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {sortedProjects.map((project) => (
               <div
                 key={project.id}
                 onClick={() => openProject(project.id)}
-                className="bg-surface-dark border border-border-dark rounded-lg p-4 cursor-pointer hover:border-primary/50 hover:shadow-lg transition-all group"
+                className="group cursor-pointer rounded-lg border border-[var(--ui-border-soft)] bg-surface-dark p-4 transition-[border-color,background-color,box-shadow] hover:border-accent/35 hover:bg-[var(--ui-surface-elevated)] hover:shadow-[var(--ui-shadow-panel)]"
               >
                 <div className="flex items-start justify-between mb-2">
-                  <h3 className="font-semibold text-text-dark truncate flex-1">
+                  <h3 className="flex-1 truncate text-sm font-medium text-text-dark">
                     {project.name}
                   </h3>
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button
-                      type="button"
-                      onClick={(e) => handleRenameClick(project.id, project.name, e)}
-                      className="p-1 hover:bg-bg-dark rounded"
-                      title={t('project.rename')}
-                    >
-                      <Pencil className="w-4 h-4 text-text-muted hover:text-text-dark" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(e) => handleDeleteClick(project.id, project.name, e)}
-                      className="p-1 hover:bg-bg-dark rounded"
-                      title={t('project.delete')}
-                    >
-                      <Trash2 className="w-4 h-4 text-text-muted hover:text-red-500" />
-                    </button>
+                    <UiTooltip content={t('project.rename')}>
+                      <button
+                        type="button"
+                        aria-label={t('project.rename')}
+                        onClick={(e) => handleRenameClick(project.id, project.name, e)}
+                        className="flex h-7 w-7 items-center justify-center rounded-md text-text-muted hover:bg-[var(--ui-hover)] hover:text-text-dark"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                    </UiTooltip>
+                    <UiTooltip content={t('project.delete')}>
+                      <button
+                        type="button"
+                        aria-label={t('project.delete')}
+                        onClick={(e) => handleDeleteClick(project.id, project.name, e)}
+                        className="flex h-7 w-7 items-center justify-center rounded-md text-text-muted hover:bg-red-500/10 hover:text-red-500"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </UiTooltip>
                   </div>
                 </div>
-                <div className="text-xs text-text-muted">
+                <div className="font-mono text-[11px] leading-5 text-text-muted">
                   <p>
                     {t('project.modified')}: {formatDate(project.updatedAt)}
                   </p>
