@@ -36,6 +36,8 @@ import {
 import { EXPORT_RESULT_DISPLAY_NAME } from '@/features/canvas/domain/nodeDisplay';
 import { nodeCatalog } from '@/features/canvas/application/nodeCatalog';
 import { canvasNodeFactory } from '@/features/canvas/application/canvasServices';
+import { resolveConfiguredImageModel } from '@/features/canvas/models';
+import { useSettingsStore } from '@/stores/settingsStore';
 import {
   ensureAtLeastOneMinEdge,
   resolveMinEdgeFittedSize,
@@ -64,6 +66,22 @@ export interface CanvasHistoryState {
 
 const MAX_HISTORY_STEPS = 50;
 const IMAGE_NODE_VISUAL_MIN_EDGE = 96;
+
+function applyImageModelDefault(
+  type: CanvasNodeType,
+  data: Partial<CanvasNodeData>
+): Partial<CanvasNodeData> {
+  if (
+    (type !== CANVAS_NODE_TYPES.imageEdit && type !== CANVAS_NODE_TYPES.storyboardGen) ||
+    typeof (data as { model?: unknown }).model === 'string'
+  ) {
+    return data;
+  }
+
+  const settings = useSettingsStore.getState();
+  const selectedModel = resolveConfiguredImageModel(settings, undefined);
+  return selectedModel ? { ...data, model: selectedModel.id } : data;
+}
 
 interface CanvasState {
   nodes: CanvasNode[];
@@ -784,7 +802,11 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
 
   addNode: (type, position, data = {}) => {
     const state = get();
-    const newNode = canvasNodeFactory.createNode(type, position, data);
+    const newNode = canvasNodeFactory.createNode(
+      type,
+      position,
+      applyImageModelDefault(type, data)
+    );
     set({
       nodes: [...state.nodes, newNode],
       history: {

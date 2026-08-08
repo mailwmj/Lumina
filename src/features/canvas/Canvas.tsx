@@ -27,7 +27,7 @@ import '@xyflow/react/dist/style.css';
 
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useProjectStore } from '@/stores/projectStore';
-import { getConfiguredApiKeyCount, useSettingsStore } from '@/stores/settingsStore';
+import { useSettingsStore } from '@/stores/settingsStore';
 import { canvasAiGateway, canvasEventBus } from '@/features/canvas/application/canvasServices';
 import {
   CANVAS_NODE_TYPES,
@@ -42,6 +42,7 @@ import {
   CURRENT_RUNTIME_SESSION_ID,
 } from '@/features/canvas/application/generationErrorReport';
 import { showErrorDialog } from '@/features/canvas/application/errorDialog';
+import { resolveImageProviderRuntime } from '@/features/canvas/application/imageProviderRuntime';
 import {
   getConnectMenuNodeTypes,
   nodeHasSourceHandle,
@@ -49,7 +50,6 @@ import {
 } from '@/features/canvas/domain/nodeRegistry';
 import { convertAudioToMp3, convertVideoToMp4 } from '@/commands/media';
 import { embedStoryboardImageMetadata, autoSaveVideoToProject, autoSaveImageToProject } from '@/commands/image';
-import { listModelProviders } from '@/features/canvas/models';
 import { nodeTypes } from './nodes';
 import { edgeTypes } from './edges';
 import { NodeSelectionMenu } from './NodeSelectionMenu';
@@ -57,7 +57,6 @@ import { SelectedNodeOverlay } from './ui/SelectedNodeOverlay';
 import { CanvasToolbar } from './CanvasToolbar';
 import { NodeToolDialog } from './ui/NodeToolDialog';
 import { ImageViewerModal } from './ui/ImageViewerModal';
-import { MissingApiKeyHint } from '@/features/settings/MissingApiKeyHint';
 import { logger } from '@/lib/logger';
 
 const DEFAULT_VIEWPORT: Viewport = { x: 0, y: 0, zoom: 1 };
@@ -325,15 +324,12 @@ export function Canvas() {
   const imageViewer = useCanvasStore((state) => state.imageViewer);
   const closeImageViewer = useCanvasStore((state) => state.closeImageViewer);
   const navigateImageViewer = useCanvasStore((state) => state.navigateImageViewer);
-  const apiKeys = useSettingsStore((state) => state.apiKeys);
+  const openAiImageApi = useSettingsStore((state) => state.openAiImageApi);
+  const chaomoImageApi = useSettingsStore((state) => state.chaomoImageApi);
   const useUploadFilenameAsNodeTitle = useSettingsStore((state) => state.useUploadFilenameAsNodeTitle);
   const videoApis = useSettingsStore((state) => state.videoApis);
   const snapToGridEnabled = useSettingsStore((state) => state.snapToGridEnabled);
   const snapGridSize = useSettingsStore((state) => state.snapGridSize);
-  const providerIds = useMemo(() => listModelProviders().map((provider) => provider.id), []);
-  const configuredApiKeyCount = useSettingsStore((state) =>
-    getConfiguredApiKeyCount(state.apiKeys, providerIds)
-  );
 
   const getCurrentProject = useProjectStore((state) => state.getCurrentProject);
   const saveCurrentProject = useProjectStore((state) => state.saveCurrentProject);
@@ -472,17 +468,18 @@ export function Canvas() {
             const generationProviderId = typeof currentData.generationProviderId === 'string'
               ? currentData.generationProviderId
               : '';
-            if (generationProviderId) {
-              const providerApiKey = apiKeys[generationProviderId] ?? '';
-              if (providerApiKey) {
-                await canvasAiGateway.setApiKey(generationProviderId, providerApiKey).catch((error) => {
+            const providerRuntime = resolveImageProviderRuntime(generationProviderId, {
+              openAiImageApi,
+              chaomoImageApi,
+            });
+            if (providerRuntime.apiKey) {
+                await canvasAiGateway.setApiKey(generationProviderId, providerRuntime.apiKey).catch((error) => {
                   logger.warn('[GenerationJob] set_api_key failed before poll', {
                     nodeId: pendingNode.id,
                     generationProviderId,
                     error,
                   });
                 });
-              }
             }
 
             const status = await canvasAiGateway.getGenerateImageJob(jobId).catch((error) => {
@@ -578,7 +575,7 @@ export function Canvas() {
         }
       })();
     }
-  }, [apiKeys, nodes, updateNodeData]);
+  }, [chaomoImageApi, nodes, openAiImageApi, updateNodeData]);
 
   // Polling for export video nodes
   useEffect(() => {
@@ -621,16 +618,11 @@ export function Canvas() {
             const generationProviderId = typeof currentData.generationProviderId === 'string'
               ? currentData.generationProviderId
               : '';
-            if (generationProviderId) {
-              // For video APIs, key is in videoApis; for others use apiKeys
-              let providerApiKey = apiKeys[generationProviderId] ?? '';
-              if (!providerApiKey && generationProviderId === 'volcvideo') {
-                // Video API key is stored in videoApis array
-                const configuredVideoApi = videoApis.find(
-                  (api: { apiKey?: string }) => api.apiKey && api.apiKey.length > 0
-                );
-                providerApiKey = configuredVideoApi?.apiKey ?? '';
-              }
+            if (generationProviderId === 'volcvideo') {
+              const configuredVideoApi = videoApis.find(
+                (api: { apiKey?: string }) => api.apiKey && api.apiKey.length > 0
+              );
+              const providerApiKey = configuredVideoApi?.apiKey ?? '';
               if (providerApiKey) {
                 await canvasAiGateway.setApiKey(generationProviderId, providerApiKey).catch((error) => {
                   logger.warn('[VideoJob] set_api_key failed before poll', {
@@ -754,7 +746,7 @@ export function Canvas() {
         }
       })();
     }
-  }, [apiKeys, videoApis, nodes, updateNodeData]);
+  }, [videoApis, nodes, updateNodeData]);
 
   useEffect(() => {
     const element = wrapperRef.current;
@@ -2037,7 +2029,6 @@ export function Canvas() {
     () => (
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
         <div className="flex max-w-3xl flex-col items-center gap-5 px-6 text-center">
-          {configuredApiKeyCount === 0 && <MissingApiKeyHint />}
           <div>
             <div className="mb-2 text-2xl text-text-muted">{t('canvas.emptyHintTitle')}</div>
             <div className="text-sm text-text-muted opacity-60">{t('canvas.emptyHintSubtitle')}</div>
@@ -2045,7 +2036,7 @@ export function Canvas() {
         </div>
       </div>
     ),
-    [configuredApiKeyCount, t]
+    [t]
   );
 
   return (
@@ -2113,12 +2104,6 @@ export function Canvas() {
       <CanvasToolbar />
 
       {nodes.length === 0 && emptyHint}
-      {nodes.length > 0 && configuredApiKeyCount === 0 && (
-        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center px-6">
-          <MissingApiKeyHint />
-        </div>
-      )}
-
       {showNodeMenu && previewConnectionVisual && (
         <svg
           className="pointer-events-none absolute z-40 overflow-visible"

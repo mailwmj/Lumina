@@ -8,6 +8,7 @@ export interface GenerateRequest {
   aspect_ratio: string;
   reference_images?: string[];
   extra_params?: Record<string, unknown>;
+  provider_config?: Record<string, string>;
   /** Draft task ID - when set, generates final video from this draft */
   draftTaskId?: string;
   /** Project ID - when set, images are saved under project-specific subdirectory */
@@ -23,6 +24,17 @@ export interface GenerationJobStatus {
   error?: string | null;
   /** External task ID from provider (e.g., volcvideo task ID like "cgt-xxx") */
   external_task_id?: string | null;
+}
+
+export interface DiscoveredImageModel {
+  id: string;
+  label?: string;
+}
+
+export interface DiscoverImageModelsRequest {
+  provider_id: 'ai-media' | 'chaomo';
+  base_url: string;
+  api_key: string;
 }
 
 const BASE64_PREVIEW_HEAD = 96;
@@ -67,6 +79,7 @@ function sanitizeGenerateRequestForLog(request: GenerateRequest): Record<string,
       truncateBase64Like(item)
     ),
     extra_params: request.extra_params ?? {},
+    provider_config: request.provider_config ?? {},
   };
 }
 
@@ -126,6 +139,15 @@ export async function setApiKey(provider: string, apiKey: string): Promise<void>
     throw new Error('当前不是 Tauri 容器环境，请使用 `npm run tauri dev` 启动');
   }
   return await invoke('set_api_key', { provider, apiKey });
+}
+
+export async function discoverImageModels(
+  request: DiscoverImageModelsRequest
+): Promise<DiscoveredImageModel[]> {
+  if (!isTauri()) {
+    throw new Error('当前不是 Tauri 容器环境，请使用 `npm run tauri dev` 启动');
+  }
+  return await invoke<DiscoveredImageModel[]>('discover_image_models', { request });
 }
 
 export async function generateImage(request: GenerateRequest): Promise<string> {

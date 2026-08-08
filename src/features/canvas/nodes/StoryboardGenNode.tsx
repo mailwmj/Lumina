@@ -58,23 +58,19 @@ import {
   type ReferenceTokenMatch,
 } from '@/features/canvas/application/referenceTokenEditing';
 import {
-  DEFAULT_IMAGE_MODEL_ID,
-  getImageModel,
-  listImageModels,
+  listConfiguredImageModels,
   resolveImageModelResolution,
   resolveImageModelResolutions,
+  resolveConfiguredImageModel,
+  UNCONFIGURED_IMAGE_MODEL,
 } from '@/features/canvas/models';
-import { GRSAI_NANO_BANANA_PRO_MODEL_ID } from '@/features/canvas/models/image/grsai/nanoBananaPro';
-import { FAL_NANO_BANANA_2_MODEL_ID } from '@/features/canvas/models/image/fal/nanoBanana2';
-import { KIE_NANO_BANANA_2_MODEL_ID } from '@/features/canvas/models/image/kie/nanoBanana2';
-import { resolveModelPriceDisplay } from '@/features/canvas/pricing';
 import { ModelParamsControls } from '@/features/canvas/ui/ModelParamsControls';
+import { resolveImageProviderRuntime } from '@/features/canvas/application/imageProviderRuntime';
 import { CanvasNodeImage } from '@/features/canvas/ui/CanvasNodeImage';
 import {
   UiButton,
 } from '@/components/ui';
 import { NodeHeader, NODE_HEADER_FLOATING_POSITION_CLASS } from '@/features/canvas/ui/NodeHeader';
-import { NodePriceBadge } from '@/features/canvas/ui/NodePriceBadge';
 import { NodeResizeHandle } from '@/features/canvas/ui/NodeResizeHandle';
 import {
   NODE_CONTROL_CHIP_CLASS,
@@ -83,6 +79,7 @@ import {
   NODE_CONTROL_PARAMS_CHIP_CLASS,
   NODE_CONTROL_PRIMARY_BUTTON_CLASS,
 } from '@/features/canvas/ui/nodeControlStyles';
+import { openSettingsDialog } from '@/features/settings/settingsEvents';
 
 type StoryboardGenNodeProps = {
   id: string;
@@ -567,7 +564,7 @@ function generateGridImageDataUrl(
 }
 
 export const StoryboardGenNode = memo(({ id, data, selected, width, height }: StoryboardGenNodeProps) => {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const { zoom } = useViewport();
   const updateNodeInternals = useUpdateNodeInternals();
   const setSelectedNode = useCanvasStore((state) => state.setSelectedNode);
@@ -577,8 +574,10 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
   const addNode = useCanvasStore((state) => state.addNode);
   const addEdge = useCanvasStore((state) => state.addEdge);
   const findNodePosition = useCanvasStore((state) => state.findNodePosition);
-  const apiKeys = useSettingsStore((state) => state.apiKeys);
-  const grsaiNanoBananaProModel = useSettingsStore((state) => state.grsaiNanoBananaProModel);
+  const openAiImageApi = useSettingsStore((state) => state.openAiImageApi);
+  const chaomoImageApi = useSettingsStore((state) => state.chaomoImageApi);
+  const lastImageModelSelection = useSettingsStore((state) => state.lastImageModelSelection);
+  const setLastImageModelSelection = useSettingsStore((state) => state.setLastImageModelSelection);
   const storyboardGenKeepStyleConsistent = useSettingsStore(
     (state) => state.storyboardGenKeepStyleConsistent
   );
@@ -597,11 +596,6 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
   const showStoryboardGenAdvancedRatioControls = useSettingsStore(
     (state) => state.showStoryboardGenAdvancedRatioControls
   );
-  const showNodePrice = useSettingsStore((state) => state.showNodePrice);
-  const priceDisplayCurrencyMode = useSettingsStore((state) => state.priceDisplayCurrencyMode);
-  const usdToCnyRate = useSettingsStore((state) => state.usdToCnyRate);
-  const preferDiscountedPrice = useSettingsStore((state) => state.preferDiscountedPrice);
-  const grsaiCreditTierId = useSettingsStore((state) => state.grsaiCreditTierId);
   const textApis = useSettingsStore((state) => state.textApis);
   const imagePolishPrompt = useSettingsStore((state) => state.imagePolishPrompt);
 
@@ -655,21 +649,34 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
     [incomingImageItems]
   );
 
-  const imageModels = useMemo(() => listImageModels(), []);
+  const imageModels = useMemo(
+    () =>
+      listConfiguredImageModels({
+        openAiImageApi,
+        chaomoImageApi,
+        lastImageModelSelection,
+      }),
+    [chaomoImageApi, lastImageModelSelection, openAiImageApi]
+  );
 
-  const selectedModel = useMemo(() => {
-    const modelId = nodeData.model ?? DEFAULT_IMAGE_MODEL_ID;
-    return getImageModel(modelId);
-  }, [nodeData.model]);
-  const providerApiKey = apiKeys[selectedModel.providerId] ?? '';
+  const configuredModel = useMemo(
+    () =>
+      resolveConfiguredImageModel(
+        { openAiImageApi, chaomoImageApi, lastImageModelSelection },
+        nodeData.model
+      ),
+    [chaomoImageApi, lastImageModelSelection, nodeData.model, openAiImageApi]
+  );
+  const hasConfiguredModel = configuredModel !== null;
+  const selectedModel = configuredModel ?? UNCONFIGURED_IMAGE_MODEL;
+  const providerRuntime = useMemo(
+    () => resolveImageProviderRuntime(selectedModel.providerId, { openAiImageApi, chaomoImageApi }),
+    [chaomoImageApi, openAiImageApi, selectedModel.providerId]
+  );
+  const providerApiKey = providerRuntime.apiKey;
   const effectiveExtraParams = useMemo(
-    () => ({
-      ...(nodeData.extraParams ?? {}),
-      ...(selectedModel.id === GRSAI_NANO_BANANA_PRO_MODEL_ID
-        ? { grsai_pro_model: grsaiNanoBananaProModel }
-        : {}),
-    }),
-    [grsaiNanoBananaProModel, nodeData.extraParams, selectedModel.id]
+    () => ({ ...(nodeData.extraParams ?? {}) }),
+    [nodeData.extraParams]
   );
   const resolutionOptions = useMemo(
     () => resolveImageModelResolutions(selectedModel, { extraParams: effectiveExtraParams }),
@@ -682,24 +689,9 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
     });
   }, [effectiveExtraParams, nodeData.size, selectedModel]);
 
-  // G31 Flash 不支持 auto aspectRatio，需要隐藏该选项
-  const supportsAutoAspectRatio = useMemo(() => {
-    // RunningHub 模型中，V1 支持 auto，G31 Flash 不支持
-    const modelId = selectedModel.id;
-    if (modelId.includes('g31-flash')) {
-      return false;
-    }
-    return true;
-  }, [selectedModel.id]);
-
   const aspectRatioOptions = useMemo<AspectRatioChoice[]>(
-    () => {
-      const baseOptions = supportsAutoAspectRatio
-        ? [AUTO_ASPECT_RATIO_OPTION, ...selectedModel.aspectRatios]
-        : [...selectedModel.aspectRatios];
-      return baseOptions;
-    },
-    [selectedModel.aspectRatios, supportsAutoAspectRatio]
+    () => [AUTO_ASPECT_RATIO_OPTION, ...selectedModel.aspectRatios],
+    [selectedModel.aspectRatios]
   );
 
   const selectedAspectRatio = useMemo((): AspectRatioChoice => {
@@ -708,16 +700,8 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
     if (found) {
       return found;
     }
-    // 如果不支持 auto 且当前选中的是 auto，切换到第一个可用选项
-    if (!supportsAutoAspectRatio && nodeAspectRatio === AUTO_REQUEST_ASPECT_RATIO) {
-      return aspectRatioOptions[0] ?? { value: DEFAULT_ASPECT_RATIO, label: DEFAULT_ASPECT_RATIO };
-    }
-    // 默认返回 auto 或第一个选项
-    if (supportsAutoAspectRatio) {
-      return AUTO_ASPECT_RATIO_OPTION;
-    }
-    return aspectRatioOptions[0] ?? { value: DEFAULT_ASPECT_RATIO, label: DEFAULT_ASPECT_RATIO };
-  }, [aspectRatioOptions, nodeData.requestAspectRatio, supportsAutoAspectRatio]);
+    return AUTO_ASPECT_RATIO_OPTION;
+  }, [aspectRatioOptions, nodeData.requestAspectRatio]);
 
   const ratioControlMode: StoryboardRatioControlMode = showStoryboardGenAdvancedRatioControls
     ? (nodeData.ratioControlMode === 'overall' ? 'overall' : 'cell')
@@ -789,65 +773,6 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
   const requestResolution = selectedModel.resolveRequest({
     referenceImageCount: incomingImages.length,
   });
-  const showWebSearchToggle =
-    selectedModel.id === FAL_NANO_BANANA_2_MODEL_ID ||
-    selectedModel.id === KIE_NANO_BANANA_2_MODEL_ID;
-  const webSearchEnabled = Boolean(nodeData.extraParams?.enable_web_search);
-  const resolvedPriceDisplay = useMemo(
-    () =>
-      showNodePrice
-        ? resolveModelPriceDisplay(selectedModel, {
-          resolution: selectedResolution.value,
-          extraParams: effectiveExtraParams,
-          language: i18n.language,
-          settings: {
-            displayCurrencyMode: priceDisplayCurrencyMode,
-            usdToCnyRate,
-            preferDiscountedPrice,
-            grsaiCreditTierId,
-          },
-        })
-        : null,
-    [
-      grsaiCreditTierId,
-      i18n.language,
-      preferDiscountedPrice,
-      priceDisplayCurrencyMode,
-      effectiveExtraParams,
-      selectedModel,
-      selectedResolution.value,
-      showNodePrice,
-      usdToCnyRate,
-    ]
-  );
-  const resolvedPriceTooltip = useMemo(() => {
-    if (!resolvedPriceDisplay) {
-      return undefined;
-    }
-
-    const lines = [resolvedPriceDisplay.label];
-    if (resolvedPriceDisplay.nativeLabel) {
-      lines.push(t('pricing.nativePrice', { value: resolvedPriceDisplay.nativeLabel }));
-    }
-    if (resolvedPriceDisplay.originalLabel) {
-      lines.push(t('pricing.originalPrice', { value: resolvedPriceDisplay.originalLabel }));
-    }
-    if (resolvedPriceDisplay.pointsCost) {
-      lines.push(t('pricing.pointsCost', { count: resolvedPriceDisplay.pointsCost }));
-    }
-    if (resolvedPriceDisplay.grsaiCreditTier) {
-      lines.push(
-        t('pricing.grsaiTier', {
-          price: resolvedPriceDisplay.grsaiCreditTier.priceCny.toFixed(2),
-          credits: resolvedPriceDisplay.grsaiCreditTier.credits.toLocaleString(
-            i18n.language.startsWith('zh') ? 'zh-CN' : 'en-US'
-          ),
-        })
-      );
-    }
-    return lines.join('\n');
-  }, [i18n.language, resolvedPriceDisplay, t]);
-
   const supportedAspectRatioValues = useMemo(
     () => selectedModel.aspectRatios.map((item) => item.value),
     [selectedModel.aspectRatios]
@@ -937,6 +862,9 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
 
   // Sync model, size, aspect ratio with node data
   useEffect(() => {
+    if (!hasConfiguredModel) {
+      return;
+    }
     if (nodeData.model !== selectedModel.id) {
       updateNodeData(id, { model: selectedModel.id });
     }
@@ -950,6 +878,7 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
     }
   }, [
     id,
+    hasConfiguredModel,
     nodeData,
     selectedModel.id,
     selectedResolution.value,
@@ -1224,6 +1153,13 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
       return;
     }
 
+    if (!hasConfiguredModel) {
+      const errorMessage = t('node.storyboardGen.modelRequired');
+      setError(errorMessage);
+      void showErrorDialog(errorMessage, t('common.error'));
+      return;
+    }
+
     const prompt = buildPrompt();
     if (!prompt) {
       const errorMessage = '请填写至少一个分镜内容描述';
@@ -1301,6 +1237,7 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
         aspectRatio: resolvedRequestAspectRatio,
         referenceImages: allReferenceImages,
         extraParams: effectiveExtraParams,
+        providerConfig: providerRuntime.providerConfig,
         projectId,
       });
       const generationDebugContext: GenerationDebugContext = {
@@ -1371,10 +1308,12 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
     }
   }, [
     providerApiKey,
+    providerRuntime.providerConfig,
     nodeData,
     incomingImages,
     requestResolution.requestModel,
     effectiveExtraParams,
+    hasConfiguredModel,
     selectedModel.expectedDurationMs,
     selectedModel.id,
     selectedModel.providerId,
@@ -1707,14 +1646,6 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
         headerAdjust={STORYBOARD_GEN_HEADER_ADJUST}
         iconAdjust={STORYBOARD_GEN_ICON_ADJUST}
         titleAdjust={STORYBOARD_GEN_TITLE_ADJUST}
-        rightSlot={
-          resolvedPriceDisplay ? (
-            <NodePriceBadge
-              label={resolvedPriceDisplay.label}
-              title={resolvedPriceTooltip}
-            />
-          ) : undefined
-        }
         editable
         onTitleChange={(nextTitle) => updateNodeData(id, { displayName: nextTitle })}
       />
@@ -2018,48 +1949,55 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
         className="relative mx-auto mt-auto flex shrink-0 items-center justify-between"
         style={{ width: `${frameLayout.paramsRowWidth}px` }}
       >
-        <ModelParamsControls
-          imageModels={imageModels}
-          selectedModel={selectedModel}
-          resolutionOptions={resolutionOptions}
-          selectedResolution={selectedResolution}
-          selectedAspectRatio={selectedAspectRatio}
-          aspectRatioOptions={aspectRatioOptions}
-          onModelChange={(modelId) => updateNodeData(id, { model: modelId })}
-          onResolutionChange={(resolution) =>
-            updateNodeData(id, { size: resolution as ImageSize })
-          }
-          onAspectRatioChange={(aspectRatio) =>
-            updateNodeData(id, { requestAspectRatio: aspectRatio })
-          }
-          extraParams={nodeData.extraParams}
-          onExtraParamChange={(key, value) =>
-            updateNodeData(id, {
-              extraParams: {
-                ...(nodeData.extraParams ?? {}),
-                [key]: value,
-              },
-            })
-          }
-          showWebSearchToggle={showWebSearchToggle}
-          webSearchEnabled={webSearchEnabled}
-          onWebSearchToggle={(enabled) =>
-            updateNodeData(id, {
-              extraParams: {
-                ...(nodeData.extraParams ?? {}),
-                enable_web_search: enabled,
-              },
-            })
-          }
-          triggerSize="sm"
-          chipClassName={NODE_CONTROL_CHIP_CLASS}
-          modelChipClassName={NODE_CONTROL_MODEL_CHIP_CLASS}
-          paramsChipClassName={NODE_CONTROL_PARAMS_CHIP_CLASS}
-          modelPanelAlign="center"
-          paramsPanelAlign="center"
-          modelPanelClassName="inline-block min-w-[300px] max-w-[calc(100vw-32px)] p-2"
-          paramsPanelClassName="w-[420px] p-3"
-        />
+        {hasConfiguredModel ? (
+          <ModelParamsControls
+            imageModels={imageModels}
+            selectedModel={selectedModel}
+            resolutionOptions={resolutionOptions}
+            selectedResolution={selectedResolution}
+            selectedAspectRatio={selectedAspectRatio}
+            aspectRatioOptions={aspectRatioOptions}
+            onModelChange={(modelId) => {
+              const model = imageModels.find((item) => item.id === modelId);
+              if (!model) {
+                return;
+              }
+              updateNodeData(id, { model: modelId });
+              setLastImageModelSelection({ providerId: model.providerId as 'ai-media' | 'chaomo', modelId });
+            }}
+            onResolutionChange={(resolution) =>
+              updateNodeData(id, { size: resolution as ImageSize })
+            }
+            onAspectRatioChange={(aspectRatio) =>
+              updateNodeData(id, { requestAspectRatio: aspectRatio })
+            }
+            extraParams={nodeData.extraParams}
+            onExtraParamChange={(key, value) =>
+              updateNodeData(id, {
+                extraParams: {
+                  ...(nodeData.extraParams ?? {}),
+                  [key]: value,
+                },
+              })
+            }
+            triggerSize="sm"
+            chipClassName={NODE_CONTROL_CHIP_CLASS}
+            modelChipClassName={NODE_CONTROL_MODEL_CHIP_CLASS}
+            paramsChipClassName={NODE_CONTROL_PARAMS_CHIP_CLASS}
+            modelPanelAlign="center"
+            paramsPanelAlign="center"
+            modelPanelClassName="inline-block min-w-[300px] max-w-[calc(100vw-32px)] p-2"
+            paramsPanelClassName="w-[420px] p-3"
+          />
+        ) : (
+          <UiButton
+            variant="muted"
+            size="sm"
+            onClick={() => openSettingsDialog({ category: 'imageApis' })}
+          >
+            {t('modelParams.configureImageModel')}
+          </UiButton>
+        )}
 
         <UiButton
           onClick={(event: ReactMouseEvent<HTMLButtonElement>) => {
@@ -2071,6 +2009,7 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
           variant="primary"
           size="sm"
           className={`!min-w-0 shrink-0 ${NODE_CONTROL_PRIMARY_BUTTON_CLASS}`}
+          disabled={!hasConfiguredModel}
         >
           <Sparkles className={NODE_CONTROL_ICON_CLASS} strokeWidth={2.8} />
           {t('canvas.generate')}

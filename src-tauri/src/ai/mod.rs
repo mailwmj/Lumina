@@ -15,6 +15,7 @@ pub struct GenerateRequest {
     pub aspect_ratio: String,
     pub reference_images: Option<Vec<String>>,
     pub extra_params: Option<HashMap<String, serde_json::Value>>,
+    pub provider_config: Option<HashMap<String, serde_json::Value>>,
     /// Draft task ID - when set, generates final video from this draft
     pub draft_task_id: Option<String>,
 }

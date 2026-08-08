@@ -12,15 +12,11 @@ import {
 } from '@/features/canvas/models';
 import {
   UiChipButton,
-  UiModal,
   UiPanel,
-  UiButton,
   UiInput,
   UiCheckbox,
   UiSelect,
 } from '@/components/ui';
-import { useSettingsStore } from '@/stores/settingsStore';
-import { openSettingsDialog } from '@/features/settings/settingsEvents';
 
 interface ModelParamsControlsProps {
   imageModels: ImageModelDefinition[];
@@ -182,8 +178,6 @@ export const ModelParamsControls = memo(({
   const [paramsAnchorBaseWidth, setParamsAnchorBaseWidth] = useState<number | null>(null);
   const [otherParamsAnchorBaseWidth, setOtherParamsAnchorBaseWidth] = useState<number | null>(null);
   const [panelProviderId, setPanelProviderId] = useState(selectedModel.providerId);
-  const [missingKeyProviderName, setMissingKeyProviderName] = useState<string | null>(null);
-  const apiKeys = useSettingsStore((state) => state.apiKeys);
 
   const selectedProvider = useMemo(
     () => getModelProvider(selectedModel.providerId),
@@ -480,15 +474,9 @@ export const ModelParamsControls = memo(({
                         className={`h-8 rounded-lg border text-xs transition-colors ${providerOptionClassName} ${active
                           ? 'border-accent/50 bg-accent/15 text-text-dark'
                           : 'border-[rgba(255,255,255,0.12)] bg-bg-dark/65 text-text-muted hover:border-[rgba(255,255,255,0.2)]'
-                          }`}
+                        }`}
                         onClick={(event) => {
                           event.stopPropagation();
-                          const providerApiKey = (apiKeys[provider.id] ?? '').trim();
-                          if (!providerApiKey) {
-                            setOpenPanel(null);
-                            setMissingKeyProviderName(provider.label || provider.name);
-                            return;
-                          }
                           if (provider.id !== panelProviderId) {
                             const firstModel = imageModels.find((model) => model.providerId === provider.id);
                             if (firstModel) {
@@ -779,42 +767,6 @@ export const ModelParamsControls = memo(({
         document.body
       )}
 
-      {typeof document !== 'undefined' && createPortal(
-        <UiModal
-          isOpen={Boolean(missingKeyProviderName)}
-          title={t('modelParams.providerKeyRequiredTitle')}
-          onClose={() => setMissingKeyProviderName(null)}
-          widthClassName="w-[420px]"
-          containerClassName="z-[120]"
-          footer={(
-            <>
-              <UiButton
-                variant="muted"
-                size="sm"
-                onClick={() => setMissingKeyProviderName(null)}
-              >
-                {t('common.cancel')}
-              </UiButton>
-              <UiButton
-                variant="primary"
-                size="sm"
-                onClick={() => {
-                  setMissingKeyProviderName(null);
-                  setOpenPanel(null);
-                  openSettingsDialog({ category: 'imageApis' });
-                }}
-              >
-                {t('modelParams.goConfigure')}
-              </UiButton>
-            </>
-          )}
-        >
-          <p className="text-sm text-text-muted">
-            {t('modelParams.providerKeyRequiredDesc', { provider: missingKeyProviderName ?? '' })}
-          </p>
-        </UiModal>,
-        document.body
-      )}
     </div>
   );
 });

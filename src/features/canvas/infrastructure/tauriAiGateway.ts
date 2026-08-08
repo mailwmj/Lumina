@@ -22,6 +22,9 @@ async function normalizeReferenceImages(payload: GenerateImagePayload): Promise<
   const isKieModel = payload.model.startsWith('kie/');
   const isFalModel = payload.model.startsWith('fal/');
   const isRunninghubModel = payload.model.startsWith('runninghub/');
+  const isOpenAiModel = payload.model.startsWith('openai/');
+  const isOpenAiCompatibleImageModel =
+    isOpenAiModel || payload.model.startsWith('ai-media/') || payload.model.startsWith('chaomo/');
   // Video models need HTTP public URLs - if local path, upload to VOD
   // Check both volcvideo/ prefix and doubao-seedance model name (for compatibility with stored model values without prefix)
   const isVideoModel = payload.model.startsWith('volcvideo/') || payload.model.includes('doubao-seedance');
@@ -35,7 +38,7 @@ async function normalizeReferenceImages(payload: GenerateImagePayload): Promise<
   return payload.referenceImages
     ? await Promise.all(
       payload.referenceImages.map(async (imageUrl, index) =>
-        isKieModel || isFalModel || isRunninghubModel
+        isKieModel || isFalModel || isRunninghubModel || isOpenAiCompatibleImageModel
           ? imageUrl // KIE/FAL/RunningHub 使用 data URL（后端会上传到服务器）
           : isVideoModel
           ? isLikelyLocalImagePath(imageUrl)
@@ -59,6 +62,7 @@ export const tauriAiGateway: AiGateway = {
       aspect_ratio: payload.aspectRatio,
       reference_images: normalizedReferenceImages,
       extra_params: payload.extraParams,
+      provider_config: payload.providerConfig,
       draftTaskId: payload.draftTaskId,
     });
   },
@@ -76,6 +80,7 @@ export const tauriAiGateway: AiGateway = {
       aspect_ratio: payload.aspectRatio,
       reference_images: normalizedReferenceImages,
       extra_params: payload.extraParams,
+      provider_config: payload.providerConfig,
       draftTaskId: payload.draftTaskId,
       project_id: payload.projectId,
     });

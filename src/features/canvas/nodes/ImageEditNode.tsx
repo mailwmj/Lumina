@@ -48,16 +48,12 @@ import {
   resolveReferenceAwareDeleteRange,
 } from '@/features/canvas/application/referenceTokenEditing';
 import {
-  DEFAULT_IMAGE_MODEL_ID,
-  getImageModel,
-  listImageModels,
+  listConfiguredImageModels,
   resolveImageModelResolution,
   resolveImageModelResolutions,
+  resolveConfiguredImageModel,
+  UNCONFIGURED_IMAGE_MODEL,
 } from '@/features/canvas/models';
-import { GRSAI_NANO_BANANA_PRO_MODEL_ID } from '@/features/canvas/models/image/grsai/nanoBananaPro';
-import { FAL_NANO_BANANA_2_MODEL_ID } from '@/features/canvas/models/image/fal/nanoBanana2';
-import { KIE_NANO_BANANA_2_MODEL_ID } from '@/features/canvas/models/image/kie/nanoBanana2';
-import { resolveModelPriceDisplay } from '@/features/canvas/pricing';
 import {
   NODE_CONTROL_CHIP_CLASS,
   NODE_CONTROL_ICON_CLASS,
@@ -67,12 +63,13 @@ import {
 } from '@/features/canvas/ui/nodeControlStyles';
 import { ModelParamsControls } from '@/features/canvas/ui/ModelParamsControls';
 import { CanvasNodeImage } from '@/features/canvas/ui/CanvasNodeImage';
-import { NodePriceBadge } from '@/features/canvas/ui/NodePriceBadge';
 import { UiButton } from '@/components/ui';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { polishText } from '@/features/canvas/infrastructure/textPolishService';
+import { resolveImageProviderRuntime } from '@/features/canvas/application/imageProviderRuntime';
+import { openSettingsDialog } from '@/features/settings/settingsEvents';
 
 type ImageEditNodeProps = NodeProps & {
   id: string;
@@ -236,7 +233,7 @@ function buildAiResultNodeTitle(prompt: string, fallbackTitle: string): string {
 }
 
 export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageEditNodeProps) => {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const updateNodeInternals = useUpdateNodeInternals();
   const [error, setError] = useState<string | null>(null);
   const [isPolishing, setIsPolishing] = useState(false);
@@ -264,13 +261,10 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
   const addNode = useCanvasStore((state) => state.addNode);
   const findNodePosition = useCanvasStore((state) => state.findNodePosition);
   const addEdge = useCanvasStore((state) => state.addEdge);
-  const apiKeys = useSettingsStore((state) => state.apiKeys);
-  const grsaiNanoBananaProModel = useSettingsStore((state) => state.grsaiNanoBananaProModel);
-  const showNodePrice = useSettingsStore((state) => state.showNodePrice);
-  const priceDisplayCurrencyMode = useSettingsStore((state) => state.priceDisplayCurrencyMode);
-  const usdToCnyRate = useSettingsStore((state) => state.usdToCnyRate);
-  const preferDiscountedPrice = useSettingsStore((state) => state.preferDiscountedPrice);
-  const grsaiCreditTierId = useSettingsStore((state) => state.grsaiCreditTierId);
+  const openAiImageApi = useSettingsStore((state) => state.openAiImageApi);
+  const chaomoImageApi = useSettingsStore((state) => state.chaomoImageApi);
+  const lastImageModelSelection = useSettingsStore((state) => state.lastImageModelSelection);
+  const setLastImageModelSelection = useSettingsStore((state) => state.setLastImageModelSelection);
   const textApis = useSettingsStore((state) => state.textApis);
   const imagePolishPrompt = useSettingsStore((state) => state.imagePolishPrompt);
 
@@ -293,21 +287,34 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
     [incomingImageItems]
   );
 
-  const imageModels = useMemo(() => listImageModels(), []);
+  const imageModels = useMemo(
+    () =>
+      listConfiguredImageModels({
+        openAiImageApi,
+        chaomoImageApi,
+        lastImageModelSelection,
+      }),
+    [chaomoImageApi, lastImageModelSelection, openAiImageApi]
+  );
 
-  const selectedModel = useMemo(() => {
-    const modelId = data.model ?? DEFAULT_IMAGE_MODEL_ID;
-    return getImageModel(modelId);
-  }, [data.model]);
-  const providerApiKey = apiKeys[selectedModel.providerId] ?? '';
+  const configuredModel = useMemo(
+    () =>
+      resolveConfiguredImageModel(
+        { openAiImageApi, chaomoImageApi, lastImageModelSelection },
+        data.model
+      ),
+    [chaomoImageApi, data.model, lastImageModelSelection, openAiImageApi]
+  );
+  const hasConfiguredModel = configuredModel !== null;
+  const selectedModel = configuredModel ?? UNCONFIGURED_IMAGE_MODEL;
+  const providerRuntime = useMemo(
+    () => resolveImageProviderRuntime(selectedModel.providerId, { openAiImageApi, chaomoImageApi }),
+    [chaomoImageApi, openAiImageApi, selectedModel.providerId]
+  );
+  const providerApiKey = providerRuntime.apiKey;
   const effectiveExtraParams = useMemo(
-    () => ({
-      ...(data.extraParams ?? {}),
-      ...(selectedModel.id === GRSAI_NANO_BANANA_PRO_MODEL_ID
-        ? { grsai_pro_model: grsaiNanoBananaProModel }
-        : {}),
-    }),
-    [data.extraParams, grsaiNanoBananaProModel, selectedModel.id]
+    () => ({ ...(data.extraParams ?? {}) }),
+    [data.extraParams]
   );
   const resolutionOptions = useMemo(
     () => resolveImageModelResolutions(selectedModel, { extraParams: effectiveExtraParams }),
@@ -337,64 +344,6 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
   const requestResolution = selectedModel.resolveRequest({
     referenceImageCount: incomingImages.length,
   });
-  const showWebSearchToggle =
-    selectedModel.id === FAL_NANO_BANANA_2_MODEL_ID ||
-    selectedModel.id === KIE_NANO_BANANA_2_MODEL_ID;
-  const webSearchEnabled = Boolean(data.extraParams?.enable_web_search);
-  const resolvedPriceDisplay = useMemo(
-    () =>
-      showNodePrice
-        ? resolveModelPriceDisplay(selectedModel, {
-          resolution: selectedResolution.value,
-          extraParams: effectiveExtraParams,
-          language: i18n.language,
-          settings: {
-            displayCurrencyMode: priceDisplayCurrencyMode,
-            usdToCnyRate,
-            preferDiscountedPrice,
-            grsaiCreditTierId,
-          },
-        })
-        : null,
-    [
-      grsaiCreditTierId,
-      i18n.language,
-      preferDiscountedPrice,
-      priceDisplayCurrencyMode,
-      effectiveExtraParams,
-      selectedModel,
-      selectedResolution.value,
-      showNodePrice,
-      usdToCnyRate,
-    ]
-  );
-  const resolvedPriceTooltip = useMemo(() => {
-    if (!resolvedPriceDisplay) {
-      return undefined;
-    }
-
-    const lines = [resolvedPriceDisplay.label];
-    if (resolvedPriceDisplay.nativeLabel) {
-      lines.push(t('pricing.nativePrice', { value: resolvedPriceDisplay.nativeLabel }));
-    }
-    if (resolvedPriceDisplay.originalLabel) {
-      lines.push(t('pricing.originalPrice', { value: resolvedPriceDisplay.originalLabel }));
-    }
-    if (resolvedPriceDisplay.pointsCost) {
-      lines.push(t('pricing.pointsCost', { count: resolvedPriceDisplay.pointsCost }));
-    }
-    if (resolvedPriceDisplay.grsaiCreditTier) {
-      lines.push(
-        t('pricing.grsaiTier', {
-          price: resolvedPriceDisplay.grsaiCreditTier.priceCny.toFixed(2),
-          credits: resolvedPriceDisplay.grsaiCreditTier.credits.toLocaleString(
-            i18n.language.startsWith('zh') ? 'zh-CN' : 'en-US'
-          ),
-        })
-      );
-    }
-    return lines.join('\n');
-  }, [i18n.language, resolvedPriceDisplay, t]);
 
   const supportedAspectRatioValues = useMemo(
     () => selectedModel.aspectRatios.map((item) => item.value),
@@ -427,6 +376,9 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
   }, [id, updateNodeData]);
 
   useEffect(() => {
+    if (!hasConfiguredModel) {
+      return;
+    }
     if (data.model !== selectedModel.id) {
       updateNodeData(id, { model: selectedModel.id });
     }
@@ -442,6 +394,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
     data.model,
     data.requestAspectRatio,
     data.size,
+    hasConfiguredModel,
     id,
     selectedAspectRatio.value,
     selectedModel.id,
@@ -553,6 +506,13 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
   }, [textApis, imagePolishPrompt, promptDraft]);
 
   const handleGenerate = useCallback(async () => {
+    if (!hasConfiguredModel) {
+      const errorMessage = t('node.imageEdit.modelRequired');
+      setError(errorMessage);
+      void showErrorDialog(errorMessage, t('common.error'));
+      return;
+    }
+
     const prompt = promptDraft.replace(/@(?=图\d+)/g, '').trim();
     if (!prompt) {
       const errorMessage = t('node.imageEdit.promptRequired');
@@ -621,6 +581,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
         aspectRatio: resolvedRequestAspectRatio,
         referenceImages: incomingImages,
         extraParams: effectiveExtraParams,
+        providerConfig: providerRuntime.providerConfig,
         projectId,
       });
       const generationDebugContext: GenerationDebugContext = {
@@ -691,9 +652,11 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
     addNode,
     addEdge,
     providerApiKey,
+    providerRuntime.providerConfig,
     findNodePosition,
     promptDraft,
     effectiveExtraParams,
+    hasConfiguredModel,
     id,
     incomingImages,
     requestResolution.requestModel,
@@ -824,14 +787,6 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
         className={NODE_HEADER_FLOATING_POSITION_CLASS}
         icon={<Sparkles className="h-4 w-4" />}
         titleText={resolvedTitle}
-        rightSlot={
-          resolvedPriceDisplay ? (
-            <NodePriceBadge
-              label={resolvedPriceDisplay.label}
-              title={resolvedPriceTooltip}
-            />
-          ) : undefined
-        }
         editable
         onTitleChange={(nextTitle) => updateNodeData(id, { displayName: nextTitle })}
       />
@@ -933,48 +888,53 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
       </div>
 
       <div className="mt-2 flex shrink-0 items-center gap-1">
-        <ModelParamsControls
-          imageModels={imageModels}
-          selectedModel={selectedModel}
-          resolutionOptions={resolutionOptions}
-          selectedResolution={selectedResolution}
-          selectedAspectRatio={selectedAspectRatio}
-          aspectRatioOptions={aspectRatioOptions}
-          onModelChange={(modelId) => {
-            updateNodeData(id, { model: modelId });
-          }}
-          onResolutionChange={(resolution) => {
-            updateNodeData(id, { size: resolution as ImageSize });
-          }
-          }
-          onAspectRatioChange={(aspectRatio) => {
-            updateNodeData(id, { requestAspectRatio: aspectRatio });
-          }
-          }
-          extraParams={data.extraParams}
-          onExtraParamChange={(key, value) =>
-            updateNodeData(id, {
-              extraParams: {
-                ...(data.extraParams ?? {}),
-                [key]: value,
-              },
-            })
-          }
-          showWebSearchToggle={showWebSearchToggle}
-          webSearchEnabled={webSearchEnabled}
-          onWebSearchToggle={(enabled) =>
-            updateNodeData(id, {
-              extraParams: {
-                ...(data.extraParams ?? {}),
-                enable_web_search: enabled,
-              },
-            })
-          }
-          triggerSize="sm"
-          chipClassName={NODE_CONTROL_CHIP_CLASS}
-          modelChipClassName={NODE_CONTROL_MODEL_CHIP_CLASS}
-          paramsChipClassName={NODE_CONTROL_PARAMS_CHIP_CLASS}
-        />
+        {hasConfiguredModel ? (
+          <ModelParamsControls
+            imageModels={imageModels}
+            selectedModel={selectedModel}
+            resolutionOptions={resolutionOptions}
+            selectedResolution={selectedResolution}
+            selectedAspectRatio={selectedAspectRatio}
+            aspectRatioOptions={aspectRatioOptions}
+            onModelChange={(modelId) => {
+              const model = imageModels.find((item) => item.id === modelId);
+              if (!model) {
+                return;
+              }
+              updateNodeData(id, { model: modelId });
+              setLastImageModelSelection({ providerId: model.providerId as 'ai-media' | 'chaomo', modelId });
+            }}
+            onResolutionChange={(resolution) => {
+              updateNodeData(id, { size: resolution as ImageSize });
+            }
+            }
+            onAspectRatioChange={(aspectRatio) => {
+              updateNodeData(id, { requestAspectRatio: aspectRatio });
+            }
+            }
+            extraParams={data.extraParams}
+            onExtraParamChange={(key, value) =>
+              updateNodeData(id, {
+                extraParams: {
+                  ...(data.extraParams ?? {}),
+                  [key]: value,
+                },
+              })
+            }
+            triggerSize="sm"
+            chipClassName={NODE_CONTROL_CHIP_CLASS}
+            modelChipClassName={NODE_CONTROL_MODEL_CHIP_CLASS}
+            paramsChipClassName={NODE_CONTROL_PARAMS_CHIP_CLASS}
+          />
+        ) : (
+          <UiButton
+            variant="muted"
+            size="sm"
+            onClick={() => openSettingsDialog({ category: 'imageApis' })}
+          >
+            {t('modelParams.configureImageModel')}
+          </UiButton>
+        )}
 
         <UiButton
           onClick={(event) => {
@@ -1003,6 +963,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
           }}
           variant="primary"
           className={`shrink-0 ${NODE_CONTROL_PRIMARY_BUTTON_CLASS}`}
+          disabled={!hasConfiguredModel}
         >
           <Sparkles className={NODE_CONTROL_ICON_CLASS} strokeWidth={2.8} />
           {t('canvas.generate')}

@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use reqwest::Client;
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -44,6 +45,8 @@ pub struct GenerateRequestDto {
     pub aspect_ratio: String,
     pub reference_images: Option<Vec<String>>,
     pub extra_params: Option<HashMap<String, Value>>,
+    #[serde(default)]
+    pub provider_config: Option<HashMap<String, Value>>,
     /// Draft task ID - when set, generates final video from this draft
     #[serde(rename = "draftTaskId", default)]
     pub draft_task_id: Option<String>,
@@ -314,6 +317,124 @@ pub async fn set_api_key(provider: String, api_key: String) -> Result<(), String
         .map_err(|error| error.to_string())
 }
 
+#[derive(Debug, Deserialize)]
+pub struct DiscoverImageModelsRequest {
+    pub provider_id: String,
+    pub base_url: String,
+    pub api_key: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct DiscoveredImageModelDto {
+    pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+}
+
+fn resolve_models_endpoint(base_url: &str) -> Result<String, String> {
+    let normalized = base_url.trim().trim_end_matches('/');
+    if normalized.is_empty() {
+        return Err("请填写 Base URL".to_string());
+    }
+    if normalized.ends_with("/v1") {
+        return Ok(format!("{}/models", normalized));
+    }
+    Ok(format!("{}/v1/models", normalized))
+}
+
+fn model_list_from_response(payload: &Value) -> Vec<DiscoveredImageModelDto> {
+    let models = payload
+        .get("data")
+        .or_else(|| payload.get("models"))
+        .and_then(Value::as_array)
+        .or_else(|| payload.as_array());
+    let Some(models) = models else {
+        return Vec::new();
+    };
+
+    let mut unique_models = HashSet::new();
+    models
+        .iter()
+        .filter_map(|entry| {
+            let id = entry
+                .as_str()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
+                .or_else(|| {
+                    entry.as_object().and_then(|record| {
+                        ["id", "model", "name"]
+                            .iter()
+                            .find_map(|key| record.get(*key).and_then(Value::as_str))
+                            .map(str::trim)
+                            .filter(|value| !value.is_empty())
+                            .map(str::to_string)
+                    })
+                })?;
+
+            if !unique_models.insert(id.clone()) {
+                return None;
+            }
+
+            let label = entry.as_object().and_then(|record| {
+                ["display_name", "displayName", "label", "name"]
+                    .iter()
+                    .find_map(|key| record.get(*key).and_then(Value::as_str))
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty() && *value != id)
+                    .map(str::to_string)
+            });
+
+            Some(DiscoveredImageModelDto { id, label })
+        })
+        .collect()
+}
+
+#[tauri::command]
+pub async fn discover_image_models(
+    request: DiscoverImageModelsRequest,
+) -> Result<Vec<DiscoveredImageModelDto>, String> {
+    if request.provider_id != "ai-media" && request.provider_id != "chaomo" {
+        return Err("不支持该生图 Provider 的模型发现".to_string());
+    }
+    if request.api_key.trim().is_empty() {
+        return Err("请填写 API Key".to_string());
+    }
+
+    let endpoint = resolve_models_endpoint(&request.base_url)?;
+    info!(
+        "Discovering image models for provider {} at {}",
+        request.provider_id, endpoint
+    );
+    let response = Client::new()
+        .get(&endpoint)
+        .bearer_auth(request.api_key.trim())
+        .timeout(Duration::from_secs(15))
+        .send()
+        .await
+        .map_err(|error| format!("获取模型列表失败：{}", error))?;
+    let status = response.status();
+    let payload = response
+        .json::<Value>()
+        .await
+        .map_err(|error| format!("模型列表返回的数据无法解析：{}", error))?;
+
+    if !status.is_success() {
+        let message = payload
+            .get("error")
+            .and_then(|error| {
+                error
+                    .as_str()
+                    .map(str::to_string)
+                    .or_else(|| error.get("message").and_then(Value::as_str).map(str::to_string))
+            })
+            .unwrap_or_else(|| format!("HTTP {}", status));
+        return Err(format!("获取模型列表失败：{}", message));
+    }
+
+    Ok(model_list_from_response(&payload))
+}
+
 #[tauri::command]
 pub async fn submit_generate_image_job(
     app: AppHandle,
@@ -340,6 +461,7 @@ pub async fn submit_generate_image_job(
         aspect_ratio: request.aspect_ratio,
         reference_images: request.reference_images,
         extra_params: request.extra_params,
+        provider_config: request.provider_config,
         draft_task_id: request.draft_task_id,
     };
 
@@ -691,6 +813,7 @@ pub async fn generate_image(request: GenerateRequestDto) -> Result<String, Strin
         aspect_ratio: request.aspect_ratio,
         reference_images: request.reference_images,
         extra_params: request.extra_params,
+        provider_config: request.provider_config,
         draft_task_id: request.draft_task_id,
     };
 

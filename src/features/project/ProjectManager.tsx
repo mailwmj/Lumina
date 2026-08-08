@@ -2,12 +2,9 @@ import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Plus, FolderOpen, Pencil, Trash2, AlertTriangle } from 'lucide-react';
 import { useProjectStore } from '@/stores/projectStore';
-import { getConfiguredApiKeyCount, useSettingsStore } from '@/stores/settingsStore';
 import { UI_CONTENT_OVERLAY_INSET_CLASS, UI_DIALOG_TRANSITION_MS } from '@/components/ui/motion';
 import { useDialogTransition } from '@/components/ui/useDialogTransition';
 import { UiButton, UiSelect } from '@/components/ui/primitives';
-import { MissingApiKeyHint } from '@/features/settings/MissingApiKeyHint';
-import { listModelProviders } from '@/features/canvas/models';
 import { RenameDialog } from './RenameDialog';
 
 type ProjectSortField = 'name' | 'createdAt' | 'updatedAt';
@@ -85,10 +82,6 @@ export function ProjectManager() {
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
   const [sortField, setSortField] = useState<ProjectSortField>('createdAt');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
-  const providerIds = useMemo(() => listModelProviders().map((provider) => provider.id), []);
-  const configuredApiKeyCount = useSettingsStore((state) =>
-    getConfiguredApiKeyCount(state.apiKeys, providerIds)
-  );
 
   const { projects, isOpeningProject, createProject, deleteProject, renameProject, openProject } =
     useProjectStore();
@@ -180,8 +173,6 @@ export function ProjectManager() {
             {t('project.newProject')}
           </UiButton>
         </div>
-
-        {configuredApiKeyCount === 0 && <MissingApiKeyHint className="mb-8" />}
 
         {projects.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-text-muted">

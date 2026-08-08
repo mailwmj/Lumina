@@ -1,5 +1,4 @@
 import type { ImageModelDefinition } from '../../types';
-import { createGrsaiPointsPricing } from '@/features/canvas/pricing';
 
 export const GRSAI_NANO_BANANA_2_MODEL_ID = 'grsai/nano-banana-2';
 
@@ -32,7 +31,6 @@ export const imageModel: ImageModelDefinition = {
     { value: '2K', label: '2K' },
     { value: '4K', label: '4K' },
   ],
-  pricing: createGrsaiPointsPricing(() => 1300),
   resolveRequest: ({ referenceImageCount }) => ({
     requestModel: GRSAI_NANO_BANANA_2_MODEL_ID,
     modeLabel: referenceImageCount > 0 ? '编辑模式' : '生成模式',

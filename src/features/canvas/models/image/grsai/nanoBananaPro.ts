@@ -1,5 +1,4 @@
 import type { ImageModelDefinition, ResolutionOption } from '../../types';
-import { createGrsaiPointsPricing } from '@/features/canvas/pricing';
 
 export const GRSAI_NANO_BANANA_PRO_MODEL_ID = 'grsai/nano-banana-pro';
 const DEFAULT_GRSAI_PRO_VARIANT = 'nano-banana-pro';
@@ -25,13 +24,13 @@ const ALL_RESOLUTION_OPTIONS: ResolutionOption[] = [
 const VIP_RESOLUTION_OPTIONS = ALL_RESOLUTION_OPTIONS.filter((item) => item.value !== '4K');
 const VIP_4K_RESOLUTION_OPTIONS = ALL_RESOLUTION_OPTIONS.filter((item) => item.value === '4K');
 
-const GRSAI_PRO_POINTS_BY_MODEL: Record<string, number> = {
-  'nano-banana-pro': 1800,
-  'nano-banana-pro-vt': 1800,
-  'nano-banana-pro-cl': 3400,
-  'nano-banana-pro-vip': 7000,
-  'nano-banana-pro-4k-vip': 8600,
-};
+const GRSAI_PRO_VARIANTS = new Set([
+  'nano-banana-pro',
+  'nano-banana-pro-vt',
+  'nano-banana-pro-cl',
+  'nano-banana-pro-vip',
+  'nano-banana-pro-4k-vip',
+]);
 
 export function resolveGrsaiNanoBananaProVariant(
   extraParams?: Record<string, unknown>
@@ -40,7 +39,7 @@ export function resolveGrsaiNanoBananaProVariant(
     ? extraParams.grsai_pro_model.trim().toLowerCase()
     : DEFAULT_GRSAI_PRO_VARIANT;
 
-  return GRSAI_PRO_POINTS_BY_MODEL[variant] ? variant : DEFAULT_GRSAI_PRO_VARIANT;
+  return GRSAI_PRO_VARIANTS.has(variant) ? variant : DEFAULT_GRSAI_PRO_VARIANT;
 }
 
 function resolveGrsaiNanoBananaProResolutions(
@@ -71,10 +70,6 @@ export const imageModel: ImageModelDefinition = {
   aspectRatios: NANO_BANANA_ASPECT_RATIOS.map((value) => ({ value, label: value })),
   resolutions: ALL_RESOLUTION_OPTIONS,
   resolveResolutions: ({ extraParams }) => resolveGrsaiNanoBananaProResolutions(extraParams),
-  pricing: createGrsaiPointsPricing(({ extraParams }) => {
-    const variant = resolveGrsaiNanoBananaProVariant(extraParams);
-    return GRSAI_PRO_POINTS_BY_MODEL[variant] ?? GRSAI_PRO_POINTS_BY_MODEL[DEFAULT_GRSAI_PRO_VARIANT];
-  }),
   resolveRequest: ({ referenceImageCount }) => ({
     requestModel: GRSAI_NANO_BANANA_PRO_MODEL_ID,
     modeLabel: referenceImageCount > 0 ? '编辑模式' : '生成模式',

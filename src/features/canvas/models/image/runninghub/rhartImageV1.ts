@@ -1,5 +1,4 @@
 import type { ImageModelDefinition } from '../../types';
-import { createFixedResolutionPricing } from '@/features/canvas/pricing';
 
 export const RUNNINGHUB_RHART_MODEL_ID = 'runninghub/rhart-image-v1';
 
@@ -30,12 +29,6 @@ export const imageModel: ImageModelDefinition = {
   resolutions: [
     { value: '1K', label: '1K' },
   ],
-  pricing: createFixedResolutionPricing({
-    currency: 'CNY',
-    standardRates: {
-      '1K': 0.5,
-    },
-  }),
   resolveRequest: ({ referenceImageCount }) => ({
     requestModel: 'rhart-image-v1',
     modeLabel: referenceImageCount > 0 ? '编辑模式' : '生成模式',

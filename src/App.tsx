@@ -173,22 +173,6 @@ function App() {
     };
   }, [isHydrated, autoCheckAppUpdateOnLaunch, enableUpdateDialog]);
 
-  const handleManualCheckUpdate = async (): Promise<'has-update' | 'up-to-date' | 'failed'> => {
-    const result = await checkForUpdate();
-    if (!result.hasUpdate) {
-      return result.error ? 'failed' : 'up-to-date';
-    }
-
-    setLatestVersion(result.latestVersion ?? '');
-    setCurrentVersion(result.currentVersion ?? '');
-
-    if (enableUpdateDialog) {
-      setShowUpdateDialog(true);
-    }
-
-    return 'has-update';
-  };
-
   const handleApplyIgnore = (mode: UpdateIgnoreMode) => {
     if (mode === 'forever-all') {
       setEnableUpdateDialog(false);
@@ -230,7 +214,6 @@ function App() {
           isOpen={showSettings}
           onClose={() => setShowSettings(false)}
           initialCategory={settingsInitialCategory}
-          onCheckUpdate={handleManualCheckUpdate}
         />
         <UpdateAvailableDialog
           isOpen={showUpdateDialog}

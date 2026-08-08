@@ -1,23 +1,27 @@
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { X, Eye, EyeOff, FolderOpen, Loader2, Plus, Trash2 } from 'lucide-react';
-import { Trans, useTranslation } from 'react-i18next';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import remarkBreaks from 'remark-breaks';
-import { getVersion } from '@tauri-apps/api/app';
+import { useTranslation } from 'react-i18next';
 import { open } from '@tauri-apps/plugin-dialog';
-import { openUrl } from '@tauri-apps/plugin-opener';
 import { getLogConfig, setLogConfig, resetLogConfig, useLogStore } from '@/lib/logger';
 import { invoke } from '@tauri-apps/api/core';
-import { useSettingsStore, type TextApiConfig, type VideoApiConfig, DEFAULT_TEXT_API_PROMPT, DEFAULT_VIDEO_SD10_POLISH_PROMPT, DEFAULT_VIDEO_SD15_PROMPT } from '@/stores/settingsStore';
+import {
+  useSettingsStore,
+  type ChaomoImageApiConfig,
+  type ImageModelCatalog,
+  type ImageProviderId,
+  type OpenAiImageApiConfig,
+  type TextApiConfig,
+  type VideoApiConfig,
+  DEFAULT_TEXT_API_PROMPT,
+  DEFAULT_VIDEO_SD10_POLISH_PROMPT,
+  DEFAULT_VIDEO_SD15_PROMPT,
+} from '@/stores/settingsStore';
+import { discoverImageModels } from '@/commands/ai';
+import { toConfiguredImageModelId } from '@/features/canvas/models';
 import { testTextApi } from '@/features/canvas/infrastructure/textPolishService';
 import { UiCheckbox, UiSelect } from '@/components/ui';
 import { UI_CONTENT_OVERLAY_INSET_CLASS, UI_DIALOG_TRANSITION_MS } from '@/components/ui/motion';
 import { useDialogTransition } from '@/components/ui/useDialogTransition';
-import { listModelProviders } from '@/features/canvas/models';
-import { GRSAI_NANO_BANANA_PRO_MODEL_OPTIONS } from '@/features/canvas/models/providers/grsai';
-import { GRSAI_CREDIT_TIERS } from '@/features/canvas/pricing/types';
-import providerGuideMarkdown from '../../docs/settings/provider-guide.md?raw';
 import type { SettingsCategory } from '@/features/settings/settingsEvents';
 import { logger } from '@/lib/logger';
 
@@ -25,7 +29,6 @@ interface SettingsDialogProps {
   isOpen: boolean;
   onClose: () => void;
   initialCategory?: SettingsCategory;
-  onCheckUpdate?: () => Promise<'has-update' | 'up-to-date' | 'failed'>;
 }
 
 interface SettingsCheckboxCardProps {
@@ -35,19 +38,81 @@ interface SettingsCheckboxCardProps {
   onCheckedChange: (checked: boolean) => void;
 }
 
-const PROVIDER_REGISTER_URLS: Record<string, string> = {
-  ppio: 'https://ppio.com/user/register?invited_by=WGY0DZ',
-  grsai: 'https://grsai.com',
-  kie: 'https://kie.ai?ref=eef20ef0b0595cad227d45b29c635f6c',
-  fal: 'https://fal.ai',
-};
+interface ImageModelSelectionPanelProps {
+  catalog: ImageModelCatalog | null;
+  selectedModelIds: string[];
+  isLoading: boolean;
+  error: string | null;
+  onRefresh: () => void;
+  onSelectionChange: (modelId: string, selected: boolean) => void;
+  refreshLabel: string;
+  refreshingLabel: string;
+  noModelsLabel: string;
+  selectModelsLabel: string;
+}
 
-const PROVIDER_GET_KEY_URLS: Record<string, string> = {
-  ppio: 'https://ppio.com/settings/key-management',
-  grsai: 'https://grsai.com/zh/dashboard/api-keys',
-  kie: 'https://kie.ai/api-key',
-  fal: 'https://fal.ai/dashboard/keys',
-};
+function ImageModelSelectionPanel({
+  catalog,
+  selectedModelIds,
+  isLoading,
+  error,
+  onRefresh,
+  onSelectionChange,
+  refreshLabel,
+  refreshingLabel,
+  noModelsLabel,
+  selectModelsLabel,
+}: ImageModelSelectionPanelProps) {
+  const selectedModelIdSet = new Set(selectedModelIds);
+
+  return (
+    <div className="rounded border border-border-dark bg-surface-dark p-3">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-xs font-medium text-text-dark">{selectModelsLabel}</span>
+        <button
+          type="button"
+          onClick={onRefresh}
+          disabled={isLoading}
+          className="inline-flex h-7 shrink-0 items-center rounded border border-border-dark bg-bg-dark px-2 text-xs text-text-dark transition-colors hover:bg-surface-dark disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {isLoading && <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />}
+          {isLoading ? refreshingLabel : refreshLabel}
+        </button>
+      </div>
+
+      {error && <p className="mt-2 text-xs text-red-400">{error}</p>}
+
+      {!error && !catalog && (
+        <p className="mt-2 text-xs text-text-muted">{noModelsLabel}</p>
+      )}
+
+      {catalog && catalog.models.length === 0 && (
+        <p className="mt-2 text-xs text-text-muted">{noModelsLabel}</p>
+      )}
+
+      {catalog && catalog.models.length > 0 && (
+        <div className="ui-scrollbar mt-2 max-h-40 space-y-1 overflow-y-auto">
+          {catalog.models.map((model) => {
+            const selected = selectedModelIdSet.has(model.id);
+            return (
+              <label
+                key={model.id}
+                className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1.5 text-xs text-text-dark hover:bg-bg-dark"
+              >
+                <UiCheckbox
+                  checked={selected}
+                  onCheckedChange={(checked) => onSelectionChange(model.id, checked)}
+                  onClick={(event) => event.stopPropagation()}
+                />
+                <span className="min-w-0 break-words">{model.label || model.id}</span>
+              </label>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function SettingsCheckboxCard({
   title,
@@ -88,13 +153,11 @@ export function SettingsDialog({
   isOpen,
   onClose,
   initialCategory = 'general',
-  onCheckUpdate,
 }: SettingsDialogProps) {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const {
-    apiKeys,
-    grsaiNanoBananaProModel,
-    hideProviderGuidePopover,
+    openAiImageApi,
+    chaomoImageApi,
     downloadPresetPaths,
     useUploadFilenameAsNodeTitle,
     storyboardGenKeepStyleConsistent,
@@ -103,19 +166,12 @@ export function SettingsDialog({
     ignoreAtTagWhenCopyingAndGenerating,
     enableStoryboardGenGridPreviewShortcut,
     showStoryboardGenAdvancedRatioControls,
-    showNodePrice,
-    priceDisplayCurrencyMode,
-    usdToCnyRate,
-    preferDiscountedPrice,
-    grsaiCreditTierId,
     uiRadiusPreset,
     themeTonePreset,
     accentColor,
     canvasEdgeRoutingMode,
-    autoCheckAppUpdateOnLaunch,
-    enableUpdateDialog,
-    setProviderApiKey,
-    setGrsaiNanoBananaProModel,
+    setOpenAiImageApi,
+    setChaomoImageApi,
     setDownloadPresetPaths,
     setUseUploadFilenameAsNodeTitle,
     setStoryboardGenKeepStyleConsistent,
@@ -124,17 +180,10 @@ export function SettingsDialog({
     setIgnoreAtTagWhenCopyingAndGenerating,
     setEnableStoryboardGenGridPreviewShortcut,
     setShowStoryboardGenAdvancedRatioControls,
-    setShowNodePrice,
-    setPriceDisplayCurrencyMode,
-    setUsdToCnyRate,
-    setPreferDiscountedPrice,
-    setGrsaiCreditTierId,
     setUiRadiusPreset,
     setThemeTonePreset,
     setAccentColor,
     setCanvasEdgeRoutingMode,
-    setAutoCheckAppUpdateOnLaunch,
-    setEnableUpdateDialog,
     textApis,
     setTextApis,
     imagePolishPrompt,
@@ -142,21 +191,19 @@ export function SettingsDialog({
     videoApis,
     setVideoApis,
   } = useSettingsStore();
-  const providers = useMemo(() => {
-    const providerOrder = ['kie', 'ppio', 'fal', 'grsai'];
-    const providerIndex = new Map(providerOrder.map((id, index) => [id, index]));
-    return listModelProviders().slice().sort((left, right) => {
-      const leftIndex = providerIndex.get(left.id) ?? Number.MAX_SAFE_INTEGER;
-      const rightIndex = providerIndex.get(right.id) ?? Number.MAX_SAFE_INTEGER;
-      return leftIndex - rightIndex;
-    });
-  }, []);
   const [activeCategory, setActiveCategory] = useState<SettingsCategory>(initialCategory);
-  const [appVersion, setAppVersion] = useState<string>('');
-  const [localApiKeys, setLocalApiKeys] = useState<Record<string, string>>(apiKeys);
-  const [localGrsaiNanoBananaProModel, setLocalGrsaiNanoBananaProModel] = useState(
-    grsaiNanoBananaProModel
+  const [localOpenAiImageApi, setLocalOpenAiImageApi] = useState<OpenAiImageApiConfig>(
+    openAiImageApi
   );
+  const [localChaomoImageApi, setLocalChaomoImageApi] = useState<ChaomoImageApiConfig>(
+    chaomoImageApi
+  );
+  const [modelDiscoveryState, setModelDiscoveryState] = useState<
+    Record<ImageProviderId, { isLoading: boolean; error: string | null }>
+  >({
+    'ai-media': { isLoading: false, error: null },
+    chaomo: { isLoading: false, error: null },
+  });
   const [localDownloadPathInput, setLocalDownloadPathInput] = useState('');
   const [localDownloadPresetPaths, setLocalDownloadPresetPaths] = useState(downloadPresetPaths);
   const [localUseUploadFilenameAsNodeTitle, setLocalUseUploadFilenameAsNodeTitle] = useState(
@@ -176,25 +223,12 @@ export function SettingsDialog({
     useState(enableStoryboardGenGridPreviewShortcut);
   const [localShowStoryboardGenAdvancedRatioControls, setLocalShowStoryboardGenAdvancedRatioControls] =
     useState(showStoryboardGenAdvancedRatioControls);
-  const [localShowNodePrice, setLocalShowNodePrice] = useState(showNodePrice);
-  const [localPriceDisplayCurrencyMode, setLocalPriceDisplayCurrencyMode] = useState(
-    priceDisplayCurrencyMode
-  );
-  const [localUsdToCnyRate, setLocalUsdToCnyRate] = useState(String(usdToCnyRate));
-  const [localPreferDiscountedPrice, setLocalPreferDiscountedPrice] = useState(
-    preferDiscountedPrice
-  );
-  const [localGrsaiCreditTierId, setLocalGrsaiCreditTierId] = useState(grsaiCreditTierId);
   const [localUiRadiusPreset, setLocalUiRadiusPreset] = useState(uiRadiusPreset);
   const [localThemeTonePreset, setLocalThemeTonePreset] = useState(themeTonePreset);
   const [localAccentColor, setLocalAccentColor] = useState(accentColor);
   const [localCanvasEdgeRoutingMode, setLocalCanvasEdgeRoutingMode] = useState(canvasEdgeRoutingMode);
-  const [localAutoCheckAppUpdateOnLaunch, setLocalAutoCheckAppUpdateOnLaunch] = useState(
-    autoCheckAppUpdateOnLaunch
-  );
-  const [localEnableUpdateDialog, setLocalEnableUpdateDialog] = useState(enableUpdateDialog);
-  const [checkUpdateStatus, setCheckUpdateStatus] = useState<'' | 'checking' | 'has-update' | 'up-to-date' | 'failed'>('');
-  const [revealedApiKeys, setRevealedApiKeys] = useState<Record<string, boolean>>({});
+  const [isOpenAiApiKeyRevealed, setIsOpenAiApiKeyRevealed] = useState(false);
+  const [isChaomoApiKeyRevealed, setIsChaomoApiKeyRevealed] = useState(false);
   const [localTextApis, setLocalTextApis] = useState<TextApiConfig[]>(textApis);
   const [localImagePolishPrompt, setLocalImagePolishPrompt] = useState<string>(imagePolishPrompt);
   const [localVideoApis, setLocalVideoApis] = useState<VideoApiConfig[]>(videoApis);
@@ -202,32 +236,12 @@ export function SettingsDialog({
   const { shouldRender, isVisible } = useDialogTransition(isOpen, UI_DIALOG_TRANSITION_MS);
 
   useEffect(() => {
-    let mounted = true;
-    const loadAppVersion = async () => {
-      try {
-        const version = await getVersion();
-        if (mounted) {
-          setAppVersion(version);
-        }
-      } catch {
-        if (mounted) {
-          setAppVersion('');
-        }
-      }
-    };
-    void loadAppVersion();
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  useEffect(() => {
     if (!isOpen) {
       return;
     }
-    setLocalApiKeys(apiKeys);
+    setLocalOpenAiImageApi(openAiImageApi);
+    setLocalChaomoImageApi(chaomoImageApi);
     setLocalDownloadPresetPaths(downloadPresetPaths);
-    setLocalGrsaiNanoBananaProModel(grsaiNanoBananaProModel);
     setLocalUseUploadFilenameAsNodeTitle(useUploadFilenameAsNodeTitle);
     setLocalStoryboardGenKeepStyleConsistent(storyboardGenKeepStyleConsistent);
     setLocalStoryboardGenDisableTextInImage(storyboardGenDisableTextInImage);
@@ -235,25 +249,38 @@ export function SettingsDialog({
     setLocalIgnoreAtTagWhenCopyingAndGenerating(ignoreAtTagWhenCopyingAndGenerating);
     setLocalEnableStoryboardGenGridPreviewShortcut(enableStoryboardGenGridPreviewShortcut);
     setLocalShowStoryboardGenAdvancedRatioControls(showStoryboardGenAdvancedRatioControls);
-    setLocalShowNodePrice(showNodePrice);
-    setLocalPriceDisplayCurrencyMode(priceDisplayCurrencyMode);
-    setLocalUsdToCnyRate(String(usdToCnyRate));
-    setLocalPreferDiscountedPrice(preferDiscountedPrice);
-    setLocalGrsaiCreditTierId(grsaiCreditTierId);
     setLocalUiRadiusPreset(uiRadiusPreset);
     setLocalThemeTonePreset(themeTonePreset);
     setLocalAccentColor(accentColor);
     setLocalCanvasEdgeRoutingMode(canvasEdgeRoutingMode);
-    setLocalAutoCheckAppUpdateOnLaunch(autoCheckAppUpdateOnLaunch);
-    setLocalEnableUpdateDialog(enableUpdateDialog);
     setLocalTextApis(textApis);
+    setLocalImagePolishPrompt(imagePolishPrompt);
     setLocalVideoApis(videoApis);
-    setCheckUpdateStatus('');
-    setRevealedApiKeys({});
+    setIsOpenAiApiKeyRevealed(false);
+    setIsChaomoApiKeyRevealed(false);
+    setModelDiscoveryState({
+      'ai-media': { isLoading: false, error: null },
+      chaomo: { isLoading: false, error: null },
+    });
     setLocalDownloadPathInput('');
   }, [
     isOpen,
+    openAiImageApi,
+    chaomoImageApi,
+    downloadPresetPaths,
+    useUploadFilenameAsNodeTitle,
+    storyboardGenKeepStyleConsistent,
+    storyboardGenDisableTextInImage,
+    storyboardGenAutoInferEmptyFrame,
+    ignoreAtTagWhenCopyingAndGenerating,
+    enableStoryboardGenGridPreviewShortcut,
+    showStoryboardGenAdvancedRatioControls,
+    uiRadiusPreset,
+    themeTonePreset,
+    accentColor,
+    canvasEdgeRoutingMode,
     textApis,
+    imagePolishPrompt,
     videoApis,
   ]);
 
@@ -265,11 +292,62 @@ export function SettingsDialog({
     setActiveCategory(initialCategory);
   }, [initialCategory, isOpen]);
 
+  const handleDiscoverImageModels = useCallback(
+    async (providerId: ImageProviderId, config: OpenAiImageApiConfig | ChaomoImageApiConfig) => {
+      setModelDiscoveryState((previous) => ({
+        ...previous,
+        [providerId]: { isLoading: true, error: null },
+      }));
+
+      try {
+        const models = await discoverImageModels({
+          provider_id: providerId,
+          base_url: config.baseUrl,
+          api_key: config.apiKey,
+        });
+        const modelCatalog: ImageModelCatalog = {
+          models: models.map((model) => ({
+            id: toConfiguredImageModelId(providerId, model.id),
+            ...(model.label ? { label: model.label } : {}),
+          })),
+          refreshedAt: Date.now(),
+        };
+        const selectedModelIds = new Set(config.selectedModelIds);
+        const nextConfig = {
+          ...config,
+          modelCatalog,
+          selectedModelIds: modelCatalog.models
+            .map((model) => model.id)
+            .filter((modelId) => selectedModelIds.has(modelId)),
+        };
+
+        if (providerId === 'ai-media') {
+          setLocalOpenAiImageApi(nextConfig);
+        } else {
+          setLocalChaomoImageApi(nextConfig);
+        }
+      } catch (error) {
+        setModelDiscoveryState((previous) => ({
+          ...previous,
+          [providerId]: {
+            isLoading: false,
+            error: error instanceof Error ? error.message : t('settings.imageModelsFetchFailed'),
+          },
+        }));
+        return;
+      }
+
+      setModelDiscoveryState((previous) => ({
+        ...previous,
+        [providerId]: { isLoading: false, error: null },
+      }));
+    },
+    [t]
+  );
+
   const handleSave = useCallback(() => {
-    providers.forEach((provider) => {
-      setProviderApiKey(provider.id, localApiKeys[provider.id] ?? '');
-    });
-    setGrsaiNanoBananaProModel(localGrsaiNanoBananaProModel);
+    setOpenAiImageApi(localOpenAiImageApi);
+    setChaomoImageApi(localChaomoImageApi);
     setDownloadPresetPaths(localDownloadPresetPaths);
     setUseUploadFilenameAsNodeTitle(localUseUploadFilenameAsNodeTitle);
     setStoryboardGenKeepStyleConsistent(localStoryboardGenKeepStyleConsistent);
@@ -278,25 +356,18 @@ export function SettingsDialog({
     setIgnoreAtTagWhenCopyingAndGenerating(localIgnoreAtTagWhenCopyingAndGenerating);
     setEnableStoryboardGenGridPreviewShortcut(localEnableStoryboardGenGridPreviewShortcut);
     setShowStoryboardGenAdvancedRatioControls(localShowStoryboardGenAdvancedRatioControls);
-    setShowNodePrice(localShowNodePrice);
-    setPriceDisplayCurrencyMode(localPriceDisplayCurrencyMode);
-    setUsdToCnyRate(Number(localUsdToCnyRate));
-    setPreferDiscountedPrice(localPreferDiscountedPrice);
-    setGrsaiCreditTierId(localGrsaiCreditTierId);
     setUiRadiusPreset(localUiRadiusPreset);
     setThemeTonePreset(localThemeTonePreset);
     setAccentColor(localAccentColor);
     setCanvasEdgeRoutingMode(localCanvasEdgeRoutingMode);
-    setAutoCheckAppUpdateOnLaunch(localAutoCheckAppUpdateOnLaunch);
-    setEnableUpdateDialog(localEnableUpdateDialog);
     setTextApis(localTextApis);
     setImagePolishPrompt(localImagePolishPrompt);
     setVideoApis(localVideoApis);
     onClose();
   }, [
-    localApiKeys,
+    localOpenAiImageApi,
+    localChaomoImageApi,
     localDownloadPresetPaths,
-    localGrsaiNanoBananaProModel,
     localUseUploadFilenameAsNodeTitle,
     localStoryboardGenKeepStyleConsistent,
     localStoryboardGenDisableTextInImage,
@@ -304,23 +375,15 @@ export function SettingsDialog({
     localIgnoreAtTagWhenCopyingAndGenerating,
     localEnableStoryboardGenGridPreviewShortcut,
     localShowStoryboardGenAdvancedRatioControls,
-    localShowNodePrice,
-    localPriceDisplayCurrencyMode,
-    localUsdToCnyRate,
-    localPreferDiscountedPrice,
-    localGrsaiCreditTierId,
     localUiRadiusPreset,
     localThemeTonePreset,
     localAccentColor,
     localCanvasEdgeRoutingMode,
-    localAutoCheckAppUpdateOnLaunch,
-    localEnableUpdateDialog,
     localTextApis,
     localImagePolishPrompt,
     localVideoApis,
-    providers,
-    setProviderApiKey,
-    setGrsaiNanoBananaProModel,
+    setOpenAiImageApi,
+    setChaomoImageApi,
     setDownloadPresetPaths,
     setUseUploadFilenameAsNodeTitle,
     setStoryboardGenKeepStyleConsistent,
@@ -329,31 +392,14 @@ export function SettingsDialog({
     setIgnoreAtTagWhenCopyingAndGenerating,
     setEnableStoryboardGenGridPreviewShortcut,
     setShowStoryboardGenAdvancedRatioControls,
-    setShowNodePrice,
-    setPriceDisplayCurrencyMode,
-    setUsdToCnyRate,
-    setPreferDiscountedPrice,
-    setGrsaiCreditTierId,
     setUiRadiusPreset,
     setThemeTonePreset,
     setAccentColor,
     setCanvasEdgeRoutingMode,
-    setAutoCheckAppUpdateOnLaunch,
-    setEnableUpdateDialog,
     setTextApis,
     setVideoApis,
     onClose,
   ]);
-
-  const handleCheckUpdate = useCallback(async () => {
-    if (!onCheckUpdate) {
-      return;
-    }
-
-    setCheckUpdateStatus('checking');
-    const status = await onCheckUpdate();
-    setCheckUpdateStatus(status);
-  }, [onCheckUpdate]);
 
   const handlePickDownloadPath = useCallback(async () => {
     try {
@@ -391,13 +437,6 @@ export function SettingsDialog({
 
   const handleRemoveDownloadPath = useCallback((path: string) => {
     setLocalDownloadPresetPaths((previous) => previous.filter((value) => value !== path));
-  }, []);
-
-  const handleMarkdownLinkClick = useCallback((href?: string) => {
-    if (!href) {
-      return;
-    }
-    void openUrl(href);
   }, []);
 
   if (!shouldRender) return null;
@@ -472,20 +511,6 @@ export function SettingsDialog({
               </button>
 
               <button
-                onClick={() => setActiveCategory('pricing')}
-                className={`
-                w-full flex items-center gap-3 px-4 py-2.5 text-left
-                transition-colors
-                ${activeCategory === 'pricing'
-                    ? 'bg-accent/10 text-text-dark border-l-2 border-accent'
-                    : 'text-text-muted hover:bg-bg-dark hover:text-text-dark'
-                  }
-              `}
-              >
-                <span className="text-sm">{t('settings.pricing')}</span>
-              </button>
-
-              <button
                 onClick={() => setActiveCategory('experimental')}
                 className={`
                 w-full flex items-center gap-3 px-4 py-2.5 text-left
@@ -511,20 +536,6 @@ export function SettingsDialog({
               `}
               >
                 <span className="text-sm">{t('settings.textApis')}</span>
-              </button>
-
-              <button
-                onClick={() => setActiveCategory('about')}
-                className={`
-                w-full flex items-center gap-3 px-4 py-2.5 text-left
-                transition-colors
-                ${activeCategory === 'about'
-                    ? 'bg-accent/10 text-text-dark border-l-2 border-accent'
-                    : 'text-text-muted hover:bg-bg-dark hover:text-text-dark'
-                  }
-              `}
-              >
-                <span className="text-sm">{t('settings.about')}</span>
               </button>
 
               <button
@@ -571,111 +582,177 @@ export function SettingsDialog({
                 </div>
 
                 <div className="ui-scrollbar flex-1 space-y-4 overflow-y-auto p-6">
-                  {providers.map((provider) => {
-                    const displayName = i18n.language.startsWith('zh') ? provider.label : provider.name;
-                    const isRevealed = Boolean(revealedApiKeys[provider.id]);
+                  <div className="rounded-lg border border-border-dark bg-bg-dark p-4">
+                    <div className="mb-4">
+                      <h3 className="text-sm font-medium text-text-dark">
+                        {t('settings.openAiImageApi')}
+                      </h3>
+                      <p className="mt-1 text-xs text-text-muted">
+                        {t('settings.openAiImageApiDesc')}
+                      </p>
+                    </div>
 
-                    return (
-                      <div key={provider.id} className="rounded-lg border border-border-dark bg-bg-dark p-4">
-                        <div className="mb-3">
-                          <h3 className="text-sm font-medium text-text-dark">{displayName}</h3>
-                          {PROVIDER_REGISTER_URLS[provider.id] && PROVIDER_GET_KEY_URLS[provider.id] ? (
-                            <p className="text-xs text-text-muted">
-                              {t('settings.providerApiKeyGuidePrefix')}{' '}
-                              <a
-                                href={PROVIDER_REGISTER_URLS[provider.id]}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="text-accent hover:underline"
-                              >
-                                {t('settings.providerRegisterLink')}
-                              </a>
-                              {t('settings.providerApiKeyGuideMiddle')}{' '}
-                              <a
-                                href={PROVIDER_GET_KEY_URLS[provider.id]}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="text-accent hover:underline"
-                              >
-                                {t('settings.getApiKeyLink')}
-                              </a>
-                            </p>
-                          ) : (
-                            <p className="text-xs text-text-muted">{provider.id}</p>
-                          )}
-                        </div>
+                    <div className="space-y-3">
+                      <label className="block">
+                        <span className="mb-1 block text-xs font-medium text-text-dark">
+                          {t('settings.openAiImageBaseUrl')}
+                        </span>
+                        <input
+                          type="url"
+                          value={localOpenAiImageApi.baseUrl}
+                            onChange={(event) =>
+                              setLocalOpenAiImageApi((previous) => ({
+                                ...previous,
+                                baseUrl: event.target.value,
+                                modelCatalog: null,
+                                selectedModelIds: [],
+                              }))
+                            }
+                          className="w-full rounded border border-border-dark bg-surface-dark px-3 py-2 text-sm text-text-dark"
+                        />
+                      </label>
 
+                      <label className="block">
+                        <span className="mb-1 block text-xs font-medium text-text-dark">
+                          {t('settings.openAiImageApiKey')}
+                        </span>
                         <div className="relative">
                           <input
-                            type={isRevealed ? 'text' : 'password'}
-                            value={localApiKeys[provider.id] ?? ''}
-                            onChange={(event) => {
-                              const nextValue = event.target.value;
-                              setLocalApiKeys((previous) => ({
+                            type={isOpenAiApiKeyRevealed ? 'text' : 'password'}
+                            value={localOpenAiImageApi.apiKey}
+                            onChange={(event) =>
+                              setLocalOpenAiImageApi((previous) => ({
                                 ...previous,
-                                [provider.id]: nextValue,
-                              }));
-                              setProviderApiKey(provider.id, nextValue);
-                            }}
+                                apiKey: event.target.value,
+                                modelCatalog: null,
+                                selectedModelIds: [],
+                              }))
+                            }
                             placeholder={t('settings.enterApiKey')}
                             className="w-full rounded border border-border-dark bg-surface-dark px-3 py-2 pr-10 text-sm text-text-dark placeholder:text-text-muted"
                           />
                           <button
                             type="button"
-                            onClick={() =>
-                              setRevealedApiKeys((previous) => ({
-                                ...previous,
-                                [provider.id]: !isRevealed,
-                              }))
-                            }
+                            title={isOpenAiApiKeyRevealed ? t('settings.hideApiKey') : t('settings.showApiKey')}
+                            onClick={() => setIsOpenAiApiKeyRevealed((visible) => !visible)}
                             className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 hover:bg-bg-dark"
                           >
-                            {isRevealed ? (
+                            {isOpenAiApiKeyRevealed ? (
                               <EyeOff className="h-4 w-4 text-text-muted" />
                             ) : (
                               <Eye className="h-4 w-4 text-text-muted" />
                             )}
                           </button>
                         </div>
+                      </label>
 
-                        {provider.id === 'grsai' && (
-                          <div className="mt-3">
-                            <div className="mb-1 text-xs font-medium text-text-dark">
-                              {t('settings.nanoBananaProModel')}
-                            </div>
-                            <p className="mb-2 text-xs text-text-muted">
-                              <Trans
-                                i18nKey="settings.nanoBananaProModelDesc"
-                                components={{
-                                  modelListLink: (
-                                    <a
-                                      href="https://grsai.com/zh/dashboard/models"
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="text-accent hover:underline"
-                                    />
-                                  ),
-                                }}
-                              />
-                            </p>
-                            <UiSelect
-                              value={localGrsaiNanoBananaProModel}
-                              onChange={(event) =>
-                                setLocalGrsaiNanoBananaProModel(event.target.value)
-                              }
-                              className="h-9 text-sm"
-                            >
-                              {GRSAI_NANO_BANANA_PRO_MODEL_OPTIONS.map((option) => (
-                                <option key={option} value={option}>
-                                  {option}
-                                </option>
-                              ))}
-                            </UiSelect>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                      <ImageModelSelectionPanel
+                        catalog={localOpenAiImageApi.modelCatalog}
+                        selectedModelIds={localOpenAiImageApi.selectedModelIds}
+                        isLoading={modelDiscoveryState['ai-media'].isLoading}
+                        error={modelDiscoveryState['ai-media'].error}
+                        onRefresh={() => void handleDiscoverImageModels('ai-media', localOpenAiImageApi)}
+                        onSelectionChange={(modelId, selected) =>
+                          setLocalOpenAiImageApi((previous) => ({
+                            ...previous,
+                            selectedModelIds: selected
+                              ? Array.from(new Set([...previous.selectedModelIds, modelId]))
+                              : previous.selectedModelIds.filter((id) => id !== modelId),
+                          }))
+                        }
+                        refreshLabel={t('settings.imageModelsFetch')}
+                        refreshingLabel={t('settings.imageModelsFetching')}
+                        noModelsLabel={t('settings.imageModelsEmpty')}
+                        selectModelsLabel={t('settings.imageModelsSelect')}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border border-border-dark bg-bg-dark p-4">
+                    <div className="mb-4">
+                      <h3 className="text-sm font-medium text-text-dark">
+                        {t('settings.chaomoImageApi')}
+                      </h3>
+                      <p className="mt-1 text-xs text-text-muted">
+                        {t('settings.chaomoImageApiDesc')}
+                      </p>
+                    </div>
+
+                    <div className="space-y-3">
+                      <label className="block">
+                        <span className="mb-1 block text-xs font-medium text-text-dark">
+                          {t('settings.openAiImageBaseUrl')}
+                        </span>
+                        <input
+                          type="url"
+                          value={localChaomoImageApi.baseUrl}
+                            onChange={(event) =>
+                              setLocalChaomoImageApi((previous) => ({
+                                ...previous,
+                                baseUrl: event.target.value,
+                                modelCatalog: null,
+                                selectedModelIds: [],
+                              }))
+                          }
+                          className="w-full rounded border border-border-dark bg-surface-dark px-3 py-2 text-sm text-text-dark"
+                        />
+                      </label>
+
+                      <label className="block">
+                        <span className="mb-1 block text-xs font-medium text-text-dark">
+                          {t('settings.openAiImageApiKey')}
+                        </span>
+                        <div className="relative">
+                          <input
+                            type={isChaomoApiKeyRevealed ? 'text' : 'password'}
+                            value={localChaomoImageApi.apiKey}
+                            onChange={(event) =>
+                              setLocalChaomoImageApi((previous) => ({
+                                ...previous,
+                                apiKey: event.target.value,
+                                modelCatalog: null,
+                                selectedModelIds: [],
+                              }))
+                            }
+                            placeholder={t('settings.enterApiKey')}
+                            className="w-full rounded border border-border-dark bg-surface-dark px-3 py-2 pr-10 text-sm text-text-dark placeholder:text-text-muted"
+                          />
+                          <button
+                            type="button"
+                            title={isChaomoApiKeyRevealed ? t('settings.hideApiKey') : t('settings.showApiKey')}
+                            onClick={() => setIsChaomoApiKeyRevealed((visible) => !visible)}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 hover:bg-bg-dark"
+                          >
+                            {isChaomoApiKeyRevealed ? (
+                              <EyeOff className="h-4 w-4 text-text-muted" />
+                            ) : (
+                              <Eye className="h-4 w-4 text-text-muted" />
+                            )}
+                          </button>
+                        </div>
+                      </label>
+
+                      <ImageModelSelectionPanel
+                        catalog={localChaomoImageApi.modelCatalog}
+                        selectedModelIds={localChaomoImageApi.selectedModelIds}
+                        isLoading={modelDiscoveryState.chaomo.isLoading}
+                        error={modelDiscoveryState.chaomo.error}
+                        onRefresh={() => void handleDiscoverImageModels('chaomo', localChaomoImageApi)}
+                        onSelectionChange={(modelId, selected) =>
+                          setLocalChaomoImageApi((previous) => ({
+                            ...previous,
+                            selectedModelIds: selected
+                              ? Array.from(new Set([...previous.selectedModelIds, modelId]))
+                              : previous.selectedModelIds.filter((id) => id !== modelId),
+                          }))
+                        }
+                        refreshLabel={t('settings.imageModelsFetch')}
+                        refreshingLabel={t('settings.imageModelsFetching')}
+                        noModelsLabel={t('settings.imageModelsEmpty')}
+                        selectModelsLabel={t('settings.imageModelsSelect')}
+                      />
+                    </div>
+                  </div>
 
                   {/* 全局图片润色提示词模板 */}
                   <div className="rounded-lg border border-border-dark bg-bg-dark p-4">
@@ -824,114 +901,6 @@ export function SettingsDialog({
                       >
                         {t('settings.resetAccentColor')}
                       </button>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex justify-end border-t border-border-dark px-6 py-4">
-                  <button
-                    onClick={handleSave}
-                    className="rounded bg-accent px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-accent/80"
-                  >
-                    {t('common.save')}
-                  </button>
-                </div>
-              </>
-            )}
-
-            {activeCategory === 'pricing' && (
-              <>
-                <div className="px-6 py-5 border-b border-border-dark">
-                  <h2 className="text-lg font-semibold text-text-dark">
-                    {t('settings.pricing')}
-                  </h2>
-                  <p className="text-sm text-text-muted mt-1">
-                    {t('settings.pricingDesc')}
-                  </p>
-                </div>
-
-                <div className="ui-scrollbar flex-1 space-y-4 overflow-y-auto p-6">
-                  <SettingsCheckboxCard
-                    checked={localShowNodePrice}
-                    onCheckedChange={setLocalShowNodePrice}
-                    title={t('settings.showNodePrice')}
-                    description={t('settings.showNodePriceDesc')}
-                  />
-
-                  <div className="rounded-lg border border-border-dark bg-bg-dark p-4">
-                    <h3 className="text-sm font-medium text-text-dark">
-                      {t('settings.priceDisplayCurrencyMode')}
-                    </h3>
-                    <p className="mt-1 text-xs text-text-muted">
-                      {t('settings.priceDisplayCurrencyModeDesc')}
-                    </p>
-                    <div className="mt-3">
-                      <UiSelect
-                        value={localPriceDisplayCurrencyMode}
-                        onChange={(event) =>
-                          setLocalPriceDisplayCurrencyMode(
-                            event.target.value as typeof localPriceDisplayCurrencyMode
-                          )
-                        }
-                        className="h-9 text-sm"
-                      >
-                        <option value="auto">{t('settings.priceCurrencyAuto')}</option>
-                        <option value="cny">{t('settings.priceCurrencyCny')}</option>
-                        <option value="usd">{t('settings.priceCurrencyUsd')}</option>
-                      </UiSelect>
-                    </div>
-                  </div>
-
-                  <div className="rounded-lg border border-border-dark bg-bg-dark p-4">
-                    <h3 className="text-sm font-medium text-text-dark">
-                      {t('settings.usdToCnyRate')}
-                    </h3>
-                    <p className="mt-1 text-xs text-text-muted">
-                      {t('settings.usdToCnyRateDesc')}
-                    </p>
-                    <div className="mt-3">
-                      <input
-                        type="number"
-                        min="0.01"
-                        step="0.01"
-                        value={localUsdToCnyRate}
-                        onChange={(event) => setLocalUsdToCnyRate(event.target.value)}
-                        className="h-9 w-full rounded border border-border-dark bg-surface-dark px-3 text-sm text-text-dark outline-none placeholder:text-text-muted"
-                      />
-                    </div>
-                  </div>
-
-                  <SettingsCheckboxCard
-                    checked={localPreferDiscountedPrice}
-                    onCheckedChange={setLocalPreferDiscountedPrice}
-                    title={t('settings.preferDiscountedPrice')}
-                    description={t('settings.preferDiscountedPriceDesc')}
-                  />
-
-                  <div className="rounded-lg border border-border-dark bg-bg-dark p-4">
-                    <h3 className="text-sm font-medium text-text-dark">
-                      {t('settings.grsaiCreditTier')}
-                    </h3>
-                    <p className="mt-1 text-xs text-text-muted">
-                      {t('settings.grsaiCreditTierDesc')}
-                    </p>
-                    <div className="mt-3">
-                      <UiSelect
-                        value={localGrsaiCreditTierId}
-                        onChange={(event) =>
-                          setLocalGrsaiCreditTierId(event.target.value as typeof localGrsaiCreditTierId)
-                        }
-                        className="h-9 text-sm"
-                      >
-                        {GRSAI_CREDIT_TIERS.map((tier) => (
-                          <option key={tier.id} value={tier.id}>
-                            {t('settings.grsaiCreditTierOption', {
-                              price: tier.priceCny.toFixed(2),
-                              credits: tier.credits.toLocaleString(i18n.language.startsWith('zh') ? 'zh-CN' : 'en-US'),
-                            })}
-                          </option>
-                        ))}
-                      </UiSelect>
                     </div>
                   </div>
                 </div>
@@ -1101,126 +1070,6 @@ export function SettingsDialog({
                   >
                     {t('common.save')}
                   </button>
-                </div>
-              </>
-            )}
-
-            {activeCategory === 'about' && (
-              <>
-                <div className="px-6 py-5 border-b border-border-dark">
-                  <h2 className="text-lg font-semibold text-text-dark">
-                    {t('settings.about')}
-                  </h2>
-                  <p className="text-sm text-text-muted mt-1">
-                    {t('settings.aboutDesc')}
-                  </p>
-                </div>
-
-                <div className="ui-scrollbar flex-1 space-y-4 overflow-y-auto p-6">
-                  <div className="rounded-lg border border-border-dark bg-bg-dark p-4">
-                    <div className="flex items-start gap-4">
-                      <img
-                        src="/app-icon.png"
-                        alt={t('settings.aboutAppName')}
-                        className="h-14 w-14 rounded-lg border border-border-dark object-cover"
-                      />
-                      <div className="min-w-0 flex-1">
-                        <a
-                          href="https://space.bilibili.com/39337803"
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-base font-semibold text-accent hover:underline"
-                        >
-                          {t('settings.aboutAppName')}
-                        </a>
-                        <p className="mt-1 text-sm text-text-muted">
-                          {t('settings.aboutIntro')}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="rounded-lg border border-border-dark bg-bg-dark p-4 space-y-2 text-sm">
-                    <p className="text-text-dark">
-                      {t('settings.aboutVersionLabel')}: <span className="text-text-muted">{appVersion || t('settings.aboutVersionUnknown')}</span>
-                    </p>
-                    <p className="text-text-dark">
-                      {t('settings.aboutAuthorLabel')}:{' '}
-                      <a
-                        href="https://space.bilibili.com/39337803"
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-accent hover:underline"
-                      >
-                        {t('settings.aboutAuthor')}
-                      </a>
-                    </p>
-                    <p className="text-text-dark">
-                      {t('settings.aboutRepositoryLabel')}:{' '}
-                      <a
-                        href="https://github.com/xujunjiex/Storyboard-Copilot-Plus"
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-accent hover:underline break-all"
-                      >
-                        https://github.com/xujunjiex/Storyboard-Copilot-Plus
-                      </a>
-                    </p>
-                  </div>
-
-                  <div className="space-y-3">
-                    <SettingsCheckboxCard
-                      checked={localAutoCheckAppUpdateOnLaunch}
-                      onCheckedChange={setLocalAutoCheckAppUpdateOnLaunch}
-                      title={t('settings.autoCheckUpdateOnLaunch')}
-                      description={t('settings.autoCheckUpdateOnLaunchDesc')}
-                    />
-                    <SettingsCheckboxCard
-                      checked={localEnableUpdateDialog}
-                      onCheckedChange={setLocalEnableUpdateDialog}
-                      title={t('settings.enableUpdateDialog')}
-                      description={t('settings.enableUpdateDialogDesc')}
-                    />
-                    <div className="pt-1">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          void handleCheckUpdate();
-                        }}
-                        className="rounded border border-border-dark bg-surface-dark px-3 py-2 text-sm text-text-dark transition-colors hover:bg-bg-dark disabled:cursor-not-allowed disabled:opacity-50"
-                        disabled={checkUpdateStatus === 'checking'}
-                      >
-                        {checkUpdateStatus === 'checking'
-                          ? t('settings.checkingUpdate')
-                          : t('settings.checkUpdateNow')}
-                      </button>
-                      {checkUpdateStatus !== '' && (
-                        <p className="mt-2 text-xs text-text-muted">
-                          {checkUpdateStatus === 'has-update' && t('settings.checkUpdateHasUpdate')}
-                          {checkUpdateStatus === 'up-to-date' && t('settings.checkUpdateUpToDate')}
-                          {checkUpdateStatus === 'failed' && t('settings.checkUpdateFailed')}
-                          {checkUpdateStatus === 'checking' && t('settings.checkingUpdate')}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex justify-end border-t border-border-dark px-6 py-4">
-                  <div className="flex gap-2">
-                    <button
-                      onClick={onClose}
-                      className="rounded border border-border-dark px-4 py-2 text-sm font-medium text-text-dark transition-colors hover:bg-bg-dark"
-                    >
-                      {t('common.close')}
-                    </button>
-                    <button
-                      onClick={handleSave}
-                      className="rounded bg-accent px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-accent/80"
-                    >
-                      {t('common.save')}
-                    </button>
-                  </div>
                 </div>
               </>
             )}
@@ -1613,35 +1462,6 @@ export function SettingsDialog({
             )}
           </div>
         </div>
-        {activeCategory === 'imageApis' && !hideProviderGuidePopover && (
-          <div
-            className={`absolute top-0 bottom-0 left-[calc(50%+366px)] right-0 min-w-[240px] max-w-[380px] rounded-lg border border-border-dark bg-surface-dark/95 p-3 shadow-xl transition-opacity duration-200 ${isVisible ? 'opacity-100' : 'opacity-0'}`}
-          >
-            <div className="markdown-body break-words text-xs leading-5 text-text-muted [&_a]:text-accent [&_blockquote]:border-l-2 [&_blockquote]:border-white/20 [&_blockquote]:pl-3 [&_code]:rounded [&_code]:bg-white/10 [&_code]:px-1 [&_code]:py-0.5 [&_h1]:text-sm [&_h1]:font-semibold [&_h2]:text-xs [&_h2]:font-semibold [&_h3]:text-xs [&_h3]:font-semibold [&_hr]:border-white/10 [&_li]:my-0.5 [&_ol]:list-decimal [&_ol]:pl-4 [&_p]:my-0 [&_p+_p]:mt-4 [&_pre]:overflow-auto [&_pre]:rounded-md [&_pre]:bg-black/30 [&_pre]:p-2 [&_ul]:list-disc [&_ul]:pl-4">
-              <ReactMarkdown
-                remarkPlugins={[remarkGfm, remarkBreaks]}
-                components={{
-                  a: ({ href, children, ...props }) => (
-                    <a
-                      {...props}
-                      href={href}
-                      target="_blank"
-                      rel="noreferrer"
-                      onClick={(event) => {
-                        event.preventDefault();
-                        handleMarkdownLinkClick(href);
-                      }}
-                    >
-                      {children}
-                    </a>
-                  ),
-                }}
-              >
-                {providerGuideMarkdown}
-              </ReactMarkdown>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

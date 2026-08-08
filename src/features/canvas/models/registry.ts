@@ -4,25 +4,41 @@ import type {
   ModelProviderDefinition,
   ResolutionOption,
 } from './types';
+import { imageModel as aiMediaGptImage2Model } from './image/openai/aiMediaGptImage2';
+import { imageModel as chaomoGptImage21kModel } from './image/openai/chaomoGptImage21k';
+import { imageModel as chaomoGptImage21kHightModel } from './image/openai/chaomoGptImage21kHight';
+import { imageModel as chaomoGptImage22kHightModel } from './image/openai/chaomoGptImage22kHight';
+import { imageModel as chaomoGptImage24kHightModel } from './image/openai/chaomoGptImage24kHight';
+import { imageModel as chaomoGptImage22kDirectModel } from './image/openai/chaomoGptImage22kDirect';
+import { imageModel as chaomoGptImage24kStableModel } from './image/openai/chaomoGptImage24kStable';
+import { imageModel as chaomoGptImage2DirectModel } from './image/openai/chaomoGptImage2Direct';
+import { imageModel as chaomoGptImage24kNativeModel } from './image/openai/chaomoGptImage24kNative';
+import { imageModel as chaomoNanoBanana2Model } from './image/openai/chaomoNanoBanana2';
+import { imageModel as chaomoNanoBananaProModel } from './image/openai/chaomoNanoBananaPro';
+import {
+  AI_MEDIA_GPT_IMAGE_2_MODEL_ID,
+  aiMediaProvider,
+  CHAOMO_GPT_IMAGE2_4K_DIRECT_MODEL_ID,
+  CHAOMO_GPT_IMAGE2_4K_MODEL_ID,
+  CHAOMO_LEGACY_GPT_IMAGE_2_DIRECT_MODEL_ID,
+  CHAOMO_LEGACY_GPT_IMAGE_2_4K_NATIVE_MODEL_ID,
+  chaomoProvider,
+} from './providers/openai';
 
-const providerModules = import.meta.glob<{ provider: ModelProviderDefinition }>(
-  './providers/*.ts',
-  { eager: true }
-);
-const modelModules = import.meta.glob<{ imageModel: ImageModelDefinition }>(
-  './image/**/*.ts',
-  { eager: true }
-);
-
-const providers: ModelProviderDefinition[] = Object.values(providerModules)
-  .map((module) => module.provider)
-  .filter((provider): provider is ModelProviderDefinition => Boolean(provider))
-  .sort((a, b) => a.id.localeCompare(b.id));
-
-const imageModels: ImageModelDefinition[] = Object.values(modelModules)
-  .map((module) => module.imageModel)
-  .filter((model): model is ImageModelDefinition => Boolean(model))
-  .sort((a, b) => a.id.localeCompare(b.id));
+const providers: ModelProviderDefinition[] = [aiMediaProvider, chaomoProvider];
+const imageModels: ImageModelDefinition[] = [
+  aiMediaGptImage2Model,
+  chaomoGptImage21kModel,
+  chaomoGptImage21kHightModel,
+  chaomoGptImage22kHightModel,
+  chaomoGptImage24kHightModel,
+  chaomoGptImage22kDirectModel,
+  chaomoGptImage24kStableModel,
+  chaomoGptImage2DirectModel,
+  chaomoGptImage24kNativeModel,
+  chaomoNanoBanana2Model,
+  chaomoNanoBananaProModel,
+];
 
 const providerMap = new Map<string, ModelProviderDefinition>(
   providers.map((provider) => [provider.id, provider])
@@ -31,11 +47,11 @@ const imageModelMap = new Map<string, ImageModelDefinition>(
   imageModels.map((model) => [model.id, model])
 );
 
-export const DEFAULT_IMAGE_MODEL_ID = 'kie/nano-banana-2';
+export const DEFAULT_IMAGE_MODEL_ID = AI_MEDIA_GPT_IMAGE_2_MODEL_ID;
 
 const imageModelAliasMap = new Map<string, string>([
-  ['gemini-3.1-flash', 'ppio/gemini-3.1-flash'],
-  ['gemini-3.1-flash-edit', 'ppio/gemini-3.1-flash'],
+  [CHAOMO_LEGACY_GPT_IMAGE_2_DIRECT_MODEL_ID, CHAOMO_GPT_IMAGE2_4K_DIRECT_MODEL_ID],
+  [CHAOMO_LEGACY_GPT_IMAGE_2_4K_NATIVE_MODEL_ID, CHAOMO_GPT_IMAGE2_4K_MODEL_ID],
 ]);
 
 export function listImageModels(): ImageModelDefinition[] {
@@ -46,9 +62,16 @@ export function listModelProviders(): ModelProviderDefinition[] {
   return providers;
 }
 
+export function resolveImageModelIdAlias(modelId: string): string {
+  return imageModelAliasMap.get(modelId) ?? modelId;
+}
+
+export function findImageModel(modelId: string): ImageModelDefinition | undefined {
+  return imageModelMap.get(resolveImageModelIdAlias(modelId));
+}
+
 export function getImageModel(modelId: string): ImageModelDefinition {
-  const resolvedModelId = imageModelAliasMap.get(modelId) ?? modelId;
-  return imageModelMap.get(resolvedModelId) ?? imageModelMap.get(DEFAULT_IMAGE_MODEL_ID)!;
+  return findImageModel(modelId) ?? imageModelMap.get(DEFAULT_IMAGE_MODEL_ID)!;
 }
 
 export function resolveImageModelResolutions(

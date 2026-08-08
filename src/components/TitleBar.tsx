@@ -1,4 +1,5 @@
 import { useCallback } from 'react';
+import { isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Minus, X, Maximize2, Settings, ArrowLeft } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -23,7 +24,7 @@ export function TitleBar({ onSettingsClick, showBackButton, onBackClick }: Title
   const { theme, toggleTheme } = useThemeStore();
   const currentProjectName = useProjectStore((state) => state.currentProject?.name);
 
-  const appWindow = getCurrentWindow();
+  const appWindow = isTauri() ? getCurrentWindow() : null;
   const isZh = i18n.language.startsWith('zh');
   const isMac =
     typeof navigator !== 'undefined'
@@ -32,10 +33,12 @@ export function TitleBar({ onSettingsClick, showBackButton, onBackClick }: Title
   const titleText = currentProjectName ? `${currentProjectName} - ${appTitle}` : appTitle;
 
   const handleMinimize = useCallback(async () => {
+    if (!appWindow) return;
     await appWindow.minimize();
   }, [appWindow]);
 
   const handleMaximize = useCallback(async () => {
+    if (!appWindow) return;
     const isMaximized = await appWindow.isMaximized();
     if (isMaximized) {
       await appWindow.unmaximize();
@@ -45,6 +48,7 @@ export function TitleBar({ onSettingsClick, showBackButton, onBackClick }: Title
   }, [appWindow]);
 
   const handleClose = useCallback(async () => {
+    if (!appWindow) return;
     await appWindow.close();
   }, [appWindow]);
 
@@ -54,6 +58,7 @@ export function TitleBar({ onSettingsClick, showBackButton, onBackClick }: Title
     if (target?.closest('button') || target?.closest('[data-no-drag="true"]')) {
       return;
     }
+    if (!appWindow) return;
     await appWindow.startDragging();
   }, [appWindow]);
 
@@ -68,7 +73,7 @@ export function TitleBar({ onSettingsClick, showBackButton, onBackClick }: Title
 
   return (
     <div className="h-10 flex items-center justify-between bg-surface-dark border-b border-border-dark select-none z-50 relative">
-      {isMac ? (
+      {isMac && appWindow ? (
         <div className="group flex items-center h-full pl-3 pr-2 gap-2" data-no-drag="true">
           <button
             type="button"

@@ -1,5 +1,4 @@
 import type { ImageModelDefinition } from '../../types';
-import { createFixedResolutionPricing } from '@/features/canvas/pricing';
 
 export const BLTCY_NANO_BANANA_MODEL_ID = 'bltcy/nano-banana';
 
@@ -34,12 +33,6 @@ export const imageModel: ImageModelDefinition = {
   resolutions: [
     { value: '1K', label: '1K' },
   ],
-  pricing: createFixedResolutionPricing({
-    currency: 'CNY',
-    standardRates: {
-      '1K': 0.25,
-    },
-  }),
   resolveRequest: ({ referenceImageCount }) => ({
     requestModel: 'nano-banana',
     modeLabel: referenceImageCount > 0 ? '编辑模式' : '生成模式',

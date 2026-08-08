@@ -192,6 +192,7 @@ pub fn run() {
             image::auto_save_image_to_project,
             image::delete_project_upload_file,
             ai_commands::set_api_key,
+            ai_commands::discover_image_models,
             ai_commands::submit_generate_image_job,
             ai_commands::get_generate_image_job,
             ai_commands::cancel_video_generation_task,

@@ -1,5 +1,4 @@
 import type { ImageModelDefinition } from '../../types';
-import { createMultiplierPricing, isHighThinkingEnabled } from '@/features/canvas/pricing';
 
 export const FAL_NANO_BANANA_2_MODEL_ID = 'fal/nano-banana-2';
 
@@ -50,19 +49,6 @@ export const imageModel: ImageModelDefinition = {
   defaultExtraParams: {
     thinking_level: 'off',
   },
-  pricing: createMultiplierPricing({
-    currency: 'USD',
-    baseAmount: 0.08,
-    resolutionMultipliers: {
-      '0.5K': 0.75,
-      '1K': 1,
-      '2K': 1.5,
-      '4K': 2,
-    },
-    resolveExtraCharges: ({ extraParams }) =>
-      (extraParams?.enable_web_search === true ? 0.015 : 0) +
-      (isHighThinkingEnabled(extraParams) ? 0.002 : 0),
-  }),
   resolveRequest: ({ referenceImageCount }) => ({
     requestModel: FAL_NANO_BANANA_2_MODEL_ID,
     modeLabel: referenceImageCount > 0 ? '编辑模式' : '生成模式',

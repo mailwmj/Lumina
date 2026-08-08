@@ -1,18 +1,57 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { logger } from '@/lib/logger';
-import {
-  DEFAULT_GRSAI_CREDIT_TIER_ID,
-  PRICE_DISPLAY_CURRENCY_MODES,
-  type GrsaiCreditTierId,
-  type PriceDisplayCurrencyMode,
-} from '@/features/canvas/pricing/types';
 
 export type UiRadiusPreset = 'compact' | 'default' | 'large';
 export type ThemeTonePreset = 'neutral' | 'warm' | 'cool';
 export type CanvasEdgeRoutingMode = 'spline' | 'orthogonal' | 'smartOrthogonal';
-export type ProviderApiKeys = Record<string, string>;
-export const DEFAULT_GRSAI_NANO_BANANA_PRO_MODEL = 'nano-banana-pro';
+export type ImageProviderId = 'ai-media' | 'chaomo';
+
+export const DEFAULT_OPENAI_IMAGE_BASE_URL = 'https://api.ai-media.vip/v1';
+export const DEFAULT_CHAOMO_IMAGE_BASE_URL = 'https://www.chaomoapi.com/v1';
+
+export interface DiscoveredImageModel {
+  id: string;
+  label?: string;
+}
+
+export interface ImageModelCatalog {
+  models: DiscoveredImageModel[];
+  refreshedAt: number;
+}
+
+export interface ImageModelSelection {
+  providerId: ImageProviderId;
+  modelId: string;
+}
+
+export interface ImageProviderApiConfig {
+  apiKey: string;
+  baseUrl: string;
+  modelCatalog: ImageModelCatalog | null;
+  selectedModelIds: string[];
+}
+
+export type OpenAiImageApiConfig = ImageProviderApiConfig;
+export type ChaomoImageApiConfig = ImageProviderApiConfig;
+
+export function createDefaultOpenAiImageApiConfig(): OpenAiImageApiConfig {
+  return {
+    apiKey: '',
+    baseUrl: DEFAULT_OPENAI_IMAGE_BASE_URL,
+    modelCatalog: null,
+    selectedModelIds: [],
+  };
+}
+
+export function createDefaultChaomoImageApiConfig(): ChaomoImageApiConfig {
+  return {
+    apiKey: '',
+    baseUrl: DEFAULT_CHAOMO_IMAGE_BASE_URL,
+    modelCatalog: null,
+    selectedModelIds: [],
+  };
+}
 
 export interface TextApiConfig {
   id: string;
@@ -239,9 +278,8 @@ function mergeVideoApis(existingApis?: VideoApiConfig[]): VideoApiConfig[] {
 
 interface SettingsState {
   isHydrated: boolean;
-  apiKeys: ProviderApiKeys;
-  grsaiNanoBananaProModel: string;
-  hideProviderGuidePopover: boolean;
+  openAiImageApi: OpenAiImageApiConfig;
+  chaomoImageApi: ChaomoImageApiConfig;
   downloadPresetPaths: string[];
   useUploadFilenameAsNodeTitle: boolean;
   storyboardGenKeepStyleConsistent: boolean;
@@ -250,11 +288,6 @@ interface SettingsState {
   ignoreAtTagWhenCopyingAndGenerating: boolean;
   enableStoryboardGenGridPreviewShortcut: boolean;
   showStoryboardGenAdvancedRatioControls: boolean;
-  showNodePrice: boolean;
-  priceDisplayCurrencyMode: PriceDisplayCurrencyMode;
-  usdToCnyRate: number;
-  preferDiscountedPrice: boolean;
-  grsaiCreditTierId: GrsaiCreditTierId;
   uiRadiusPreset: UiRadiusPreset;
   themeTonePreset: ThemeTonePreset;
   accentColor: string;
@@ -268,9 +301,10 @@ interface SettingsState {
   imagePolishPrompt: string;
   videoApis: VideoApiConfig[];
   activeVideoApiId: string | null;
-  setProviderApiKey: (providerId: string, key: string) => void;
-  setGrsaiNanoBananaProModel: (model: string) => void;
-  setHideProviderGuidePopover: (hide: boolean) => void;
+  lastImageModelSelection: ImageModelSelection | null;
+  setOpenAiImageApi: (config: OpenAiImageApiConfig) => void;
+  setChaomoImageApi: (config: ChaomoImageApiConfig) => void;
+  setLastImageModelSelection: (selection: ImageModelSelection | null) => void;
   setDownloadPresetPaths: (paths: string[]) => void;
   setUseUploadFilenameAsNodeTitle: (enabled: boolean) => void;
   setStoryboardGenKeepStyleConsistent: (enabled: boolean) => void;
@@ -279,11 +313,6 @@ interface SettingsState {
   setIgnoreAtTagWhenCopyingAndGenerating: (enabled: boolean) => void;
   setEnableStoryboardGenGridPreviewShortcut: (enabled: boolean) => void;
   setShowStoryboardGenAdvancedRatioControls: (enabled: boolean) => void;
-  setShowNodePrice: (enabled: boolean) => void;
-  setPriceDisplayCurrencyMode: (mode: PriceDisplayCurrencyMode) => void;
-  setUsdToCnyRate: (rate: number) => void;
-  setPreferDiscountedPrice: (enabled: boolean) => void;
-  setGrsaiCreditTierId: (tierId: GrsaiCreditTierId) => void;
   setUiRadiusPreset: (preset: UiRadiusPreset) => void;
   setThemeTonePreset: (preset: ThemeTonePreset) => void;
   setAccentColor: (color: string) => void;
@@ -313,45 +342,98 @@ function normalizeApiKey(input: string): string {
   return input.trim();
 }
 
-function normalizePriceDisplayCurrencyMode(
-  input: PriceDisplayCurrencyMode | string | null | undefined
-): PriceDisplayCurrencyMode {
-  return PRICE_DISPLAY_CURRENCY_MODES.includes(input as PriceDisplayCurrencyMode)
-    ? (input as PriceDisplayCurrencyMode)
-    : 'auto';
-}
-
-function normalizeUsdToCnyRate(input: number | string | null | undefined): number {
-  const numeric = typeof input === 'number' ? input : Number(input);
-  if (!Number.isFinite(numeric) || numeric <= 0) {
-    return 7.2;
+function normalizeDiscoveredImageModels(input: unknown): DiscoveredImageModel[] {
+  if (!Array.isArray(input)) {
+    return [];
   }
 
-  return Math.min(100, Math.max(0.01, Math.round(numeric * 100) / 100));
+  const modelById = new Map<string, DiscoveredImageModel>();
+  input.forEach((item) => {
+    if (!item || typeof item !== 'object') {
+      return;
+    }
+    const record = item as Record<string, unknown>;
+    const id = typeof record.id === 'string' ? record.id.trim() : '';
+    if (!id || modelById.has(id)) {
+      return;
+    }
+    const label = typeof record.label === 'string' ? record.label.trim() : '';
+    modelById.set(id, label ? { id, label } : { id });
+  });
+
+  return Array.from(modelById.values());
 }
 
-function normalizeGrsaiCreditTierId(
-  input: GrsaiCreditTierId | string | null | undefined
-): GrsaiCreditTierId {
-  switch (input) {
-    case 'tier-10':
-    case 'tier-20':
-    case 'tier-49':
-    case 'tier-99':
-    case 'tier-499':
-    case 'tier-999':
-      return input;
-    default:
-      return DEFAULT_GRSAI_CREDIT_TIER_ID;
+function normalizeImageModelCatalog(input: unknown): ImageModelCatalog | null {
+  if (!input || typeof input !== 'object') {
+    return null;
   }
+  const record = input as Record<string, unknown>;
+  const models = normalizeDiscoveredImageModels(record.models);
+  const refreshedAt = typeof record.refreshedAt === 'number' && Number.isFinite(record.refreshedAt)
+    ? record.refreshedAt
+    : Date.now();
+
+  return { models, refreshedAt };
 }
 
-function normalizeGrsaiNanoBananaProModel(input: string | null | undefined): string {
-  const trimmed = (input ?? '').trim().toLowerCase();
-  if (trimmed === DEFAULT_GRSAI_NANO_BANANA_PRO_MODEL || trimmed.startsWith('nano-banana-pro-')) {
-    return trimmed;
+function normalizeSelectedModelIds(input: unknown, catalog: ImageModelCatalog | null): string[] {
+  if (!catalog || !Array.isArray(input)) {
+    return [];
   }
-  return DEFAULT_GRSAI_NANO_BANANA_PRO_MODEL;
+
+  const availableIds = new Set(catalog.models.map((model) => model.id));
+  return Array.from(
+    new Set(
+      input
+        .filter((value): value is string => typeof value === 'string')
+        .map((value) => value.trim())
+        .filter((value) => availableIds.has(value))
+    )
+  );
+}
+
+function normalizeOpenAiImageApiConfig(
+  input: Partial<OpenAiImageApiConfig> | null | undefined
+): OpenAiImageApiConfig {
+  const defaults = createDefaultOpenAiImageApiConfig();
+  const baseUrl = typeof input?.baseUrl === 'string' ? input.baseUrl.trim() : '';
+  const modelCatalog = normalizeImageModelCatalog(input?.modelCatalog);
+
+  return {
+    apiKey: normalizeApiKey(input?.apiKey ?? ''),
+    baseUrl: baseUrl || defaults.baseUrl,
+    modelCatalog,
+    selectedModelIds: normalizeSelectedModelIds(input?.selectedModelIds, modelCatalog),
+  };
+}
+
+function normalizeChaomoImageApiConfig(
+  input: Partial<ChaomoImageApiConfig> | null | undefined
+): ChaomoImageApiConfig {
+  const defaults = createDefaultChaomoImageApiConfig();
+  const baseUrl = typeof input?.baseUrl === 'string' ? input.baseUrl.trim() : '';
+  const modelCatalog = normalizeImageModelCatalog(input?.modelCatalog);
+
+  return {
+    apiKey: normalizeApiKey(input?.apiKey ?? ''),
+    baseUrl: baseUrl || defaults.baseUrl,
+    modelCatalog,
+    selectedModelIds: normalizeSelectedModelIds(input?.selectedModelIds, modelCatalog),
+  };
+}
+
+function normalizeImageModelSelection(input: unknown): ImageModelSelection | null {
+  if (!input || typeof input !== 'object') {
+    return null;
+  }
+  const record = input as Record<string, unknown>;
+  const providerId = record.providerId;
+  const modelId = typeof record.modelId === 'string' ? record.modelId.trim() : '';
+  if ((providerId !== 'ai-media' && providerId !== 'chaomo') || !modelId) {
+    return null;
+  }
+  return { providerId, modelId };
 }
 
 function normalizeCanvasEdgeRoutingMode(
@@ -363,46 +445,12 @@ function normalizeCanvasEdgeRoutingMode(
   return 'spline';
 }
 
-function normalizeApiKeys(input: ProviderApiKeys | null | undefined): ProviderApiKeys {
-  if (!input) {
-    return {};
-  }
-
-  return Object.entries(input).reduce<ProviderApiKeys>((acc, [providerId, key]) => {
-    const normalizedProviderId = providerId.trim();
-    if (!normalizedProviderId) {
-      return acc;
-    }
-
-    acc[normalizedProviderId] = normalizeApiKey(key);
-    return acc;
-  }, {});
-}
-
-export function hasConfiguredApiKey(apiKeys: ProviderApiKeys): boolean {
-  return getConfiguredApiKeyCount(apiKeys) > 0;
-}
-
-export function getConfiguredApiKeyCount(
-  apiKeys: ProviderApiKeys,
-  providerIds?: readonly string[]
-): number {
-  const keysToCount = providerIds
-    ? providerIds.map((providerId) => apiKeys[providerId] ?? '')
-    : Object.values(apiKeys);
-
-  return keysToCount.reduce((count, key) => {
-    return normalizeApiKey(key).length > 0 ? count + 1 : count;
-  }, 0);
-}
-
 export const useSettingsStore = create<SettingsState>()(
   persist(
     (set) => ({
       isHydrated: false,
-      apiKeys: {},
-      grsaiNanoBananaProModel: DEFAULT_GRSAI_NANO_BANANA_PRO_MODEL,
-      hideProviderGuidePopover: false,
+      openAiImageApi: createDefaultOpenAiImageApiConfig(),
+      chaomoImageApi: createDefaultChaomoImageApiConfig(),
       downloadPresetPaths: [],
       useUploadFilenameAsNodeTitle: true,
       storyboardGenKeepStyleConsistent: true,
@@ -411,11 +459,6 @@ export const useSettingsStore = create<SettingsState>()(
       ignoreAtTagWhenCopyingAndGenerating: true,
       enableStoryboardGenGridPreviewShortcut: false,
       showStoryboardGenAdvancedRatioControls: false,
-      showNodePrice: true,
-      priceDisplayCurrencyMode: 'auto',
-      usdToCnyRate: 7.2,
-      preferDiscountedPrice: false,
-      grsaiCreditTierId: DEFAULT_GRSAI_CREDIT_TIER_ID,
       uiRadiusPreset: 'default',
       themeTonePreset: 'neutral',
       accentColor: '#3B82F6',
@@ -424,18 +467,24 @@ export const useSettingsStore = create<SettingsState>()(
       snapGridSize: 20,
       autoCheckAppUpdateOnLaunch: true,
       enableUpdateDialog: true,
-      setProviderApiKey: (providerId, key) =>
-        set((state) => ({
-          apiKeys: {
-            ...state.apiKeys,
-            [providerId]: normalizeApiKey(key),
-          },
-        })),
-      setGrsaiNanoBananaProModel: (model) =>
-        set({
-          grsaiNanoBananaProModel: normalizeGrsaiNanoBananaProModel(model),
+      setOpenAiImageApi: (config) =>
+        set((state) => {
+          const openAiImageApi = normalizeOpenAiImageApiConfig(config);
+          const lastImageModelSelection = state.lastImageModelSelection?.providerId === 'ai-media' &&
+            !openAiImageApi.selectedModelIds.includes(state.lastImageModelSelection.modelId)
+            ? null
+            : state.lastImageModelSelection;
+          return { openAiImageApi, lastImageModelSelection };
         }),
-      setHideProviderGuidePopover: (hide) => set({ hideProviderGuidePopover: hide }),
+      setChaomoImageApi: (config) =>
+        set((state) => {
+          const chaomoImageApi = normalizeChaomoImageApiConfig(config);
+          const lastImageModelSelection = state.lastImageModelSelection?.providerId === 'chaomo' &&
+            !chaomoImageApi.selectedModelIds.includes(state.lastImageModelSelection.modelId)
+            ? null
+            : state.lastImageModelSelection;
+          return { chaomoImageApi, lastImageModelSelection };
+        }),
       setDownloadPresetPaths: (paths) => {
         const uniquePaths = Array.from(
           new Set(paths.map((path) => path.trim()).filter((path) => path.length > 0))
@@ -455,17 +504,6 @@ export const useSettingsStore = create<SettingsState>()(
         set({ enableStoryboardGenGridPreviewShortcut: enabled }),
       setShowStoryboardGenAdvancedRatioControls: (enabled) =>
         set({ showStoryboardGenAdvancedRatioControls: enabled }),
-      setShowNodePrice: (enabled) => set({ showNodePrice: enabled }),
-      setPriceDisplayCurrencyMode: (priceDisplayCurrencyMode) =>
-        set({
-          priceDisplayCurrencyMode:
-            normalizePriceDisplayCurrencyMode(priceDisplayCurrencyMode),
-        }),
-      setUsdToCnyRate: (usdToCnyRate) =>
-        set({ usdToCnyRate: normalizeUsdToCnyRate(usdToCnyRate) }),
-      setPreferDiscountedPrice: (enabled) => set({ preferDiscountedPrice: enabled }),
-      setGrsaiCreditTierId: (grsaiCreditTierId) =>
-        set({ grsaiCreditTierId: normalizeGrsaiCreditTierId(grsaiCreditTierId) }),
       setUiRadiusPreset: (uiRadiusPreset) => set({ uiRadiusPreset }),
       setThemeTonePreset: (themeTonePreset) => set({ themeTonePreset }),
       setAccentColor: (color) => set({ accentColor: normalizeHexColor(color) }),
@@ -483,6 +521,9 @@ export const useSettingsStore = create<SettingsState>()(
       setImagePolishPrompt: (prompt: string) => set({ imagePolishPrompt: prompt }),
       videoApis: PRESET_VIDEO_APIS,
       activeVideoApiId: null,
+      lastImageModelSelection: null,
+      setLastImageModelSelection: (selection) =>
+        set({ lastImageModelSelection: normalizeImageModelSelection(selection) }),
       setVideoApis: (apis) => {
         logger.debug(`[settingsStore] setVideoApis called with: ${JSON.stringify(apis?.map(a => a.modelId))}`);
         set({ videoApis: apis });
@@ -491,7 +532,7 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: 'settings-storage',
-      version: 13,
+      version: 17,
       onRehydrateStorage: () => {
         return (_state, error) => {
           if (error) {
@@ -501,95 +542,42 @@ export const useSettingsStore = create<SettingsState>()(
         };
       },
       migrate: (persistedState: unknown) => {
-        const state = (persistedState ?? {}) as {
-          apiKey?: string;
-          apiKeys?: ProviderApiKeys;
-          ignoreAtTagWhenCopyingAndGenerating?: boolean;
-          grsaiNanoBananaProModel?: string;
-          hideProviderGuidePopover?: boolean;
+        const state = (persistedState ?? {}) as Record<string, unknown> & {
+          openAiImageApi?: Partial<OpenAiImageApiConfig>;
+          chaomoImageApi?: Partial<ChaomoImageApiConfig>;
           canvasEdgeRoutingMode?: CanvasEdgeRoutingMode | string;
-          autoCheckAppUpdateOnLaunch?: boolean;
-          enableUpdateDialog?: boolean;
-          enableStoryboardGenGridPreviewShortcut?: boolean;
-          showStoryboardGenAdvancedRatioControls?: boolean;
-          storyboardGenAutoInferEmptyFrame?: boolean;
-          showNodePrice?: boolean;
-          priceDisplayCurrencyMode?: PriceDisplayCurrencyMode | string;
-          usdToCnyRate?: number | string;
-          preferDiscountedPrice?: boolean;
-          grsaiCreditTierId?: GrsaiCreditTierId | string;
           textApis?: TextApiConfig[];
           activeTextApiId?: string | null;
           imagePolishPrompt?: string;
           videoApis?: VideoApiConfig[];
           activeVideoApiId?: string | null;
+          lastImageModelSelection?: ImageModelSelection | null;
         };
-
-        const migratedApiKeys = normalizeApiKeys(state.apiKeys);
-        const ignoreAtTagWhenCopyingAndGenerating =
-          state.ignoreAtTagWhenCopyingAndGenerating ?? true;
-        if (Object.keys(migratedApiKeys).length > 0) {
-          return {
-            ...(persistedState as object),
-            isHydrated: true,
-            apiKeys: migratedApiKeys,
-            ignoreAtTagWhenCopyingAndGenerating,
-            grsaiNanoBananaProModel: normalizeGrsaiNanoBananaProModel(
-              state.grsaiNanoBananaProModel
-            ),
-            hideProviderGuidePopover: state.hideProviderGuidePopover ?? false,
-            canvasEdgeRoutingMode: normalizeCanvasEdgeRoutingMode(state.canvasEdgeRoutingMode),
-            autoCheckAppUpdateOnLaunch: state.autoCheckAppUpdateOnLaunch ?? true,
-            enableUpdateDialog: state.enableUpdateDialog ?? true,
-            enableStoryboardGenGridPreviewShortcut:
-              state.enableStoryboardGenGridPreviewShortcut ?? false,
-            showStoryboardGenAdvancedRatioControls:
-              state.showStoryboardGenAdvancedRatioControls ?? false,
-            storyboardGenAutoInferEmptyFrame: state.storyboardGenAutoInferEmptyFrame ?? true,
-            showNodePrice: state.showNodePrice ?? true,
-            priceDisplayCurrencyMode: normalizePriceDisplayCurrencyMode(
-              state.priceDisplayCurrencyMode
-            ),
-            usdToCnyRate: normalizeUsdToCnyRate(state.usdToCnyRate),
-            preferDiscountedPrice: state.preferDiscountedPrice ?? false,
-            grsaiCreditTierId: normalizeGrsaiCreditTierId(state.grsaiCreditTierId),
-            textApis: state.textApis ?? PRESET_TEXT_APIS,
-            activeTextApiId: state.activeTextApiId ?? null,
-            imagePolishPrompt: state.imagePolishPrompt ?? DEFAULT_TEXT_API_PROMPT,
-            videoApis: mergeVideoApis(state.videoApis),
-            activeVideoApiId: state.activeVideoApiId ?? null,
-          };
-        }
+        const {
+          apiKey: _legacyApiKey,
+          apiKeys: _legacyApiKeys,
+          grsaiNanoBananaProModel: _legacyGrsaiModel,
+          hideProviderGuidePopover: _legacyProviderGuide,
+          showNodePrice: _legacyShowNodePrice,
+          priceDisplayCurrencyMode: _legacyPriceCurrency,
+          usdToCnyRate: _legacyUsdToCnyRate,
+          preferDiscountedPrice: _legacyDiscountPreference,
+          grsaiCreditTierId: _legacyGrsaiCreditTier,
+          ...retainedState
+        } = state;
 
         return {
-          ...(persistedState as object),
+          ...retainedState,
           isHydrated: true,
-          apiKeys: state.apiKey ? { ppio: normalizeApiKey(state.apiKey) } : {},
-          ignoreAtTagWhenCopyingAndGenerating,
-          grsaiNanoBananaProModel: normalizeGrsaiNanoBananaProModel(
-            state.grsaiNanoBananaProModel
-          ),
-          hideProviderGuidePopover: state.hideProviderGuidePopover ?? false,
+          openAiImageApi: normalizeOpenAiImageApiConfig(state.openAiImageApi),
+          chaomoImageApi: normalizeChaomoImageApiConfig(state.chaomoImageApi),
           canvasEdgeRoutingMode: normalizeCanvasEdgeRoutingMode(state.canvasEdgeRoutingMode),
-          autoCheckAppUpdateOnLaunch: state.autoCheckAppUpdateOnLaunch ?? true,
-          enableUpdateDialog: state.enableUpdateDialog ?? true,
-          enableStoryboardGenGridPreviewShortcut:
-            state.enableStoryboardGenGridPreviewShortcut ?? false,
-          showStoryboardGenAdvancedRatioControls:
-            state.showStoryboardGenAdvancedRatioControls ?? false,
-          storyboardGenAutoInferEmptyFrame: state.storyboardGenAutoInferEmptyFrame ?? true,
-          showNodePrice: state.showNodePrice ?? true,
-          priceDisplayCurrencyMode: normalizePriceDisplayCurrencyMode(
-            state.priceDisplayCurrencyMode
-          ),
-          usdToCnyRate: normalizeUsdToCnyRate(state.usdToCnyRate),
-          preferDiscountedPrice: state.preferDiscountedPrice ?? false,
-          grsaiCreditTierId: normalizeGrsaiCreditTierId(state.grsaiCreditTierId),
           textApis: state.textApis ?? PRESET_TEXT_APIS,
           activeTextApiId: state.activeTextApiId ?? null,
           imagePolishPrompt: state.imagePolishPrompt ?? DEFAULT_TEXT_API_PROMPT,
           videoApis: mergeVideoApis(state.videoApis),
           activeVideoApiId: state.activeVideoApiId ?? null,
+          lastImageModelSelection: normalizeImageModelSelection(state.lastImageModelSelection),
         };
       },
     }

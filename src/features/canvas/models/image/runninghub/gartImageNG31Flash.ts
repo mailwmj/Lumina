@@ -1,5 +1,4 @@
 import type { ImageModelDefinition } from '../../types';
-import { createFixedResolutionPricing } from '@/features/canvas/pricing';
 
 export const RUNNINGHUB_G31_FLASH_MODEL_ID = 'runninghub/rhart-image-n-g31-flash';
 
@@ -36,14 +35,6 @@ export const imageModel: ImageModelDefinition = {
     { value: '2K', label: '2K' },
     { value: '4K', label: '4K' },
   ],
-  pricing: createFixedResolutionPricing({
-    currency: 'CNY',
-    standardRates: {
-      '1K': 0.5,
-      '2K': 1.0,
-      '4K': 2.0,
-    },
-  }),
   resolveRequest: ({ referenceImageCount }) => ({
     requestModel: 'rhart-image-n-g31-flash',
     modeLabel: referenceImageCount > 0 ? '编辑模式' : '生成模式',

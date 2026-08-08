@@ -1,5 +1,4 @@
 import type { ImageModelDefinition } from '../../types';
-import { createFixedResolutionPricing } from '@/features/canvas/pricing';
 
 export const BLTCY_GEMINI_31_FLASH_PREVIEW_MODEL_ID = 'bltcy/gemini-3.1-flash-image-preview';
 
@@ -37,15 +36,6 @@ export const imageModel: ImageModelDefinition = {
     { value: '2K', label: '2K' },
     { value: '4K', label: '4K' },
   ],
-  pricing: createFixedResolutionPricing({
-    currency: 'CNY',
-    standardRates: {
-      '512': 0.2,
-      '1K': 0.35,
-      '2K': 0.55,
-      '4K': 0.8,
-    },
-  }),
   resolveRequest: ({ referenceImageCount }) => ({
     requestModel: 'gemini-3.1-flash-image-preview',
     modeLabel: referenceImageCount > 0 ? '编辑模式' : '生成模式',

@@ -38,6 +38,8 @@ export interface GenerateImagePayload {
   aspectRatio: string;
   referenceImages?: string[];
   extraParams?: Record<string, unknown>;
+  /** Provider-specific runtime settings that must not be stored on the canvas node. */
+  providerConfig?: Record<string, string>;
   /** Draft task ID - when set, generates final video from this draft */
   draftTaskId?: string;
   /** Project ID - when set, images/videos are saved under project-specific subdirectory */

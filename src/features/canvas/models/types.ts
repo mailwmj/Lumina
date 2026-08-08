@@ -1,5 +1,3 @@
-import type { ModelPricingDefinition } from '@/features/canvas/pricing/types';
-
 export type MediaModelType = 'image' | 'video' | 'audio';
 
 export interface ModelProviderDefinition {
@@ -53,7 +51,6 @@ export interface ImageModelDefinition {
   resolveResolutions?: (context: ImageModelRuntimeContext) => ResolutionOption[];
   extraParamsSchema?: ExtraParamDefinition[];
   defaultExtraParams?: Record<string, unknown>;
-  pricing?: ModelPricingDefinition;
   resolveRequest: (context: { referenceImageCount: number }) => {
     requestModel: string;
     modeLabel: string;

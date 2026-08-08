@@ -1,11 +1,9 @@
 export type SettingsCategory =
   | 'imageApis'
-  | 'pricing'
   | 'appearance'
   | 'general'
   | 'experimental'
   | 'logging'
-  | 'about'
   | 'textApis'
   | 'videoApis';
 
