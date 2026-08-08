@@ -1,0 +1,53 @@
+import { afterEach, describe, expect, it } from 'vitest';
+
+import { canvasNodeFactory } from '@/features/canvas/application/canvasServices';
+import { CANVAS_NODE_TYPES, type CanvasNode } from '@/features/canvas/domain/canvasNodes';
+
+import { useCanvasStore } from './canvasStore';
+
+function createNode(type: CanvasNode['type'], id: string): CanvasNode {
+  return {
+    ...canvasNodeFactory.createNode(type, { x: 0, y: 0 }),
+    id,
+  };
+}
+
+describe('canvas store batch connections', () => {
+  afterEach(() => {
+    useCanvasStore.getState().setCanvasData([], []);
+  });
+
+  it('records a batch as one undoable history step', () => {
+    const sourceA = createNode(CANVAS_NODE_TYPES.upload, 'source-a');
+    const sourceB = createNode(CANVAS_NODE_TYPES.upload, 'source-b');
+    const target = createNode(CANVAS_NODE_TYPES.imageEdit, 'target');
+    const store = useCanvasStore.getState();
+
+    store.setCanvasData([sourceA, sourceB, target], []);
+
+    const addedCount = useCanvasStore.getState().onConnectBatch([
+      {
+        source: sourceA.id,
+        target: target.id,
+        sourceHandle: 'source',
+        targetHandle: 'target',
+      },
+      {
+        source: sourceB.id,
+        target: target.id,
+        sourceHandle: 'source',
+        targetHandle: 'target',
+      },
+    ]);
+
+    expect(addedCount).toBe(2);
+    expect(useCanvasStore.getState().edges).toHaveLength(2);
+    expect(useCanvasStore.getState().history.past).toHaveLength(1);
+
+    expect(useCanvasStore.getState().undo()).toBe(true);
+    expect(useCanvasStore.getState().edges).toHaveLength(0);
+
+    expect(useCanvasStore.getState().redo()).toBe(true);
+    expect(useCanvasStore.getState().edges).toHaveLength(2);
+  });
+});
