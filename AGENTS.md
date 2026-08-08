@@ -2,7 +2,7 @@
 
 ## 1. 项目目标与技术栈
 
-- 产品目标：基于节点画布进行图片上传、AI 生成/编辑、工具处理（裁剪/标注/分镜）。
+- 产品目标：基于节点画布进行图片/视频上传、AI 图片/视频生成与编辑、提示词润色及分镜创作流程。
 - 前端：React + TypeScript + Zustand + @xyflow/react + TailwindCSS。
 - 后端：Tauri 2 + Rust（命令式接口）+ SQLite（rusqlite，WAL）。
 - 关键原则：解耦、可扩展、可回归验证、自动持久化、交互性能优先。
@@ -25,6 +25,8 @@
 3. 节点与覆盖层
 - `src/features/canvas/nodes/*.tsx`
 - `src/features/canvas/nodes/ImageEditNode.tsx`
+- `src/features/canvas/nodes/VideoGenNode.tsx`（视频生成：单图/首尾帧）
+- `src/features/canvas/nodes/VideoResultNode.tsx`（视频结果展示）
 - `src/features/canvas/nodes/GroupNode.tsx`
 - `src/features/canvas/ui/SelectedNodeOverlay.tsx`
 - `src/features/canvas/ui/NodeActionToolbar.tsx`
@@ -94,13 +96,13 @@
 - 使用 DTO/纯数据对象，避免双向引用。
 - Store 不应直接承担重业务逻辑；业务逻辑放应用层。
 
-### 4.6 文档边界
+### 4.5 AI Provider 异步任务模式
 
-- 本文档定位为“技术开发规范文档”，优先记录稳定的架构约束、分层规则、扩展流程、验证标准。
-- 不记录易变的具体 UI 操作步骤、临时交互文案或产品走查细节（这些应放在需求文档/设计稿/任务说明中）。
-- 当实现变化仅影响交互细节而不影响技术约束时，可不更新本文档。
+- AI 任务采用 `submit -> poll -> get result` 三段式流程，由 `ProviderTaskHandle.task_id` 关联。
+- `supports_task_resume()` 返回 `true` 时可中断后恢复，否则需一次性完成。
+- 参考：`src-tauri/src/ai/mod.rs` 中的 `AIProvider` trait、`ProviderTaskSubmission`、`ProviderTaskPollResult`。
 
-### 4.5 节点注册单一真相源
+### 4.6 节点注册单一真相源
 
 - 节点类型、默认数据、菜单展示、连线能力统一在 `domain/nodeRegistry.ts` 声明，不在 `Canvas.tsx` / `canvasStore.ts` 重复硬编码。
 - `connectivity` 为连线能力配置源：
@@ -108,6 +110,19 @@
   - `connectMenu.fromSource` / `connectMenu.fromTarget`：从输出端或输入端拉线时，是否允许出现在“创建节点菜单”。
 - 菜单候选节点必须由注册表函数统一推导（如 `getConnectMenuNodeTypes`），禁止在 UI 层手写类型白名单。
 - 内部衍生节点（如切割结果 `storyboardSplit`、导出节点）默认 `connectMenu` 关闭，只能由应用流程自动创建。
+
+### 4.7 润色服务架构
+
+- 图片节点和上传节点使用 `image` 模板；视频节点使用 `video` 模板。
+- 所有润色调用 `textApis`，不得改走 `videoApis`；`base_url`、`api_key`、`model_id` 均来自用户配置。
+- 模板入口为 `src/features/canvas/infrastructure/textPolishService.ts`；后端命令为 `polish_text`。
+- 图片模板使用 `imagePolishPrompt`；视频模板使用对应 `VideoApiConfig.polishPrompt` 或 `defaultPolishPrompt`。
+
+### 4.8 文档边界
+
+- 本文档定位为“技术开发规范文档”，优先记录稳定的架构约束、分层规则、扩展流程、验证标准。
+- 不记录易变的具体 UI 操作步骤、临时交互文案或产品走查细节（这些应放在需求文档/设计稿/任务说明中）。
+- 当实现变化仅影响交互细节而不影响技术约束时，可不更新本文档。
 
 ## 5. UI/交互规范
 
@@ -146,7 +161,14 @@ npx tsc --noEmit
 cd src-tauri && cargo check
 ```
 
-### 6.3 收尾检查
+### 6.3 测试命令
+
+```bash
+# 前端单元测试
+npx vitest run
+```
+
+### 6.4 收尾检查
 
 ```bash
 # 前端完整构建
@@ -185,7 +207,15 @@ npm run release -- patch --notes-file docs/releases/v0.2.1.md
   - 默认参数
   - 请求映射函数 `resolveRequest`
 
-### 8.2 新工具接入
+### 8.2 视频节点体系
+
+- `videoSingle` 和 `videoFrame` 是视频生成节点；`exportVideo` 是生成流程自动创建的结果节点。
+- `videoFrame` 使用 `target-first` 和 `target-last` 两个输入端口；输入图片解析必须按端口分别收集。
+- 视频任务由 `VideoGenNode` 提交，`Canvas.tsx` 轮询 `exportVideo` 节点的 `generationJobId`，完成后写入结果节点。
+- Provider 解析先处理显式 `provider/model` 前缀，再按各 provider 的 `supports_model()` 匹配；模型路由不得在 UI 层硬编码。
+- 视频生成 API 只接收公网图片 URL；本地图片必须先经过统一的图片规范化/上传流程，已有 `data:` 或 HTTP(S) URL 直接透传。
+
+### 8.3 新工具接入
 
 1. 在 `tools/types.ts` 声明能力（如 editor kind）。
 2. 在 `tools/builtInTools.ts` 注册插件。
@@ -193,7 +223,7 @@ npm run release -- patch --notes-file docs/releases/v0.2.1.md
 4. 在 `application/toolProcessor.ts` 接入执行逻辑。
 5. 保证产物仍走“处理后生成新节点”链路，不覆盖原节点。
 
-### 8.3 新节点接入
+### 8.4 新节点接入
 
 1. 在 `domain/canvasNodes.ts` 增加类型与数据结构（必要时增加类型守卫）。
 2. 在 `domain/nodeRegistry.ts` 注册定义：`createDefaultData`、`capabilities`、`connectivity`。
@@ -209,6 +239,21 @@ npm run release -- patch --notes-file docs/releases/v0.2.1.md
 
 ## 9. 持久化规范
 
+### 9.1 项目文件夹结构
+
+每个项目创建时自动生成目录结构：
+
+```text
+{projectDir}/
+├── _project.json
+├── uploads/
+└── outputs/
+    ├── images/
+    └── videos/
+```
+
+项目目录通过 `create_project_dirs` 创建，删除项目时同步清理。
+
 - 项目数据通过 `projectStore` 自动持久化，不要求手动保存。
 - 重启默认进入项目页；进入项目时恢复上次 viewport。
 - 当前持久化后端为 SQLite，库文件位于 Tauri `app_data_dir/projects.db`。
@@ -216,7 +261,7 @@ npm run release -- patch --notes-file docs/releases/v0.2.1.md
 - 前端持久化采用双通道：
   - 整项目快照：`upsert_project_record`（防抖 + idle 调度）。
   - 视口快照：`update_project_viewport_record`（轻量更新、独立防抖）。
-- 图片字段通过 `imagePool + __img_ref__` 做去重编码；新增图片字段（如 `previewImageUrl`）需同步编码/解码映射。
+- 图片字段通过 `imagePool + __img_ref__:<index>` 做去重编码；新增图片字段（如 `previewImageUrl`）需同步编码/解码映射。
 - 变更 SQLite 表结构时：
   - 必须在 `ensure_projects_table` 中做自愈（`PRAGMA table_info` + `ALTER TABLE`）。
   - 开发阶段可不兼容旧的临时草稿格式，但不能破坏当前 `projects.db` 的基本可读性。
@@ -259,6 +304,23 @@ npm run release -- patch --notes-file docs/releases/v0.2.1.md
 - 切换中英文后，不出现未翻译 key 泄露（例如直接显示 `project.title`）。
 - 新增 key 在中英语言包均存在。
 - 关键按钮、提示、错误文案在两种语言下都可读不截断。
+
+## 12. Agent skills
+
+### Issue tracker
+
+Issues and specs for this repo live in GitHub Issues at `mailwmj/opencanvas`; use `gh`
+with the explicit `--repo mailwmj/opencanvas` flag. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, and `wontfix`.
+See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+This is a single-context repository. Read the root `CONTEXT.md` and relevant
+`docs/adr/` files when they exist. See `docs/agents/domain.md`.
 
 ---
 
