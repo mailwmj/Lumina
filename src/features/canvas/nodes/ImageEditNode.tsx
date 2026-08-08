@@ -10,7 +10,7 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { Handle, Position, useUpdateNodeInternals, type NodeProps } from '@xyflow/react';
-import { Loader2, Sparkles, Wand2 } from 'lucide-react';
+import { Loader2, Sparkles, Wand2 } from '@/components/ui/icons';
 import { useTranslation } from 'react-i18next';
 
 import {
@@ -24,6 +24,7 @@ import {
 import { resolveNodeDisplayName } from '@/features/canvas/domain/nodeDisplay';
 import { NodeHeader, NODE_HEADER_FLOATING_POSITION_CLASS } from '@/features/canvas/ui/NodeHeader';
 import { NodeResizeHandle } from '@/features/canvas/ui/NodeResizeHandle';
+import { resolveNodeSurfaceStateClass } from '@/features/canvas/ui/nodeSurfaceStyles';
 import {
   canvasAiGateway,
   graphImageResolver,
@@ -65,7 +66,7 @@ import {
 } from '@/features/canvas/ui/nodeControlStyles';
 import { ModelParamsControls } from '@/features/canvas/ui/ModelParamsControls';
 import { CanvasNodeImage } from '@/features/canvas/ui/CanvasNodeImage';
-import { UiButton } from '@/components/ui';
+import { UiButton, UiTooltip } from '@/components/ui';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -189,7 +190,7 @@ function renderPromptWithHighlights(
         data-highlight-ref="true"
         data-image-url={imageUrl || ''}
         data-index={token.value}
-        className="relative z-0 text-white [text-shadow:0.24px_0_currentColor,-0.24px_0_currentColor] before:absolute before:-inset-x-[4px] before:-inset-y-[1px] before:-z-10 before:rounded-[7px] before:bg-accent/55 before:content-['']"
+        className="relative z-0 text-[var(--accent-foreground)] before:absolute before:-inset-x-[4px] before:-inset-y-[1px] before:-z-10 before:rounded-[7px] before:bg-accent/85 before:content-['']"
       >
         {matchText}
       </span>
@@ -748,9 +749,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
       ref={rootRef}
       className={`
         group relative flex h-full flex-col overflow-visible rounded-[var(--node-radius)] border bg-surface-dark/90 p-2 transition-colors duration-150
-        ${selected
-          ? 'border-accent shadow-[0_0_0_1px_rgba(59,130,246,0.32)]'
-          : 'border-[rgba(15,23,42,0.22)] hover:border-[rgba(15,23,42,0.34)] dark:border-[rgba(255,255,255,0.22)] dark:hover:border-[rgba(255,255,255,0.34)]'}
+        ${resolveNodeSurfaceStateClass(selected)}
       `}
       style={{ width: `${resolvedWidth}px`, height: `${resolvedHeight}px` }}
       onClick={() => setSelectedNode(id)}
@@ -763,7 +762,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
         onTitleChange={(nextTitle) => updateNodeData(id, { displayName: nextTitle })}
       />
 
-      <div className="relative min-h-0 flex-1 rounded-lg border border-[rgba(255,255,255,0.1)] bg-bg-dark/45 p-2">
+      <div className="relative min-h-0 flex-1 rounded-lg border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] p-2">
         <div className="relative h-full min-h-0">
           <div
             ref={promptHighlightRef}
@@ -799,7 +798,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
 
         {showImagePicker && incomingImageItems.length > 0 && (
           <div
-            className="nowheel absolute z-30 w-[120px] overflow-hidden rounded-xl border border-[rgba(255,255,255,0.16)] bg-surface-dark shadow-xl"
+            className="nowheel absolute z-30 w-[120px] overflow-hidden rounded-[10px] border border-[var(--ui-border-soft)] bg-[var(--ui-surface-elevated)] shadow-[var(--ui-shadow-panel)]"
             style={{ left: pickerAnchor.left, top: pickerAnchor.top }}
             onMouseDown={(event) => event.stopPropagation()}
             onWheelCapture={(event) => event.stopPropagation()}
@@ -817,8 +816,8 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
                     insertImageReference(index);
                   }}
                   onMouseEnter={() => setPickerActiveIndex(index)}
-                  className={`flex w-full items-center gap-2 border border-transparent bg-bg-dark/70 px-2 py-2 text-left text-sm text-text-dark transition-colors hover:border-[rgba(255,255,255,0.18)] ${pickerActiveIndex === index
-                      ? 'border-[rgba(255,255,255,0.24)] bg-bg-dark'
+                  className={`flex w-full items-center gap-2 border border-transparent bg-transparent px-2 py-2 text-left text-sm text-text-dark transition-colors hover:bg-[var(--ui-hover)] ${pickerActiveIndex === index
+                      ? 'border-accent/45 bg-accent/10'
                       : ''
                     }`}
                 >
@@ -840,7 +839,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
 
         {referenceHover && typeof document !== 'undefined' && createPortal(
           <div
-            className="pointer-events-none fixed z-[9999] overflow-hidden rounded-lg border border-[rgba(255,255,255,0.16)] bg-surface-dark shadow-xl"
+            className="pointer-events-none fixed z-[9999] overflow-hidden rounded-lg border border-[var(--ui-border-soft)] bg-[var(--ui-surface-elevated)] shadow-[var(--ui-shadow-tooltip)]"
             style={{
               left: Math.max(10, referenceHover.anchorRect.left + referenceHover.anchorRect.width / 2 - 75),
               top: referenceHover.anchorRect.bottom + 10,
@@ -908,23 +907,25 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
           </UiButton>
         )}
 
-        <UiButton
-          onClick={(event) => {
-            event.stopPropagation();
-            void handlePolish();
-          }}
-          variant="muted"
-          size="sm"
-          className={`shrink-0`}
-          title={t('canvas.polishPrompt')}
-          disabled={isPolishing}
-        >
-          {isPolishing ? (
-            <Loader2 className={`${NODE_CONTROL_ICON_CLASS} animate-spin`} strokeWidth={2.8} />
-          ) : (
-            <Wand2 className={NODE_CONTROL_ICON_CLASS} strokeWidth={2.8} />
-          )}
-        </UiButton>
+        <UiTooltip content={t('node.imageEdit.polishPrompt')}>
+          <UiButton
+            aria-label={t('node.imageEdit.polishPrompt')}
+            onClick={(event) => {
+              event.stopPropagation();
+              void handlePolish();
+            }}
+            variant="muted"
+            size="sm"
+            className="shrink-0 px-2"
+            disabled={isPolishing}
+          >
+            {isPolishing ? (
+              <Loader2 className={`${NODE_CONTROL_ICON_CLASS} animate-spin`} strokeWidth={2.8} />
+            ) : (
+              <Wand2 className={NODE_CONTROL_ICON_CLASS} strokeWidth={2.8} />
+            )}
+          </UiButton>
+        </UiTooltip>
 
         <div className="ml-auto" />
 
@@ -948,13 +949,13 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
         type="target"
         id="target"
         position={Position.Left}
-        className="!h-2 !w-2 !border-surface-dark !bg-accent"
+        className="!h-2 !w-2 !border-surface-dark !bg-[var(--edge)]"
       />
       <Handle
         type="source"
         id="source"
         position={Position.Right}
-        className="!h-2 !w-2 !border-surface-dark !bg-accent"
+        className="!h-2 !w-2 !border-surface-dark !bg-[var(--edge)]"
       />
       <NodeResizeHandle
         minWidth={IMAGE_EDIT_NODE_MIN_WIDTH}

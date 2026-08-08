@@ -1,6 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { SlidersHorizontal, Zap } from 'lucide-react';
+import { SlidersHorizontal, Zap } from '@/components/ui/icons';
 import { useTranslation } from 'react-i18next';
 
 import { AUTO_REQUEST_ASPECT_RATIO } from '@/features/canvas/domain/canvasNodes';
@@ -222,11 +222,11 @@ export const ModelParamsControls = memo(({
   const modelIconClassName = isCompactTrigger ? 'h-3 w-3 shrink-0' : 'h-4 w-4 shrink-0';
   const paramsIconClassName = isCompactTrigger ? 'h-2.5 w-2.5 shrink-0' : 'h-4 w-4 shrink-0';
   const modelTextClassName = isCompactTrigger
-    ? 'min-w-0 truncate text-[10px] font-medium leading-none'
-    : 'min-w-0 truncate font-medium';
+    ? 'min-w-0 truncate font-mono text-[10px] font-medium leading-none'
+    : 'min-w-0 truncate font-mono font-medium';
   const providerTextClassName = isCompactTrigger
-    ? 'shrink-0 text-[10px] leading-none text-text-muted/80'
-    : 'shrink-0 text-text-muted/80';
+    ? 'shrink-0 font-mono text-[10px] leading-none text-text-muted/80'
+    : 'shrink-0 font-mono text-text-muted/80';
   const paramsPrimaryTextClassName = isCompactTrigger
     ? 'truncate text-[10px] leading-none'
     : 'truncate';
@@ -434,7 +434,7 @@ export const ModelParamsControls = memo(({
           }}
         >
           <SlidersHorizontal className={paramsIconClassName} />
-          <span className={paramsPrimaryTextClassName}>{selectedAspectRatio.label}</span>
+          <span className={`${paramsPrimaryTextClassName} font-mono`}>{selectedAspectRatio.label}</span>
           <span className={paramsSecondaryTextClassName}>· {selectedResolution.label}</span>
         </UiChipButton>
       </div>
@@ -491,7 +491,7 @@ export const ModelParamsControls = memo(({
                         key={provider.id}
                         className={`h-8 rounded-lg border text-xs transition-colors ${providerOptionClassName} ${active
                           ? 'border-accent/50 bg-accent/15 text-text-dark'
-                          : 'border-[rgba(255,255,255,0.12)] bg-bg-dark/65 text-text-muted hover:border-[rgba(255,255,255,0.2)]'
+                          : 'border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] text-text-muted hover:border-[var(--ui-border-strong)]'
                         }`}
                         onClick={(event) => {
                           event.stopPropagation();
@@ -524,8 +524,8 @@ export const ModelParamsControls = memo(({
                       <button
                         key={group.name}
                         className={`inline-flex w-full min-w-0 max-w-full items-center rounded-lg border text-xs leading-4 transition-colors ${modelOptionClassName} ${active
-                          ? 'border-accent/50 bg-accent/15 text-text-dark shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]'
-                          : 'border-[rgba(255,255,255,0.12)] bg-bg-dark/65 text-text-muted hover:border-[rgba(255,255,255,0.2)] hover:bg-[rgba(255,255,255,0.05)]'
+                          ? 'border-accent/50 bg-accent/15 text-text-dark'
+                          : 'border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] text-text-muted hover:border-[var(--ui-border-strong)] hover:bg-[var(--ui-hover)]'
                           }`}
                         style={{ width: '100%', minWidth: 0, maxWidth: '100%' }}
                         onClick={(event) => {
@@ -534,7 +534,7 @@ export const ModelParamsControls = memo(({
                           setOpenPanel(null);
                         }}
                       >
-                        <span className="min-w-0 max-w-full break-words text-center">{group.name}</span>
+                        <span className="min-w-0 max-w-full break-words text-center font-mono">{group.name}</span>
                       </button>
                     );
                   })}
@@ -559,22 +559,22 @@ export const ModelParamsControls = memo(({
           >
             <div>
               <div className="mb-2 text-xs text-text-muted">{t('modelParams.quality')}</div>
-              <div className="grid grid-cols-3 gap-1 rounded-xl border border-[rgba(255,255,255,0.1)] bg-bg-dark/65 p-1">
+              <div className="grid grid-cols-3 gap-1 rounded-[10px] border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] p-1">
                 {resolutionOptions.map((item) => {
                   const active = item.value === selectedResolution.value;
                   return (
                     <button
                       key={item.value}
                       className={`h-8 rounded-lg text-sm transition-colors ${active
-                        ? 'bg-surface-dark text-text-dark'
-                        : 'text-text-muted hover:bg-bg-dark'
+                        ? 'bg-accent text-[var(--accent-foreground)]'
+                        : 'text-text-muted hover:bg-[var(--ui-hover)]'
                         }`}
                       onClick={(event) => {
                         event.stopPropagation();
                         onResolutionChange(item.value);
                       }}
                     >
-                      {item.label}
+                      <span className="font-mono">{item.label}</span>
                     </button>
                   );
                 })}
@@ -583,7 +583,7 @@ export const ModelParamsControls = memo(({
 
             <div className="mt-3">
               <div className="mb-2 text-xs text-text-muted">{t('modelParams.aspectRatio')}</div>
-              <div className="grid grid-cols-5 gap-1 rounded-xl border border-[rgba(255,255,255,0.1)] bg-bg-dark/65 p-1">
+              <div className="grid grid-cols-5 gap-1 rounded-[10px] border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] p-1">
                 {aspectRatioOptions.map((item) => {
                   const active = item.value === selectedAspectRatio.value;
                   const previewStyle = getRatioPreviewStyle(
@@ -594,8 +594,8 @@ export const ModelParamsControls = memo(({
                     <button
                       key={item.value}
                       className={`rounded-lg px-1 py-1.5 transition-colors ${active
-                        ? 'bg-surface-dark text-text-dark'
-                        : 'text-text-muted hover:bg-bg-dark'
+                        ? 'bg-accent text-[var(--accent-foreground)]'
+                        : 'text-text-muted hover:bg-[var(--ui-hover)]'
                         }`}
                       onClick={(event) => {
                         event.stopPropagation();
@@ -612,7 +612,7 @@ export const ModelParamsControls = memo(({
                           />
                         )}
                       </div>
-                      <div className="text-[10px]">{item.label}</div>
+                      <div className="font-mono text-[10px]">{item.label}</div>
                     </button>
                   );
                 })}
@@ -622,7 +622,7 @@ export const ModelParamsControls = memo(({
             {panelExtraParamSchema.length > 0 && (
               <div className="mt-3">
                 <div className="mb-2 text-xs text-text-muted">{t('modelParams.extraOptions')}</div>
-                <div className="space-y-2 rounded-xl border border-[rgba(255,255,255,0.1)] bg-bg-dark/65 p-3">
+                <div className="space-y-2 rounded-[10px] border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] p-3">
                   {panelExtraParamSchema.map((definition) => {
                     const translatedLabel = resolveTranslatedText(
                       t,
@@ -644,7 +644,7 @@ export const ModelParamsControls = memo(({
                     );
 
                     return (
-                      <div key={definition.key} className="space-y-2 rounded-lg border border-[rgba(255,255,255,0.08)] bg-black/10 p-2">
+                      <div key={definition.key} className="space-y-2 border-t border-[var(--ui-border-soft)] pt-2 first:border-t-0 first:pt-0">
                         <div>
                           <div className="text-xs font-medium text-text-dark">{translatedLabel}</div>
                           {translatedDescription && (
@@ -673,6 +673,7 @@ export const ModelParamsControls = memo(({
                         {definition.type === 'boolean' && (
                           <label className="flex cursor-pointer items-center gap-2 text-sm text-text-dark">
                             <UiCheckbox
+                              aria-label={translatedLabel}
                               checked={Boolean(resolvedValue)}
                               onCheckedChange={(checked) =>
                                 onExtraParamChange?.(definition.key, checked)
@@ -729,8 +730,9 @@ export const ModelParamsControls = memo(({
           >
             <div className="space-y-3">
               {showWebSearchToggle && (
-                <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-[rgba(255,255,255,0.08)] bg-bg-dark/65 px-3 py-2">
+                <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] px-3 py-2">
                   <UiCheckbox
+                    aria-label={webSearchLabel ?? t('modelParams.enableWebSearch')}
                     checked={webSearchEnabled}
                     onCheckedChange={(checked) => onWebSearchToggle?.(checked)}
                     className="mt-0.5"
@@ -762,7 +764,7 @@ export const ModelParamsControls = memo(({
                 return (
                   <div
                     key={definition.key}
-                    className="space-y-2 rounded-lg border border-[rgba(255,255,255,0.08)] bg-bg-dark/65 p-3"
+                    className="space-y-2 rounded-lg border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] p-3"
                   >
                     <div>
                       <div className="text-xs font-medium text-text-dark">{translatedLabel}</div>

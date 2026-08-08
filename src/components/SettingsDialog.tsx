@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
-import { X, Eye, EyeOff, FolderOpen, Loader2, Plus, Trash2 } from 'lucide-react';
+import { X, Eye, EyeOff, FolderOpen, Loader2, Plus, Trash2 } from '@/components/ui/icons';
 import { useTranslation } from 'react-i18next';
 import { open } from '@tauri-apps/plugin-dialog';
 import { getLogConfig, setLogConfig, resetLogConfig, useLogStore } from '@/lib/logger';
@@ -19,10 +19,11 @@ import {
 import { discoverImageModels } from '@/commands/ai';
 import { toConfiguredImageModelId } from '@/features/canvas/models';
 import { testTextApi } from '@/features/canvas/infrastructure/textPolishService';
-import { UiCheckbox, UiSelect } from '@/components/ui';
+import { UiButton, UiCheckbox, UiInput, UiSelect, UiTooltip } from '@/components/ui';
 import { UI_CONTENT_OVERLAY_INSET_CLASS, UI_DIALOG_TRANSITION_MS } from '@/components/ui/motion';
 import { useDialogTransition } from '@/components/ui/useDialogTransition';
 import type { SettingsCategory } from '@/features/settings/settingsEvents';
+import { DEFAULT_ACCENT_COLOR } from '@/features/settings/application/accentColor';
 import { logger } from '@/lib/logger';
 
 interface SettingsDialogProps {
@@ -100,6 +101,7 @@ function ImageModelSelectionPanel({
                 className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1.5 text-xs text-text-dark hover:bg-bg-dark"
               >
                 <UiCheckbox
+                  aria-label={model.label || model.id}
                   checked={selected}
                   onCheckedChange={(checked) => onSelectionChange(model.id, checked)}
                   onClick={(event) => event.stopPropagation()}
@@ -131,10 +133,11 @@ function SettingsCheckboxCard({
           onCheckedChange(!checked);
         }
       }}
-      className="w-full rounded-lg border border-border-dark bg-bg-dark p-4 text-left transition-colors hover:border-[rgba(255,255,255,0.2)]"
+      className="w-full border-b border-[var(--ui-border-soft)] py-3 text-left transition-colors hover:bg-[var(--ui-hover)]"
     >
       <div className="flex items-start gap-3">
         <UiCheckbox
+          aria-label={title}
           checked={checked}
           onCheckedChange={(nextChecked) => onCheckedChange(nextChecked)}
           onClick={(event) => event.stopPropagation()}
@@ -166,8 +169,6 @@ export function SettingsDialog({
     ignoreAtTagWhenCopyingAndGenerating,
     enableStoryboardGenGridPreviewShortcut,
     showStoryboardGenAdvancedRatioControls,
-    uiRadiusPreset,
-    themeTonePreset,
     accentColor,
     canvasEdgeRoutingMode,
     setOpenAiImageApi,
@@ -180,8 +181,6 @@ export function SettingsDialog({
     setIgnoreAtTagWhenCopyingAndGenerating,
     setEnableStoryboardGenGridPreviewShortcut,
     setShowStoryboardGenAdvancedRatioControls,
-    setUiRadiusPreset,
-    setThemeTonePreset,
     setAccentColor,
     setCanvasEdgeRoutingMode,
     textApis,
@@ -223,8 +222,6 @@ export function SettingsDialog({
     useState(enableStoryboardGenGridPreviewShortcut);
   const [localShowStoryboardGenAdvancedRatioControls, setLocalShowStoryboardGenAdvancedRatioControls] =
     useState(showStoryboardGenAdvancedRatioControls);
-  const [localUiRadiusPreset, setLocalUiRadiusPreset] = useState(uiRadiusPreset);
-  const [localThemeTonePreset, setLocalThemeTonePreset] = useState(themeTonePreset);
   const [localAccentColor, setLocalAccentColor] = useState(accentColor);
   const [localCanvasEdgeRoutingMode, setLocalCanvasEdgeRoutingMode] = useState(canvasEdgeRoutingMode);
   const [isOpenAiApiKeyRevealed, setIsOpenAiApiKeyRevealed] = useState(false);
@@ -249,8 +246,6 @@ export function SettingsDialog({
     setLocalIgnoreAtTagWhenCopyingAndGenerating(ignoreAtTagWhenCopyingAndGenerating);
     setLocalEnableStoryboardGenGridPreviewShortcut(enableStoryboardGenGridPreviewShortcut);
     setLocalShowStoryboardGenAdvancedRatioControls(showStoryboardGenAdvancedRatioControls);
-    setLocalUiRadiusPreset(uiRadiusPreset);
-    setLocalThemeTonePreset(themeTonePreset);
     setLocalAccentColor(accentColor);
     setLocalCanvasEdgeRoutingMode(canvasEdgeRoutingMode);
     setLocalTextApis(textApis);
@@ -275,8 +270,6 @@ export function SettingsDialog({
     ignoreAtTagWhenCopyingAndGenerating,
     enableStoryboardGenGridPreviewShortcut,
     showStoryboardGenAdvancedRatioControls,
-    uiRadiusPreset,
-    themeTonePreset,
     accentColor,
     canvasEdgeRoutingMode,
     textApis,
@@ -356,8 +349,6 @@ export function SettingsDialog({
     setIgnoreAtTagWhenCopyingAndGenerating(localIgnoreAtTagWhenCopyingAndGenerating);
     setEnableStoryboardGenGridPreviewShortcut(localEnableStoryboardGenGridPreviewShortcut);
     setShowStoryboardGenAdvancedRatioControls(localShowStoryboardGenAdvancedRatioControls);
-    setUiRadiusPreset(localUiRadiusPreset);
-    setThemeTonePreset(localThemeTonePreset);
     setAccentColor(localAccentColor);
     setCanvasEdgeRoutingMode(localCanvasEdgeRoutingMode);
     setTextApis(localTextApis);
@@ -375,8 +366,6 @@ export function SettingsDialog({
     localIgnoreAtTagWhenCopyingAndGenerating,
     localEnableStoryboardGenGridPreviewShortcut,
     localShowStoryboardGenAdvancedRatioControls,
-    localUiRadiusPreset,
-    localThemeTonePreset,
     localAccentColor,
     localCanvasEdgeRoutingMode,
     localTextApis,
@@ -392,8 +381,6 @@ export function SettingsDialog({
     setIgnoreAtTagWhenCopyingAndGenerating,
     setEnableStoryboardGenGridPreviewShortcut,
     setShowStoryboardGenAdvancedRatioControls,
-    setUiRadiusPreset,
-    setThemeTonePreset,
     setAccentColor,
     setCanvasEdgeRoutingMode,
     setTextApis,
@@ -439,30 +426,40 @@ export function SettingsDialog({
     setLocalDownloadPresetPaths((previous) => previous.filter((value) => value !== path));
   }, []);
 
+  const categoryButtonClass = (category: SettingsCategory) =>
+    `mx-2 flex w-[calc(100%-1rem)] items-center rounded-lg px-3 py-2 text-left text-sm transition-colors ${
+      activeCategory === category
+        ? 'bg-accent/14 font-medium text-accent'
+        : 'text-text-muted hover:bg-[var(--ui-hover)] hover:text-text-dark'
+    }`;
+
   if (!shouldRender) return null;
 
   return (
     <div className={`fixed ${UI_CONTENT_OVERLAY_INSET_CLASS} z-50 flex items-center justify-center`}>
       <div
-        className={`absolute inset-0 bg-black/90 transition-opacity duration-200 ${isVisible ? 'opacity-100' : 'opacity-0'}`}
+        className={`absolute inset-0 bg-black/65 transition-opacity duration-200 ${isVisible ? 'opacity-100' : 'opacity-0'}`}
         onClick={onClose}
       />
-      <div className="relative w-[min(96vw,1120px)]">
+      <div className="relative w-[min(94vw,920px)]">
         <div
-          className={`relative mx-auto h-[500px] w-[700px] overflow-hidden rounded-lg border border-border-dark bg-surface-dark shadow-xl transition-opacity duration-200 ${isVisible ? 'opacity-100' : 'opacity-0'} flex`}
+          className={`relative mx-auto flex h-[min(84vh,720px)] w-full overflow-hidden rounded-[10px] border border-[var(--ui-border-soft)] bg-[var(--ui-surface-panel)] shadow-[var(--ui-shadow-panel)] transition-opacity duration-200 ${isVisible ? 'opacity-100' : 'opacity-0'}`}
         >
-          {/* Close button */}
-          <button
-            onClick={onClose}
-            className="absolute top-3 right-3 p-1 hover:bg-bg-dark rounded transition-colors z-10"
-          >
-            <X className="w-5 h-5 text-text-muted" />
-          </button>
+          <UiTooltip content={t('common.close')}>
+            <button
+              type="button"
+              aria-label={t('common.close')}
+              onClick={onClose}
+              className="absolute right-3 top-3 z-10 flex h-8 w-8 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-[var(--ui-hover)] hover:text-text-dark"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </UiTooltip>
 
           {/* Sidebar */}
-          <div className="w-[180px] bg-bg-dark border-r border-border-dark flex flex-col">
+          <div className="flex w-[200px] shrink-0 flex-col border-r border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)]">
             <div className="px-4 py-4">
-              <span className="text-xs font-medium text-text-muted uppercase tracking-wider">
+              <span className="text-xs font-medium text-text-muted">
                 {t('settings.title')}
               </span>
             </div>
@@ -470,100 +467,51 @@ export function SettingsDialog({
             <nav className="flex-1">
               <button
                 onClick={() => setActiveCategory('general')}
-                className={`
-                w-full flex items-center gap-3 px-4 py-2.5 text-left
-                transition-colors
-                ${activeCategory === 'general'
-                    ? 'bg-accent/10 text-text-dark border-l-2 border-accent'
-                    : 'text-text-muted hover:bg-bg-dark hover:text-text-dark'
-                  }
-              `}
+                className={categoryButtonClass('general')}
               >
                 <span className="text-sm">{t('settings.general')}</span>
               </button>
 
               <button
                 onClick={() => setActiveCategory('imageApis')}
-                className={`
-                w-full flex items-center gap-3 px-4 py-2.5 text-left
-                transition-colors
-                ${activeCategory === 'imageApis'
-                    ? 'bg-accent/10 text-text-dark border-l-2 border-accent'
-                    : 'text-text-muted hover:bg-bg-dark hover:text-text-dark'
-                  }
-              `}
+                className={categoryButtonClass('imageApis')}
               >
                 <span className="text-sm">{t('settings.imageApis')}</span>
               </button>
 
               <button
                 onClick={() => setActiveCategory('appearance')}
-                className={`
-                w-full flex items-center gap-3 px-4 py-2.5 text-left
-                transition-colors
-                ${activeCategory === 'appearance'
-                    ? 'bg-accent/10 text-text-dark border-l-2 border-accent'
-                    : 'text-text-muted hover:bg-bg-dark hover:text-text-dark'
-                  }
-              `}
+                className={categoryButtonClass('appearance')}
               >
                 <span className="text-sm">{t('settings.appearance')}</span>
               </button>
 
               <button
                 onClick={() => setActiveCategory('experimental')}
-                className={`
-                w-full flex items-center gap-3 px-4 py-2.5 text-left
-                transition-colors
-                ${activeCategory === 'experimental'
-                    ? 'bg-accent/10 text-text-dark border-l-2 border-accent'
-                    : 'text-text-muted hover:bg-bg-dark hover:text-text-dark'
-                  }
-              `}
+                className={categoryButtonClass('experimental')}
               >
                 <span className="text-sm">{t('settings.experimental')}</span>
               </button>
 
               <button
                 onClick={() => setActiveCategory('textApis')}
-                className={`
-                w-full flex items-center gap-3 px-4 py-2.5 text-left
-                transition-colors
-                ${activeCategory === 'textApis'
-                    ? 'bg-accent/10 text-text-dark border-l-2 border-accent'
-                    : 'text-text-muted hover:bg-bg-dark hover:text-text-dark'
-                  }
-              `}
+                className={categoryButtonClass('textApis')}
               >
                 <span className="text-sm">{t('settings.textApis')}</span>
               </button>
 
               <button
                 onClick={() => setActiveCategory('videoApis')}
-                className={`
-                w-full flex items-center gap-3 px-4 py-2.5 text-left
-                transition-colors
-                ${activeCategory === 'videoApis'
-                    ? 'bg-accent/10 text-text-dark border-l-2 border-accent'
-                    : 'text-text-muted hover:bg-bg-dark hover:text-text-dark'
-                  }
-              `}
+                className={categoryButtonClass('videoApis')}
               >
                 <span className="text-sm">{t('settings.videoApis')}</span>
               </button>
 
               <button
                 onClick={() => setActiveCategory('logging')}
-                className={`
-                w-full flex items-center gap-3 px-4 py-2.5 text-left
-                transition-colors
-                ${activeCategory === 'logging'
-                    ? 'bg-accent/10 text-text-dark border-l-2 border-accent'
-                    : 'text-text-muted hover:bg-bg-dark hover:text-text-dark'
-                  }
-              `}
+                className={categoryButtonClass('logging')}
               >
-                <span className="text-sm">日志</span>
+                <span className="text-sm">{t('settings.logging')}</span>
               </button>
             </nav>
           </div>
@@ -572,8 +520,8 @@ export function SettingsDialog({
           <div className="flex-1 flex flex-col">
             {activeCategory === 'imageApis' && (
               <>
-                <div className="px-6 py-5 border-b border-border-dark">
-                  <h2 className="text-lg font-semibold text-text-dark">
+                <div className="border-b border-[var(--ui-border-soft)] px-6 py-4">
+                  <h2 className="text-base font-semibold text-text-dark">
                     {t('settings.imageApis')}
                   </h2>
                   <p className="text-sm text-text-muted mt-1">
@@ -581,8 +529,8 @@ export function SettingsDialog({
                   </p>
                 </div>
 
-                <div className="ui-scrollbar flex-1 space-y-4 overflow-y-auto p-6">
-                  <div className="rounded-lg border border-border-dark bg-bg-dark p-4">
+                <div className="ui-scrollbar flex-1 overflow-y-auto px-6 py-2">
+                  <div className="border-b border-[var(--ui-border-soft)] py-4">
                     <div className="mb-4">
                       <h3 className="text-sm font-medium text-text-dark">
                         {t('settings.openAiImageApi')}
@@ -631,18 +579,20 @@ export function SettingsDialog({
                             placeholder={t('settings.enterApiKey')}
                             className="w-full rounded border border-border-dark bg-surface-dark px-3 py-2 pr-10 text-sm text-text-dark placeholder:text-text-muted"
                           />
-                          <button
-                            type="button"
-                            title={isOpenAiApiKeyRevealed ? t('settings.hideApiKey') : t('settings.showApiKey')}
-                            onClick={() => setIsOpenAiApiKeyRevealed((visible) => !visible)}
-                            className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 hover:bg-bg-dark"
-                          >
-                            {isOpenAiApiKeyRevealed ? (
-                              <EyeOff className="h-4 w-4 text-text-muted" />
-                            ) : (
-                              <Eye className="h-4 w-4 text-text-muted" />
-                            )}
-                          </button>
+                          <UiTooltip content={isOpenAiApiKeyRevealed ? t('settings.hideApiKey') : t('settings.showApiKey')}>
+                            <button
+                              type="button"
+                              aria-label={isOpenAiApiKeyRevealed ? t('settings.hideApiKey') : t('settings.showApiKey')}
+                              onClick={() => setIsOpenAiApiKeyRevealed((visible) => !visible)}
+                              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 hover:bg-[var(--ui-hover)]"
+                            >
+                              {isOpenAiApiKeyRevealed ? (
+                                <EyeOff className="h-4 w-4 text-text-muted" />
+                              ) : (
+                                <Eye className="h-4 w-4 text-text-muted" />
+                              )}
+                            </button>
+                          </UiTooltip>
                         </div>
                       </label>
 
@@ -668,7 +618,7 @@ export function SettingsDialog({
                     </div>
                   </div>
 
-                  <div className="rounded-lg border border-border-dark bg-bg-dark p-4">
+                  <div className="py-4">
                     <div className="mb-4">
                       <h3 className="text-sm font-medium text-text-dark">
                         {t('settings.chaomoImageApi')}
@@ -717,18 +667,20 @@ export function SettingsDialog({
                             placeholder={t('settings.enterApiKey')}
                             className="w-full rounded border border-border-dark bg-surface-dark px-3 py-2 pr-10 text-sm text-text-dark placeholder:text-text-muted"
                           />
-                          <button
-                            type="button"
-                            title={isChaomoApiKeyRevealed ? t('settings.hideApiKey') : t('settings.showApiKey')}
-                            onClick={() => setIsChaomoApiKeyRevealed((visible) => !visible)}
-                            className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 hover:bg-bg-dark"
-                          >
-                            {isChaomoApiKeyRevealed ? (
-                              <EyeOff className="h-4 w-4 text-text-muted" />
-                            ) : (
-                              <Eye className="h-4 w-4 text-text-muted" />
-                            )}
-                          </button>
+                          <UiTooltip content={isChaomoApiKeyRevealed ? t('settings.hideApiKey') : t('settings.showApiKey')}>
+                            <button
+                              type="button"
+                              aria-label={isChaomoApiKeyRevealed ? t('settings.hideApiKey') : t('settings.showApiKey')}
+                              onClick={() => setIsChaomoApiKeyRevealed((visible) => !visible)}
+                              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 hover:bg-[var(--ui-hover)]"
+                            >
+                              {isChaomoApiKeyRevealed ? (
+                                <EyeOff className="h-4 w-4 text-text-muted" />
+                              ) : (
+                                <Eye className="h-4 w-4 text-text-muted" />
+                              )}
+                            </button>
+                          </UiTooltip>
                         </div>
                       </label>
 
@@ -785,7 +737,7 @@ export function SettingsDialog({
                 <div className="px-6 py-4 border-t border-border-dark flex justify-end">
                   <button
                     onClick={handleSave}
-                    className="px-4 py-2 text-sm font-medium bg-accent text-white rounded
+                    className="px-4 py-2 text-sm font-medium bg-accent text-[var(--accent-foreground)] rounded
                              hover:bg-accent/80 transition-colors"
                   >
                     {t('common.save')}
@@ -796,8 +748,8 @@ export function SettingsDialog({
 
             {activeCategory === 'appearance' && (
               <>
-                <div className="px-6 py-5 border-b border-border-dark">
-                  <h2 className="text-lg font-semibold text-text-dark">
+                <div className="border-b border-[var(--ui-border-soft)] px-6 py-4">
+                  <h2 className="text-base font-semibold text-text-dark">
                     {t('settings.appearance')}
                   </h2>
                   <p className="text-sm text-text-muted mt-1">
@@ -805,52 +757,8 @@ export function SettingsDialog({
                   </p>
                 </div>
 
-                <div className="ui-scrollbar flex-1 space-y-4 overflow-y-auto p-6">
-                  <div className="rounded-lg border border-border-dark bg-bg-dark p-4">
-                    <h3 className="text-sm font-medium text-text-dark">
-                      {t('settings.radiusPreset')}
-                    </h3>
-                    <p className="mt-1 text-xs text-text-muted">
-                      {t('settings.radiusPresetDesc')}
-                    </p>
-                    <div className="mt-3">
-                      <UiSelect
-                        value={localUiRadiusPreset}
-                        onChange={(event) =>
-                          setLocalUiRadiusPreset(event.target.value as typeof localUiRadiusPreset)
-                        }
-                        className="h-9 text-sm"
-                      >
-                        <option value="compact">{t('settings.radiusCompact')}</option>
-                        <option value="default">{t('settings.radiusDefault')}</option>
-                        <option value="large">{t('settings.radiusLarge')}</option>
-                      </UiSelect>
-                    </div>
-                  </div>
-
-                  <div className="rounded-lg border border-border-dark bg-bg-dark p-4">
-                    <h3 className="text-sm font-medium text-text-dark">
-                      {t('settings.themeTone')}
-                    </h3>
-                    <p className="mt-1 text-xs text-text-muted">
-                      {t('settings.themeToneDesc')}
-                    </p>
-                    <div className="mt-3">
-                      <UiSelect
-                        value={localThemeTonePreset}
-                        onChange={(event) =>
-                          setLocalThemeTonePreset(event.target.value as typeof localThemeTonePreset)
-                        }
-                        className="h-9 text-sm"
-                      >
-                        <option value="neutral">{t('settings.toneNeutral')}</option>
-                        <option value="warm">{t('settings.toneWarm')}</option>
-                        <option value="cool">{t('settings.toneCool')}</option>
-                      </UiSelect>
-                    </div>
-                  </div>
-
-                  <div className="rounded-lg border border-border-dark bg-bg-dark p-4">
+                <div className="ui-scrollbar flex-1 overflow-y-auto px-6">
+                  <section className="border-b border-[var(--ui-border-soft)] py-5">
                     <h3 className="text-sm font-medium text-text-dark">
                       {t('settings.edgeRoutingMode')}
                     </h3>
@@ -872,9 +780,9 @@ export function SettingsDialog({
                         <option value="smartOrthogonal">{t('settings.edgeRoutingSmartOrthogonal')}</option>
                       </UiSelect>
                     </div>
-                  </div>
+                  </section>
 
-                  <div className="rounded-lg border border-border-dark bg-bg-dark p-4">
+                  <section className="py-5">
                     <h3 className="text-sm font-medium text-text-dark">
                       {t('settings.accentColor')}
                     </h3>
@@ -886,29 +794,29 @@ export function SettingsDialog({
                         type="color"
                         value={localAccentColor}
                         onChange={(event) => setLocalAccentColor(event.target.value)}
-                        className="h-9 w-12 rounded border border-border-dark bg-surface-dark p-1"
+                        className="h-9 w-12 rounded-lg border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] p-1"
                       />
                       <input
                         value={localAccentColor}
                         onChange={(event) => setLocalAccentColor(event.target.value)}
-                        placeholder="#3B82F6"
-                        className="h-9 flex-1 rounded border border-border-dark bg-surface-dark px-3 text-sm text-text-dark outline-none placeholder:text-text-muted"
+                        placeholder={DEFAULT_ACCENT_COLOR}
+                        className="h-9 flex-1 rounded-lg border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] px-3 font-mono text-sm text-text-dark outline-none placeholder:text-text-muted focus:border-accent"
                       />
                       <button
                         type="button"
-                        className="inline-flex h-9 items-center justify-center rounded border border-border-dark bg-surface-dark px-3 text-xs text-text-dark transition-colors hover:bg-bg-dark"
-                        onClick={() => setLocalAccentColor('#3B82F6')}
+                        className="inline-flex h-9 items-center justify-center rounded-lg border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] px-3 text-xs text-text-dark transition-colors hover:bg-[var(--ui-hover)]"
+                        onClick={() => setLocalAccentColor(DEFAULT_ACCENT_COLOR)}
                       >
                         {t('settings.resetAccentColor')}
                       </button>
                     </div>
-                  </div>
+                  </section>
                 </div>
 
-                <div className="flex justify-end border-t border-border-dark px-6 py-4">
+                <div className="flex justify-end border-t border-[var(--ui-border-soft)] px-6 py-4">
                   <button
                     onClick={handleSave}
-                    className="rounded bg-accent px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-accent/80"
+                    className="rounded bg-accent px-4 py-2 text-sm font-medium text-[var(--accent-foreground)] transition-colors hover:bg-accent/85"
                   >
                     {t('common.save')}
                   </button>
@@ -1001,14 +909,16 @@ export function SettingsDialog({
                             className="flex items-center gap-2 rounded border border-border-dark bg-surface-dark px-2 py-1.5"
                           >
                             <span className="truncate text-xs text-text-dark">{path}</span>
-                            <button
-                              type="button"
-                              className="ml-auto inline-flex h-6 w-6 items-center justify-center rounded text-text-muted transition-colors hover:bg-bg-dark hover:text-text-dark"
-                              onClick={() => handleRemoveDownloadPath(path)}
-                              title={t('common.delete')}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
+                            <UiTooltip content={t('common.delete')}>
+                              <button
+                                type="button"
+                                aria-label={t('common.delete')}
+                                className="ml-auto inline-flex h-6 w-6 items-center justify-center rounded text-text-muted transition-colors hover:bg-[var(--ui-hover)] hover:text-red-400"
+                                onClick={() => handleRemoveDownloadPath(path)}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </UiTooltip>
                           </div>
                         ))
                       ) : (
@@ -1021,7 +931,7 @@ export function SettingsDialog({
                 <div className="flex justify-end border-t border-border-dark px-6 py-4">
                   <button
                     onClick={handleSave}
-                    className="rounded bg-accent px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-accent/80"
+                    className="rounded bg-accent px-4 py-2 text-sm font-medium text-[var(--accent-foreground)] transition-colors hover:bg-accent/85"
                   >
                     {t('common.save')}
                   </button>
@@ -1066,7 +976,7 @@ export function SettingsDialog({
                 <div className="flex justify-end border-t border-border-dark px-6 py-4">
                   <button
                     onClick={handleSave}
-                    className="rounded bg-accent px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-accent/80"
+                    className="rounded bg-accent px-4 py-2 text-sm font-medium text-[var(--accent-foreground)] transition-colors hover:bg-accent/85"
                   >
                     {t('common.save')}
                   </button>
@@ -1118,17 +1028,19 @@ export function SettingsDialog({
                               />
                               {t('settings.textApiEnabled')}
                             </label>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const updated = localTextApis.filter((_, i) => i !== index);
-                                setLocalTextApis(updated);
-                              }}
-                              className="inline-flex h-6 w-6 items-center justify-center rounded text-text-muted transition-colors hover:bg-bg-dark hover:text-red-400"
-                              title={t('settings.removeTextApi')}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
+                            <UiTooltip content={t('settings.removeTextApi')}>
+                              <button
+                                type="button"
+                                aria-label={t('settings.removeTextApi')}
+                                onClick={() => {
+                                  const updated = localTextApis.filter((_, i) => i !== index);
+                                  setLocalTextApis(updated);
+                                }}
+                                className="inline-flex h-6 w-6 items-center justify-center rounded text-text-muted transition-colors hover:bg-red-500/10 hover:text-red-400"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </UiTooltip>
                           </div>
                         </div>
 
@@ -1253,7 +1165,7 @@ export function SettingsDialog({
                 <div className="flex justify-end border-t border-border-dark px-6 py-4">
                   <button
                     onClick={handleSave}
-                    className="rounded bg-accent px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-accent/80"
+                    className="rounded bg-accent px-4 py-2 text-sm font-medium text-[var(--accent-foreground)] transition-colors hover:bg-accent/85"
                   >
                     {t('common.save')}
                   </button>
@@ -1289,17 +1201,19 @@ export function SettingsDialog({
                               </span>
                             )}
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const updated = localVideoApis.filter((_, i) => i !== index);
-                              setLocalVideoApis(updated);
-                            }}
-                            className="inline-flex h-6 w-6 items-center justify-center rounded text-text-muted transition-colors hover:bg-bg-dark hover:text-red-400"
-                            title={t('settings.removeVideoApi')}
-                                                    >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
+                          <UiTooltip content={t('settings.removeVideoApi')}>
+                            <button
+                              type="button"
+                              aria-label={t('settings.removeVideoApi')}
+                              onClick={() => {
+                                const updated = localVideoApis.filter((_, i) => i !== index);
+                                setLocalVideoApis(updated);
+                              }}
+                              className="inline-flex h-6 w-6 items-center justify-center rounded text-text-muted transition-colors hover:bg-red-500/10 hover:text-red-400"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </UiTooltip>
                         </div>
 
                         <div className="space-y-3">
@@ -1439,7 +1353,7 @@ export function SettingsDialog({
                 <div className="flex justify-end border-t border-border-dark px-6 py-4">
                   <button
                     onClick={handleSave}
-                    className="rounded bg-accent px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-accent/80"
+                    className="rounded bg-accent px-4 py-2 text-sm font-medium text-[var(--accent-foreground)] transition-colors hover:bg-accent/85"
                   >
                     {t('common.save')}
                   </button>
@@ -1449,9 +1363,9 @@ export function SettingsDialog({
 
             {activeCategory === 'logging' && (
               <>
-                <div className="px-6 py-5 border-b border-border-dark">
-                  <h2 className="text-lg font-semibold text-text-dark">
-                    日志设置
+                <div className="border-b border-[var(--ui-border-soft)] px-6 py-4">
+                  <h2 className="text-base font-semibold text-text-dark">
+                    {t('settings.logging')}
                   </h2>
                 </div>
 
@@ -1488,13 +1402,11 @@ function LoggingSettings(): JSX.Element {
   }
 
   return (
-    <div className="space-y-4">
-      <h3 className="text-lg font-semibold">{t('logger.settings.title')}</h3>
-
+    <div className="space-y-5">
       <div>
-        <label className="text-sm">{t('logger.settings.globalLevel')}</label>
-        <select
-          className="ml-2 bg-zinc-800 px-2 py-1 rounded"
+        <label className="mb-1.5 block text-xs font-medium text-text-dark">{t('logger.settings.globalLevel')}</label>
+        <UiSelect
+          className="h-9 w-40 font-mono text-sm"
           value={config.level}
           onChange={(e) => {
             setLogConfig({ level: e.target.value as 'debug' | 'info' | 'warn' | 'error' });
@@ -1505,60 +1417,60 @@ function LoggingSettings(): JSX.Element {
           <option value="info">info</option>
           <option value="warn">warn</option>
           <option value="error">error</option>
-        </select>
+        </UiSelect>
       </div>
 
       <div>
-        <label className="text-sm">{t('logger.settings.moduleOverride')}</label>
-        <input
+        <label className="mb-1.5 block text-xs font-medium text-text-dark">{t('logger.settings.moduleOverride')}</label>
+        <UiInput
           type="text"
-          className="ml-2 bg-zinc-800 px-2 py-1 rounded w-96"
+          className="h-9 max-w-xl font-mono text-sm"
           value={moduleText}
           onChange={(e) => commitModuleText(e.target.value)}
           placeholder={t('logger.settings.moduleOverridePlaceholder')}
         />
-        <p className="text-xs text-zinc-500 mt-1">{t('logger.settings.moduleOverrideHint')}</p>
+        <p className="mt-1.5 text-xs text-text-muted">{t('logger.settings.moduleOverrideHint')}</p>
       </div>
 
-      <div className="flex gap-4">
-        <label className="text-sm">
-          <input
-            type="checkbox"
+      <div className="flex flex-wrap gap-4 border-y border-[var(--ui-border-soft)] py-4">
+        <label className="flex cursor-pointer items-center gap-2 text-sm text-text-dark">
+          <UiCheckbox
+            aria-label={t('logger.settings.consoleOutput')}
             checked={config.console}
-            onChange={(e) => {
-              setLogConfig({ console: e.target.checked });
+            onCheckedChange={(checked) => {
+              setLogConfig({ console: checked });
               setLocal(getLogConfig());
             }}
           />
-          <span className="ml-2">{t('logger.settings.consoleOutput')}</span>
+          <span>{t('logger.settings.consoleOutput')}</span>
         </label>
-        <label className="text-sm">
-          <input
-            type="checkbox"
+        <label className="flex cursor-pointer items-center gap-2 text-sm text-text-dark">
+          <UiCheckbox
+            aria-label={t('logger.settings.persist')}
             checked={config.persist}
-            onChange={(e) => {
-              setLogConfig({ persist: e.target.checked });
+            onCheckedChange={(checked) => {
+              setLogConfig({ persist: checked });
               setLocal(getLogConfig());
             }}
           />
-          <span className="ml-2">{t('logger.settings.persist')}</span>
+          <span>{t('logger.settings.persist')}</span>
         </label>
-        <label className="text-sm">
-          <input
-            type="checkbox"
+        <label className="flex cursor-pointer items-center gap-2 text-sm text-text-dark">
+          <UiCheckbox
+            aria-label={t('logger.settings.consoleTimestamps')}
             checked={config.consoleTimestamps}
-            onChange={(e) => {
-              setLogConfig({ consoleTimestamps: e.target.checked });
+            onCheckedChange={(checked) => {
+              setLogConfig({ consoleTimestamps: checked });
               setLocal(getLogConfig());
             }}
           />
-          <span className="ml-2">{t('logger.settings.consoleTimestamps')}</span>
+          <span>{t('logger.settings.consoleTimestamps')}</span>
         </label>
       </div>
 
       <div className="flex gap-2">
-        <button
-          className="px-3 py-1 bg-zinc-800 rounded text-sm"
+        <UiButton
+          size="sm"
           onClick={async () => {
             try {
               await invoke('open_log_dir');
@@ -1568,9 +1480,9 @@ function LoggingSettings(): JSX.Element {
           }}
         >
           {t('logger.settings.openFolder')}
-        </button>
-        <button
-          className="px-3 py-1 bg-zinc-800 rounded text-sm"
+        </UiButton>
+        <UiButton
+          size="sm"
           onClick={() => {
             const entries = useLogStore.getState().snapshot().slice(-100);
             navigator.clipboard.writeText(
@@ -1579,9 +1491,9 @@ function LoggingSettings(): JSX.Element {
           }}
         >
           {t('logger.settings.copyAll')}
-        </button>
-        <button
-          className="px-3 py-1 bg-zinc-800 rounded text-sm"
+        </UiButton>
+        <UiButton
+          size="sm"
           onClick={() => {
             resetLogConfig();
             setLocal(getLogConfig());
@@ -1589,7 +1501,7 @@ function LoggingSettings(): JSX.Element {
           }}
         >
           {t('logger.settings.reset')}
-        </button>
+        </UiButton>
       </div>
     </div>
   );

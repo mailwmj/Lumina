@@ -333,6 +333,7 @@ export function NodeToolDialog() {
     <UiModal
       isOpen={isOpen}
       title={`${resolveToolLabel(activePlugin?.type)}${t('toolDialog.suffix')}`}
+      closeLabel={t('common.close')}
       onClose={closeDialog}
       widthClassName={widthClassName}
       footer={

@@ -1,11 +1,12 @@
-import { useCallback } from 'react';
+import { useCallback, type ButtonHTMLAttributes, type ReactNode } from 'react';
 import { isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { Minus, X, Maximize2, Settings, ArrowLeft } from 'lucide-react';
+import { Minus, X, Maximize2, Settings, ArrowLeft } from '@/components/ui/icons';
 import { useTranslation } from 'react-i18next';
-import { Moon, Sun, Languages } from 'lucide-react';
+import { Moon, Sun, Languages } from '@/components/ui/icons';
 import { useThemeStore } from '@/stores/themeStore';
 import { useProjectStore } from '@/stores/projectStore';
+import { UiTooltip } from '@/components/ui';
 import closeNormalIcon from '@/assets/macos-traffic-lights/1-close-1-normal.svg';
 import closeHoverIcon from '@/assets/macos-traffic-lights/2-close-2-hover.svg';
 import minimizeNormalIcon from '@/assets/macos-traffic-lights/2-minimize-1-normal.svg';
@@ -17,6 +18,39 @@ interface TitleBarProps {
   onSettingsClick: () => void;
   showBackButton?: boolean;
   onBackClick?: () => void;
+}
+
+interface TitleBarButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  label: string;
+  danger?: boolean;
+  children: ReactNode;
+}
+
+function TitleBarButton({
+  label,
+  danger = false,
+  className = '',
+  children,
+  type = 'button',
+  ...props
+}: TitleBarButtonProps) {
+  return (
+    <UiTooltip content={label}>
+      <button
+        type={type}
+        data-no-drag="true"
+        aria-label={label}
+        className={`flex h-8 w-8 items-center justify-center rounded-md text-text-muted transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/45 ${
+          danger
+            ? 'hover:bg-red-500 hover:text-white'
+            : 'hover:bg-[var(--ui-hover)] hover:text-text-dark'
+        } ${className}`}
+        {...props}
+      >
+        {children}
+      </button>
+    </UiTooltip>
+  );
 }
 
 export function TitleBar({ onSettingsClick, showBackButton, onBackClick }: TitleBarProps) {
@@ -72,42 +106,45 @@ export function TitleBar({ onSettingsClick, showBackButton, onBackClick }: Title
   }, [toggleTheme]);
 
   return (
-    <div className="h-10 flex items-center justify-between bg-surface-dark border-b border-border-dark select-none z-50 relative">
+    <div className="relative z-50 flex h-10 select-none items-center justify-between border-b border-[var(--ui-border-soft)] bg-[var(--ui-surface-panel)]">
       {isMac && appWindow ? (
-        <div className="group flex items-center h-full pl-3 pr-2 gap-2" data-no-drag="true">
-          <button
-            type="button"
-            onMouseDown={(event) => event.stopPropagation()}
-            onClick={handleClose}
-            className="relative flex h-3 w-3 items-center justify-center"
-            title={t('titleBar.close')}
-            aria-label={t('titleBar.close')}
-          >
-            <img src={closeNormalIcon} alt="" className="h-3 w-3 pointer-events-none opacity-100 transition-opacity group-hover:opacity-0" />
-            <img src={closeHoverIcon} alt="" className="absolute h-3 w-3 pointer-events-none opacity-0 transition-opacity group-hover:opacity-100" />
-          </button>
-          <button
-            type="button"
-            onMouseDown={(event) => event.stopPropagation()}
-            onClick={handleMinimize}
-            className="relative flex h-3 w-3 items-center justify-center"
-            title={t('titleBar.minimize')}
-            aria-label={t('titleBar.minimize')}
-          >
-            <img src={minimizeNormalIcon} alt="" className="h-3 w-3 pointer-events-none opacity-100 transition-opacity group-hover:opacity-0" />
-            <img src={minimizeHoverIcon} alt="" className="absolute h-3 w-3 pointer-events-none opacity-0 transition-opacity group-hover:opacity-100" />
-          </button>
-          <button
-            type="button"
-            onMouseDown={(event) => event.stopPropagation()}
-            onClick={handleMaximize}
-            className="relative flex h-3 w-3 items-center justify-center"
-            title={t('titleBar.maximize')}
-            aria-label={t('titleBar.maximize')}
-          >
-            <img src={maximizeNormalIcon} alt="" className="h-3 w-3 pointer-events-none opacity-100 transition-opacity group-hover:opacity-0" />
-            <img src={maximizeHoverIcon} alt="" className="absolute h-3 w-3 pointer-events-none opacity-0 transition-opacity group-hover:opacity-100" />
-          </button>
+        <div className="flex h-full items-center gap-2 pl-3 pr-2" data-no-drag="true">
+          <UiTooltip content={t('titleBar.close')}>
+            <button
+              type="button"
+              onMouseDown={(event) => event.stopPropagation()}
+              onClick={handleClose}
+              className="group/light relative flex h-3 w-3 items-center justify-center"
+              aria-label={t('titleBar.close')}
+            >
+              <img src={closeNormalIcon} alt="" className="pointer-events-none h-3 w-3 opacity-100 transition-opacity group-hover/light:opacity-0" />
+              <img src={closeHoverIcon} alt="" className="pointer-events-none absolute h-3 w-3 opacity-0 transition-opacity group-hover/light:opacity-100" />
+            </button>
+          </UiTooltip>
+          <UiTooltip content={t('titleBar.minimize')}>
+            <button
+              type="button"
+              onMouseDown={(event) => event.stopPropagation()}
+              onClick={handleMinimize}
+              className="group/light relative flex h-3 w-3 items-center justify-center"
+              aria-label={t('titleBar.minimize')}
+            >
+              <img src={minimizeNormalIcon} alt="" className="pointer-events-none h-3 w-3 opacity-100 transition-opacity group-hover/light:opacity-0" />
+              <img src={minimizeHoverIcon} alt="" className="pointer-events-none absolute h-3 w-3 opacity-0 transition-opacity group-hover/light:opacity-100" />
+            </button>
+          </UiTooltip>
+          <UiTooltip content={t('titleBar.maximize')}>
+            <button
+              type="button"
+              onMouseDown={(event) => event.stopPropagation()}
+              onClick={handleMaximize}
+              className="group/light relative flex h-3 w-3 items-center justify-center"
+              aria-label={t('titleBar.maximize')}
+            >
+              <img src={maximizeNormalIcon} alt="" className="pointer-events-none h-3 w-3 opacity-100 transition-opacity group-hover/light:opacity-0" />
+              <img src={maximizeHoverIcon} alt="" className="pointer-events-none absolute h-3 w-3 opacity-0 transition-opacity group-hover/light:opacity-100" />
+            </button>
+          </UiTooltip>
         </div>
       ) : null}
 
@@ -116,21 +153,19 @@ export function TitleBar({ onSettingsClick, showBackButton, onBackClick }: Title
         onMouseDown={handleDragStart}
       >
         {showBackButton && onBackClick && (
-          <button
-            type="button"
-            data-no-drag="true"
+          <TitleBarButton
+            label={t('titleBar.back')}
             onMouseDown={(event) => event.stopPropagation()}
             onClick={(event) => {
               event.stopPropagation();
               onBackClick();
             }}
-            className="mr-3 p-1 hover:bg-bg-dark rounded transition-colors"
-            title={t('titleBar.back')}
+            className="mr-2"
           >
-            <ArrowLeft className="w-4 h-4 text-text-muted hover:text-text-dark" />
-          </button>
+            <ArrowLeft className="h-4 w-4" />
+          </TitleBarButton>
         )}
-        <span className="text-sm font-semibold text-text-dark">
+        <span className="text-sm font-medium text-text-dark">
           {titleText}
         </span>
         {!isZh && !currentProjectName ? (
@@ -138,69 +173,57 @@ export function TitleBar({ onSettingsClick, showBackButton, onBackClick }: Title
         ) : null}
       </div>
 
-      {/* 右侧按钮区域 */}
-      <div className="flex items-center h-full">
-        <button
-          type="button"
+      <div className="flex h-full items-center gap-0.5 px-1">
+        <TitleBarButton
+          label={i18n.language.startsWith('zh') ? t('titleBar.switchToEnglish') : t('titleBar.switchToChinese')}
           onClick={handleLanguageClick}
-          className="h-full px-3 hover:bg-bg-dark transition-colors"
-          title={i18n.language.startsWith('zh') ? t('titleBar.switchToEnglish') : t('titleBar.switchToChinese')}
         >
-          <Languages className="w-4 h-4 text-text-muted" />
-        </button>
+          <Languages className="h-4 w-4" />
+        </TitleBarButton>
 
-        <button
-          type="button"
+        <TitleBarButton
+          label={theme === 'dark' ? t('theme.light') : t('theme.dark')}
           onClick={handleThemeClick}
-          className="h-full px-3 hover:bg-bg-dark transition-colors"
-          title={theme === 'dark' ? t('theme.light') : t('theme.dark')}
         >
           {theme === 'dark' ? (
-            <Sun className="w-4 h-4 text-text-muted" />
+            <Sun className="h-4 w-4" />
           ) : (
-            <Moon className="w-4 h-4 text-text-muted" />
+            <Moon className="h-4 w-4" />
           )}
-        </button>
+        </TitleBarButton>
 
-        <button
-          type="button"
+        <TitleBarButton
+          label={t('settings.title')}
           onClick={onSettingsClick}
-          className="h-full px-3 hover:bg-bg-dark transition-colors"
-          title={t('settings.title')}
         >
-          <Settings className="w-4 h-4 text-text-muted" />
-        </button>
+          <Settings className="h-4 w-4" />
+        </TitleBarButton>
 
         {!isMac ? (
           <>
-            <div className="w-px h-4 bg-border-dark mx-1" />
+            <div className="mx-1 h-4 w-px bg-[var(--ui-border-soft)]" />
 
-            <button
-              type="button"
+            <TitleBarButton
+              label={t('titleBar.minimize')}
               onClick={handleMinimize}
-              className="h-full px-3 hover:bg-bg-dark transition-colors"
-              title={t('titleBar.minimize')}
             >
-              <Minus className="w-4 h-4 text-text-muted hover:text-text-dark" />
-            </button>
+              <Minus className="h-4 w-4" />
+            </TitleBarButton>
 
-            <button
-              type="button"
+            <TitleBarButton
+              label={t('titleBar.maximize')}
               onClick={handleMaximize}
-              className="h-full px-3 hover:bg-bg-dark transition-colors"
-              title={t('titleBar.maximize')}
             >
-              <Maximize2 className="w-4 h-4 text-text-muted hover:text-text-dark" />
-            </button>
+              <Maximize2 className="h-4 w-4" />
+            </TitleBarButton>
 
-            <button
-              type="button"
+            <TitleBarButton
+              label={t('titleBar.close')}
               onClick={handleClose}
-              className="h-full px-3 hover:bg-red-500 transition-colors group"
-              title={t('titleBar.close')}
+              danger
             >
-              <X className="w-4 h-4 text-text-muted group-hover:text-white" />
-            </button>
+              <X className="h-4 w-4" />
+            </TitleBarButton>
           </>
         ) : null}
       </div>

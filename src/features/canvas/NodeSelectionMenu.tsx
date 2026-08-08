@@ -1,6 +1,6 @@
 import { useMemo, useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Image, Upload, Sparkles, LayoutGrid, Type, Video } from 'lucide-react';
+import { Image, Upload, Sparkles, LayoutGrid, Type, Video } from '@/components/ui/icons';
 import { UI_POPOVER_TRANSITION_MS } from '@/components/ui/motion';
 
 import type { CanvasNodeType } from '@/features/canvas/domain/canvasNodes';
@@ -98,11 +98,11 @@ export function NodeSelectionMenu({
     <div
       ref={menuRef}
       className={`
-        absolute z-50 min-w-[${isDoubleColumn ? '360' : '220'}px] overflow-hidden rounded-lg border border-border-dark bg-surface-dark shadow-xl
+        absolute z-50 overflow-hidden rounded-[10px] border border-[var(--ui-border-soft)] bg-[var(--ui-surface-elevated)] p-1 shadow-[var(--ui-shadow-panel)]
         transition-opacity duration-150
         ${isVisible ? 'opacity-100' : 'opacity-0'}
       `}
-      style={{ left: position.x, top: position.y }}
+      style={{ left: position.x, top: position.y, minWidth: isDoubleColumn ? 360 : 220 }}
     >
       <div className={`flex ${isDoubleColumn ? '' : ''}`}>
         {/* Left column or single column */}
@@ -112,14 +112,14 @@ export function NodeSelectionMenu({
             return (
               <button
                 key={item.type}
-                className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-bg-dark"
+                className="flex h-11 w-full items-center gap-2.5 rounded-md px-2.5 text-left transition-colors hover:bg-[var(--ui-hover)]"
                 style={{ transitionDelay: isVisible ? `${index * 30}ms` : '0ms' }}
                 onClick={() => {
                   handleClose();
                   setTimeout(() => onSelect(item.type), UI_POPOVER_TRANSITION_MS + 10);
                 }}
               >
-                <div className="flex h-8 w-8 items-center justify-center rounded-md bg-bg-dark">
+                <div className="flex h-7 w-7 items-center justify-center rounded-md bg-accent/10">
                   <Icon className="h-4 w-4 text-accent" />
                 </div>
                 <span className="text-sm text-text-dark">{t(item.menuLabelKey)}</span>
@@ -129,20 +129,20 @@ export function NodeSelectionMenu({
         </div>
         {/* Right column - only for double column layout */}
         {isDoubleColumn && rightColumnItems.length > 0 && (
-          <div className="flex-1 border-l border-border-dark/50">
+                  <div className="flex-1 border-l border-[var(--ui-border-soft)] pl-1">
             {rightColumnItems.map((item, index) => {
               const Icon = iconMap[item.menuIcon] ?? Image;
               return (
                 <button
                   key={item.type}
-                  className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-bg-dark"
+                  className="flex h-11 w-full items-center gap-2.5 rounded-md px-2.5 text-left transition-colors hover:bg-[var(--ui-hover)]"
                   style={{ transitionDelay: isVisible ? `${(halfLength + index) * 30}ms` : '0ms' }}
                   onClick={() => {
                     handleClose();
                     setTimeout(() => onSelect(item.type), UI_POPOVER_TRANSITION_MS + 10);
                   }}
                 >
-                  <div className="flex h-8 w-8 items-center justify-center rounded-md bg-bg-dark">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-md bg-accent/10">
                     <Icon className="h-4 w-4 text-accent" />
                   </div>
                   <span className="text-sm text-text-dark">{t(item.menuLabelKey)}</span>

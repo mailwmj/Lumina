@@ -1,6 +1,15 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ButtonHTMLAttributes,
+  type ReactNode,
+} from 'react';
 import { NodeToolbar as ReactFlowNodeToolbar } from '@xyflow/react';
-import { Copy, Crop, Download, FolderOpen, PenLine, RefreshCw, Scissors, Trash2, Unlink2 } from 'lucide-react';
+import { Copy, Crop, Download, FolderOpen, PenLine, RefreshCw, Scissors, Trash2, Unlink2 } from '@/components/ui/icons';
 import { save } from '@tauri-apps/plugin-dialog';
 import { downloadDir, join } from '@tauri-apps/api/path';
 import { useTranslation } from 'react-i18next';
@@ -20,7 +29,7 @@ import {
 import { canvasEventBus } from '@/features/canvas/application/canvasServices';
 import { getNodeToolPlugins } from '@/features/canvas/tools';
 import type { ToolIconKey } from '@/features/canvas/tools';
-import { UiChipButton, UiPanel } from '@/components/ui';
+import { UiChipButton, UiPanel, UiTooltip } from '@/components/ui';
 import {
   copyImageSourceToClipboard,
   saveImageSourceToDirectory,
@@ -54,7 +63,43 @@ const toolIconMap: Record<ToolIconKey, typeof Crop> = {
 
 const TOOLBAR_BUTTON_RADIUS_CLASS = 'rounded-full';
 const TOOLBAR_NEUTRAL_BUTTON_CLASS =
-  'border-[rgba(255,255,255,0.18)] bg-bg-dark/70 text-text-dark hover:border-[rgba(255,255,255,0.32)] hover:bg-bg-dark';
+  '!border-transparent !bg-transparent text-text-dark hover:!border-transparent hover:!bg-[var(--ui-hover)]';
+
+interface ToolbarIconActionProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  label: string;
+  danger?: boolean;
+  success?: boolean;
+  children: ReactNode;
+}
+
+function ToolbarIconAction({
+  label,
+  danger = false,
+  success = false,
+  className = '',
+  children,
+  type = 'button',
+  ...props
+}: ToolbarIconActionProps) {
+  return (
+    <UiTooltip content={label}>
+      <button
+        type={type}
+        aria-label={label}
+        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/45 ${
+          success
+            ? 'bg-emerald-500/16 text-emerald-500'
+            : danger
+              ? 'text-text-muted hover:bg-red-500/10 hover:text-red-400'
+              : 'text-text-muted hover:bg-[var(--ui-hover)] hover:text-text-dark'
+        } ${className}`}
+        {...props}
+      >
+        {children}
+      </button>
+    </UiTooltip>
+  );
+}
 
 export const NodeActionToolbar = memo(({ node }: NodeActionToolbarProps) => {
   const { t, i18n } = useTranslation();
@@ -399,7 +444,7 @@ export const NodeActionToolbar = memo(({ node }: NodeActionToolbarProps) => {
       offset={NODE_TOOLBAR_OFFSET}
       className={NODE_TOOLBAR_CLASS}
     >
-      <UiPanel className="flex items-center gap-1 rounded-full p-1">
+      <UiPanel className="no-scrollbar flex h-12 max-w-[calc(100vw-24px)] items-center gap-0.5 overflow-x-auto rounded-full px-1.5 py-1 shadow-[var(--ui-shadow-toolbar)]">
         {!isImageEdit && tools.map((tool) => {
           const Icon = toolIconMap[tool.icon] ?? Crop;
 
@@ -434,20 +479,16 @@ export const NodeActionToolbar = memo(({ node }: NodeActionToolbarProps) => {
           </UiChipButton>
         )}
         {!isImageEdit && canHandleImage && (
-          <UiChipButton
+          <ToolbarIconAction
             key="image-copy"
-            className={`h-8 ${TOOLBAR_BUTTON_RADIUS_CLASS} px-2.5 text-xs ${TOOLBAR_NEUTRAL_BUTTON_CLASS} ${
-              isCopySuccess
-                ? '!border-emerald-400/70 !bg-emerald-500/20 !text-emerald-200 hover:!bg-emerald-500/30'
-                : ''
-            }`}
+            label={isCopySuccess ? t('nodeToolbar.copied') : t('nodeToolbar.copy')}
+            success={isCopySuccess}
             onClick={() => {
               void handleCopyImage();
             }}
           >
             <Copy className="h-3.5 w-3.5" />
-            {t('nodeToolbar.copy')}
-          </UiChipButton>
+          </ToolbarIconAction>
         )}
         {!isImageEdit && canCopyStoryboardText && (
           <UiChipButton
@@ -482,9 +523,9 @@ export const NodeActionToolbar = memo(({ node }: NodeActionToolbarProps) => {
           </UiChipButton>
         )}
         {!isImageEdit && canHandleImage && (
-          <UiChipButton
+          <ToolbarIconAction
             key="image-download"
-            className={`h-8 ${TOOLBAR_BUTTON_RADIUS_CLASS} px-2.5 text-xs ${TOOLBAR_NEUTRAL_BUTTON_CLASS}`}
+            label={t('nodeToolbar.download')}
             onClick={(event) => {
               event.stopPropagation();
               if (downloadPresetPaths.length === 0) {
@@ -499,13 +540,12 @@ export const NodeActionToolbar = memo(({ node }: NodeActionToolbarProps) => {
             }}
           >
             <Download className="h-3.5 w-3.5" />
-            {t('nodeToolbar.download')}
-          </UiChipButton>
+          </ToolbarIconAction>
         )}
         {!isImageEdit && canHandleVideo && (
-          <UiChipButton
+          <ToolbarIconAction
             key="video-download"
-            className={`h-8 ${TOOLBAR_BUTTON_RADIUS_CLASS} px-2.5 text-xs ${TOOLBAR_NEUTRAL_BUTTON_CLASS}`}
+            label={t('nodeToolbar.download')}
             onClick={(event) => {
               event.stopPropagation();
               if (downloadPresetPaths.length === 0) {
@@ -520,8 +560,7 @@ export const NodeActionToolbar = memo(({ node }: NodeActionToolbarProps) => {
             }}
           >
             <Download className="h-3.5 w-3.5" />
-            {t('nodeToolbar.download')}
-          </UiChipButton>
+          </ToolbarIconAction>
         )}
         {!isImageEdit && isGroupNode(node) && (
           <UiChipButton
@@ -537,28 +576,29 @@ export const NodeActionToolbar = memo(({ node }: NodeActionToolbarProps) => {
             {t('nodeToolbar.ungroup')}
           </UiChipButton>
         )}
-        <UiChipButton
+        <div className="mx-1 h-5 w-px shrink-0 bg-[var(--ui-border-soft)]" />
+        <ToolbarIconAction
           key="node-delete"
-          className={`h-8 ${TOOLBAR_BUTTON_RADIUS_CLASS} border-red-500/45 bg-red-500/15 px-2.5 text-xs text-red-300 hover:bg-red-500/25`}
+          label={t('common.delete')}
+          danger
           onClick={(e) => {
             e.stopPropagation();
             handleDeleteClick();
           }}
         >
           <Trash2 className="h-3.5 w-3.5" />
-          {t('common.delete')}
-        </UiChipButton>
+        </ToolbarIconAction>
       </UiPanel>
 
       {!isImageEdit && downloadMenu && (
         <div
           ref={downloadMenuRef}
-          className={`fixed z-[120] min-w-[280px] rounded-xl border border-[rgba(255,255,255,0.18)] bg-surface-dark/95 p-2 shadow-2xl backdrop-blur-sm transition-opacity duration-150 ${isDownloadMenuVisible ? 'opacity-100' : 'opacity-0'}`}
+          className={`fixed z-[120] min-w-[280px] rounded-[10px] border border-[var(--ui-border-soft)] bg-[var(--ui-surface-elevated)] p-2 shadow-[var(--ui-shadow-panel)] transition-opacity duration-150 ${isDownloadMenuVisible ? 'opacity-100' : 'opacity-0'}`}
           style={{ left: `${downloadMenu.x}px`, top: `${downloadMenu.y}px` }}
         >
           <button
             type="button"
-            className="flex h-9 w-full items-center gap-2 rounded-lg px-2.5 text-left text-sm text-text-dark transition-colors hover:bg-bg-dark"
+            className="flex h-9 w-full items-center gap-2 rounded-lg px-2.5 text-left text-sm text-text-dark transition-colors hover:bg-[var(--ui-hover)]"
             onClick={() => {
               if (canHandleVideo) {
                 void handleVideoDownloadSaveAs();
@@ -572,12 +612,12 @@ export const NodeActionToolbar = memo(({ node }: NodeActionToolbarProps) => {
           </button>
 
           {downloadPresetPaths.length > 0 ? (
-            <div className="mt-1 space-y-1 border-t border-[rgba(255,255,255,0.1)] pt-2">
+            <div className="mt-1 space-y-1 border-t border-[var(--ui-border-soft)] pt-2">
               {downloadPresetPaths.map((path) => (
                 <button
                   key={path}
                   type="button"
-                  className="flex h-9 w-full items-center gap-2 rounded-lg px-2.5 text-left text-xs text-text-dark transition-colors hover:bg-bg-dark"
+                  className="flex h-9 w-full items-center gap-2 rounded-lg px-2.5 text-left text-xs text-text-dark transition-colors hover:bg-[var(--ui-hover)]"
                   onClick={() => {
                     if (canHandleVideo) {
                       void handleVideoDownloadToPreset(path);
@@ -593,7 +633,7 @@ export const NodeActionToolbar = memo(({ node }: NodeActionToolbarProps) => {
               ))}
             </div>
           ) : (
-            <div className="mt-1 border-t border-[rgba(255,255,255,0.1)] px-2.5 pt-2 text-xs text-text-muted">
+            <div className="mt-1 border-t border-[var(--ui-border-soft)] px-2.5 pt-2 text-xs text-text-muted">
               {t('nodeToolbar.noDownloadPresetPathsHint')}
             </div>
           )}

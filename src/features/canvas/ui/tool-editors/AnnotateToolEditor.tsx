@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowRight, Brush, Circle, Square, Type, Undo2, Trash2 } from 'lucide-react';
+import { ArrowRight, Brush, Circle, Redo2, Square, Type, Undo2, Trash2 } from '@/components/ui/icons';
 import {
   Arrow,
   Ellipse,
@@ -24,6 +24,8 @@ import {
   type AnnotationToolType,
 } from '@/features/canvas/tools/annotation';
 import { resolveImageDisplayUrl } from '@/features/canvas/application/imageData';
+import { getAccentForeground, normalizeAccentColor } from '@/features/settings/application/accentColor';
+import { useSettingsStore } from '@/stores/settingsStore';
 import type { VisualToolEditorProps } from './types';
 
 const VIEWPORT_PADDING_PX = 16;
@@ -196,6 +198,8 @@ function pruneUndefinedToolOptionsPatch(patch: Partial<ToolOptions>): Partial<To
 }
 
 export function AnnotateToolEditor({ options, onOptionsChange, sourceImageUrl }: VisualToolEditorProps) {
+  const accentColor = normalizeAccentColor(useSettingsStore((state) => state.accentColor));
+  const accentForeground = getAccentForeground(accentColor);
   const [image, setImage] = useState<HTMLImageElement | null>(null);
   const [tool, setTool] = useState<AnnotationToolType>('rect');
   const [annotations, setAnnotations] = useState<AnnotationItem[]>(() =>
@@ -985,7 +989,7 @@ export function AnnotateToolEditor({ options, onOptionsChange, sourceImageUrl }:
               className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs transition-colors ${
                 active
                   ? 'border-accent/45 bg-accent/15 text-text-dark'
-                  : 'border-[rgba(255,255,255,0.14)] text-text-muted hover:bg-bg-dark'
+                  : 'border-[var(--ui-border-soft)] text-text-muted hover:bg-[var(--ui-hover)]'
               }`}
             >
               <Icon className="h-3.5 w-3.5" />
@@ -1003,7 +1007,7 @@ export function AnnotateToolEditor({ options, onOptionsChange, sourceImageUrl }:
               type="color"
               value={color}
               onChange={(event) => handleStyleInputChange({ color: event.target.value })}
-              className="h-9 w-10 cursor-pointer rounded-md border border-[rgba(255,255,255,0.18)] bg-transparent p-1"
+              className="h-9 w-10 cursor-pointer rounded-md border border-[var(--ui-border-strong)] bg-[var(--ui-surface-field)] p-1"
             />
             {activeStyleKind === 'shape' && (
               <>
@@ -1029,7 +1033,7 @@ export function AnnotateToolEditor({ options, onOptionsChange, sourceImageUrl }:
                   onChange={(event) =>
                     handleStyleInputChange({ fontSizePercent: Number(event.target.value) })
                   }
-                  className="h-9 w-24 rounded-lg border border-[rgba(255,255,255,0.14)] bg-bg-dark/80 px-2 text-sm text-text-dark outline-none"
+                  className="h-9 w-24 rounded-lg border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] px-2 font-mono text-sm text-text-dark outline-none focus:border-accent"
                 />
                 <span className="text-xs text-text-muted">%</span>
               </div>
@@ -1038,7 +1042,7 @@ export function AnnotateToolEditor({ options, onOptionsChange, sourceImageUrl }:
         )}
         <button
           type="button"
-          className="inline-flex items-center gap-1 rounded-lg border border-[rgba(255,255,255,0.14)] px-2.5 py-1.5 text-xs text-text-muted transition-colors hover:bg-bg-dark"
+          className="inline-flex items-center gap-1 rounded-lg border border-[var(--ui-border-soft)] px-2.5 py-1.5 text-xs text-text-muted transition-colors hover:bg-[var(--ui-hover)] disabled:opacity-40"
           onClick={handleUndo}
           disabled={undoStack.length === 0}
         >
@@ -1047,19 +1051,16 @@ export function AnnotateToolEditor({ options, onOptionsChange, sourceImageUrl }:
         </button>
         <button
           type="button"
-          className="inline-flex items-center gap-1 rounded-lg border border-[rgba(255,255,255,0.14)] px-2.5 py-1.5 text-xs text-text-muted transition-colors hover:bg-bg-dark"
+          className="inline-flex items-center gap-1 rounded-lg border border-[var(--ui-border-soft)] px-2.5 py-1.5 text-xs text-text-muted transition-colors hover:bg-[var(--ui-hover)] disabled:opacity-40"
           onClick={handleRedo}
           disabled={redoStack.length === 0}
         >
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-            <path d="M3 7v6h6" />
-            <path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13" />
-          </svg>
+          <Redo2 className="h-3.5 w-3.5" />
           重做
         </button>
         <button
           type="button"
-          className="inline-flex items-center gap-1 rounded-lg border border-[rgba(255,255,255,0.14)] px-2.5 py-1.5 text-xs text-text-muted transition-colors hover:bg-bg-dark"
+          className="inline-flex items-center gap-1 rounded-lg border border-[var(--ui-border-soft)] px-2.5 py-1.5 text-xs text-text-muted transition-colors hover:bg-[var(--ui-hover)] disabled:opacity-40"
           onClick={handleDeleteSelected}
           disabled={!selectedId}
         >
@@ -1068,7 +1069,7 @@ export function AnnotateToolEditor({ options, onOptionsChange, sourceImageUrl }:
         </button>
         <button
           type="button"
-          className="inline-flex items-center gap-1 rounded-lg border border-[rgba(255,255,255,0.14)] px-2.5 py-1.5 text-xs text-text-muted transition-colors hover:bg-bg-dark"
+          className="inline-flex items-center gap-1 rounded-lg border border-[var(--ui-border-soft)] px-2.5 py-1.5 text-xs text-text-muted transition-colors hover:bg-[var(--ui-hover)] disabled:opacity-40"
           onClick={() => {
             setUndoStack((prev) => [...prev, annotations].slice(-40));
             setRedoStack([]);
@@ -1084,7 +1085,7 @@ export function AnnotateToolEditor({ options, onOptionsChange, sourceImageUrl }:
 
       <div
         ref={viewportRef}
-        className="relative h-[min(62vh,640px)] overflow-hidden rounded-xl border border-[rgba(255,255,255,0.12)] bg-bg-dark/85"
+        className="relative h-[min(62vh,640px)] overflow-hidden rounded-[10px] border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)]"
       >
         <div
           ref={stageHostRef}
@@ -1134,9 +1135,9 @@ export function AnnotateToolEditor({ options, onOptionsChange, sourceImageUrl }:
                     return newBox;
                   }}
                   rotateEnabled={false}
-                  borderStroke="#3b82f6"
-                  anchorStroke="#3b82f6"
-                  anchorFill="#ffffff"
+                  borderStroke={accentColor}
+                  anchorStroke={accentColor}
+                  anchorFill={accentForeground}
                   anchorSize={8}
                   ignoreStroke
                   keepRatio={transformerKeepRatio}
@@ -1148,7 +1149,7 @@ export function AnnotateToolEditor({ options, onOptionsChange, sourceImageUrl }:
 
           {textEditorState && textEditorStagePos && (
             <div
-              className="absolute z-20 flex flex-col gap-2 rounded-md border border-[rgba(255,255,255,0.2)] bg-black/75 p-2 backdrop-blur-sm"
+              className="absolute z-20 flex flex-col gap-2 rounded-md border border-[var(--ui-border-strong)] bg-[var(--ui-surface-elevated)] p-2 shadow-[var(--ui-shadow-panel)]"
               style={{
                 left: `${textEditorStagePos.x}px`,
                 top: `${textEditorStagePos.y}px`,
@@ -1182,19 +1183,19 @@ export function AnnotateToolEditor({ options, onOptionsChange, sourceImageUrl }:
                   }
                 }}
                 rows={3}
-                className="w-full resize-none rounded border border-[rgba(255,255,255,0.18)] bg-bg-dark/90 px-2 py-1.5 text-sm text-text-dark outline-none focus:border-accent"
+                className="w-full resize-none rounded border border-[var(--ui-border-strong)] bg-[var(--ui-surface-field)] px-2 py-1.5 text-sm text-text-dark outline-none focus:border-accent"
               />
               <div className="flex items-center justify-end gap-2">
                 <button
                   type="button"
-                  className="rounded border border-[rgba(255,255,255,0.22)] px-2 py-1 text-xs text-text-muted hover:bg-bg-dark"
+                  className="rounded border border-[var(--ui-border-strong)] px-2 py-1 text-xs text-text-muted hover:bg-[var(--ui-hover)]"
                   onClick={handleCancelTextEditor}
                 >
                   取消
                 </button>
                 <button
                   type="button"
-                  className="rounded border border-accent/45 bg-accent/20 px-2 py-1 text-xs text-text-dark hover:bg-accent/30"
+                  className="rounded bg-accent px-2 py-1 text-xs font-medium text-[var(--accent-foreground)] hover:bg-accent/85"
                   onClick={handleCommitTextEditor}
                 >
                   确认

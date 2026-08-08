@@ -36,7 +36,7 @@ type NodeHeaderProps = {
   onTitleChange?: (value: string) => void;
 };
 
-export const NODE_HEADER_TONE_CLASS = 'text-[rgba(15,23,42,0.68)] dark:text-white/55';
+export const NODE_HEADER_TONE_CLASS = 'text-text-muted/70';
 export const NODE_HEADER_TITLE_CLASS = 'text-[14px] font-normal';
 export const NODE_HEADER_META_CLASS = 'text-xs text-text-muted';
 export const NODE_HEADER_FLOATING_POSITION_CLASS = 'absolute -top-7 left-1 right-1 z-10';
@@ -211,7 +211,7 @@ export function NodeHeader({
             }
           }}
           className={joinClasses(
-            'nodrag nowheel h-6 min-w-[70px] w-full max-w-full rounded border border-[rgba(15,23,42,0.22)] bg-[rgba(255,255,255,0.86)] px-2 text-[13px] font-normal text-text-dark outline-none focus:border-accent/70 dark:border-[rgba(255,255,255,0.24)] dark:bg-black/30',
+            'nodrag nowheel h-6 min-w-[70px] w-full max-w-full rounded border border-[var(--ui-border-strong)] bg-[var(--ui-surface-field)] px-2 text-[13px] font-normal text-text-dark outline-none focus:border-accent/70',
             titleClassName
           )}
         />
@@ -290,4 +290,3 @@ export function NodeHeader({
     </div>
   );
 }
-

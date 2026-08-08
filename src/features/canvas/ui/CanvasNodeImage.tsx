@@ -184,7 +184,7 @@ export const CanvasNodeImage = memo(({
       />
       {resolutionHover && typeof document !== 'undefined' && createPortal(
         <div
-          className="pointer-events-none fixed z-[9999] rounded-md border border-[rgba(255,255,255,0.16)] bg-surface-dark px-2 py-1 text-xs text-text-dark shadow-xl"
+          className="pointer-events-none fixed z-[9999] rounded-md border border-[var(--ui-border-soft)] bg-[var(--ui-surface-elevated)] px-2 py-1 text-xs text-text-dark shadow-[var(--ui-shadow-tooltip)]"
           style={{
             left: Math.max(10, resolutionHover.anchorRect.left + resolutionHover.anchorRect.width / 2 - 40),
             top: resolutionHover.anchorRect.bottom + 8,

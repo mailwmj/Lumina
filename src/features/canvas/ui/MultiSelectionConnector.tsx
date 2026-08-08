@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import type { Viewport } from '@xyflow/react';
 import { useTranslation } from 'react-i18next';
+import { UiTooltip } from '@/components/ui';
 
 import type { CanvasNode } from '../domain/canvasNodes';
 
@@ -226,13 +227,13 @@ export const MultiSelectionConnector = memo(({
         </svg>
       )}
 
-      <button
-        type="button"
-        className="nodrag nopan absolute z-50 flex h-10 w-10 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-black/80 bg-[#17131f] shadow-[0_4px_14px_rgba(0,0,0,0.5)]"
-        style={{ left: geometry.connector.x, top: geometry.connector.y }}
-        title={t('canvas.multiConnect.dragHandle')}
-        aria-label={t('canvas.multiConnect.dragHandle')}
-        onPointerDown={(event) => {
+      <UiTooltip content={t('canvas.multiConnect.dragHandle')}>
+        <button
+          type="button"
+          className="nodrag nopan absolute z-50 flex h-10 w-10 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-[var(--ui-border-soft)] bg-[var(--ui-surface-panel)] shadow-[var(--ui-shadow-toolbar)]"
+          style={{ left: geometry.connector.x, top: geometry.connector.y }}
+          aria-label={t('canvas.multiConnect.dragHandle')}
+          onPointerDown={(event) => {
           if (event.button !== 0) {
             return;
           }
@@ -257,10 +258,11 @@ export const MultiSelectionConnector = memo(({
               },
             });
           }
-        }}
-      >
-        <span className="h-5 w-5 rounded-full border border-[var(--canvas-selection-connector-border)] bg-[var(--canvas-selection-connector)] shadow-[0_0_0_3px_rgba(139,92,246,0.2)]" />
-      </button>
+          }}
+        >
+          <span className="h-5 w-5 rounded-full border border-[var(--canvas-selection-connector-border)] bg-[var(--canvas-selection-connector)] shadow-[0_0_0_3px_rgb(var(--edge-rgb)/0.2)]" />
+        </button>
+      </UiTooltip>
     </>
   );
 });

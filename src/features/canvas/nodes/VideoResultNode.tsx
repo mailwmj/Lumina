@@ -5,7 +5,7 @@ import {
   useUpdateNodeInternals,
   type NodeProps,
 } from '@xyflow/react';
-import { AlertTriangle, Copy, Video, Check, ChevronDown, ChevronUp, X } from 'lucide-react';
+import { AlertTriangle, Copy, Video, Check, ChevronDown, ChevronUp, X } from '@/components/ui/icons';
 import { useTranslation } from 'react-i18next';
 
 import {
@@ -18,11 +18,13 @@ import {
 import { resolveNodeDisplayName } from '@/features/canvas/domain/nodeDisplay';
 import { NodeHeader, NODE_HEADER_FLOATING_POSITION_CLASS } from '@/features/canvas/ui/NodeHeader';
 import { NodeResizeHandle } from '@/features/canvas/ui/NodeResizeHandle';
+import { resolveNodeSurfaceStateClass } from '@/features/canvas/ui/nodeSurfaceStyles';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { submitGenerateImageJob, setApiKey } from '@/commands/ai';
 import { resolveVideoDisplayUrl } from '@/features/canvas/application/imageData';
 import { logger } from '@/lib/logger';
+import { UiTooltip } from '@/components/ui';
 
 type VideoResultNodeProps = NodeProps & {
   id: string;
@@ -287,9 +289,7 @@ export const VideoResultNode = memo(({ id, data, selected, width, height }: Vide
           ? (selected
             ? 'border-red-400 shadow-[0_0_0_1px_rgba(248,113,113,0.42)]'
             : 'border-red-500/70 bg-[rgba(127,29,29,0.12)] hover:border-red-400/80 dark:border-red-500/70 dark:hover:border-red-400/80')
-          : selected
-          ? 'border-accent shadow-[0_0_0_1px_rgba(59,130,246,0.32)]'
-          : 'border-[rgba(15,23,42,0.22)] hover:border-[rgba(15,23,42,0.34)] dark:border-[rgba(255,255,255,0.22)] dark:hover:border-[rgba(255,255,255,0.34)]'}
+          : resolveNodeSurfaceStateClass(selected)}
       `}
       style={{ width: `${resolvedWidth}px`, height: `${resolvedHeight}px` }}
       onClick={() => setSelectedNode(id)}
@@ -316,12 +316,12 @@ export const VideoResultNode = memo(({ id, data, selected, width, height }: Vide
           {showDetails ? (
             <>
               <ChevronUp className="h-3 w-3" />
-              <span>收起</span>
+              <span>{t('common.hideDetails')}</span>
             </>
           ) : (
             <>
               <ChevronDown className="h-3 w-3" />
-              <span>详情</span>
+              <span>{t('common.details')}</span>
             </>
           )}
         </button>
@@ -348,18 +348,20 @@ export const VideoResultNode = memo(({ id, data, selected, width, height }: Vide
               <span className="block break-words text-center text-[11px] leading-5 text-red-200/90">
                 {generationError}
               </span>
-              <button
-                type="button"
-                onClick={handleCopyError}
-                className="absolute right-1 top-1 rounded bg-red-900/50 p-1 opacity-0 transition-opacity hover:bg-red-900 group-hover:opacity-100"
-                title={isCopySuccess ? t('common.copied') : t('common.copy')}
-              >
-                {isCopySuccess ? (
-                  <Check className="h-3 w-3 text-green-400" />
-                ) : (
-                  <Copy className="h-3 w-3 text-red-300" />
-                )}
-              </button>
+              <UiTooltip content={isCopySuccess ? t('common.copied') : t('common.copy')}>
+                <button
+                  type="button"
+                  aria-label={isCopySuccess ? t('common.copied') : t('common.copy')}
+                  onClick={handleCopyError}
+                  className="absolute right-1 top-1 rounded bg-red-900/50 p-1 opacity-0 transition-opacity hover:bg-red-900 group-hover:opacity-100"
+                >
+                  {isCopySuccess ? (
+                    <Check className="h-3 w-3 text-green-400" />
+                  ) : (
+                    <Copy className="h-3 w-3 text-red-300" />
+                  )}
+                </button>
+              </UiTooltip>
             </div>
           </div>
         ) : (
@@ -391,7 +393,7 @@ export const VideoResultNode = memo(({ id, data, selected, width, height }: Vide
             e.stopPropagation();
             handleGenerateFinal();
           }}
-          className="pointer-events-auto absolute right-2 bottom-2 z-30 flex items-center gap-1 rounded bg-accent px-2.5 py-1 text-xs font-medium text-white shadow hover:bg-accent/90"
+          className="pointer-events-auto absolute right-2 bottom-2 z-30 flex items-center gap-1 rounded bg-accent px-2.5 py-1 text-xs font-medium text-[var(--accent-foreground)] shadow hover:bg-accent/90"
         >
           <Video className="h-3 w-3" />
           <span>生成正式视频</span>
@@ -401,49 +403,52 @@ export const VideoResultNode = memo(({ id, data, selected, width, height }: Vide
       {/* Generation details panel - positioned below the node, outside video area */}
       {showDetails && hasGenerationInfo && data.videoUrl && !isGenerating && (
         <div
-          className="absolute left-0 top-full z-30 max-h-[300px] w-full overflow-y-auto bg-bg-dark/98 border border-border/50 p-3 shadow-lg"
+          className="absolute left-0 top-full z-30 max-h-[300px] w-full overflow-y-auto border border-[var(--ui-border-soft)] bg-[var(--ui-surface-panel)] p-3 shadow-[var(--ui-shadow-panel)]"
           style={{ borderRadius: '0 0 var(--node-radius) var(--node-radius)' }}
           onClick={(e) => e.stopPropagation()}
         >
           <div className="mb-2 flex items-center justify-between">
             <span className="text-xs font-medium text-text-muted/80">生成参数</span>
-            <button
-              type="button"
-              onClick={() => setShowDetails(false)}
-              className="rounded p-1 hover:bg-white/10"
-            >
-              <X className="h-3 w-3 text-white/60" />
-            </button>
+            <UiTooltip content={t('common.close')}>
+              <button
+                type="button"
+                aria-label={t('common.close')}
+                onClick={() => setShowDetails(false)}
+                className="rounded p-1 text-text-muted hover:bg-[var(--ui-hover)] hover:text-text-dark"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </UiTooltip>
           </div>
           <div className="space-y-2 text-xs">
             {/* Model info */}
             {data.model && (
               <div className="flex items-center gap-2">
                 <span className="text-text-muted/60">模型:</span>
-                <span className="text-text">{data.model}</span>
+                <span className="font-mono text-text-dark">{data.model}</span>
               </div>
             )}
 
             {/* Params */}
             <div className="flex flex-wrap items-center gap-2">
               {data.resolution && (
-                <span className="rounded bg-white/10 px-1.5 py-0.5 text-white/80">
+                <span className="rounded bg-[var(--ui-hover)] px-1.5 py-0.5 font-mono text-text-dark">
                   {data.resolution}
                 </span>
               )}
               {data.duration && (
-                <span className="rounded bg-white/10 px-1.5 py-0.5 text-white/80">
+                <span className="rounded bg-[var(--ui-hover)] px-1.5 py-0.5 font-mono text-text-dark">
                   {data.duration}s
                 </span>
               )}
               {data.seed !== undefined && (
-                <span className="rounded bg-white/10 px-1.5 py-0.5 text-white/80">
+                <span className="rounded bg-[var(--ui-hover)] px-1.5 py-0.5 font-mono text-text-dark">
                   Seed: {data.seed === -1 ? '随机' : data.seed}
                 </span>
               )}
               {data.hasAudio !== undefined && (
-                <span className="rounded bg-white/10 px-1.5 py-0.5 text-white/80">
-                  {data.hasAudio ? '🔊 有声' : '🔇 静音'}
+                <span className="rounded bg-[var(--ui-hover)] px-1.5 py-0.5 text-text-dark">
+                  {data.hasAudio ? '有声' : '静音'}
                 </span>
               )}
             </div>
@@ -453,20 +458,22 @@ export const VideoResultNode = memo(({ id, data, selected, width, height }: Vide
               <div className="mt-2">
                 <div className="mb-1 flex items-center justify-between">
                   <span className="text-text-muted/60">提示词:</span>
-                  <button
-                    type="button"
-                    onClick={handleCopyPrompt}
-                    className="rounded p-1 hover:bg-white/10"
-                    title="复制提示词"
-                  >
-                    {isCopySuccess ? (
-                      <Check className="h-3 w-3 text-green-400" />
-                    ) : (
-                      <Copy className="h-3 w-3 text-white/60" />
-                    )}
-                  </button>
+                  <UiTooltip content={isCopySuccess ? t('common.copied') : t('common.copy')}>
+                    <button
+                      type="button"
+                      aria-label={isCopySuccess ? t('common.copied') : t('common.copy')}
+                      onClick={handleCopyPrompt}
+                      className="rounded p-1 text-text-muted hover:bg-[var(--ui-hover)] hover:text-text-dark"
+                    >
+                      {isCopySuccess ? (
+                        <Check className="h-3 w-3 text-green-400" />
+                      ) : (
+                        <Copy className="h-3 w-3" />
+                      )}
+                    </button>
+                  </UiTooltip>
                 </div>
-                <p className="whitespace-pre-wrap break-words text-white/90 leading-4">
+                <p className="whitespace-pre-wrap break-words leading-4 text-text-dark">
                   {data.prompt}
                 </p>
               </div>
@@ -478,21 +485,23 @@ export const VideoResultNode = memo(({ id, data, selected, width, height }: Vide
                 <div className="mb-1 flex items-center justify-between">
                   <span className="text-text-muted/60">视频URL:</span>
                   <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={handleCopyVideoUrl}
-                      className="rounded p-1 hover:bg-white/10"
-                      title="复制视频URL"
-                    >
-                      {isCopySuccess ? (
-                        <Check className="h-3 w-3 text-green-400" />
-                      ) : (
-                        <Copy className="h-3 w-3 text-white/60" />
-                      )}
-                    </button>
+                    <UiTooltip content={isCopySuccess ? t('common.copied') : t('common.copy')}>
+                      <button
+                        type="button"
+                        aria-label={isCopySuccess ? t('common.copied') : t('common.copy')}
+                        onClick={handleCopyVideoUrl}
+                        className="rounded p-1 text-text-muted hover:bg-[var(--ui-hover)] hover:text-text-dark"
+                      >
+                        {isCopySuccess ? (
+                          <Check className="h-3 w-3 text-green-400" />
+                        ) : (
+                          <Copy className="h-3 w-3" />
+                        )}
+                      </button>
+                    </UiTooltip>
                   </div>
                 </div>
-                <p className="truncate text-accent/80">{data.videoUrl}</p>
+                <p className="truncate font-mono text-accent/80">{data.videoUrl}</p>
               </div>
             )}
           </div>
@@ -503,13 +512,13 @@ export const VideoResultNode = memo(({ id, data, selected, width, height }: Vide
         type="target"
         id="target"
         position={Position.Left}
-        className="!h-2 !w-2 !border-surface-dark !bg-accent"
+        className="!h-2 !w-2 !border-surface-dark !bg-[var(--edge)]"
       />
       <Handle
         type="source"
         id="source"
         position={Position.Right}
-        className="!h-2 !w-2 !border-surface-dark !bg-accent"
+        className="!h-2 !w-2 !border-surface-dark !bg-[var(--edge)]"
       />
       <NodeResizeHandle
         minWidth={resizeMinWidth}

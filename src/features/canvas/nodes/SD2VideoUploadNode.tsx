@@ -15,7 +15,7 @@ import {
   useUpdateNodeInternals,
   type NodeProps,
 } from '@xyflow/react';
-import { Video } from 'lucide-react';
+import { Video } from '@/components/ui/icons';
 import { useTranslation } from 'react-i18next';
 
 import {
@@ -28,6 +28,7 @@ import {
 } from '@/features/canvas/domain/nodeDisplay';
 import { NodeHeader, NODE_HEADER_FLOATING_POSITION_CLASS } from '@/features/canvas/ui/NodeHeader';
 import { NodeResizeHandle } from '@/features/canvas/ui/NodeResizeHandle';
+import { resolveNodeSurfaceStateClass } from '@/features/canvas/ui/nodeSurfaceStyles';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { resolveVideoDisplayUrl } from '@/features/canvas/application/imageData';
@@ -200,9 +201,7 @@ export const VideoUploadNode = memo(({ id, data, selected, width, height }: Vide
     <div
       className={`
         group relative overflow-visible rounded-[var(--node-radius)] border bg-surface-dark/85 p-0 transition-colors duration-150
-        ${selected
-          ? 'border-accent shadow-[0_0_0_1px_rgba(59,130,246,0.32)]'
-          : 'border-[rgba(15,23,42,0.22)] hover:border-[rgba(15,23,42,0.34)] dark:border-[rgba(255,255,255,0.22)] dark:hover:border-[rgba(255,255,255,0.34)]'}
+        ${resolveNodeSurfaceStateClass(selected)}
         ${isDragOver ? 'border-accent bg-accent/5' : ''}
       `}
       style={{ width: resolvedWidth, height: resolvedHeight }}
@@ -230,7 +229,7 @@ export const VideoUploadNode = memo(({ id, data, selected, width, height }: Vide
             />
             {/* 视频编号标签 */}
             <div className="absolute bottom-1 left-1 flex items-center justify-center">
-              <span className="inline-flex h-5 min-w-5 items-center justify-center rounded bg-accent/90 px-1.5 text-xs font-medium text-white shadow-sm">
+              <span className="inline-flex h-5 min-w-5 items-center justify-center rounded bg-accent/90 px-1.5 text-xs font-medium text-[var(--accent-foreground)] shadow-sm">
                 {t('node.videoUploadRef.videoIndex', { index: 1 })}
               </span>
             </div>
@@ -265,7 +264,7 @@ export const VideoUploadNode = memo(({ id, data, selected, width, height }: Vide
         type="source"
         id="source"
         position={Position.Right}
-        className="!h-2 !w-2 !border-surface-dark !bg-purple-500"
+        className="!h-2 !w-2 !border-surface-dark !bg-[var(--edge)]"
       />
 
       {/* 拖动改变大小 */}
