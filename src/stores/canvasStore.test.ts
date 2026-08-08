@@ -50,4 +50,32 @@ describe('canvas store batch connections', () => {
     expect(useCanvasStore.getState().redo()).toBe(true);
     expect(useCanvasStore.getState().edges).toHaveLength(2);
   });
+
+  it('creates and connects a node batch as one undoable history step', () => {
+    const source = createNode(CANVAS_NODE_TYPES.imageEdit, 'source');
+    const store = useCanvasStore.getState();
+    store.setCanvasData([source], []);
+
+    const resultIds = useCanvasStore.getState().addNodeBatch(
+      Array.from({ length: 4 }, (_, index) => ({
+        type: CANVAS_NODE_TYPES.exportImage,
+        position: { x: 300, y: index * 196 },
+      }))
+    );
+    resultIds.forEach((resultId) => {
+      useCanvasStore.getState().addEdge(source.id, resultId);
+    });
+
+    expect(useCanvasStore.getState().nodes).toHaveLength(5);
+    expect(useCanvasStore.getState().edges).toHaveLength(4);
+    expect(useCanvasStore.getState().history.past).toHaveLength(1);
+
+    expect(useCanvasStore.getState().undo()).toBe(true);
+    expect(useCanvasStore.getState().nodes.map((node) => node.id)).toEqual([source.id]);
+    expect(useCanvasStore.getState().edges).toHaveLength(0);
+
+    expect(useCanvasStore.getState().redo()).toBe(true);
+    expect(useCanvasStore.getState().nodes).toHaveLength(5);
+    expect(useCanvasStore.getState().edges).toHaveLength(4);
+  });
 });

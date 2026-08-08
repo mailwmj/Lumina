@@ -7,7 +7,11 @@ import {
 import { persistImageLocally, isLikelyLocalImagePath } from '@/features/canvas/application/imageData';
 import { uploadImageToVolcVod } from '@/commands/image';
 
-import type { AiGateway, GenerateImagePayload } from '../application/ports';
+import type {
+  AiGateway,
+  GenerateImagePayload,
+} from '../application/ports';
+import { submitGenerationJobBatch } from '../application/generationJobBatch';
 import { logger } from '@/lib/logger';
 
 /**
@@ -50,6 +54,23 @@ async function normalizeReferenceImages(payload: GenerateImagePayload): Promise<
     : undefined;
 }
 
+function submitNormalizedGenerateImageJob(
+  payload: GenerateImagePayload,
+  normalizedReferenceImages: string[] | undefined
+): Promise<string> {
+  return submitGenerateImageJob({
+    prompt: payload.prompt,
+    model: payload.model,
+    size: payload.size,
+    aspect_ratio: payload.aspectRatio,
+    reference_images: normalizedReferenceImages,
+    extra_params: payload.extraParams,
+    provider_config: payload.providerConfig,
+    draftTaskId: payload.draftTaskId,
+    project_id: payload.projectId,
+  });
+}
+
 export const tauriAiGateway: AiGateway = {
   setApiKey,
   generateImage: async (payload: GenerateImagePayload) => {
@@ -73,16 +94,15 @@ export const tauriAiGateway: AiGateway = {
         logger.info('[submitGenerateImageJob] normalized image[{}]: {}...', i, img.substring(0, 100));
       });
     }
-    return await submitGenerateImageJob({
-      prompt: payload.prompt,
-      model: payload.model,
-      size: payload.size,
-      aspect_ratio: payload.aspectRatio,
-      reference_images: normalizedReferenceImages,
-      extra_params: payload.extraParams,
-      provider_config: payload.providerConfig,
-      draftTaskId: payload.draftTaskId,
-      project_id: payload.projectId,
+    return await submitNormalizedGenerateImageJob(payload, normalizedReferenceImages);
+  },
+  submitGenerateImageJobs: async (payload, outputCount, onSettled) => {
+    const normalizedReferenceImages = await normalizeReferenceImages(payload);
+    const safeOutputCount = Math.max(1, Math.min(4, Math.floor(outputCount)));
+    return submitGenerationJobBatch({
+      outputCount: safeOutputCount,
+      submit: () => submitNormalizedGenerateImageJob(payload, normalizedReferenceImages),
+      onSettled,
     });
   },
   getGenerateImageJob,

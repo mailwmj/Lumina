@@ -1,6 +1,5 @@
 import {
   type KeyboardEvent,
-  type ReactNode,
   memo,
   useMemo,
   useState,
@@ -9,15 +8,20 @@ import {
   useRef,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { Handle, Position, useUpdateNodeInternals, type NodeProps } from '@xyflow/react';
+import {
+  Handle,
+  Position,
+  useReactFlow,
+  useUpdateNodeInternals,
+  type NodeProps,
+} from '@xyflow/react';
 import { Loader2, Sparkles, Wand2 } from '@/components/ui/icons';
 import { useTranslation } from 'react-i18next';
 
 import {
   AUTO_REQUEST_ASPECT_RATIO,
   CANVAS_NODE_TYPES,
-  EXPORT_RESULT_NODE_DEFAULT_WIDTH,
-  EXPORT_RESULT_NODE_LAYOUT_HEIGHT,
+  DEFAULT_IMAGE_OUTPUT_COUNT,
   type ImageEditNodeData,
   type ImageSize,
 } from '@/features/canvas/domain/canvasNodes';
@@ -29,7 +33,7 @@ import {
   canvasAiGateway,
   graphImageResolver,
 } from '@/features/canvas/application/canvasServices';
-import { resolveErrorContent, showErrorDialog } from '@/features/canvas/application/errorDialog';
+import { showErrorDialog } from '@/features/canvas/application/errorDialog';
 import {
   detectAspectRatio,
   parseAspectRatio,
@@ -43,7 +47,6 @@ import {
   type GenerationDebugContext,
 } from '@/features/canvas/application/generationErrorReport';
 import {
-  findReferenceTokens,
   insertReferenceToken,
   removeTextRange,
   resolveReferenceAwareDeleteRange,
@@ -59,11 +62,16 @@ import {
 } from '@/features/canvas/models';
 import {
   NODE_CONTROL_CHIP_CLASS,
+  NODE_CONTROL_ICON_BUTTON_CLASS,
   NODE_CONTROL_ICON_CLASS,
   NODE_CONTROL_MODEL_CHIP_CLASS,
   NODE_CONTROL_PARAMS_CHIP_CLASS,
   NODE_CONTROL_PRIMARY_BUTTON_CLASS,
 } from '@/features/canvas/ui/nodeControlStyles';
+import {
+  createImageOutputBatchNodes,
+  markImageOutputNodeFailed,
+} from '@/features/canvas/application/imageOutputBatch';
 import { ModelParamsControls } from '@/features/canvas/ui/ModelParamsControls';
 import { CanvasNodeImage } from '@/features/canvas/ui/CanvasNodeImage';
 import { UiButton, UiTooltip } from '@/components/ui';
@@ -73,6 +81,12 @@ import { useSettingsStore } from '@/stores/settingsStore';
 import { polishText } from '@/features/canvas/infrastructure/textPolishService';
 import { resolveImageProviderRuntime } from '@/features/canvas/application/imageProviderRuntime';
 import { openSettingsDialog } from '@/features/settings/settingsEvents';
+import {
+  PICKER_FALLBACK_ANCHOR,
+  renderPromptWithHighlights,
+  resolvePickerAnchor,
+  type PickerAnchor,
+} from '@/features/canvas/ui/imageEditPromptOverlay';
 
 type ImageEditNodeProps = NodeProps & {
   id: string;
@@ -85,126 +99,12 @@ interface AspectRatioChoice {
   label: string;
 }
 
-interface PickerAnchor {
-  left: number;
-  top: number;
-}
-
-const PICKER_FALLBACK_ANCHOR: PickerAnchor = { left: 8, top: 8 };
-const PICKER_Y_OFFSET_PX = 20;
 const IMAGE_EDIT_NODE_MIN_WIDTH = 390;
 const IMAGE_EDIT_NODE_MIN_HEIGHT = 180;
 const IMAGE_EDIT_NODE_MAX_WIDTH = 1400;
 const IMAGE_EDIT_NODE_MAX_HEIGHT = 1000;
 const IMAGE_EDIT_NODE_DEFAULT_WIDTH = 520;
 const IMAGE_EDIT_NODE_DEFAULT_HEIGHT = 320;
-
-function getTextareaCaretOffset(
-  textarea: HTMLTextAreaElement,
-  caretIndex: number
-): PickerAnchor {
-  const mirror = document.createElement('div');
-  const computed = window.getComputedStyle(textarea);
-  const mirrorStyle = mirror.style;
-
-  mirrorStyle.position = 'absolute';
-  mirrorStyle.visibility = 'hidden';
-  mirrorStyle.pointerEvents = 'none';
-  mirrorStyle.whiteSpace = 'pre-wrap';
-  mirrorStyle.overflowWrap = 'break-word';
-  mirrorStyle.wordBreak = 'break-word';
-  mirrorStyle.boxSizing = computed.boxSizing;
-  mirrorStyle.width = `${textarea.clientWidth}px`;
-  mirrorStyle.font = computed.font;
-  mirrorStyle.lineHeight = computed.lineHeight;
-  mirrorStyle.letterSpacing = computed.letterSpacing;
-  mirrorStyle.padding = computed.padding;
-  mirrorStyle.border = computed.border;
-  mirrorStyle.textTransform = computed.textTransform;
-  mirrorStyle.textIndent = computed.textIndent;
-
-  mirror.textContent = textarea.value.slice(0, caretIndex);
-
-  const marker = document.createElement('span');
-  marker.textContent = textarea.value.slice(caretIndex, caretIndex + 1) || ' ';
-  mirror.appendChild(marker);
-
-  document.body.appendChild(mirror);
-
-  const left = marker.offsetLeft - textarea.scrollLeft;
-  const top = marker.offsetTop - textarea.scrollTop;
-
-  document.body.removeChild(mirror);
-
-  return {
-    left: Math.max(0, left),
-    top: Math.max(0, top),
-  };
-}
-
-function resolvePickerAnchor(
-  container: HTMLDivElement | null,
-  textarea: HTMLTextAreaElement,
-  caretIndex: number
-): PickerAnchor {
-  if (!container) {
-    return PICKER_FALLBACK_ANCHOR;
-  }
-
-  const containerRect = container.getBoundingClientRect();
-  const textareaRect = textarea.getBoundingClientRect();
-  const caretOffset = getTextareaCaretOffset(textarea, caretIndex);
-
-  return {
-    left: Math.max(0, textareaRect.left - containerRect.left + caretOffset.left),
-    top: Math.max(0, textareaRect.top - containerRect.top + caretOffset.top + PICKER_Y_OFFSET_PX),
-  };
-}
-
-function renderPromptWithHighlights(
-  prompt: string,
-  maxImageCount: number,
-  imageUrls?: string[]
-): ReactNode {
-  if (!prompt) {
-    return ' ';
-  }
-
-  const segments: ReactNode[] = [];
-  let lastIndex = 0;
-  const referenceTokens = findReferenceTokens(prompt, maxImageCount);
-  for (const token of referenceTokens) {
-    const matchStart = token.start;
-    const matchText = token.token;
-
-    if (matchStart > lastIndex) {
-      segments.push(
-        <span key={`plain-${lastIndex}`}>{prompt.slice(lastIndex, matchStart)}</span>
-      );
-    }
-
-    const imageUrl = imageUrls && imageUrls[token.value - 1] ? imageUrls[token.value - 1] : undefined;
-    segments.push(
-      <span
-        key={`ref-${matchStart}`}
-        data-highlight-ref="true"
-        data-image-url={imageUrl || ''}
-        data-index={token.value}
-        className="relative z-0 text-[var(--accent-foreground)] before:absolute before:-inset-x-[4px] before:-inset-y-[1px] before:-z-10 before:rounded-[7px] before:bg-accent/85 before:content-['']"
-      >
-        {matchText}
-      </span>
-    );
-
-    lastIndex = matchStart + matchText.length;
-  }
-
-  if (lastIndex < prompt.length) {
-    segments.push(<span key={`plain-${lastIndex}`}>{prompt.slice(lastIndex)}</span>);
-  }
-
-  return segments;
-}
 
 function buildAiResultNodeTitle(prompt: string, fallbackTitle: string): string {
   const normalizedPrompt = prompt.trim();
@@ -217,11 +117,14 @@ function buildAiResultNodeTitle(prompt: string, fallbackTitle: string): string {
 
 export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageEditNodeProps) => {
   const { t } = useTranslation();
+  const { fitView } = useReactFlow();
   const updateNodeInternals = useUpdateNodeInternals();
   const [error, setError] = useState<string | null>(null);
   const [isPolishing, setIsPolishing] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const rootRef = useRef<HTMLDivElement>(null);
+  const generationSubmissionLockRef = useRef(false);
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const promptHighlightRef = useRef<HTMLDivElement>(null);
   const [promptDraft, setPromptDraft] = useState(() => data.prompt ?? '');
@@ -241,7 +144,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
   const edges = useCanvasStore((state) => state.edges);
   const setSelectedNode = useCanvasStore((state) => state.setSelectedNode);
   const updateNodeData = useCanvasStore((state) => state.updateNodeData);
-  const addNode = useCanvasStore((state) => state.addNode);
+  const addNodeBatch = useCanvasStore((state) => state.addNodeBatch);
   const findNodePosition = useCanvasStore((state) => state.findNodePosition);
   const addEdge = useCanvasStore((state) => state.addEdge);
   const openAiImageApi = useSettingsStore((state) => state.openAiImageApi);
@@ -305,6 +208,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
     () => resolveImageGenerationResolution(data.size),
     [data.size]
   );
+  const outputCount = data.outputCount ?? DEFAULT_IMAGE_OUTPUT_COUNT;
 
   const aspectRatioOptions = useMemo<AspectRatioChoice[]>(
     () => [{
@@ -503,62 +407,46 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
       return;
     }
 
-    const generationDurationMs = selectedModel.expectedDurationMs ?? 60000;
-    const generationStartedAt = Date.now();
-    const resultNodeTitle = buildAiResultNodeTitle(prompt, t('node.imageEdit.resultTitle'));
-    const runtimeDiagnostics = await getRuntimeDiagnostics();
-    setError(null);
-
-    const newNodePosition = findNodePosition(
-      id,
-      EXPORT_RESULT_NODE_DEFAULT_WIDTH,
-      EXPORT_RESULT_NODE_LAYOUT_HEIGHT
-    );
-    const newNodeId = addNode(
-      CANVAS_NODE_TYPES.exportImage,
-      newNodePosition,
-      {
-        isGenerating: true,
-        generationStartedAt,
-        generationDurationMs,
-        resultKind: 'generic',
-        displayName: resultNodeTitle,
-      }
-    );
-    addEdge(id, newNodeId);
+    if (generationSubmissionLockRef.current) {
+      return;
+    }
+    generationSubmissionLockRef.current = true;
+    setIsSubmitting(true);
 
     try {
-      await canvasAiGateway.setApiKey(selectedModel.providerId, providerApiKey);
+      const generationDurationMs = selectedModel.expectedDurationMs ?? 60000;
+      const generationStartedAt = Date.now();
+      const resultNodeTitle = buildAiResultNodeTitle(prompt, t('node.imageEdit.resultTitle'));
+      const runtimeDiagnostics = await getRuntimeDiagnostics();
+      setError(null);
 
-      let resolvedRequestAspectRatio = selectedAspectRatio.value;
-      if (resolvedRequestAspectRatio === AUTO_REQUEST_ASPECT_RATIO) {
-        if (incomingImages.length > 0) {
-          try {
-            const sourceAspectRatio = await detectAspectRatio(incomingImages[0]);
-            const sourceAspectRatioValue = parseAspectRatio(sourceAspectRatio);
-            resolvedRequestAspectRatio = pickClosestImageGenerationAspectRatio(
-              sourceAspectRatioValue
-            );
-          } catch {
-            resolvedRequestAspectRatio = pickClosestImageGenerationAspectRatio(1);
-          }
-        } else {
-          resolvedRequestAspectRatio = pickClosestImageGenerationAspectRatio(1);
-        }
+      const resultNodes = createImageOutputBatchNodes({
+        sourceNodeId: id,
+        outputCount,
+        resultNodeTitle,
+        generationStartedAt,
+        generationDurationMs,
+        addNodeBatch,
+        addEdge,
+        findNodePosition,
+      });
+
+      if (outputCount > 1) {
+        window.requestAnimationFrame(() => {
+          window.requestAnimationFrame(() => {
+            void fitView({
+              nodes: [{ id }, ...resultNodes.map(({ nodeId }) => ({ id: nodeId }))],
+              padding: 0.16,
+              duration: 320,
+              maxZoom: 1,
+            });
+          });
+        });
       }
 
-      const projectId = useProjectStore.getState().getCurrentProject()?.id;
-      const jobId = await canvasAiGateway.submitGenerateImageJob({
-        prompt,
-        model: requestResolution.requestModel,
-        size: selectedResolution.value,
-        aspectRatio: resolvedRequestAspectRatio,
-        referenceImages: incomingImages,
-        extraParams: effectiveExtraParams,
-        providerConfig: providerRuntime.providerConfig,
-        projectId,
-      });
-      const generationDebugContext: GenerationDebugContext = {
+      let resolvedRequestAspectRatio = selectedAspectRatio.value;
+
+      const buildDebugContext = (outputIndex: number): GenerationDebugContext => ({
         sourceType: 'imageEdit',
         providerId: selectedModel.providerId,
         requestModel: requestResolution.requestModel,
@@ -568,71 +456,136 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
         extraParams: effectiveExtraParams,
         referenceImageCount: incomingImages.length,
         referenceImagePlaceholders: createReferenceImagePlaceholders(incomingImages.length),
+        outputCount,
+        outputIndex: outputIndex + 1,
         appVersion: runtimeDiagnostics.appVersion,
         osName: runtimeDiagnostics.osName,
         osVersion: runtimeDiagnostics.osVersion,
         osBuild: runtimeDiagnostics.osBuild,
         userAgent: runtimeDiagnostics.userAgent,
-      };
-      updateNodeData(newNodeId, {
-        generationJobId: jobId,
-        generationSourceType: 'imageEdit',
-        generationProviderId: selectedModel.providerId,
-        generationClientSessionId: CURRENT_RUNTIME_SESSION_ID,
-        generationDebugContext,
       });
-    } catch (generationError) {
-      const resolvedError = resolveErrorContent(generationError, t('ai.error'));
-      const generationDebugContext: GenerationDebugContext = {
-        sourceType: 'imageEdit',
-        providerId: selectedModel.providerId,
-        requestModel: requestResolution.requestModel,
-        requestSize: selectedResolution.value,
-        requestAspectRatio: selectedAspectRatio.value,
-        prompt,
-        extraParams: effectiveExtraParams,
-        referenceImageCount: incomingImages.length,
-        referenceImagePlaceholders: createReferenceImagePlaceholders(incomingImages.length),
-        appVersion: runtimeDiagnostics.appVersion,
-        osName: runtimeDiagnostics.osName,
-        osVersion: runtimeDiagnostics.osVersion,
-        osBuild: runtimeDiagnostics.osBuild,
-        userAgent: runtimeDiagnostics.userAgent,
-      };
-      const reportText = buildGenerationErrorReport({
-        errorMessage: resolvedError.message,
-        errorDetails: resolvedError.details,
-        context: generationDebugContext,
-      });
-      setError(resolvedError.message);
-      void showErrorDialog(
-        resolvedError.message,
-        t('common.error'),
-        resolvedError.details,
-        reportText
-      );
-      updateNodeData(newNodeId, {
-        isGenerating: false,
-        generationStartedAt: null,
-        generationJobId: null,
-        generationProviderId: null,
-        generationClientSessionId: null,
-        generationError: resolvedError.message,
-        generationErrorDetails: resolvedError.details ?? null,
-        generationDebugContext,
-      });
+
+      const markNodeFailed = (
+        nodeId: string,
+        outputIndex: number,
+        generationError: unknown
+      ) =>
+        markImageOutputNodeFailed({
+          nodeId,
+          generationError,
+          fallbackMessage: t('ai.error'),
+          generationDebugContext: buildDebugContext(outputIndex),
+          updateNodeData,
+        });
+
+      try {
+        if (resolvedRequestAspectRatio === AUTO_REQUEST_ASPECT_RATIO) {
+          if (incomingImages.length > 0) {
+            try {
+              const sourceAspectRatio = await detectAspectRatio(incomingImages[0]);
+              const sourceAspectRatioValue = parseAspectRatio(sourceAspectRatio);
+              resolvedRequestAspectRatio = pickClosestImageGenerationAspectRatio(
+                sourceAspectRatioValue
+              );
+            } catch {
+              resolvedRequestAspectRatio = pickClosestImageGenerationAspectRatio(1);
+            }
+          } else {
+            resolvedRequestAspectRatio = pickClosestImageGenerationAspectRatio(1);
+          }
+        }
+
+        await canvasAiGateway.setApiKey(selectedModel.providerId, providerApiKey);
+
+        const projectId = useProjectStore.getState().getCurrentProject()?.id;
+        const submissionFailures: Array<ReturnType<typeof markNodeFailed>> = [];
+        await canvasAiGateway.submitGenerateImageJobs(
+          {
+            prompt,
+            model: requestResolution.requestModel,
+            size: selectedResolution.value,
+            aspectRatio: resolvedRequestAspectRatio,
+            referenceImages: incomingImages,
+            extraParams: effectiveExtraParams,
+            providerConfig: providerRuntime.providerConfig,
+            projectId,
+          },
+          outputCount,
+          (submission, submissionIndex) => {
+            const resultNode = resultNodes[submissionIndex];
+            if (!resultNode) {
+              return;
+            }
+            const { nodeId, outputIndex } = resultNode;
+            if (submission.status === 'fulfilled') {
+              updateNodeData(nodeId, {
+                generationJobId: submission.jobId,
+                generationSourceType: 'imageEdit',
+                generationProviderId: selectedModel.providerId,
+                generationClientSessionId: CURRENT_RUNTIME_SESSION_ID,
+                generationDebugContext: buildDebugContext(outputIndex),
+              });
+              return;
+            }
+
+            const failure = markNodeFailed(nodeId, outputIndex, submission.error);
+            submissionFailures.push(failure);
+          }
+        );
+
+        const firstFailure = submissionFailures[0];
+        if (firstFailure) {
+          const reportText = buildGenerationErrorReport({
+            errorMessage: firstFailure.resolvedError.message,
+            errorDetails: firstFailure.resolvedError.details,
+            context: firstFailure.generationDebugContext,
+          });
+          setError(firstFailure.resolvedError.message);
+          void showErrorDialog(
+            firstFailure.resolvedError.message,
+            t('common.error'),
+            firstFailure.resolvedError.details,
+            reportText
+          );
+        }
+      } catch (generationError) {
+        const failures = resultNodes.map(({ nodeId, outputIndex }) =>
+          markNodeFailed(nodeId, outputIndex, generationError)
+        );
+        const firstFailure = failures[0];
+        if (!firstFailure) {
+          return;
+        }
+        const reportText = buildGenerationErrorReport({
+          errorMessage: firstFailure.resolvedError.message,
+          errorDetails: firstFailure.resolvedError.details,
+          context: firstFailure.generationDebugContext,
+        });
+        setError(firstFailure.resolvedError.message);
+        void showErrorDialog(
+          firstFailure.resolvedError.message,
+          t('common.error'),
+          firstFailure.resolvedError.details,
+          reportText
+        );
+      }
+    } finally {
+      generationSubmissionLockRef.current = false;
+      setIsSubmitting(false);
     }
   }, [
-    addNode,
+    addNodeBatch,
     addEdge,
     providerApiKey,
     providerRuntime.providerConfig,
     findNodePosition,
+    fitView,
     promptDraft,
     effectiveExtraParams,
     hasConfiguredModel,
     id,
     incomingImages,
+    outputCount,
     requestResolution.requestModel,
     selectedAspectRatio.value,
     selectedModel.id,
@@ -883,6 +836,10 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
               updateNodeData(id, { requestAspectRatio: aspectRatio });
             }
             }
+            outputCount={outputCount}
+            onOutputCountChange={(nextOutputCount) => {
+              updateNodeData(id, { outputCount: nextOutputCount });
+            }}
             extraParams={data.extraParams}
             onExtraParamChange={(key, value) =>
               updateNodeData(id, {
@@ -916,7 +873,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
             }}
             variant="muted"
             size="sm"
-            className="shrink-0 px-2"
+            className={`shrink-0 ${NODE_CONTROL_ICON_BUTTON_CLASS}`}
             disabled={isPolishing}
           >
             {isPolishing ? (
@@ -936,9 +893,14 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
           }}
           variant="primary"
           className={`shrink-0 ${NODE_CONTROL_PRIMARY_BUTTON_CLASS}`}
-          disabled={!hasConfiguredModel}
+          disabled={!hasConfiguredModel || isSubmitting}
+          aria-busy={isSubmitting}
         >
-          <Sparkles className={NODE_CONTROL_ICON_CLASS} strokeWidth={2.8} />
+          {isSubmitting ? (
+            <Loader2 className={`${NODE_CONTROL_ICON_CLASS} animate-spin`} strokeWidth={2.8} />
+          ) : (
+            <Sparkles className={NODE_CONTROL_ICON_CLASS} strokeWidth={2.8} />
+          )}
           {t('canvas.generate')}
         </UiButton>
       </div>

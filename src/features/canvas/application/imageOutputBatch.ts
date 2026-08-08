@@ -1,0 +1,140 @@
+import {
+  CANVAS_NODE_TYPES,
+  EXPORT_RESULT_NODE_MIN_HEIGHT,
+  EXPORT_RESULT_NODE_MIN_WIDTH,
+  type CanvasNodeData,
+  type CanvasNodeType,
+  type ImageOutputCount,
+} from '@/features/canvas/domain/canvasNodes';
+import {
+  resolveErrorContent,
+  type ResolvedErrorContent,
+} from '@/features/canvas/application/errorDialog';
+import type { GenerationDebugContext } from '@/features/canvas/application/generationErrorReport';
+
+export interface ImageOutputBatchLayout {
+  width: number;
+  height: number;
+  offsets: Array<{ x: number; y: number }>;
+}
+
+const IMAGE_OUTPUT_BATCH_GAP = 28;
+
+export interface ImageOutputBatchNode {
+  nodeId: string;
+  outputIndex: number;
+}
+
+interface CreateImageOutputBatchInput {
+  sourceNodeId: string;
+  outputCount: ImageOutputCount;
+  resultNodeTitle: string;
+  generationStartedAt: number;
+  generationDurationMs: number;
+  addNodeBatch: (
+    nodes: Array<{
+      type: CanvasNodeType;
+      position: { x: number; y: number };
+      data?: Partial<CanvasNodeData>;
+    }>
+  ) => string[];
+  addEdge: (source: string, target: string) => string | null;
+  findNodePosition: (
+    sourceNodeId: string,
+    newNodeWidth: number,
+    newNodeHeight: number
+  ) => { x: number; y: number };
+}
+
+interface MarkImageOutputNodeFailedInput {
+  nodeId: string;
+  generationError: unknown;
+  fallbackMessage: string;
+  generationDebugContext: GenerationDebugContext;
+  updateNodeData: (nodeId: string, data: Partial<CanvasNodeData>) => void;
+}
+
+export interface ImageOutputNodeFailure {
+  resolvedError: ResolvedErrorContent;
+  generationDebugContext: GenerationDebugContext;
+}
+
+export function resolveImageOutputBatchLayout(
+  outputCount: ImageOutputCount,
+  nodeWidth: number,
+  nodeHeight: number
+): ImageOutputBatchLayout {
+  return {
+    width: nodeWidth,
+    height: outputCount * nodeHeight + (outputCount - 1) * IMAGE_OUTPUT_BATCH_GAP,
+    offsets: Array.from({ length: outputCount }, (_, index) => ({
+      x: 0,
+      y: index * (nodeHeight + IMAGE_OUTPUT_BATCH_GAP),
+    })),
+  };
+}
+
+export function createImageOutputBatchNodes({
+  sourceNodeId,
+  outputCount,
+  resultNodeTitle,
+  generationStartedAt,
+  generationDurationMs,
+  addNodeBatch,
+  addEdge,
+  findNodePosition,
+}: CreateImageOutputBatchInput): ImageOutputBatchNode[] {
+  const layout = resolveImageOutputBatchLayout(
+    outputCount,
+    EXPORT_RESULT_NODE_MIN_WIDTH,
+    EXPORT_RESULT_NODE_MIN_HEIGHT
+  );
+  const batchPosition = findNodePosition(sourceNodeId, layout.width, layout.height);
+
+  const nodeIds = addNodeBatch(
+    layout.offsets.map((offset, outputIndex) => ({
+      type: CANVAS_NODE_TYPES.exportImage,
+      position: {
+        x: batchPosition.x + offset.x,
+        y: batchPosition.y + offset.y,
+      },
+      data: {
+        isGenerating: true,
+        generationStartedAt,
+        generationDurationMs,
+        resultKind: 'generic',
+        displayName: outputCount === 1
+          ? resultNodeTitle
+          : `${resultNodeTitle} · ${outputIndex + 1}/${outputCount}`,
+        generationBatchIndex: outputIndex,
+        generationBatchSize: outputCount,
+      },
+    }))
+  );
+
+  return nodeIds.map((nodeId, outputIndex) => {
+    addEdge(sourceNodeId, nodeId);
+    return { nodeId, outputIndex };
+  });
+}
+
+export function markImageOutputNodeFailed({
+  nodeId,
+  generationError,
+  fallbackMessage,
+  generationDebugContext,
+  updateNodeData,
+}: MarkImageOutputNodeFailedInput): ImageOutputNodeFailure {
+  const resolvedError = resolveErrorContent(generationError, fallbackMessage);
+  updateNodeData(nodeId, {
+    isGenerating: false,
+    generationStartedAt: null,
+    generationJobId: null,
+    generationProviderId: null,
+    generationClientSessionId: null,
+    generationError: resolvedError.message,
+    generationErrorDetails: resolvedError.details ?? null,
+    generationDebugContext,
+  });
+  return { resolvedError, generationDebugContext };
+}

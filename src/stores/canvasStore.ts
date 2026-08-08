@@ -110,6 +110,13 @@ interface CanvasState {
     position: { x: number; y: number },
     data?: Partial<CanvasNodeData>
   ) => string;
+  addNodeBatch: (
+    nodes: Array<{
+      type: CanvasNodeType;
+      position: { x: number; y: number };
+      data?: Partial<CanvasNodeData>;
+    }>
+  ) => string[];
   addEdge: (source: string, target: string) => string | null;
   connectNodesSequentially: (nodeIds: string[]) => string[];
   autoLayoutNodes: (nodeIds: string[], direction?: 'horizontal' | 'vertical' | 'grid', gap?: number) => void;
@@ -865,6 +872,29 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       dragHistorySnapshot: null,
     });
     return newNode.id;
+  },
+
+  addNodeBatch: (nodeInputs) => {
+    if (nodeInputs.length === 0) {
+      return [];
+    }
+    const state = get();
+    const newNodes = nodeInputs.map(({ type, position, data = {} }) =>
+      canvasNodeFactory.createNode(
+        type,
+        position,
+        applyImageModelDefault(type, data)
+      )
+    );
+    set({
+      nodes: [...state.nodes, ...newNodes],
+      history: {
+        past: pushSnapshot(state.history.past, createSnapshot(state.nodes, state.edges)),
+        future: [],
+      },
+      dragHistorySnapshot: null,
+    });
+    return newNodes.map((node) => node.id);
   },
 
   addEdge: (source, target) => {

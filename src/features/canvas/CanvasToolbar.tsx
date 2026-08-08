@@ -87,7 +87,7 @@ export const CanvasToolbar = memo(({
 
   return (
     <>
-      <div className="absolute left-1/2 top-3 z-10 flex h-11 max-w-[calc(100vw-24px)] -translate-x-1/2 items-center gap-1 overflow-x-auto rounded-full border border-[var(--ui-border-soft)] bg-[var(--ui-surface-panel)] px-1.5 shadow-[var(--ui-shadow-toolbar)] no-scrollbar">
+      <div className="absolute bottom-3 left-1/2 z-10 flex h-11 max-w-[calc(100vw-136px)] -translate-x-1/2 items-center gap-1 overflow-x-auto rounded-full border border-[var(--ui-border-soft)] bg-[var(--ui-surface-panel)] px-1.5 shadow-[var(--ui-shadow-toolbar)] no-scrollbar">
         <div className="flex items-center gap-1">
           <CanvasToolbarButton
             label={t('canvas.toolbar.selectMode')}

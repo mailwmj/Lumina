@@ -46,8 +46,6 @@ import { CanvasNodeImage } from '@/features/canvas/ui/CanvasNodeImage';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { useSettingsStore } from '@/stores/settingsStore';
-import { polishText } from '@/features/canvas/infrastructure/textPolishService';
-import { showErrorDialog } from '@/features/canvas/application/errorDialog';
 import { logger } from '@/lib/logger';
 
 type UploadNodeProps = NodeProps & {
@@ -94,7 +92,6 @@ export const UploadNode = memo(({ id, data, selected, width, height }: UploadNod
     stableLoaded: boolean;
   } | null>(null);
   const [transientPreviewUrl, setTransientPreviewUrl] = useState<string | null>(null);
-  const [isPolishing, setIsPolishing] = useState(false);
   const resolvedAspectRatio = data.aspectRatio || '1:1';
   const compactSize = resolveMinEdgeFittedSize(resolvedAspectRatio, {
     minWidth: EXPORT_RESULT_NODE_MIN_WIDTH,
@@ -291,115 +288,6 @@ export const UploadNode = memo(({ id, data, selected, width, height }: UploadNod
     }
   }, [data.imageUrl, id, setSelectedNode, transientPreviewUrl]);
 
-  /**
-   * Convert any image URL to data URL for uploading to AI APIs
-   */
-  const imageUrlToDataUrl = useCallback(async (imageUrl: string): Promise<string> => {
-    if (imageUrl.startsWith('data:')) {
-      return imageUrl;
-    }
-    if (imageUrl.startsWith('blob:')) {
-      const response = await fetch(imageUrl);
-      const blob = await response.blob();
-      return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result as string);
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-      });
-    }
-    // For asset:// or file:// URLs, try to fetch via resolveImageDisplayUrl
-    const displayUrl = resolveImageDisplayUrl(imageUrl);
-    try {
-      const response = await fetch(displayUrl);
-      const blob = await response.blob();
-      return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result as string);
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-      });
-    } catch {
-      // Fallback: try loading via HTMLImageElement and canvas
-      return new Promise((resolve, reject) => {
-        const img = new Image();
-        img.crossOrigin = 'anonymous';
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          canvas.width = img.naturalWidth;
-          canvas.height = img.naturalHeight;
-          const ctx = canvas.getContext('2d');
-          if (!ctx) {
-            reject(new Error('Failed to get canvas context'));
-            return;
-          }
-          ctx.drawImage(img, 0, 0);
-          resolve(canvas.toDataURL('image/png'));
-        };
-        img.onerror = () => reject(new Error('Failed to load image'));
-        img.src = displayUrl;
-      });
-    }
-  }, []);
-
-  const handlePolishImageDescription = useCallback(async () => {
-    if (!data.imageUrl) {
-      void showErrorDialog('请先上传图片后再进行描述生成', '润色提示');
-      return;
-    }
-
-    const textApis = useSettingsStore.getState().textApis;
-    const imagePolishPrompt = useSettingsStore.getState().imagePolishPrompt;
-    const enabledApi = textApis.find((api) => api.enabled);
-    if (!enabledApi) {
-      void showErrorDialog('请先在设置中启用一个文本API', '润色提示');
-      return;
-    }
-
-    setIsPolishing(true);
-    try {
-      // Convert image to data URL for upload
-      const imageDataUrl = await imageUrlToDataUrl(data.imageUrl);
-
-      const result = await polishText({
-        text: '请详细描述这张图片的内容，包括主体、场景、风格、氛围、光影等细节，以便用于生成AI绘画提示词。直接输出描述内容，不需要解释。',
-        referenceImages: [imageDataUrl],
-        customPrompt: imagePolishPrompt,
-        promptType: 'image',
-      }, enabledApi);
-
-      // Get current node position to place new node
-      const canvasState = useCanvasStore.getState();
-      const uploadNode = canvasState.nodes.find((n) => n.id === id);
-      if (!uploadNode) {
-        throw new Error('无法找到当前节点');
-      }
-
-      const nodeWidth = (uploadNode as { width?: number }).width || 220;
-      const newNodeX = uploadNode.position.x + nodeWidth + 80;
-      const newNodeY = uploadNode.position.y;
-
-      // Create ImageEditNode with the polished description
-      const newNodeId = canvasState.addNode(
-        CANVAS_NODE_TYPES.imageEdit,
-        { x: newNodeX, y: newNodeY },
-        {
-          prompt: result.polished,
-          aspectRatio: data.aspectRatio || '1:1',
-        }
-      );
-
-      // Create edge from upload node to new image edit node
-      canvasState.addEdge(id, newNodeId);
-
-    } catch (err) {
-      const message = err instanceof Error ? err.message : '生成描述失败';
-      void showErrorDialog(message, '生成描述失败');
-    } finally {
-      setIsPolishing(false);
-    }
-  }, [data.imageUrl, data.aspectRatio, id, imageUrlToDataUrl]);
-
   useEffect(() => () => {
     uploadPerfRef.current = null;
     clearTransientPreview();
@@ -440,41 +328,17 @@ export const UploadNode = memo(({ id, data, selected, width, height }: UploadNod
       />
 
       {data.imageUrl || transientPreviewUrl ? (
-        <>
-          <div
-            className="block h-full w-full overflow-hidden rounded-[var(--node-radius)] bg-bg-dark"
-          >
-            <CanvasNodeImage
-              src={imageSource ?? ''}
-              viewerSourceUrl={data.imageUrl ? resolveImageDisplayUrl(data.imageUrl) : null}
-              alt={t('node.upload.uploadedAlt')}
-              className="h-full w-full object-contain"
-              onLoad={handleImageLoad}
-            />
-          </div>
-          {data.imageUrl && (
-            <div className="absolute bottom-2 left-2 right-2 flex items-center justify-center">
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  void handlePolishImageDescription();
-                }}
-                disabled={isPolishing}
-                className="inline-flex h-7 items-center justify-center rounded bg-accent/90 px-3 text-xs font-medium text-[var(--accent-foreground)] shadow-sm transition-colors hover:bg-accent disabled:opacity-50"
-              >
-                {isPolishing ? (
-                  <>
-                    <span className="mr-1.5 inline-block h-3 w-3 animate-spin rounded-full border border-white/30 border-t-white" />
-                    生成中...
-                  </>
-                ) : (
-                  '生成描述'
-                )}
-              </button>
-            </div>
-          )}
-        </>
+        <div
+          className="block h-full w-full overflow-hidden rounded-[var(--node-radius)] bg-bg-dark"
+        >
+          <CanvasNodeImage
+            src={imageSource ?? ''}
+            viewerSourceUrl={data.imageUrl ? resolveImageDisplayUrl(data.imageUrl) : null}
+            alt={t('node.upload.uploadedAlt')}
+            className="h-full w-full object-contain"
+            onLoad={handleImageLoad}
+          />
+        </div>
       ) : (
         <label
           className="block h-full w-full overflow-hidden rounded-[var(--node-radius)] bg-bg-dark"

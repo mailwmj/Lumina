@@ -10,7 +10,6 @@ import {
 import {
   ReactFlow,
   Background,
-  MiniMap,
   BackgroundVariant,
   SelectionMode,
   useReactFlow,
@@ -61,6 +60,7 @@ import { edgeTypes } from './edges';
 import { NodeSelectionMenu } from './NodeSelectionMenu';
 import { SelectedNodeOverlay } from './ui/SelectedNodeOverlay';
 import { CanvasToolbar, type CanvasInteractionMode } from './CanvasToolbar';
+import { CanvasMinimapControl } from './CanvasMinimapControl';
 import { MultiSelectionConnector } from './ui/MultiSelectionConnector';
 import { NodeToolDialog } from './ui/NodeToolDialog';
 import { ImageViewerModal } from './ui/ImageViewerModal';
@@ -2059,14 +2059,7 @@ export function Canvas() {
           color={snapToGridEnabled ? 'rgb(var(--accent-rgb) / 0.16)' : 'var(--canvas-dot)'}
           lineWidth={0.5}
         />
-        <MiniMap
-          className="canvas-minimap nopan nowheel !border-border-dark !bg-surface-dark"
-          style={{ pointerEvents: 'all', zIndex: 10000 }}
-          nodeColor="rgb(var(--text-muted-rgb) / 0.72)"
-          maskColor="rgb(var(--bg-rgb) / 0.72)"
-          pannable
-          zoomable
-        />
+        <CanvasMinimapControl />
 
         <SelectedNodeOverlay />
       </ReactFlow>

@@ -46,10 +46,24 @@ export interface GenerateImagePayload {
   projectId?: string;
 }
 
+export type GenerationJobSubmissionResult =
+  | { status: 'fulfilled'; jobId: string }
+  | { status: 'rejected'; error: unknown };
+
+export type GenerationJobSubmissionListener = (
+  result: GenerationJobSubmissionResult,
+  outputIndex: number
+) => void;
+
 export interface AiGateway {
   setApiKey: (provider: string, apiKey: string) => Promise<void>;
   generateImage: (payload: GenerateImagePayload) => Promise<string>;
   submitGenerateImageJob: (payload: GenerateImagePayload) => Promise<string>;
+  submitGenerateImageJobs: (
+    payload: GenerateImagePayload,
+    outputCount: number,
+    onSettled: GenerationJobSubmissionListener
+  ) => Promise<GenerationJobSubmissionResult[]>;
   getGenerateImageJob: (jobId: string) => Promise<{
     job_id: string;
     status: 'queued' | 'running' | 'succeeded' | 'failed' | 'not_found' | 'cancelled';

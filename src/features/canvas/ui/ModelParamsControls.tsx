@@ -3,7 +3,11 @@ import { createPortal } from 'react-dom';
 import { SlidersHorizontal, Zap } from '@/components/ui/icons';
 import { useTranslation } from 'react-i18next';
 
-import { AUTO_REQUEST_ASPECT_RATIO } from '@/features/canvas/domain/canvasNodes';
+import {
+  AUTO_REQUEST_ASPECT_RATIO,
+  IMAGE_OUTPUT_COUNTS,
+  type ImageOutputCount,
+} from '@/features/canvas/domain/canvasNodes';
 import {
   getModelProvider,
   type AspectRatioOption,
@@ -28,6 +32,8 @@ interface ModelParamsControlsProps {
   onModelChange: (modelId: string) => void;
   onResolutionChange: (resolution: string) => void;
   onAspectRatioChange: (aspectRatio: string) => void;
+  outputCount?: ImageOutputCount;
+  onOutputCountChange?: (outputCount: ImageOutputCount) => void;
   extraParams?: Record<string, unknown>;
   onExtraParamChange?: (key: string, value: boolean | number | string) => void;
   showWebSearchToggle?: boolean;
@@ -59,24 +65,6 @@ const DEFAULT_PROVIDER_OPTION_CLASS_NAME =
   'w-full min-w-0 px-3 text-center';
 const DEFAULT_MODEL_OPTION_CLASS_NAME =
   'min-h-9 w-full min-w-0 max-w-full justify-center px-3 py-2 text-center';
-
-function NanoBananaIcon({ className = '' }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      xmlns="http://www.w3.org/2000/svg"
-      className={className}
-      aria-hidden="true"
-    >
-      <path d="M1.5 19.824c0-.548.444-.992.991-.992h.744a.991.991 0 010 1.983H2.49a.991.991 0 01-.991-.991z" fill="#F3AD61" />
-      <path d="M14.837 13.5h7.076c.522 0 .784-.657.413-1.044l-1.634-1.704a3.183 3.183 0 00-4.636 0l-1.633 1.704c-.37.385-.107 1.044.414 1.044zM3.587 13.5h7.076c.521 0 .784-.659.414-1.044l-1.635-1.704a3.183 3.183 0 00-4.636 0l-1.633 1.704c-.37.385-.107 1.044.414 1.044z" fill="#F9C23C" />
-      <path d="M12.525 1.521c3.69-.53 5.97 8.923 4.309 12.744-1.662 3.82-5.248 4.657-9.053 6.152a3.49 3.49 0 01-1.279.244c-1.443 0-2.227 1.187-2.774-.282-.707-1.9.22-4.031 2.069-4.757 2.014-.79 3.084-2.308 3.89-4.364.82-2.096.877-2.956.873-5.241-.003-1.827-.123-4.195 1.965-4.496z" fill="#FEEFC2" />
-      <path d="M16.834 14.264l-7.095-3.257c-.815 1.873-2.29 3.308-4.156 4.043-2.16.848-3.605 3.171-2.422 5.54 2.364 4.727 13.673-.05 13.673-6.325z" fill="#FCD53F" />
-      <path d="M13.68 12.362c.296.094.46.41.365.707-1.486 4.65-5.818 6.798-9.689 6.997a.562.562 0 11-.057-1.124c3.553-.182 7.372-2.138 8.674-6.216a.562.562 0 01.707-.364z" fill="#F9C23C" />
-      <path d="M17.43 19.85l-7.648-8.835h6.753c1.595.08 2.846 1.433 2.846 3.073v5.664c0 .997-.898 1.302-1.95.098z" fill="#FFF478" />
-    </svg>
-  );
-}
 
 function getRatioPreviewStyle(ratio: string): { width: number; height: number } {
   const [rawW, rawH] = ratio.split(':').map((value) => Number(value));
@@ -143,6 +131,8 @@ export const ModelParamsControls = memo(({
   onModelChange,
   onResolutionChange,
   onAspectRatioChange,
+  outputCount,
+  onOutputCountChange,
   extraParams,
   onExtraParamChange,
   showWebSearchToggle = false,
@@ -219,7 +209,6 @@ export const ModelParamsControls = memo(({
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [providerModels]);
   const isCompactTrigger = triggerSize === 'sm';
-  const modelIconClassName = isCompactTrigger ? 'h-3 w-3 shrink-0' : 'h-4 w-4 shrink-0';
   const paramsIconClassName = isCompactTrigger ? 'h-2.5 w-2.5 shrink-0' : 'h-4 w-4 shrink-0';
   const modelTextClassName = isCompactTrigger
     ? 'min-w-0 truncate font-mono text-[10px] font-medium leading-none'
@@ -406,7 +395,6 @@ export const ModelParamsControls = memo(({
             setOpenPanel('model');
           }}
         >
-          <NanoBananaIcon className={modelIconClassName} />
           <span className={modelTextClassName}>{selectedModelName}</span>
           {showProviderName && (
             <span className={providerTextClassName}>{selectedProviderName}</span>
@@ -618,6 +606,32 @@ export const ModelParamsControls = memo(({
                 })}
               </div>
             </div>
+
+            {outputCount !== undefined && onOutputCountChange && (
+              <div className="mt-3">
+                <div className="mb-2 text-xs text-text-muted">{t('modelParams.outputCount')}</div>
+                <div className="grid grid-cols-3 gap-1 rounded-[10px] border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] p-1">
+                  {IMAGE_OUTPUT_COUNTS.map((count) => {
+                    const active = count === outputCount;
+                    return (
+                      <button
+                        key={count}
+                        className={`h-8 rounded-lg text-sm transition-colors ${active
+                          ? 'bg-accent text-[var(--accent-foreground)]'
+                          : 'text-text-muted hover:bg-[var(--ui-hover)]'
+                          }`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onOutputCountChange(count);
+                        }}
+                      >
+                        {t('modelParams.outputCountOption', { count })}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {panelExtraParamSchema.length > 0 && (
               <div className="mt-3">

@@ -30,6 +30,9 @@ export const EXPORT_RESULT_NODE_MIN_WIDTH = 168;
 export const EXPORT_RESULT_NODE_MIN_HEIGHT = 168;
 
 export const IMAGE_SIZES = ['0.5K', '1K', '2K', '4K'] as const;
+export const IMAGE_OUTPUT_COUNTS = [1, 2, 4] as const;
+export type ImageOutputCount = (typeof IMAGE_OUTPUT_COUNTS)[number];
+export const DEFAULT_IMAGE_OUTPUT_COUNT: ImageOutputCount = 1;
 export const IMAGE_ASPECT_RATIOS = [
   '1:1',
   '16:9',
@@ -82,6 +85,7 @@ export interface ImageEditNodeData extends NodeImageData {
   prompt: string;
   model: string;
   size: ImageSize;
+  outputCount?: ImageOutputCount;
   requestAspectRatio?: string;
   extraParams?: Record<string, unknown>;
   isGenerating?: boolean;

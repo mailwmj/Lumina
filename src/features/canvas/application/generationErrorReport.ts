@@ -8,6 +8,8 @@ export interface GenerationDebugContext {
   extraParams?: Record<string, unknown>;
   referenceImageCount?: number;
   referenceImagePlaceholders?: string[];
+  outputCount?: number;
+  outputIndex?: number;
   appVersion?: string;
   osName?: string;
   osVersion?: string;
@@ -149,6 +151,9 @@ export function buildGenerationErrorReport(
   }
   if (context.requestAspectRatio) {
     sections.push(`- Aspect Ratio: ${context.requestAspectRatio}`);
+  }
+  if (context.outputCount) {
+    sections.push(`- Output: ${context.outputIndex ?? 1}/${context.outputCount}`);
   }
   sections.push(`- Reference Images: ${context.referenceImageCount ?? 0}`);
   if (Array.isArray(context.referenceImagePlaceholders) && context.referenceImagePlaceholders.length > 0) {

@@ -70,6 +70,11 @@
     "emptyHintTitle": "Double-click to add a node",
     "emptyHintSubtitle": "Double-click to add a node",
     "disconnectEdge": "Disconnect Connection",
+    "minimap": {
+      "label": "Canvas minimap",
+      "show": "Show canvas minimap",
+      "hide": "Hide canvas minimap"
+    },
     "toolbar": {
       "selectMode": "Select Tool (V)",
       "panMode": "Hand Tool (H)",
@@ -126,6 +131,9 @@
     "autoAspectRatio": "Auto",
     "quality": "Quality",
     "aspectRatio": "Aspect Ratio",
+    "outputCount": "Output count",
+    "outputCountOption_one": "{{count}} image",
+    "outputCountOption_other": "{{count}} images",
     "enableWebSearch": "Enable web search",
     "otherParams": "Other Params",
     "extraOptions": "Extra options",

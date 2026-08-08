@@ -413,3 +413,20 @@ npm run release -- patch --notes-file docs/releases/v0.2.1.md
 ---
 
 如与用户明确要求冲突，以用户要求优先；如与运行时安全冲突，以安全优先。
+
+## Agent skills
+
+### Issue tracker
+
+Issues and specs for this repo live in GitHub Issues at `mailwmj/opencanvas`; use `gh`
+with the explicit `--repo mailwmj/opencanvas` flag. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Use `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, and `wontfix`.
+See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+This is a single-context repository. Read the root `CONTEXT.md` and relevant
+`docs/adr/` files when they exist. See `docs/agents/domain.md`.

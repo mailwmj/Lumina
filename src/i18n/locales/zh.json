@@ -70,6 +70,11 @@
     "emptyHintTitle": "双击鼠标添加节点",
     "emptyHintSubtitle": "Double-click to add a node",
     "disconnectEdge": "断开连线",
+    "minimap": {
+      "label": "画布小地图",
+      "show": "显示画布小地图",
+      "hide": "隐藏画布小地图"
+    },
     "toolbar": {
       "selectMode": "选择工具 (V)",
       "panMode": "托手工具 (H)",
@@ -126,6 +131,9 @@
     "autoAspectRatio": "自动",
     "quality": "画质",
     "aspectRatio": "比例",
+    "outputCount": "生成数量",
+    "outputCountOption_one": "{{count}}张",
+    "outputCountOption_other": "{{count}}张",
     "enableWebSearch": "启用联网搜索",
     "otherParams": "其他参数",
     "extraOptions": "额外参数",
