@@ -5,7 +5,7 @@ import type {
 } from '@/stores/settingsStore';
 
 import type { ImageModelDefinition } from './types';
-import { findImageModel, resolveImageModelIdAlias } from './registry';
+import { findImageModel, listImageModels, resolveImageModelIdAlias } from './registry';
 
 const GENERIC_ASPECT_RATIOS = ['1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3'] as const;
 const GENERIC_RESOLUTIONS = ['1K', '2K', '4K'] as const;
@@ -86,9 +86,22 @@ export function listConfiguredImageModels(settings: ImageModelSettings): ImageMo
 
   (['ai-media', 'chaomo'] as const).forEach((providerId) => {
     const config = providerConfigFor(providerId, settings);
-    if (!config?.modelCatalog) {
+    if (!config?.apiKey.trim()) {
       return;
     }
+
+    if (!config.modelCatalog) {
+      listImageModels()
+        .filter((model) => model.providerId === providerId)
+        .forEach((model) => {
+          if (!seenModelIds.has(model.id)) {
+            seenModelIds.add(model.id);
+            models.push(model);
+          }
+        });
+      return;
+    }
+
     const selectedModelIds = new Set(config.selectedModelIds);
     config.modelCatalog.models.forEach((model) => {
       if (!selectedModelIds.has(model.id) || seenModelIds.has(model.id)) {

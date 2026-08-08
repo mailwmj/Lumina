@@ -66,4 +66,29 @@ describe('available image models', () => {
       'chaomo/gpt-image2-4K'
     );
   });
+
+  it('exposes built-in Chaomo models when only its API key is configured', () => {
+    const settings = createSettings();
+    settings.openAiImageApi = {
+      apiKey: '',
+      baseUrl: 'https://example.test/v1',
+      modelCatalog: null,
+      selectedModelIds: [],
+    };
+    settings.chaomoImageApi = {
+      apiKey: 'chaomo-key',
+      baseUrl: 'https://example.test/v1',
+      modelCatalog: null,
+      selectedModelIds: [],
+    };
+
+    const models = listConfiguredImageModels(settings);
+
+    expect(models.length).toBeGreaterThan(0);
+    expect(models.every((model) => model.providerId === 'chaomo')).toBe(true);
+    expect(models.some((model) => model.id === 'chaomo/gpt-image2-4K')).toBe(true);
+    expect(resolveConfiguredImageModel(settings, 'ai-media/gpt-image-2')?.providerId).toBe(
+      'chaomo'
+    );
+  });
 });
