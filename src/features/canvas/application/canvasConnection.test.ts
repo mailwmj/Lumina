@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { canvasNodeFactory } from './canvasServices';
-import { buildBatchConnectionPlan } from './canvasConnection';
+import { buildBatchConnectionPlan, isCanvasConnectionValid } from './canvasConnection';
 import { CANVAS_NODE_TYPES, type CanvasEdge, type CanvasNode } from '../domain/canvasNodes';
 
 function createNode(type: CanvasNode['type'], id: string): CanvasNode {
@@ -86,5 +86,55 @@ describe('batch canvas connections', () => {
 
     expect(plan.connections).toHaveLength(9);
     expect(plan.invalidSourceIds).toEqual(['source-9']);
+  });
+});
+
+describe('typed canvas connections', () => {
+  it('accepts text and image inputs for a text generation node and rejects video', () => {
+    const text = createNode(CANVAS_NODE_TYPES.textGeneration, 'text');
+    const image = createNode(CANVAS_NODE_TYPES.upload, 'image');
+    const video = createNode(CANVAS_NODE_TYPES.videoUpload, 'video');
+    const target = createNode(CANVAS_NODE_TYPES.textGeneration, 'target');
+    const nodes = [text, image, video, target];
+
+    expect(isCanvasConnectionValid({ source: text.id, target: target.id }, nodes, [])).toBe(true);
+    expect(isCanvasConnectionValid({ source: image.id, target: target.id }, nodes, [])).toBe(true);
+    expect(isCanvasConnectionValid({ source: video.id, target: target.id }, nodes, [])).toBe(false);
+  });
+
+  it('prevents directed cycles across text generation nodes', () => {
+    const first = createNode(CANVAS_NODE_TYPES.textGeneration, 'first');
+    const second = createNode(CANVAS_NODE_TYPES.textGeneration, 'second');
+    const edges: CanvasEdge[] = [{
+      id: 'first-to-second',
+      source: first.id,
+      target: second.id,
+      data: { valueType: 'text', inputOrder: 0 },
+    }];
+
+    expect(isCanvasConnectionValid(
+      { source: second.id, target: first.id },
+      [first, second],
+      edges
+    )).toBe(false);
+  });
+
+  it('caps text generation image inputs at ten without limiting text inputs', () => {
+    const images = Array.from({ length: 11 }, (_, index) =>
+      createNode(CANVAS_NODE_TYPES.upload, `image-${index}`)
+    );
+    const target = createNode(CANVAS_NODE_TYPES.textGeneration, 'target');
+    const edges: CanvasEdge[] = images.slice(0, 10).map((image, index) => ({
+      id: `edge-${index}`,
+      source: image.id,
+      target: target.id,
+      data: { valueType: 'image', inputOrder: index },
+    }));
+
+    expect(isCanvasConnectionValid(
+      { source: images[10].id, target: target.id },
+      [...images, target],
+      edges
+    )).toBe(false);
   });
 });

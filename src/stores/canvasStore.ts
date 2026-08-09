@@ -20,6 +20,7 @@ import {
   EXPORT_RESULT_NODE_MIN_WIDTH,
   type ActiveToolDialog,
   type CanvasEdge,
+  type CanvasDataType,
   type CanvasNode,
   type CanvasNodeData,
   type CanvasNodeType,
@@ -36,6 +37,7 @@ import {
 import { EXPORT_RESULT_DISPLAY_NAME } from '@/features/canvas/domain/nodeDisplay';
 import { nodeCatalog } from '@/features/canvas/application/nodeCatalog';
 import { canvasNodeFactory } from '@/features/canvas/application/canvasServices';
+import { inferCanvasConnectionValueType } from '@/features/canvas/application/canvasConnection';
 import { resolveConfiguredImageModel } from '@/features/canvas/models';
 import { useSettingsStore } from '@/stores/settingsStore';
 import {
@@ -161,6 +163,12 @@ interface CanvasState {
     draggedFrameId: string,
     targetFrameId: string
   ) => void;
+  reorderNodeInput: (
+    nodeId: string,
+    valueType: CanvasDataType,
+    draggedSourceId: string,
+    targetSourceId: string
+  ) => boolean;
 
   deleteNode: (nodeId: string) => void;
   deleteNodes: (nodeIds: string[]) => void;
@@ -196,6 +204,7 @@ function normalizeHandleId(value: unknown): string | undefined {
 
 function normalizeEdgesWithNodes(rawEdges: CanvasEdge[], nodes: CanvasNode[]): CanvasEdge[] {
   const nodeMap = new Map(nodes.map((node) => [node.id, node] as const));
+  const nextOrderByTargetAndType = new Map<string, number>();
 
   return rawEdges
     .filter((edge) => {
@@ -206,14 +215,48 @@ function normalizeEdgesWithNodes(rawEdges: CanvasEdge[], nodes: CanvasNode[]): C
       }
       return nodeHasSourceHandle(sourceNode.type) && nodeHasTargetHandle(targetNode.type);
     })
-    .map((edge) => ({
-      ...edge,
-      type: edge.type ?? 'disconnectableEdge',
-      sourceHandle:
-        normalizeHandleId((edge as CanvasEdge & { sourceHandle?: unknown }).sourceHandle) ?? 'source',
-      targetHandle:
-        normalizeHandleId((edge as CanvasEdge & { targetHandle?: unknown }).targetHandle) ?? 'target',
-    }));
+    .map((edge) => {
+      const sourceNode = nodeMap.get(edge.source);
+      const inferredType = sourceNode ? inferCanvasConnectionValueType(sourceNode) : null;
+      const valueType = edge.data?.valueType ?? inferredType ?? undefined;
+      const orderKey = valueType ? `${edge.target}:${valueType}` : '';
+      const nextOrder = orderKey ? nextOrderByTargetAndType.get(orderKey) ?? 0 : 0;
+      const inputOrder = Number.isFinite(edge.data?.inputOrder)
+        ? Number(edge.data?.inputOrder)
+        : nextOrder;
+      if (orderKey) {
+        nextOrderByTargetAndType.set(orderKey, Math.max(nextOrder, inputOrder + 1));
+      }
+
+      return {
+        ...edge,
+        type: edge.type ?? 'disconnectableEdge',
+        sourceHandle:
+          normalizeHandleId((edge as CanvasEdge & { sourceHandle?: unknown }).sourceHandle) ?? 'source',
+        targetHandle:
+          normalizeHandleId((edge as CanvasEdge & { targetHandle?: unknown }).targetHandle) ?? 'target',
+        data: valueType ? { ...edge.data, valueType, inputOrder } : edge.data,
+      };
+    });
+}
+
+function createInputEdgeData(
+  sourceNode: CanvasNode,
+  targetId: string,
+  edges: CanvasEdge[]
+): CanvasEdge['data'] {
+  const valueType = inferCanvasConnectionValueType(sourceNode);
+  if (!valueType) {
+    return undefined;
+  }
+  const inputOrder = edges.reduce((highest, edge) => {
+    if (edge.target !== targetId || edge.data?.valueType !== valueType) {
+      return highest;
+    }
+    const order = Number.isFinite(edge.data?.inputOrder) ? Number(edge.data?.inputOrder) : -1;
+    return Math.max(highest, order);
+  }, -1) + 1;
+  return { valueType, inputOrder };
 }
 
 function normalizeNodes(rawNodes: CanvasNode[]): CanvasNode[] {
@@ -724,9 +767,16 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         }
       }
 
+      const sourceNode = connection.source
+        ? state.nodes.find((node) => node.id === connection.source)
+        : undefined;
+      const edgeData = sourceNode && connection.target
+        ? createInputEdgeData(sourceNode, connection.target, newEdges)
+        : undefined;
+
       return {
         edges: addEdge<CanvasEdge>(
-          { ...connection, sourceHandle, targetHandle, type: 'disconnectableEdge' },
+          { ...connection, sourceHandle, targetHandle, type: 'disconnectableEdge', data: edgeData },
           newEdges
         ),
         history: {
@@ -755,12 +805,17 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         const sourceHandle = normalizeHandleId(connection.sourceHandle) ?? 'source';
         const targetHandle = normalizeHandleId(connection.targetHandle) ?? 'target';
         const beforeCount = nextEdges.length;
+        const sourceNode = state.nodes.find((node) => node.id === connection.source);
+        const edgeData = sourceNode
+          ? createInputEdgeData(sourceNode, connection.target, nextEdges)
+          : undefined;
         nextEdges = addEdge<CanvasEdge>(
           {
             ...connection,
             sourceHandle,
             targetHandle,
             type: 'disconnectableEdge',
+            data: edgeData,
           },
           nextEdges
         );
@@ -922,6 +977,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       sourceHandle: 'source',
       targetHandle: 'target',
       type: 'disconnectableEdge',
+      data: createInputEdgeData(sourceNode, target, state.edges),
     };
 
     set({
@@ -967,6 +1023,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         sourceHandle: 'source',
         targetHandle: 'target',
         type: 'disconnectableEdge',
+        data: createInputEdgeData(sourceNode, targetId, get().edges),
       };
 
       set((s) => ({
@@ -1442,6 +1499,45 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         dragHistorySnapshot: null,
       };
     });
+  },
+
+  reorderNodeInput: (nodeId, valueType, draggedSourceId, targetSourceId) => {
+    if (draggedSourceId === targetSourceId) {
+      return false;
+    }
+
+    let reordered = false;
+    set((state) => {
+      const matchingEdges = state.edges
+        .filter((edge) => edge.target === nodeId && edge.data?.valueType === valueType)
+        .sort((left, right) => Number(left.data?.inputOrder) - Number(right.data?.inputOrder));
+      const draggedIndex = matchingEdges.findIndex((edge) => edge.source === draggedSourceId);
+      const targetIndex = matchingEdges.findIndex((edge) => edge.source === targetSourceId);
+      if (draggedIndex < 0 || targetIndex < 0) {
+        return {};
+      }
+
+      const reorderedEdges = [...matchingEdges];
+      const [draggedEdge] = reorderedEdges.splice(draggedIndex, 1);
+      reorderedEdges.splice(targetIndex, 0, draggedEdge);
+      const orderByEdgeId = new Map(reorderedEdges.map((edge, index) => [edge.id, index]));
+      const nextEdges = state.edges.map((edge) => {
+        const inputOrder = orderByEdgeId.get(edge.id);
+        return inputOrder === undefined
+          ? edge
+          : { ...edge, data: { ...edge.data, valueType, inputOrder } };
+      });
+      reordered = true;
+      return {
+        edges: nextEdges,
+        history: {
+          past: pushSnapshot(state.history.past, createSnapshot(state.nodes, state.edges)),
+          future: [],
+        },
+        dragHistorySnapshot: null,
+      };
+    });
+    return reordered;
   },
 
   updateNodePosition: (nodeId, position) => {

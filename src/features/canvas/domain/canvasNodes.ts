@@ -5,6 +5,7 @@ export const CANVAS_NODE_TYPES = {
   upload: 'uploadNode',
   imageEdit: 'imageNode',
   exportImage: 'exportImageNode',
+  textGeneration: 'textGenerationNode',
   textAnnotation: 'textAnnotationNode',
   group: 'groupNode',
   storyboardSplit: 'storyboardNode',
@@ -85,6 +86,18 @@ export interface GroupNodeData extends NodeDisplayData {
 
 export interface TextAnnotationNodeData extends NodeDisplayData {
   content: string;
+  [key: string]: unknown;
+}
+
+export interface TextGenerationNodeData extends NodeDisplayData, TextModelSelectionData {
+  /** User-authored local text. It is never overwritten by generation. */
+  inputText: string;
+  /** Latest non-empty generated result. Null means the composite input is effective. */
+  generatedText: string | null;
+  /** Runtime-only state; restored projects always start idle. */
+  isGenerating?: boolean;
+  generationError?: string | null;
+  generationErrorDetails?: string | null;
   [key: string]: unknown;
 }
 
@@ -266,6 +279,7 @@ export interface SD2VideoGenNodeData extends NodeDisplayData {
 export type CanvasNodeData =
   | UploadImageNodeData
   | ExportImageNodeData
+  | TextGenerationNodeData
   | TextAnnotationNodeData
   | GroupNodeData
   | ImageEditNodeData
@@ -278,7 +292,15 @@ export type CanvasNodeData =
   | SD2VideoGenNodeData;
 
 export type CanvasNode = Node<CanvasNodeData, CanvasNodeType>;
-export type CanvasEdge = Edge;
+export type CanvasDataType = 'text' | 'image' | 'audio' | 'video';
+
+export interface CanvasEdgeData extends Record<string, unknown> {
+  valueType?: CanvasDataType;
+  /** Order within the target node's independent value-type list. */
+  inputOrder?: number;
+}
+
+export type CanvasEdge = Edge<CanvasEdgeData>;
 
 export interface NodeCreationDto {
   type: CanvasNodeType;
@@ -334,6 +356,12 @@ export function isTextAnnotationNode(
   node: CanvasNode | null | undefined
 ): node is Node<TextAnnotationNodeData, typeof CANVAS_NODE_TYPES.textAnnotation> {
   return node?.type === CANVAS_NODE_TYPES.textAnnotation;
+}
+
+export function isTextGenerationNode(
+  node: CanvasNode | null | undefined
+): node is Node<TextGenerationNodeData, typeof CANVAS_NODE_TYPES.textGeneration> {
+  return node?.type === CANVAS_NODE_TYPES.textGeneration;
 }
 
 export function isStoryboardSplitNode(

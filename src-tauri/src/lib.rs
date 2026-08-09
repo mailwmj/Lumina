@@ -200,6 +200,7 @@ pub fn run() {
             ai_commands::generate_image,
             ai_commands::list_models,
             ai_commands::polish_text,
+            ai_commands::generate_text,
             ai_commands::test_text_api,
             project_state::list_project_summaries,
             project_state::get_project_record,

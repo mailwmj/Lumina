@@ -42,6 +42,15 @@ export interface DiscoverTextModelsRequest {
   api_key: string;
 }
 
+export interface GenerateTextRequest {
+  text: string;
+  model: string;
+  api_key: string;
+  base_url: string;
+  reference_images?: string[];
+  reasoning_effort?: string;
+}
+
 const BASE64_PREVIEW_HEAD = 96;
 const BASE64_PREVIEW_TAIL = 24;
 
@@ -168,6 +177,18 @@ export async function discoverTextModels(
     throw new Error('当前不是 Tauri 容器环境，请使用 `npm run tauri dev` 启动');
   }
   return await invoke<DiscoveredImageModel[]>('discover_text_models', { request });
+}
+
+export async function generateText(request: GenerateTextRequest): Promise<string> {
+  if (!isTauri()) {
+    throw new Error('当前不是 Tauri 容器环境，请使用 `npm run tauri dev` 启动');
+  }
+  const result = await invoke<string>('generate_text', { request });
+  const normalized = typeof result === 'string' ? result.trim() : '';
+  if (!normalized) {
+    throw new Error('API 返回内容为空');
+  }
+  return normalized;
 }
 
 export async function generateImage(request: GenerateRequest): Promise<string> {

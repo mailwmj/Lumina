@@ -2,11 +2,17 @@ import type { Connection } from '@xyflow/react';
 
 import {
   CANVAS_NODE_TYPES,
+  type CanvasDataType,
   type CanvasEdge,
   type CanvasNode,
   type CanvasNodeType,
 } from '../domain/canvasNodes';
-import { nodeHasSourceHandle, nodeHasTargetHandle } from '../domain/nodeRegistry';
+import {
+  getNodeSourceDataTypes,
+  getNodeTargetDataTypes,
+  nodeHasSourceHandle,
+  nodeHasTargetHandle,
+} from '../domain/nodeRegistry';
 
 export interface BatchConnectionPlan {
   connections: Connection[];
@@ -29,10 +35,40 @@ export function canNodeTypeBeManualConnectionSource(type: CanvasNodeType): boole
     type === CANVAS_NODE_TYPES.audioUploadRef ||
     type === CANVAS_NODE_TYPES.videoUploadRef ||
     type === CANVAS_NODE_TYPES.exportImage ||
+    type === CANVAS_NODE_TYPES.textGeneration ||
     type === CANVAS_NODE_TYPES.imageEdit ||
     type === CANVAS_NODE_TYPES.videoFrame ||
     type === CANVAS_NODE_TYPES.videoSingle
   );
+}
+
+export function inferCanvasConnectionValueType(sourceNode: CanvasNode): CanvasDataType | null {
+  const sourceTypes = getNodeSourceDataTypes(sourceNode.type);
+  return sourceTypes.length === 1 ? sourceTypes[0] : null;
+}
+
+function wouldCreateDirectedCycle(sourceId: string, targetId: string, edges: CanvasEdge[]): boolean {
+  const targetsBySource = new Map<string, string[]>();
+  for (const edge of edges) {
+    const targets = targetsBySource.get(edge.source) ?? [];
+    targets.push(edge.target);
+    targetsBySource.set(edge.source, targets);
+  }
+
+  const pending = [targetId];
+  const visited = new Set<string>();
+  while (pending.length > 0) {
+    const current = pending.pop();
+    if (!current || visited.has(current)) {
+      continue;
+    }
+    if (current === sourceId) {
+      return true;
+    }
+    visited.add(current);
+    pending.push(...(targetsBySource.get(current) ?? []));
+  }
+  return false;
 }
 
 export function canNodeBeManualConnectionSource(
@@ -111,6 +147,35 @@ export function isCanvasConnectionValid(
     !nodeHasTargetHandle(targetNode.type)
   ) {
     return false;
+  }
+
+  if (wouldCreateDirectedCycle(sourceId, targetId, edges)) {
+    return false;
+  }
+
+  if (edges.some((edge) => edge.source === sourceId && edge.target === targetId)) {
+    return false;
+  }
+
+  const valueType = inferCanvasConnectionValueType(sourceNode);
+  if (!valueType || !getNodeTargetDataTypes(targetNode.type).includes(valueType)) {
+    return false;
+  }
+
+  if (targetNode.type === CANVAS_NODE_TYPES.textGeneration && valueType === 'image') {
+    const imageInputCount = edges.filter((edge) => {
+      if (edge.target !== targetId) {
+        return false;
+      }
+      if (edge.data?.valueType) {
+        return edge.data.valueType === 'image';
+      }
+      const existingSource = nodes.find((node) => node.id === edge.source);
+      return existingSource ? inferCanvasConnectionValueType(existingSource) === 'image' : false;
+    }).length;
+    if (imageInputCount >= 10) {
+      return false;
+    }
   }
 
   const sourceIsAudioUpload = isAudioSource(sourceNode);

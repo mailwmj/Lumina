@@ -394,8 +394,9 @@ mod text_api_endpoint_tests {
     use serde_json::Value;
 
     use super::{
-        resolve_chat_completions_endpoint, resolve_models_endpoint, ChatContent, ChatMessage,
-        ChatRequest, ResponsesRequest, ResponsesReasoning,
+        build_generate_text_chat_request, extract_generated_text, resolve_chat_completions_endpoint,
+        resolve_models_endpoint, ChatContent, ChatMessage, ChatRequest, GenerateTextRequest,
+        ResponsesRequest, ResponsesReasoning,
     };
 
     #[test]
@@ -517,6 +518,52 @@ mod text_api_endpoint_tests {
         })
         .unwrap();
         assert!(chat.get("reasoning_effort").is_none());
+    }
+
+    #[test]
+    fn generic_text_request_has_only_one_user_message_and_no_hidden_template() {
+        let request = GenerateTextRequest {
+            text: "用户原文".to_string(),
+            model: "vision-model".to_string(),
+            api_key: "secret".to_string(),
+            base_url: "https://gateway.example/v1".to_string(),
+            reference_images: Some(vec!["data:image/png;base64,AAAA".to_string()]),
+            reasoning_effort: Some("high".to_string()),
+        };
+
+        let body = serde_json::to_value(build_generate_text_chat_request(&request).unwrap()).unwrap();
+        let messages = body.get("messages").and_then(Value::as_array).unwrap();
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].get("role").and_then(Value::as_str), Some("user"));
+        let serialized = serde_json::to_string(&body).unwrap();
+        assert!(serialized.contains("用户原文"));
+        assert!(!serialized.contains("system"));
+        assert_eq!(body.get("reasoning_effort").and_then(Value::as_str), Some("high"));
+    }
+
+    #[test]
+    fn generic_text_request_rejects_an_unreadable_image_reference() {
+        let request = GenerateTextRequest {
+            text: "describe".to_string(),
+            model: "vision-model".to_string(),
+            api_key: "secret".to_string(),
+            base_url: "https://gateway.example/v1".to_string(),
+            reference_images: Some(vec!["/missing/local/image.png".to_string()]),
+            reasoning_effort: None,
+        };
+
+        assert!(build_generate_text_chat_request(&request).is_err());
+    }
+
+    #[test]
+    fn extracts_text_from_chat_and_responses_api_payloads() {
+        let chat = serde_json::json!({"choices": [{"message": {"content": " chat result "}}]});
+        let responses = serde_json::json!({
+            "output": [{"content": [{"type": "output_text", "text": " response result "}]}]
+        });
+
+        assert_eq!(extract_generated_text(&chat).unwrap(), "chat result");
+        assert_eq!(extract_generated_text(&responses).unwrap(), "response result");
     }
 }
 
@@ -1069,6 +1116,18 @@ pub struct PolishTextRequest {
     pub reasoning_effort: Option<String>,
 }
 
+#[derive(Debug, serde::Deserialize)]
+pub struct GenerateTextRequest {
+    pub text: String,
+    pub model: String,
+    pub api_key: String,
+    pub base_url: String,
+    #[serde(default)]
+    pub reference_images: Option<Vec<String>>,
+    #[serde(default)]
+    pub reasoning_effort: Option<String>,
+}
+
 // 图片润色提示词模板的备用默认值（当用户未设置自定义模板时使用）
 const BACKUP_TEXT_POLISH_TEMPLATE: &str = "你是专业的AI绘画提示词润色专家。我将为你提供待优化的原始AI绘画提示词（可能包含参考图片的@引用标记），请按照以下要求进行深度优化：
 核心任务：深度理解原始提示词的核心语义和用户期望的视觉目标
@@ -1196,6 +1255,237 @@ struct Choice {
 #[derive(Debug, serde::Deserialize)]
 struct ResponseMessage {
     content: Option<String>,
+}
+
+fn validate_generate_text_request(request: &GenerateTextRequest) -> Result<(), String> {
+    if request.model.trim().is_empty() {
+        return Err("请选择文本模型".to_string());
+    }
+    if request.api_key.trim().is_empty() {
+        return Err("请先配置 API 密钥".to_string());
+    }
+    if request.text.trim().is_empty()
+        && request.reference_images.as_ref().map_or(true, Vec::is_empty)
+    {
+        return Err("请输入文本或连接图片".to_string());
+    }
+    Ok(())
+}
+
+fn validate_text_reference_image(image_url: &str) -> Result<(), String> {
+    if image_url.starts_with("http://")
+        || image_url.starts_with("https://")
+        || image_url.starts_with("data:image/")
+    {
+        return Ok(());
+    }
+    Err("参考图片无法读取，请重新连接或上传图片".to_string())
+}
+
+fn build_generate_text_chat_request(request: &GenerateTextRequest) -> Result<ChatRequest, String> {
+    validate_generate_text_request(request)?;
+    let images = request.reference_images.as_deref().unwrap_or(&[]);
+    for image_url in images {
+        validate_text_reference_image(image_url)?;
+    }
+
+    let content = if images.is_empty() {
+        ChatContent::Text(request.text.clone())
+    } else {
+        let mut parts = images
+            .iter()
+            .map(|image_url| ContentPart {
+                part_type: "image_url".to_string(),
+                text: None,
+                image_url: Some(ImageUrl {
+                    url: image_url.clone(),
+                }),
+            })
+            .collect::<Vec<_>>();
+        parts.push(ContentPart {
+            part_type: "text".to_string(),
+            text: Some(request.text.clone()),
+            image_url: None,
+        });
+        ChatContent::Array(parts)
+    };
+
+    Ok(ChatRequest {
+        model: request.model.clone(),
+        messages: vec![ChatMessage {
+            role: "user".to_string(),
+            content,
+        }],
+        stream: Some(false),
+        reasoning_effort: request.reasoning_effort.clone(),
+    })
+}
+
+fn build_generate_text_responses_request(
+    request: &GenerateTextRequest,
+) -> Result<ResponsesRequest, String> {
+    validate_generate_text_request(request)?;
+    let images = request.reference_images.as_deref().unwrap_or(&[]);
+    let mut content = Vec::with_capacity(images.len() + 1);
+    for image_url in images {
+        validate_text_reference_image(image_url)?;
+        content.push(ResponsesInputContent {
+            part_type: "input_image".to_string(),
+            image_url: Some(image_url.clone()),
+            text: None,
+        });
+    }
+    content.push(ResponsesInputContent {
+        part_type: "input_text".to_string(),
+        image_url: None,
+        text: Some(request.text.clone()),
+    });
+
+    Ok(ResponsesRequest {
+        model: request.model.clone(),
+        input: vec![ResponsesInput {
+            role: "user".to_string(),
+            content,
+        }],
+        reasoning: request
+            .reasoning_effort
+            .clone()
+            .map(|effort| ResponsesReasoning { effort }),
+    })
+}
+
+fn non_empty_json_text(value: Option<&Value>) -> Option<String> {
+    value
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+        .map(str::to_string)
+}
+
+fn extract_generated_text(payload: &Value) -> Result<String, String> {
+    if let Some(text) = non_empty_json_text(payload.get("output_text")) {
+        return Ok(text);
+    }
+    if let Some(text) = non_empty_json_text(
+        payload
+            .get("choices")
+            .and_then(Value::as_array)
+            .and_then(|choices| choices.first())
+            .and_then(|choice| choice.get("message"))
+            .and_then(|message| message.get("content")),
+    ) {
+        return Ok(text);
+    }
+
+    if let Some(output) = payload.get("output") {
+        if let Some(text) = non_empty_json_text(
+            output
+                .get("choices")
+                .and_then(Value::as_array)
+                .and_then(|choices| choices.first())
+                .and_then(|choice| choice.get("message"))
+                .and_then(|message| message.get("content")),
+        ) {
+            return Ok(text);
+        }
+
+        if let Some(items) = output.as_array() {
+            for item in items {
+                if let Some(text) = non_empty_json_text(item.get("text")) {
+                    return Ok(text);
+                }
+                if let Some(parts) = item.get("content").and_then(Value::as_array) {
+                    for part in parts {
+                        if let Some(text) = non_empty_json_text(part.get("text")) {
+                            return Ok(text);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Err("API 返回内容为空".to_string())
+}
+
+fn resolve_responses_endpoint(base_url: &str) -> Result<String, String> {
+    let normalized = base_url.trim();
+    if normalized.is_empty() {
+        return Err("请填写 Base URL".to_string());
+    }
+    let mut url = reqwest::Url::parse(normalized)
+        .map_err(|error| format!("Base URL 无效: {error}"))?;
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err("Base URL 仅支持 HTTP(S)".to_string());
+    }
+    let base_path = url.path().trim_end_matches('/');
+    let endpoint_path = if base_path.ends_with("/responses") {
+        base_path.to_string()
+    } else if base_path.is_empty() {
+        "/v1/responses".to_string()
+    } else {
+        format!("{base_path}/responses")
+    };
+    url.set_path(&endpoint_path);
+    Ok(url.to_string())
+}
+
+fn text_api_error(status: reqwest::StatusCode, raw_response: &str) -> String {
+    let summary = if status.is_server_error() {
+        "服务器内部错误，请稍后重试"
+    } else if status.as_u16() == 401 {
+        "API 密钥无效或已过期"
+    } else if status.as_u16() == 403 {
+        "API 访问被拒绝，请检查密钥权限"
+    } else if status.as_u16() == 429 {
+        "请求过于频繁，请稍后重试"
+    } else {
+        "请求参数有误"
+    };
+    format!("API 调用失败 [{}]: {} | 错误详情: {}", status, summary, raw_response)
+}
+
+#[tauri::command]
+pub async fn generate_text(request: GenerateTextRequest) -> Result<String, String> {
+    info!(
+        "Generating text with model: {}, base_url: {}, reference_images: {}",
+        request.model,
+        request.base_url,
+        request.reference_images.as_ref().map_or(0, Vec::len)
+    );
+
+    let client = reqwest::Client::new();
+    let use_responses_api =
+        request.base_url.contains("/api/v3") && !request.base_url.contains("/coding");
+    let response = if use_responses_api {
+        let endpoint = resolve_responses_endpoint(&request.base_url)?;
+        let body = build_generate_text_responses_request(&request)?;
+        client
+            .post(endpoint)
+            .bearer_auth(&request.api_key)
+            .json(&body)
+            .send()
+            .await
+    } else {
+        let endpoint = resolve_chat_completions_endpoint(&request.base_url)?;
+        let body = build_generate_text_chat_request(&request)?;
+        client
+            .post(endpoint)
+            .bearer_auth(&request.api_key)
+            .json(&body)
+            .send()
+            .await
+    }
+    .map_err(|error| format!("网络请求失败，请检查网络连接: {error}"))?;
+
+    let status = response.status();
+    let raw_response = response.text().await.unwrap_or_default();
+    if !status.is_success() {
+        return Err(text_api_error(status, &raw_response));
+    }
+    let payload = serde_json::from_str::<Value>(&raw_response)
+        .map_err(|error| format!("响应格式解析失败: {error}"))?;
+    extract_generated_text(&payload)
 }
 
 // 构建视频元信息前缀提示词（仅包含必须由用户选择的固定参数）
