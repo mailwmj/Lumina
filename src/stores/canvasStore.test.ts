@@ -130,6 +130,11 @@ describe('canvas store image reference cleanup', () => {
       });
     expect(useCanvasStore.getState().history.past).toHaveLength(1);
 
+    // React Flow can report an already-removed edge after a node removal path;
+    // that acknowledgement must not create a second, no-op undo checkpoint.
+    useCanvasStore.getState().onEdgesChange([{ id: 'red-edge', type: 'remove' }]);
+    expect(useCanvasStore.getState().history.past).toHaveLength(1);
+
     expect(useCanvasStore.getState().undo()).toBe(true);
     expect(useCanvasStore.getState().edges.map((edge) => edge.id)).toEqual([
       'red-edge',

@@ -811,11 +811,21 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       const nextEdges = applyEdgeChanges<CanvasEdge>(changes, state.edges);
       const removedEdgeIds = changes
         .filter((change): change is EdgeChange<CanvasEdge> & { id: string } =>
-          change.type === 'remove' && typeof change.id === 'string'
+          change.type === 'remove'
+          && typeof change.id === 'string'
+          && state.edges.some((edge) => edge.id === change.id)
         )
         .map((change) => change.id);
       const nextNodes = pruneImageReferencePromptTokensForEdges(state.nodes, removedEdgeIds);
-      const hasMeaningfulChange = changes.some((change) => change.type !== 'select');
+      const hasMeaningfulChange = changes.some((change) => {
+        if (change.type === 'select') {
+          return false;
+        }
+        if (change.type === 'add') {
+          return true;
+        }
+        return state.edges.some((edge) => edge.id === change.id);
+      });
 
       if (!hasMeaningfulChange) {
         return { nodes: nextNodes, edges: nextEdges };

@@ -373,6 +373,9 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
       return;
     }
 
+    // Freeze both prompt labels and image transport order before any async work.
+    // A tag resolves by edge id here, so reordering changes its visible ordinal
+    // without ever making it point at a different image.
     const referenceImageSnapshot = workflowInputs.imageInputs.flatMap((input) => input.imageUrl
       ? [{ edgeId: input.edgeId, imageUrl: input.imageUrl, previewImageUrl: input.previewImageUrl }]
       : []
