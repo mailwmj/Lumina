@@ -59,9 +59,6 @@ function readEditorNode(node: Node): string {
   if (edgeId) {
     return `{{image-ref:${edgeId}}}`;
   }
-  if (element.dataset.imageReferenceCaretAnchor) {
-    return (element.textContent ?? '').replace(/\u200B/g, '');
-  }
   if (element.tagName === 'BR') {
     return '\n';
   }
@@ -130,17 +127,37 @@ function setSelectionOffset(
   const range = document.createRange();
 
   if (affinity) {
-    const anchor = root.querySelector<HTMLElement>(
-      `[data-image-reference-caret-anchor="${affinity}"][data-image-reference-cursor-offset="${offset}"]`
-    );
-    const anchorText = anchor?.firstChild;
-    if (anchorText?.nodeType === Node.TEXT_NODE) {
-      range.setStart(anchorText, anchorText.textContent?.length ?? 0);
-      range.collapse(true);
-      const selection = window.getSelection();
-      selection?.removeAllRanges();
-      selection?.addRange(range);
-      return;
+    let referenceOffset = 0;
+    for (const child of Array.from(root.childNodes)) {
+      const childLength = readEditorNode(child).length;
+      const isReference = child.nodeType === Node.ELEMENT_NODE
+        && Boolean((child as HTMLElement).dataset.imageReferenceEdgeId);
+      const matchesAffinity = isReference && (
+        affinity === 'before'
+          ? referenceOffset === offset
+          : referenceOffset + childLength === offset
+      );
+      if (matchesAffinity) {
+        const anchorText = affinity === 'before' ? child.previousSibling : child.nextSibling;
+        if (anchorText?.nodeType === Node.TEXT_NODE) {
+          const text = anchorText.textContent ?? '';
+          const anchorCharacterOffset = text.indexOf(CARET_ANCHOR_CHARACTER);
+          range.setStart(
+            anchorText,
+            affinity === 'before'
+              ? text.length
+              : anchorCharacterOffset === -1
+                ? 0
+                : anchorCharacterOffset + CARET_ANCHOR_CHARACTER.length
+          );
+          range.collapse(true);
+          const selection = window.getSelection();
+          selection?.removeAllRanges();
+          selection?.addRange(range);
+          return;
+        }
+      }
+      referenceOffset += childLength;
     }
   }
 
@@ -284,19 +301,9 @@ export function ImageReferencePromptInput({
     const fragment = document.createDocumentFragment();
     const tokens = findImageReferencePromptTokens(nextValue);
     let lastIndex = 0;
-    const createCaretAnchor = (
-      offset: number,
-      affinity: ReferenceCaretAffinity
-    ): HTMLSpanElement => {
-      const anchor = document.createElement('span');
-      anchor.contentEditable = 'true';
-      anchor.dataset.imageReferenceCaretAnchor = affinity;
-      anchor.dataset.imageReferenceCursorOffset = String(offset);
-      anchor.setAttribute('aria-hidden', 'true');
-      anchor.className = 'inline-block w-px align-baseline caret-text-dark';
-      anchor.textContent = CARET_ANCHOR_CHARACTER;
-      return anchor;
-    };
+    // This must remain a text node. A fixed-width editable element receives
+    // keystrokes itself, which makes the typed characters wrap one per line.
+    const createCaretAnchor = () => document.createTextNode(CARET_ANCHOR_CHARACTER);
 
     for (const token of tokens) {
       if (token.start > lastIndex) {
@@ -330,9 +337,9 @@ export function ImageReferencePromptInput({
         text.className = 'truncate';
         text.textContent = label;
         chip.append(text);
-        fragment.append(createCaretAnchor(token.start, 'before'));
+        fragment.append(createCaretAnchor());
         fragment.append(chip);
-        fragment.append(createCaretAnchor(token.end, 'after'));
+        fragment.append(createCaretAnchor());
       }
       lastIndex = token.end;
     }

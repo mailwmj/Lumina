@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Plus, FolderOpen, Pencil, Trash2, AlertTriangle } from '@/components/ui/icons';
 import { useProjectStore } from '@/stores/projectStore';
+import { recordProjectOpenClick } from '@/features/app/projectOpenPaneClickGuard';
 import { UI_CONTENT_OVERLAY_INSET_CLASS } from '@/components/ui/motion';
 import { UiButton, UiModal, UiSelect, UiTooltip } from '@/components/ui';
 import { RenameDialog } from './RenameDialog';
@@ -167,7 +168,10 @@ export function ProjectManager() {
             {sortedProjects.map((project) => (
               <div
                 key={project.id}
-                onClick={() => openProject(project.id)}
+                onClick={(event) => {
+                  recordProjectOpenClick(event);
+                  openProject(project.id);
+                }}
                 className="group cursor-pointer rounded-lg border border-[var(--ui-border-soft)] bg-surface-dark p-4 transition-[border-color,background-color,box-shadow] hover:border-accent/35 hover:bg-[var(--ui-surface-elevated)] hover:shadow-[var(--ui-shadow-panel)]"
               >
                 <div className="flex items-start justify-between mb-2">

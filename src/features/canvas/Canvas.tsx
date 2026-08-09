@@ -59,6 +59,7 @@ import {
 } from '@/features/canvas/domain/nodeRegistry';
 import { convertAudioToMp3, convertVideoToMp4 } from '@/commands/media';
 import { embedStoryboardImageMetadata, autoSaveVideoToProject, autoSaveImageToProject } from '@/commands/image';
+import { shouldSuppressPaneClickAfterProjectOpen } from '@/features/app/projectOpenPaneClickGuard';
 import { nodeTypes } from './nodes';
 import { edgeTypes } from './edges';
 import { NodeSelectionMenu } from './NodeSelectionMenu';
@@ -1392,6 +1393,10 @@ export function Canvas() {
   }, []);
 
   const handlePaneClick = useCallback((event: ReactMouseEvent) => {
+    if (shouldSuppressPaneClickAfterProjectOpen(event)) {
+      return;
+    }
+
     if (suppressNextPaneClickRef.current) {
       suppressNextPaneClickRef.current = false;
       return;
