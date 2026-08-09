@@ -14,14 +14,9 @@ describe('text generation service', () => {
         reasoningEffort: 'high',
       },
       {
-        id: 'provider-a',
-        name: 'Provider A',
         apiKey: 'secret',
         baseUrl: 'https://gateway.example/v1',
         modelId: 'model-a',
-        modelCatalog: { models: [], refreshedAt: 0 },
-        selectedModelIds: ['model-a'],
-        enabled: false,
       }
     );
 

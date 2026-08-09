@@ -179,16 +179,19 @@ export async function discoverTextModels(
   return await invoke<DiscoveredImageModel[]>('discover_text_models', { request });
 }
 
+export function normalizeGeneratedTextResponse(result: unknown): string {
+  if (typeof result !== 'string' || !result.trim()) {
+    throw new Error('API 返回内容为空');
+  }
+  return result;
+}
+
 export async function generateText(request: GenerateTextRequest): Promise<string> {
   if (!isTauri()) {
     throw new Error('当前不是 Tauri 容器环境，请使用 `npm run tauri dev` 启动');
   }
   const result = await invoke<string>('generate_text', { request });
-  const normalized = typeof result === 'string' ? result.trim() : '';
-  if (!normalized) {
-    throw new Error('API 返回内容为空');
-  }
-  return normalized;
+  return normalizeGeneratedTextResponse(result);
 }
 
 export async function generateImage(request: GenerateRequest): Promise<string> {

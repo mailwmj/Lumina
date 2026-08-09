@@ -46,7 +46,10 @@ import {
   canNodeTypeBeManualConnectionSource,
   isCanvasConnectionValid,
 } from '@/features/canvas/application/canvasConnection';
+import { sortCanvasEdgesForDuplication } from '@/features/canvas/application/canvasDuplication';
 import {
+  getNodeSourceDataTypes,
+  getNodeTargetDataTypes,
   getConnectMenuNodeTypes,
   nodeHasSourceHandle,
   nodeHasTargetHandle,
@@ -190,20 +193,35 @@ function resolveClipboardImageFile(event: ClipboardEvent): File | null {
   return null;
 }
 
-function resolveAllowedNodeTypes(handleType: HandleType, sourceType?: CanvasNodeType): CanvasNodeType[] {
+function resolveAllowedNodeTypes(handleType: HandleType, fixedNodeType?: CanvasNodeType): CanvasNodeType[] {
+  const filterCompatibleTypes = (candidateTypes: CanvasNodeType[]): CanvasNodeType[] => {
+    if (!fixedNodeType) {
+      return candidateTypes;
+    }
+    const fixedTypes = handleType === 'source'
+      ? getNodeSourceDataTypes(fixedNodeType)
+      : getNodeTargetDataTypes(fixedNodeType);
+    return candidateTypes.filter((candidateType) => {
+      const candidateTypesForDirection = handleType === 'source'
+        ? getNodeTargetDataTypes(candidateType)
+        : getNodeSourceDataTypes(candidateType);
+      return fixedTypes.some((valueType) => candidateTypesForDirection.includes(valueType));
+    });
+  };
+
   // videoUpload and audioUpload can only connect to sd2VideoGen
-  if (sourceType === CANVAS_NODE_TYPES.videoUpload || sourceType === CANVAS_NODE_TYPES.audioUpload) {
+  if (fixedNodeType === CANVAS_NODE_TYPES.videoUpload || fixedNodeType === CANVAS_NODE_TYPES.audioUpload) {
     return [CANVAS_NODE_TYPES.sd2VideoGen];
   }
   // upload can connect to both existing targets AND sd2VideoGen
-  if (sourceType === CANVAS_NODE_TYPES.upload) {
+  if (fixedNodeType === CANVAS_NODE_TYPES.upload) {
     const baseTypes = getConnectMenuNodeTypes(handleType);
     if (!baseTypes.includes(CANVAS_NODE_TYPES.sd2VideoGen)) {
-      return [...baseTypes, CANVAS_NODE_TYPES.sd2VideoGen];
+      return filterCompatibleTypes([...baseTypes, CANVAS_NODE_TYPES.sd2VideoGen]);
     }
-    return baseTypes;
+    return filterCompatibleTypes(baseTypes);
   }
-  return getConnectMenuNodeTypes(handleType);
+  return filterCompatibleTypes(getConnectMenuNodeTypes(handleType));
 }
 
 function getClientPosition(event: MouseEvent | TouchEvent): { x: number; y: number } | null {
@@ -1447,9 +1465,9 @@ export function Canvas() {
       }
 
       const sourceIdSet = new Set(sourceNodes.map((node) => node.id));
-      const internalEdges = edges.filter(
+      const internalEdges = sortCanvasEdgesForDuplication(edges.filter(
         (edge) => sourceIdSet.has(edge.source) && sourceIdSet.has(edge.target)
-      );
+      ));
 
       const baseOffsets = [
         { x: 44, y: 30 },
@@ -1862,12 +1880,9 @@ export function Canvas() {
       const dropNodeId = dropNodeElement?.dataset?.id ?? null;
 
       // Find the source node type for filtering allowed target types
-      const sourceNodeForFilter =
-        pendingConnectStart.handleType === 'source'
-          ? nodes.find((node) => node.id === pendingConnectStart.nodeId)
-          : dropNodeId
-            ? nodes.find((node) => node.id === dropNodeId)
-            : null;
+      const fixedNodeForFilter = nodes.find(
+        (node) => node.id === pendingConnectStart.nodeId
+      );
 
       if (dropNodeId && dropNodeId !== pendingConnectStart.nodeId) {
         const sourceNode =
@@ -1916,7 +1931,7 @@ export function Canvas() {
 
       const allowedTypes = resolveAllowedNodeTypes(
         pendingConnectStart.handleType,
-        sourceNodeForFilter?.type
+        fixedNodeForFilter?.type
       );
       if (allowedTypes.length === 0) {
         setPendingConnectStart(null);

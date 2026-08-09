@@ -69,10 +69,13 @@ export function TextModelSelector({
 
   const selectedLabel = resolved
     ? `${resolved.apiName} / ${resolved.modelId}`
-    : t('node.textModel.unavailable', { modelId: textModelId || '' });
+    : t('node.textModel.unavailable', {
+      apiId: textApiId || '—',
+      modelId: textModelId || '—',
+    });
 
   return (
-    <div className={`flex min-w-0 shrink-0 items-center gap-1 ${className}`}>
+    <div className={`flex min-w-0 flex-1 items-center gap-1 ${className}`}>
       <select
         aria-label={t('node.textModel.select')}
         title={selectedLabel}
@@ -86,7 +89,7 @@ export function TextModelSelector({
             onChange({ textApiId: option.apiId, textModelId: option.modelId });
           }
         }}
-        className={`nodrag nowheel max-w-[160px] shrink-0 border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] font-mono text-text-dark ${NODE_CONTROL_CHIP_CLASS}`}
+        className={`nodrag nowheel min-w-0 flex-1 border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] font-mono text-text-dark ${NODE_CONTROL_CHIP_CLASS}`}
       >
         {hasUnavailableSelection && (
           <option value={requestedValue} disabled>
@@ -95,9 +98,7 @@ export function TextModelSelector({
         )}
         {options.map((option) => (
           <option key={optionValue(option.apiId, option.modelId)} value={optionValue(option.apiId, option.modelId)}>
-            {options.filter((candidate) => candidate.modelId === option.modelId).length > 1
-              ? `${option.apiName} / ${option.modelId}`
-              : option.modelId}
+            {`${option.apiName} / ${option.modelId}`}
           </option>
         ))}
       </select>

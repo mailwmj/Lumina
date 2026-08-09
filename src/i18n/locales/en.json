@@ -150,6 +150,7 @@
       "aiImageGeneration": "AI Image",
       "storyboard": "Storyboard Node",
       "storyboardGen": "Storyboard Generation",
+      "textGeneration": "Text Node",
       "textAnnotation": "Text Annotation",
       "videoFrame": "Video (First-Last Frame)",
       "videoSingle": "Video (Single Image)",
@@ -160,7 +161,7 @@
     "textModel": {
       "select": "Select text model",
       "configure": "Configure text models",
-      "unavailable": "Model unavailable: {{modelId}}",
+      "unavailable": "Model unavailable: {{apiId}} / {{modelId}}",
       "required": "Select an available text model for this node first",
       "reasoningEffort": "Reasoning effort",
       "reasoningDefault": "Default",
@@ -226,6 +227,23 @@
     "textAnnotation": {
       "placeholder": "Write Markdown text. It will render when unselected.",
       "empty": "Empty note"
+    },
+    "textGeneration": {
+      "upstreamContext": "Upstream context",
+      "disconnectInput": "Disconnect input",
+      "localInput": "User input",
+      "inputPlaceholder": "Enter text for the model to process",
+      "generatedResult": "Generated result",
+      "clearResult": "Clear generated result",
+      "generate": "Generate",
+      "stop": "Stop",
+      "generating": "Generating",
+      "inputRequired": "Enter text or connect an image",
+      "imageUnavailable": "An upstream image is missing or unreadable",
+      "imageUnavailableSources": "Upstream image “{{names}}” is missing or unreadable",
+      "emptyResponse": "The model returned empty content; the previous result was kept",
+      "generationFailed": "Text generation failed",
+      "errorDetails": "Generation error details"
     },
     "videoGen": {
       "title": "Video Node",

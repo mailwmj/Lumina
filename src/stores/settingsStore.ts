@@ -36,6 +36,11 @@ export interface ImageModelSelection {
   modelId: string;
 }
 
+export interface TextGenerationModelSelection {
+  apiId: string;
+  modelId: string;
+}
+
 export interface ImageProviderApiConfig {
   apiKey: string;
   baseUrl: string;
@@ -355,10 +360,14 @@ interface SettingsState {
   videoApis: VideoApiConfig[];
   activeVideoApiId: string | null;
   lastImageModelSelection: ImageModelSelection | null;
+  lastTextGenerationModelSelection: TextGenerationModelSelection | null;
   setOpenAiImageApi: (config: OpenAiImageApiConfig) => void;
   setChaomoImageApi: (config: ChaomoImageApiConfig) => void;
   setCustomImageApis: (configs: CustomImageApiConfig[]) => void;
   setLastImageModelSelection: (selection: ImageModelSelection | null) => void;
+  setLastTextGenerationModelSelection: (
+    selection: TextGenerationModelSelection | null
+  ) => void;
   setDownloadPresetPaths: (paths: string[]) => void;
   setUseUploadFilenameAsNodeTitle: (enabled: boolean) => void;
   setStoryboardGenKeepStyleConsistent: (enabled: boolean) => void;
@@ -553,6 +562,18 @@ function normalizeImageModelSelection(input: unknown): ImageModelSelection | nul
   return { providerId, modelId };
 }
 
+function normalizeTextGenerationModelSelection(
+  input: unknown
+): TextGenerationModelSelection | null {
+  if (!input || typeof input !== 'object') {
+    return null;
+  }
+  const record = input as Record<string, unknown>;
+  const apiId = typeof record.apiId === 'string' ? record.apiId.trim() : '';
+  const modelId = typeof record.modelId === 'string' ? record.modelId.trim() : '';
+  return apiId && modelId ? { apiId, modelId } : null;
+}
+
 function normalizeCanvasEdgeRoutingMode(
   input: CanvasEdgeRoutingMode | string | null | undefined
 ): CanvasEdgeRoutingMode {
@@ -655,6 +676,10 @@ export const useSettingsStore = create<SettingsState>()(
       lastImageModelSelection: null,
       setLastImageModelSelection: (selection) =>
         set({ lastImageModelSelection: normalizeImageModelSelection(selection) }),
+      lastTextGenerationModelSelection: null,
+      setLastTextGenerationModelSelection: (selection) => set({
+        lastTextGenerationModelSelection: normalizeTextGenerationModelSelection(selection),
+      }),
       setVideoApis: (apis) => {
         logger.debug(`[settingsStore] setVideoApis called with: ${JSON.stringify(apis?.map(a => a.modelId))}`);
         set({ videoApis: apis });
@@ -663,7 +688,7 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: 'settings-storage',
-      version: 23,
+      version: 24,
       onRehydrateStorage: () => {
         return (_state, error) => {
           if (error) {
@@ -685,6 +710,7 @@ export const useSettingsStore = create<SettingsState>()(
           videoApis?: VideoApiConfig[];
           activeVideoApiId?: string | null;
           lastImageModelSelection?: ImageModelSelection | null;
+          lastTextGenerationModelSelection?: TextGenerationModelSelection | null;
           accentColor?: unknown;
         };
         const {
@@ -721,6 +747,9 @@ export const useSettingsStore = create<SettingsState>()(
           videoApis: mergeVideoApis(state.videoApis),
           activeVideoApiId: state.activeVideoApiId ?? null,
           lastImageModelSelection: normalizeImageModelSelection(state.lastImageModelSelection),
+          lastTextGenerationModelSelection: normalizeTextGenerationModelSelection(
+            state.lastTextGenerationModelSelection
+          ),
         };
       },
     }

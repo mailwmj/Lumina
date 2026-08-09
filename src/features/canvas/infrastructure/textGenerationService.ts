@@ -4,14 +4,10 @@ import {
   generateText as invokeGenerateText,
   type GenerateTextRequest,
 } from '@/commands/ai';
-import type { TextReasoningEffort } from '@/features/canvas/models/types';
-import type { TextApiConfig } from '@/stores/settingsStore';
-
-export interface TextGenerationPayload {
-  text: string;
-  referenceImages?: string[];
-  reasoningEffort?: TextReasoningEffort;
-}
+import type {
+  GenerateTextPayload,
+  TextProviderRuntimeConfig,
+} from '@/features/canvas/application/ports';
 
 type LocalImageConverter = (source: string) => Promise<string>;
 
@@ -81,8 +77,8 @@ export async function normalizeTextGenerationReferenceImages(
 }
 
 export function createGenerateTextRequest(
-  payload: TextGenerationPayload,
-  apiConfig: TextApiConfig
+  payload: GenerateTextPayload,
+  apiConfig: TextProviderRuntimeConfig
 ): GenerateTextRequest {
   return {
     text: payload.text,
@@ -95,8 +91,8 @@ export function createGenerateTextRequest(
 }
 
 export async function generateText(
-  payload: TextGenerationPayload,
-  apiConfig: TextApiConfig
+  payload: GenerateTextPayload,
+  apiConfig: TextProviderRuntimeConfig
 ): Promise<string> {
   if (!apiConfig.apiKey.trim()) {
     throw new Error('请先配置 API 密钥');

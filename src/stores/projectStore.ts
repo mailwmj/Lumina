@@ -2,6 +2,7 @@ import { logger } from '@/lib/logger';
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
 import type { Viewport } from '@xyflow/react';
+import { CANVAS_NODE_TYPES } from '@/features/canvas/domain/canvasNodes';
 import {
   useCanvasStore,
   type CanvasEdge,
@@ -168,6 +169,32 @@ function mapHistoryImageReferences(
   };
 }
 
+export function sanitizeProjectNodesForPersistence(nodes: CanvasNode[]): CanvasNode[] {
+  return nodes.map((node) => {
+    if (node.type !== CANVAS_NODE_TYPES.textGeneration) {
+      return node;
+    }
+    const data = { ...node.data } as Record<string, unknown>;
+    delete data.isGenerating;
+    delete data.generationError;
+    delete data.generationErrorDetails;
+    return { ...node, data: data as CanvasNodeData };
+  });
+}
+
+function sanitizeProjectHistoryForPersistence(history: CanvasHistoryState): CanvasHistoryState {
+  return {
+    past: history.past.map((snapshot) => ({
+      ...snapshot,
+      nodes: sanitizeProjectNodesForPersistence(snapshot.nodes),
+    })),
+    future: history.future.map((snapshot) => ({
+      ...snapshot,
+      nodes: sanitizeProjectNodesForPersistence(snapshot.nodes),
+    })),
+  };
+}
+
 function trimHistoryForPersistence(history: CanvasHistoryState): CanvasHistoryState {
   return {
     past: history.past.slice(-MAX_PERSISTED_HISTORY_STEPS),
@@ -183,8 +210,11 @@ function encodeProject(project: Project): PersistedProject {
 
   return {
     ...project,
-    nodes: mapNodeImageReferences(project.nodes, encode),
-    history: mapHistoryImageReferences(project.history, encode),
+    nodes: mapNodeImageReferences(sanitizeProjectNodesForPersistence(project.nodes), encode),
+    history: mapHistoryImageReferences(
+      sanitizeProjectHistoryForPersistence(project.history),
+      encode
+    ),
     imagePool,
   };
 }

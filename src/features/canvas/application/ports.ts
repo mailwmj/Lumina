@@ -9,6 +9,7 @@ import type {
   StoryboardFrameItem,
 } from '../domain/canvasNodes';
 import type { CanvasNodeDefinition } from '../domain/nodeRegistry';
+import type { TextReasoningEffort } from '../models/types';
 
 export interface IdGenerator {
   next: () => string;
@@ -72,6 +73,25 @@ export interface AiGateway {
     seed?: number | null;
     external_task_id?: string | null;
   }>;
+}
+
+export interface GenerateTextPayload {
+  text: string;
+  referenceImages?: string[];
+  reasoningEffort?: TextReasoningEffort;
+}
+
+export interface TextProviderRuntimeConfig {
+  apiKey: string;
+  baseUrl: string;
+  modelId: string;
+}
+
+export interface TextGenerationGateway {
+  generate: (
+    payload: GenerateTextPayload,
+    provider: TextProviderRuntimeConfig
+  ) => Promise<string>;
 }
 
 export interface ImageSplitGateway {

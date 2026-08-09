@@ -14,12 +14,14 @@ import { resolveNodeDisplayName } from '../domain/nodeDisplay';
 import { getNodeSourceDataTypes } from '../domain/nodeRegistry';
 
 export interface ResolvedTextInput {
+  edgeId: string;
   nodeId: string;
   displayName: string;
   text: string;
 }
 
 export interface ResolvedImageInput {
+  edgeId: string;
   nodeId: string;
   displayName: string;
   imageUrl: string | null;
@@ -40,6 +42,13 @@ interface TextGenerationDataLike {
 }
 
 function nonEmptyText(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  return value.trim().length > 0 ? value : null;
+}
+
+function nonEmptyTrimmedValue(value: unknown): string | null {
   if (typeof value !== 'string') {
     return null;
   }
@@ -112,18 +121,18 @@ function resolveNodeText(
 function extractImageSource(node: CanvasNode): Pick<ResolvedImageInput, 'imageUrl' | 'previewImageUrl'> {
   if (isUploadNode(node) || isImageEditNode(node) || isExportImageNode(node) || isStoryboardGenNode(node)) {
     return {
-      imageUrl: nonEmptyText(node.data.imageUrl),
-      previewImageUrl: nonEmptyText(node.data.previewImageUrl),
+      imageUrl: nonEmptyTrimmedValue(node.data.imageUrl),
+      previewImageUrl: nonEmptyTrimmedValue(node.data.previewImageUrl),
     };
   }
 
   if (isStoryboardSplitNode(node)) {
     const firstFrame = [...node.data.frames]
       .sort((left, right) => left.order - right.order)
-      .find((frame) => nonEmptyText(frame.imageUrl));
+      .find((frame) => nonEmptyTrimmedValue(frame.imageUrl));
     return {
-      imageUrl: firstFrame ? nonEmptyText(firstFrame.imageUrl) : null,
-      previewImageUrl: firstFrame ? nonEmptyText(firstFrame.previewImageUrl) : null,
+      imageUrl: firstFrame ? nonEmptyTrimmedValue(firstFrame.imageUrl) : null,
+      previewImageUrl: firstFrame ? nonEmptyTrimmedValue(firstFrame.previewImageUrl) : null,
     };
   }
 
@@ -160,10 +169,8 @@ export function resolveTextGenerationInputs(
       return [];
     }
     const text = resolveNodeText(sourceNode, nodesById, edges, new Set([nodeId]));
-    if (!text) {
-      return [];
-    }
     return [{
+      edgeId: edge.id,
       nodeId: sourceNode.id,
       displayName: resolveNodeDisplayName(sourceNode.type, sourceNode.data),
       text,
@@ -176,6 +183,7 @@ export function resolveTextGenerationInputs(
       return [];
     }
     return [{
+      edgeId: edge.id,
       nodeId: sourceNode.id,
       displayName: resolveNodeDisplayName(sourceNode.type, sourceNode.data),
       ...extractImageSource(sourceNode),
@@ -186,7 +194,7 @@ export function resolveTextGenerationInputs(
     ? nonEmptyText(targetNode.data.inputText)
     : null;
   const effectivePrompt = [
-    ...textInputs.map((input) => input.text),
+    ...textInputs.map((input) => input.text).filter(Boolean),
     ...(localInput ? [localInput] : []),
   ].join('\n\n');
 
@@ -197,4 +205,18 @@ export function resolveTextGenerationInputs(
     referenceImages: imageInputs.flatMap((input) => input.imageUrl ? [input.imageUrl] : []),
     blockingImageNodeIds: imageInputs.flatMap((input) => input.imageUrl ? [] : [input.nodeId]),
   };
+}
+
+export function resolveEffectivePromptForNode(
+  nodeId: string,
+  localInput: string,
+  nodes: CanvasNode[],
+  edges: CanvasEdge[]
+): string {
+  const { textInputs } = resolveTextGenerationInputs(nodeId, nodes, edges);
+  const normalizedLocalInput = nonEmptyText(localInput);
+  return [
+    ...textInputs.map((input) => input.text).filter(Boolean),
+    ...(normalizedLocalInput ? [normalizedLocalInput] : []),
+  ].join('\n\n');
 }

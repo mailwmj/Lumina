@@ -556,14 +556,57 @@ mod text_api_endpoint_tests {
     }
 
     #[test]
+    fn image_only_text_generation_omits_an_empty_text_part() {
+        let request = GenerateTextRequest {
+            text: "   ".to_string(),
+            model: "vision-model".to_string(),
+            api_key: "secret".to_string(),
+            base_url: "https://gateway.example/v1".to_string(),
+            reference_images: Some(vec!["data:image/png;base64,AAAA".to_string()]),
+            reasoning_effort: None,
+        };
+
+        let body = serde_json::to_value(build_generate_text_chat_request(&request).unwrap()).unwrap();
+        let content = body
+            .get("messages")
+            .and_then(Value::as_array)
+            .and_then(|messages| messages.first())
+            .and_then(|message| message.get("content"))
+            .and_then(Value::as_array)
+            .unwrap();
+
+        assert_eq!(content.len(), 1);
+        assert_eq!(content[0].get("type").and_then(Value::as_str), Some("image_url"));
+    }
+
+    #[test]
     fn extracts_text_from_chat_and_responses_api_payloads() {
         let chat = serde_json::json!({"choices": [{"message": {"content": " chat result "}}]});
         let responses = serde_json::json!({
             "output": [{"content": [{"type": "output_text", "text": " response result "}]}]
         });
 
-        assert_eq!(extract_generated_text(&chat).unwrap(), "chat result");
-        assert_eq!(extract_generated_text(&responses).unwrap(), "response result");
+        assert_eq!(extract_generated_text(&chat).unwrap(), " chat result ");
+        assert_eq!(extract_generated_text(&responses).unwrap(), " response result ");
+    }
+
+    #[test]
+    fn concatenates_all_responses_output_text_parts_and_ignores_reasoning() {
+        let responses = serde_json::json!({
+            "output": [
+                {"type": "reasoning", "text": "hidden chain of thought"},
+                {
+                    "type": "message",
+                    "content": [
+                        {"type": "output_text", "text": "first "},
+                        {"type": "output_text", "text": "second"},
+                        {"type": "refusal", "text": "not result text"}
+                    ]
+                }
+            ]
+        });
+
+        assert_eq!(extract_generated_text(&responses).unwrap(), "first second");
     }
 }
 
@@ -1302,11 +1345,13 @@ fn build_generate_text_chat_request(request: &GenerateTextRequest) -> Result<Cha
                 }),
             })
             .collect::<Vec<_>>();
-        parts.push(ContentPart {
-            part_type: "text".to_string(),
-            text: Some(request.text.clone()),
-            image_url: None,
-        });
+        if !request.text.trim().is_empty() {
+            parts.push(ContentPart {
+                part_type: "text".to_string(),
+                text: Some(request.text.clone()),
+                image_url: None,
+            });
+        }
         ChatContent::Array(parts)
     };
 
@@ -1335,11 +1380,13 @@ fn build_generate_text_responses_request(
             text: None,
         });
     }
-    content.push(ResponsesInputContent {
-        part_type: "input_text".to_string(),
-        image_url: None,
-        text: Some(request.text.clone()),
-    });
+    if !request.text.trim().is_empty() {
+        content.push(ResponsesInputContent {
+            part_type: "input_text".to_string(),
+            image_url: None,
+            text: Some(request.text.clone()),
+        });
+    }
 
     Ok(ResponsesRequest {
         model: request.model.clone(),
@@ -1355,11 +1402,8 @@ fn build_generate_text_responses_request(
 }
 
 fn non_empty_json_text(value: Option<&Value>) -> Option<String> {
-    value
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|text| !text.is_empty())
-        .map(str::to_string)
+    let text = value.and_then(Value::as_str)?;
+    (!text.trim().is_empty()).then(|| text.to_string())
 }
 
 fn extract_generated_text(payload: &Value) -> Result<String, String> {
@@ -1390,17 +1434,28 @@ fn extract_generated_text(payload: &Value) -> Result<String, String> {
         }
 
         if let Some(items) = output.as_array() {
+            let mut text_parts = Vec::new();
             for item in items {
-                if let Some(text) = non_empty_json_text(item.get("text")) {
-                    return Ok(text);
+                let item_type = item.get("type").and_then(Value::as_str);
+                if matches!(item_type, None | Some("output_text")) {
+                    if let Some(text) = non_empty_json_text(item.get("text")) {
+                        text_parts.push(text);
+                        continue;
+                    }
                 }
                 if let Some(parts) = item.get("content").and_then(Value::as_array) {
                     for part in parts {
-                        if let Some(text) = non_empty_json_text(part.get("text")) {
-                            return Ok(text);
+                        let part_type = part.get("type").and_then(Value::as_str);
+                        if matches!(part_type, None | Some("output_text")) {
+                            if let Some(text) = non_empty_json_text(part.get("text")) {
+                                text_parts.push(text);
+                            }
                         }
                     }
                 }
+            }
+            if !text_parts.is_empty() {
+                return Ok(text_parts.concat());
             }
         }
     }

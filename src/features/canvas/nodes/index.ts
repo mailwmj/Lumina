@@ -9,6 +9,7 @@ import { VideoUploadNode } from './SD2VideoUploadNode';
 import { StoryboardGenNode } from './StoryboardGenNode';
 import { StoryboardNode } from './StoryboardNode';
 import { TextAnnotationNode } from './TextAnnotationNode';
+import { TextGenerationNode } from './TextGenerationNode';
 import { UploadNode } from './UploadNode';
 import { VideoGenNode } from './VideoGenNode';
 import { VideoResultNode } from './VideoResultNode';
@@ -26,9 +27,10 @@ export const nodeTypes: NodeTypes = {
   storyboardGenNode: StoryboardGenNode,
   storyboardNode: StoryboardNode,
   textAnnotationNode: TextAnnotationNode,
+  textGenerationNode: TextGenerationNode,
   uploadNode: UploadNode,
   videoFrameNode: VideoGenNode,
   videoSingleNode: VideoGenNode,
 };
 
-export { AudioUploadNode, GroupNode, ImageEditNode, ImageNode, SD2VideoGenNode, StoryboardGenNode, StoryboardNode, TextAnnotationNode, UploadNode, VideoGenNode, VideoResultNode, VideoUploadNode };
+export { AudioUploadNode, GroupNode, ImageEditNode, ImageNode, SD2VideoGenNode, StoryboardGenNode, StoryboardNode, TextAnnotationNode, TextGenerationNode, UploadNode, VideoGenNode, VideoResultNode, VideoUploadNode };

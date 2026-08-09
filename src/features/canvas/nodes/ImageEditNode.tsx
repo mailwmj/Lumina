@@ -28,8 +28,11 @@ import { NodeResizeHandle } from '@/features/canvas/ui/NodeResizeHandle';
 import { resolveNodeSurfaceStateClass } from '@/features/canvas/ui/nodeSurfaceStyles';
 import {
   canvasAiGateway,
-  graphImageResolver,
 } from '@/features/canvas/application/canvasServices';
+import {
+  resolveEffectivePromptForNode,
+  resolveTextGenerationInputs,
+} from '@/features/canvas/application/textGenerationInputs';
 import { showErrorDialog } from '@/features/canvas/application/errorDialog';
 import {
   detectAspectRatio,
@@ -85,6 +88,7 @@ import {
   resolvePickerAnchor,
   type PickerAnchor,
 } from '@/features/canvas/ui/imageEditPromptOverlay';
+import { TextGenerationUpstreamContext } from './TextGenerationUpstreamContext';
 
 type ImageEditNodeProps = NodeProps & {
   id: string;
@@ -142,6 +146,8 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
   const edges = useCanvasStore((state) => state.edges);
   const setSelectedNode = useCanvasStore((state) => state.setSelectedNode);
   const updateNodeData = useCanvasStore((state) => state.updateNodeData);
+  const deleteEdge = useCanvasStore((state) => state.deleteEdge);
+  const reorderNodeInput = useCanvasStore((state) => state.reorderNodeInput);
   const addNodeBatch = useCanvasStore((state) => state.addNodeBatch);
   const findNodePosition = useCanvasStore((state) => state.findNodePosition);
   const addEdge = useCanvasStore((state) => state.addEdge);
@@ -158,10 +164,11 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
     [textApis]
   );
 
-  const incomingImages = useMemo(
-    () => graphImageResolver.collectInputImages(id, nodes, edges),
+  const workflowInputs = useMemo(
+    () => resolveTextGenerationInputs(id, nodes, edges),
     [id, nodes, edges]
   );
+  const incomingImages = workflowInputs.referenceImages;
 
   const incomingImageItems = useMemo(
     () =>
@@ -396,7 +403,21 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
       return;
     }
 
-    const prompt = promptDraft.replace(/@(?=图\d+)/g, '').trim();
+    if (workflowInputs.blockingImageNodeIds.length > 0) {
+      const unavailableNames = workflowInputs.imageInputs
+        .filter((input) => !input.imageUrl)
+        .map((input) => input.displayName)
+        .join(', ');
+      const errorMessage = unavailableNames
+        ? t('node.textGeneration.imageUnavailableSources', { names: unavailableNames })
+        : t('node.textGeneration.imageUnavailable');
+      setError(errorMessage);
+      void showErrorDialog(errorMessage, t('common.error'));
+      return;
+    }
+
+    const localPrompt = promptDraft.replace(/@(?=图\d+)/g, '').trim();
+    const prompt = resolveEffectivePromptForNode(id, localPrompt, nodes, edges);
     if (!prompt) {
       const errorMessage = t('node.imageEdit.promptRequired');
       setError(errorMessage);
@@ -589,6 +610,8 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
     hasConfiguredModel,
     id,
     incomingImages,
+    edges,
+    nodes,
     outputCount,
     requestResolution.requestModel,
     selectedAspectRatio.value,
@@ -598,6 +621,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
     selectedResolution.value,
     t,
     updateNodeData,
+    workflowInputs.blockingImageNodeIds.length,
   ]);
 
   const syncPromptHighlightScroll = () => {
@@ -711,6 +735,19 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
       style={{ width: `${resolvedWidth}px`, height: `${resolvedHeight}px` }}
       onClick={() => setSelectedNode(id)}
     >
+      <TextGenerationUpstreamContext
+        textInputs={workflowInputs.textInputs}
+        imageInputs={workflowInputs.imageInputs}
+        maxHeight={Math.min(110, Math.round(resolvedHeight * 0.25))}
+        onLocate={(nodeId) => {
+          setSelectedNode(nodeId);
+          void fitView({ nodes: [{ id: nodeId }], padding: 0.65, duration: 240 });
+        }}
+        onDisconnect={deleteEdge}
+        onReorder={(kind, draggedSourceId, targetSourceId) => {
+          reorderNodeInput(id, kind, draggedSourceId, targetSourceId);
+        }}
+      />
       <div className="relative min-h-0 flex-1 rounded-lg border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] p-2">
         <div className="relative h-full min-h-0">
           <div

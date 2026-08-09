@@ -150,6 +150,7 @@
       "aiImageGeneration": "AI 图片",
       "storyboard": "分镜节点",
       "storyboardGen": "分镜生成",
+      "textGeneration": "文本节点",
       "textAnnotation": "文本注释",
       "videoFrame": "视频生成（首尾帧）",
       "videoSingle": "视频生成（单图）",
@@ -160,7 +161,7 @@
     "textModel": {
       "select": "选择文本模型",
       "configure": "配置文本模型",
-      "unavailable": "模型不可用：{{modelId}}",
+      "unavailable": "模型不可用：{{apiId}} / {{modelId}}",
       "required": "请先为当前节点选择一个可用的文本模型",
       "reasoningEffort": "思考等级",
       "reasoningDefault": "默认",
@@ -226,6 +227,23 @@
     "textAnnotation": {
       "placeholder": "输入 Markdown 文本，取消选中后会渲染预览",
       "empty": "空注释"
+    },
+    "textGeneration": {
+      "upstreamContext": "上游上下文",
+      "disconnectInput": "断开输入",
+      "localInput": "用户输入",
+      "inputPlaceholder": "输入需要模型处理的文本",
+      "generatedResult": "生成结果",
+      "clearResult": "清除生成结果",
+      "generate": "生成",
+      "stop": "停止",
+      "generating": "生成中",
+      "inputRequired": "请输入文本或连接图片",
+      "imageUnavailable": "上游图片缺失或无法读取",
+      "imageUnavailableSources": "上游图片「{{names}}」缺失或无法读取",
+      "emptyResponse": "模型返回了空内容，已保留原结果",
+      "generationFailed": "文本生成失败",
+      "errorDetails": "生成错误详情"
     },
     "videoGen": {
       "title": "视频节点",

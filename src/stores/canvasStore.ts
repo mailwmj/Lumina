@@ -37,7 +37,12 @@ import {
 import { EXPORT_RESULT_DISPLAY_NAME } from '@/features/canvas/domain/nodeDisplay';
 import { nodeCatalog } from '@/features/canvas/application/nodeCatalog';
 import { canvasNodeFactory } from '@/features/canvas/application/canvasServices';
-import { inferCanvasConnectionValueType } from '@/features/canvas/application/canvasConnection';
+import {
+  inferCanvasConnectionValueType,
+  isCanvasProgrammaticConnectionValid,
+  isCanvasStoredConnectionValid,
+} from '@/features/canvas/application/canvasConnection';
+import { resolveTextModelSelection } from '@/features/canvas/application/textModelSelection';
 import { resolveConfiguredImageModel } from '@/features/canvas/models';
 import { useSettingsStore } from '@/stores/settingsStore';
 import {
@@ -68,15 +73,39 @@ export interface CanvasHistoryState {
 
 const MAX_HISTORY_STEPS = 50;
 const IMAGE_NODE_VISUAL_MIN_EDGE = 96;
+const COALESCED_EDIT_WINDOW_MS = 700;
+let activeCoalescedEdit: { key: string; expiresAt: number } | null = null;
 
-function applyImageModelDefault(
+function clearCoalescedEdit(): void {
+  activeCoalescedEdit = null;
+}
+
+function applyNodeModelDefaults(
   type: CanvasNodeType,
   data: Partial<CanvasNodeData>
 ): Partial<CanvasNodeData> {
-  if (
-    (type !== CANVAS_NODE_TYPES.imageEdit && type !== CANVAS_NODE_TYPES.storyboardGen) ||
-    typeof (data as { model?: unknown }).model === 'string'
-  ) {
+  if (type === CANVAS_NODE_TYPES.textGeneration) {
+    const selectionData = data as { textApiId?: unknown; textModelId?: unknown };
+    if (typeof selectionData.textApiId === 'string' || typeof selectionData.textModelId === 'string') {
+      return data;
+    }
+    const settings = useSettingsStore.getState();
+    const lastSelection = settings.lastTextGenerationModelSelection;
+    if (lastSelection) {
+      return {
+        ...data,
+        textApiId: lastSelection.apiId,
+        textModelId: lastSelection.modelId,
+      };
+    }
+    const resolved = resolveTextModelSelection(settings.textApis);
+    return resolved
+      ? { ...data, textApiId: resolved.apiId, textModelId: resolved.modelId }
+      : data;
+  }
+
+  if ((type !== CANVAS_NODE_TYPES.imageEdit && type !== CANVAS_NODE_TYPES.storyboardGen)
+    || typeof (data as { model?: unknown }).model === 'string') {
     return data;
   }
 
@@ -152,6 +181,11 @@ interface CanvasState {
   ) => string | null;
 
   updateNodeData: (nodeId: string, data: Partial<CanvasNodeData>) => void;
+  updateNodeDataCoalesced: (
+    nodeId: string,
+    data: Partial<CanvasNodeData>,
+    historyGroup: string
+  ) => void;
   updateNodePosition: (nodeId: string, position: { x: number; y: number }) => void;
   updateStoryboardFrame: (
     nodeId: string,
@@ -206,7 +240,7 @@ function normalizeEdgesWithNodes(rawEdges: CanvasEdge[], nodes: CanvasNode[]): C
   const nodeMap = new Map(nodes.map((node) => [node.id, node] as const));
   const nextOrderByTargetAndType = new Map<string, number>();
 
-  return rawEdges
+  const normalizedEdges = rawEdges
     .filter((edge) => {
       const sourceNode = nodeMap.get(edge.source);
       const targetNode = nodeMap.get(edge.target);
@@ -238,6 +272,12 @@ function normalizeEdgesWithNodes(rawEdges: CanvasEdge[], nodes: CanvasNode[]): C
         data: valueType ? { ...edge.data, valueType, inputOrder } : edge.data,
       };
     });
+
+  return normalizedEdges.reduce<CanvasEdge[]>((accepted, edge) => {
+    return isCanvasStoredConnectionValid(edge, nodes, accepted)
+      ? [...accepted, edge]
+      : accepted;
+  }, []);
 }
 
 function createInputEdgeData(
@@ -557,8 +597,12 @@ function resolveAbsolutePosition(
 
 function pushSnapshot(
   snapshots: CanvasHistorySnapshot[],
-  snapshot: CanvasHistorySnapshot
+  snapshot: CanvasHistorySnapshot,
+  preserveCoalescedEdit = false
 ): CanvasHistorySnapshot[] {
+  if (!preserveCoalescedEdit) {
+    clearCoalescedEdit();
+  }
   const last = snapshots[snapshots.length - 1];
   if (last && last.nodes === snapshot.nodes && last.edges === snapshot.edges) {
     return snapshots;
@@ -746,6 +790,9 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     });
 
     set((state) => {
+      if (!isCanvasProgrammaticConnectionValid(connection, state.nodes, state.edges)) {
+        return state;
+      }
       // 限制首尾帧节点（videoFrame）的每个 targetHandle 只能连接一条边
       let newEdges = state.edges;
 
@@ -801,6 +848,9 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         if (!connection.source || !connection.target) {
           continue;
         }
+        if (!isCanvasProgrammaticConnectionValid(connection, state.nodes, nextEdges)) {
+          continue;
+        }
 
         const sourceHandle = normalizeHandleId(connection.sourceHandle) ?? 'source';
         const targetHandle = normalizeHandleId(connection.targetHandle) ?? 'target';
@@ -842,6 +892,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   },
 
   setCanvasData: (nodes, edges, history) => {
+    clearCoalescedEdit();
     const normalizedNodes = normalizeNodes(nodes);
     const normalizedEdges = normalizeEdgesWithNodes(edges, normalizedNodes);
 
@@ -916,7 +967,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     const newNode = canvasNodeFactory.createNode(
       type,
       position,
-      applyImageModelDefault(type, data)
+      applyNodeModelDefaults(type, data)
     );
     set({
       nodes: [...state.nodes, newNode],
@@ -938,7 +989,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       canvasNodeFactory.createNode(
         type,
         position,
-        applyImageModelDefault(type, data)
+        applyNodeModelDefaults(type, data)
       )
     );
     set({
@@ -961,6 +1012,16 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       return null;
     }
     if (!nodeHasSourceHandle(sourceNode.type) || !nodeHasTargetHandle(targetNode.type)) {
+      return null;
+    }
+
+    const connection: Connection = {
+      source,
+      target,
+      sourceHandle: 'source',
+      targetHandle: 'target',
+    };
+    if (!isCanvasProgrammaticConnectionValid(connection, state.nodes, state.edges)) {
       return null;
     }
 
@@ -1013,6 +1074,16 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       }
 
       if (!nodeHasSourceHandle(sourceNode.type) || !nodeHasTargetHandle(targetNode.type)) {
+        continue;
+      }
+
+      const connection: Connection = {
+        source: sourceId,
+        target: targetId,
+        sourceHandle: 'source',
+        targetHandle: 'target',
+      };
+      if (!isCanvasProgrammaticConnectionValid(connection, get().nodes, get().edges)) {
         continue;
       }
 
@@ -1455,6 +1526,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   },
 
   updateNodeData: (nodeId, data) => {
+    clearCoalescedEdit();
     set((state) => {
       let changed = false;
       const nextNodes = state.nodes.map((node) => {
@@ -1497,6 +1569,54 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
           future: [],
         },
         dragHistorySnapshot: null,
+      };
+    });
+  },
+
+  updateNodeDataCoalesced: (nodeId, data, historyGroup) => {
+    const editKey = `${nodeId}:${historyGroup}`;
+    const now = Date.now();
+    const shouldRecordHistory = activeCoalescedEdit?.key !== editKey
+      || activeCoalescedEdit.expiresAt <= now;
+    activeCoalescedEdit = {
+      key: editKey,
+      expiresAt: now + COALESCED_EDIT_WINDOW_MS,
+    };
+
+    set((state) => {
+      let changed = false;
+      const nextNodes = state.nodes.map((node) => {
+        if (node.id !== nodeId) {
+          return node;
+        }
+        const hasDataChange = Object.entries(data).some(([key, nextValue]) =>
+          !Object.is((node.data as Record<string, unknown>)[key], nextValue)
+        );
+        if (!hasDataChange) {
+          return node;
+        }
+        changed = true;
+        return {
+          ...node,
+          data: { ...node.data, ...data } as CanvasNodeData,
+        };
+      });
+      if (!changed) {
+        return {};
+      }
+      return {
+        nodes: nextNodes,
+        ...(shouldRecordHistory ? {
+          history: {
+            past: pushSnapshot(
+              state.history.past,
+              createSnapshot(state.nodes, state.edges),
+              true
+            ),
+            future: [],
+          },
+          dragHistorySnapshot: null,
+        } : {}),
       };
     });
   },
@@ -1940,6 +2060,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   },
 
   undo: () => {
+    clearCoalescedEdit();
     const state = get();
     const target = state.history.past[state.history.past.length - 1];
     if (!target) {
@@ -1964,6 +2085,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   },
 
   redo: () => {
+    clearCoalescedEdit();
     const state = get();
     const target = state.history.future[state.history.future.length - 1];
     if (!target) {
