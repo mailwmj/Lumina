@@ -604,6 +604,7 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
     (state) => state.showStoryboardGenAdvancedRatioControls
   );
   const textApis = useSettingsStore((state) => state.textApis);
+  const textPolishReasoningEffort = useSettingsStore((state) => state.textPolishReasoningEffort);
   const imagePolishPrompt = useSettingsStore((state) => state.imagePolishPrompt);
 
   const [error, setError] = useState<string | null>(null);
@@ -1085,7 +1086,7 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
       const result = await polishText({
         text: frameDescription,
         customPrompt: imagePolishPrompt,
-        reasoningEffort: selectedTextModel.apiConfig.reasoningEffort,
+        reasoningEffort: textPolishReasoningEffort ?? undefined,
       }, selectedTextModel.apiConfig);
       const newFrames = nodeData.frames.map((f, i) =>
         i === frameIndex ? { ...f, description: result.polished } : f
@@ -1101,7 +1102,7 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
     } finally {
       setPolishingFrameIndex(null);
     }
-  }, [imagePolishPrompt, nodeData.frames, selectedTextModel, t, updateNodeData, id]);
+  }, [imagePolishPrompt, nodeData.frames, selectedTextModel, t, textPolishReasoningEffort, updateNodeData, id]);
 
   const handleGenerate = useCallback(async (previewGridOnly = false) => {
     if (!nodeData) {

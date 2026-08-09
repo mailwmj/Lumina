@@ -10,7 +10,6 @@ import {
   type TextApiConfig,
   type VideoApiConfig,
   DEFAULT_VIDEO_SD10_POLISH_PROMPT,
-  DEFAULT_VIDEO_SD15_PROMPT,
 } from '@/stores/settingsStore';
 import { UiSelect, UiTooltip } from '@/components/ui';
 import { UI_CONTENT_OVERLAY_INSET_CLASS, UI_DIALOG_TRANSITION_MS } from '@/components/ui/motion';
@@ -22,6 +21,7 @@ import { ImageApisSettings } from '@/features/settings/ImageApisSettings';
 import { LoggingSettings } from '@/features/settings/LoggingSettings';
 import { SettingsCheckboxCard } from '@/features/settings/SettingsCheckboxCard';
 import { TextApisSettings } from '@/features/settings/TextApisSettings';
+import { PromptPolishSettings } from '@/features/settings/PromptPolishSettings';
 
 interface SettingsDialogProps {
   isOpen: boolean;
@@ -62,6 +62,8 @@ export function SettingsDialog({
     setCanvasEdgeRoutingMode,
     textApis,
     setTextApis,
+    textPolishReasoningEffort,
+    setTextPolishReasoningEffort,
     imagePolishPrompt,
     setImagePolishPrompt,
     videoApis,
@@ -96,6 +98,9 @@ export function SettingsDialog({
   const [localAccentColor, setLocalAccentColor] = useState(accentColor);
   const [localCanvasEdgeRoutingMode, setLocalCanvasEdgeRoutingMode] = useState(canvasEdgeRoutingMode);
   const [localTextApis, setLocalTextApis] = useState<TextApiConfig[]>(textApis);
+  const [localTextPolishReasoningEffort, setLocalTextPolishReasoningEffort] = useState(
+    textPolishReasoningEffort
+  );
   const [localImagePolishPrompt, setLocalImagePolishPrompt] = useState<string>(imagePolishPrompt);
   const [localVideoApis, setLocalVideoApis] = useState<VideoApiConfig[]>(videoApis);
   const { shouldRender, isVisible } = useDialogTransition(isOpen, UI_DIALOG_TRANSITION_MS);
@@ -117,6 +122,7 @@ export function SettingsDialog({
     setLocalAccentColor(accentColor);
     setLocalCanvasEdgeRoutingMode(canvasEdgeRoutingMode);
     setLocalTextApis(textApis);
+    setLocalTextPolishReasoningEffort(textPolishReasoningEffort);
     setLocalImagePolishPrompt(imagePolishPrompt);
     setLocalVideoApis(videoApis);
     setLocalDownloadPathInput('');
@@ -135,6 +141,7 @@ export function SettingsDialog({
     accentColor,
     canvasEdgeRoutingMode,
     textApis,
+    textPolishReasoningEffort,
     imagePolishPrompt,
     videoApis,
   ]);
@@ -161,6 +168,7 @@ export function SettingsDialog({
     setAccentColor(localAccentColor);
     setCanvasEdgeRoutingMode(localCanvasEdgeRoutingMode);
     setTextApis(localTextApis);
+    setTextPolishReasoningEffort(localTextPolishReasoningEffort);
     setImagePolishPrompt(localImagePolishPrompt);
     setVideoApis(localVideoApis);
     onClose();
@@ -178,6 +186,7 @@ export function SettingsDialog({
     localAccentColor,
     localCanvasEdgeRoutingMode,
     localTextApis,
+    localTextPolishReasoningEffort,
     localImagePolishPrompt,
     localVideoApis,
     setOpenAiImageApi,
@@ -193,6 +202,8 @@ export function SettingsDialog({
     setAccentColor,
     setCanvasEdgeRoutingMode,
     setTextApis,
+    setTextPolishReasoningEffort,
+    setImagePolishPrompt,
     setVideoApis,
     onClose,
   ]);
@@ -296,6 +307,13 @@ export function SettingsDialog({
               </button>
 
               <button
+                onClick={() => setActiveCategory('promptPolish')}
+                className={categoryButtonClass('promptPolish')}
+              >
+                <span className="text-sm">{t('settings.promptPolish')}</span>
+              </button>
+
+              <button
                 onClick={() => setActiveCategory('appearance')}
                 className={categoryButtonClass('appearance')}
               >
@@ -343,11 +361,9 @@ export function SettingsDialog({
                     openAiImageApi={localOpenAiImageApi}
                     chaomoImageApi={localChaomoImageApi}
                     customImageApis={localCustomImageApis}
-                    imagePolishPrompt={localImagePolishPrompt}
                     onOpenAiImageApiChange={setLocalOpenAiImageApi}
                     onChaomoImageApiChange={setLocalChaomoImageApi}
                     onCustomImageApisChange={setLocalCustomImageApis}
-                    onImagePolishPromptChange={setLocalImagePolishPrompt}
                   />
                 </div>
 
@@ -620,6 +636,41 @@ export function SettingsDialog({
               </>
             )}
 
+            {activeCategory === 'promptPolish' && (
+              <>
+                <div className="border-b border-[var(--ui-border-soft)] px-6 py-4">
+                  <h2 className="text-base font-semibold text-text-dark">
+                    {t('settings.promptPolish')}
+                  </h2>
+                  <p className="mt-1 text-sm text-text-muted">
+                    {t('settings.promptPolishDesc')}
+                  </p>
+                </div>
+
+                <div className="ui-scrollbar flex-1 overflow-y-auto px-6 py-2">
+                  <PromptPolishSettings
+                    textApis={localTextApis}
+                    reasoningEffort={localTextPolishReasoningEffort}
+                    imagePrompt={localImagePolishPrompt}
+                    videoApis={localVideoApis}
+                    onTextApisChange={setLocalTextApis}
+                    onReasoningEffortChange={setLocalTextPolishReasoningEffort}
+                    onImagePromptChange={setLocalImagePolishPrompt}
+                    onVideoApisChange={setLocalVideoApis}
+                  />
+                </div>
+
+                <div className="flex justify-end border-t border-border-dark px-6 py-4">
+                  <button
+                    onClick={handleSave}
+                    className="rounded bg-accent px-4 py-2 text-sm font-medium text-[var(--accent-foreground)] transition-colors hover:bg-accent/85"
+                  >
+                    {t('common.save')}
+                  </button>
+                </div>
+              </>
+            )}
+
             {activeCategory === 'videoApis' && (
               <>
                 <div className="px-6 py-5 border-b border-border-dark">
@@ -726,49 +777,6 @@ export function SettingsDialog({
                                 setLocalVideoApis(updated);
                               }}
                               className="w-full rounded border border-border-dark bg-surface-dark px-3 py-2 text-sm text-text-dark"
-                            />
-                          </div>
-
-                          <div>
-                            <div className="mb-1 flex items-center justify-between">
-                              <label className="text-xs font-medium text-text-dark">
-                                提示词润色模板
-                              </label>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const api = localVideoApis[index];
-                                  // 根据 modelId 判断使用哪个默认模板
-                                  const modelId = api.modelId || '';
-                                  let defaultTemplate = DEFAULT_VIDEO_SD10_POLISH_PROMPT;
-                                  if (modelId.includes('1-5-pro')) {
-                                    defaultTemplate = DEFAULT_VIDEO_SD15_PROMPT;
-                                  }
-                                  const updated = [...localVideoApis];
-                                  updated[index] = {
-                                    ...updated[index],
-                                    polishPrompt: api.defaultPolishPrompt || defaultTemplate,
-                                  };
-                                  setLocalVideoApis(updated);
-                                }}
-                                className="text-xs text-accent hover:underline"
-                              >
-                                恢复默认
-                              </button>
-                            </div>
-                            <textarea
-                              value={api.polishPrompt ?? ''}
-                              onChange={(e) => {
-                                const updated = [...localVideoApis];
-                                updated[index] = {
-                                  ...updated[index],
-                                  polishPrompt: e.target.value,
-                                };
-                                setLocalVideoApis(updated);
-                              }}
-                              rows={6}
-                              placeholder="设置该模型的提示词润色模板，留空则使用默认模板。"
-                              className="w-full rounded border border-border-dark bg-surface-dark px-3 py-2 text-sm text-text-dark resize-none"
                             />
                           </div>
                         </div>

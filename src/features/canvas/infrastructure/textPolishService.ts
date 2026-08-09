@@ -233,7 +233,7 @@ export async function testTextApi(
         base_url: apiConfig.baseUrl,
         reference_images: null,
         custom_prompt: null,
-        reasoning_effort: apiConfig.reasoningEffort ?? null,
+        reasoning_effort: null,
       },
     });
 

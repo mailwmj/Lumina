@@ -294,6 +294,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
   const findNodePosition = useCanvasStore((state) => state.findNodePosition);
   const videoApis = useSettingsStore((state) => state.videoApis);
   const textApis = useSettingsStore((state) => state.textApis);
+  const textPolishReasoningEffort = useSettingsStore((state) => state.textPolishReasoningEffort);
   const selectedTextModel = useMemo(
     () => resolveEnabledTextModelSelection(textApis),
     [textApis]
@@ -590,7 +591,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
         isVideoFrame: isVideoFrame,
         customPrompt: effectivePolishPrompt,
         promptType: 'video',
-        reasoningEffort: selectedTextModel.apiConfig.reasoningEffort,
+        reasoningEffort: textPolishReasoningEffort ?? undefined,
       }, selectedTextModel.apiConfig);
       setPromptDraft(result.polished);
       updateNodeData(id, { prompt: result.polished });
@@ -614,7 +615,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
     } finally {
       setIsPolishing(false);
     }
-  }, [videoApis, promptDraft, incomingImages, isVideoFrame, maxImages, id, updateNodeData, data, selectedTextModel, t]);
+  }, [videoApis, promptDraft, incomingImages, isVideoFrame, maxImages, id, updateNodeData, data, selectedTextModel, t, textPolishReasoningEffort]);
 
   const handleGenerate = useCallback(async () => {
     logger.info('[VideoGen] handleGenerate called', { prompt: promptDraft, model: data.model, hasImages: incomingImages.length });

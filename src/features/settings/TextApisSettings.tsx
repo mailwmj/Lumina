@@ -6,10 +6,6 @@ import { UiCheckbox, UiTooltip } from '@/components/ui';
 import { Eye, EyeOff, Loader2, Plus, Trash2 } from '@/components/ui/icons';
 import { testTextApi } from '@/features/canvas/infrastructure/textPolishService';
 import {
-  TEXT_REASONING_EFFORTS,
-  type TextReasoningEffort,
-} from '@/features/canvas/models/types';
-import {
   createTextApiConfig,
   type DiscoveredImageModel,
   type ImageModelCatalog,
@@ -129,6 +125,9 @@ export function TextApisSettings({ apis, onChange }: TextApisSettingsProps) {
             .map((modelId) => ({ id: modelId })),
         ];
         const selectedModelIdSet = new Set(api.selectedModelIds);
+        const testModelId = selectedModelIdSet.has(api.modelId)
+          ? api.modelId
+          : api.selectedModelIds[0] ?? '';
         const isRevealed = revealedApiIds.has(api.id);
 
         return (
@@ -138,24 +137,8 @@ export function TextApisSettings({ apis, onChange }: TextApisSettingsProps) {
                 <h3 className="break-words text-sm font-medium text-text-dark">
                   {api.name || t('settings.textApiUntitled')}
                 </h3>
-                {api.enabled && (
-                  <span className="mt-1 inline-block text-xs text-accent">
-                    {t('settings.textApiActive')}
-                  </span>
-                )}
               </div>
-              <div className="flex shrink-0 items-center gap-3">
-                <label className="flex cursor-pointer items-center gap-1.5 text-xs text-text-muted">
-                  <UiCheckbox
-                    aria-label={t('settings.textApiEnabled')}
-                    checked={api.enabled}
-                    onCheckedChange={(enabled) => onChange(apis.map((candidate) => ({
-                      ...candidate,
-                      enabled: candidate.id === api.id ? enabled : false,
-                    })))}
-                  />
-                  {t('settings.textApiEnabled')}
-                </label>
+              <div className="flex shrink-0 items-center">
                 <UiTooltip content={t('settings.removeTextApi')}>
                   <button
                     type="button"
@@ -301,55 +284,12 @@ export function TextApisSettings({ apis, onChange }: TextApisSettingsProps) {
                 )}
               </div>
 
-              <label className="block">
-                <span className="mb-1 block text-xs font-medium text-text-dark">
-                  {t('settings.textApiDefaultModel')}
-                </span>
-                <select
-                  value={api.modelId}
-                  onChange={(event) => updateApi(api.id, { ...api, modelId: event.target.value })}
-                  disabled={api.selectedModelIds.length === 0}
-                  className="h-9 w-full rounded border border-border-dark bg-surface-dark px-3 text-sm text-text-dark disabled:opacity-50"
-                >
-                  {api.selectedModelIds.length === 0 && <option value="">-</option>}
-                  {api.selectedModelIds.map((modelId) => (
-                    <option key={modelId} value={modelId}>{modelId}</option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="block">
-                <span className="mb-1 block text-xs font-medium text-text-dark">
-                  {t('settings.textApiReasoningEffort')}
-                </span>
-                <select
-                  value={api.reasoningEffort ?? ''}
-                  onChange={(event) => updateApi(api.id, {
-                    ...api,
-                    reasoningEffort: event.target.value
-                      ? event.target.value as TextReasoningEffort
-                      : undefined,
-                  })}
-                  className="h-9 w-full rounded border border-border-dark bg-surface-dark px-3 text-sm text-text-dark"
-                >
-                  <option value="">{t('node.textModel.reasoningDefault')}</option>
-                  {TEXT_REASONING_EFFORTS.map((effort) => (
-                    <option key={effort} value={effort}>
-                      {t(`node.textModel.reasoning.${effort}`)}
-                    </option>
-                  ))}
-                </select>
-                <span className="mt-1 block text-xs text-text-muted">
-                  {t('settings.textApiReasoningEffortDesc')}
-                </span>
-              </label>
-
               <button
                 type="button"
                 onClick={async () => {
                   setTestingApiId(api.id);
                   try {
-                    const result = await testTextApi(api);
+                    const result = await testTextApi({ ...api, modelId: testModelId });
                     window.alert(t('settings.textApiTestSucceeded', { message: result.message }));
                   } catch (error) {
                     window.alert(t('settings.textApiTestFailed', {
@@ -359,7 +299,7 @@ export function TextApisSettings({ apis, onChange }: TextApisSettingsProps) {
                     setTestingApiId(null);
                   }
                 }}
-                disabled={testingApiId === api.id || !api.apiKey || !api.baseUrl || !api.modelId}
+                disabled={testingApiId === api.id || !api.apiKey || !api.baseUrl || !testModelId}
                 className="inline-flex h-8 items-center justify-center rounded border border-border-dark bg-surface-dark px-3 text-xs text-text-dark transition-colors hover:bg-bg-dark disabled:opacity-50"
               >
                 {testingApiId === api.id && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}

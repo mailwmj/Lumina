@@ -5,6 +5,7 @@ export type SettingsCategory =
   | 'experimental'
   | 'logging'
   | 'textApis'
+  | 'promptPolish'
   | 'videoApis';
 
 interface OpenSettingsEventDetail {

@@ -95,7 +95,6 @@ export interface TextApiConfig {
   modelId: string;
   modelCatalog: ImageModelCatalog | null;
   selectedModelIds: string[];
-  reasoningEffort?: TextReasoningEffort;
   enabled: boolean;
 }
 
@@ -108,7 +107,6 @@ export function createTextApiConfig(): TextApiConfig {
     modelId: '',
     modelCatalog: null,
     selectedModelIds: [],
-    reasoningEffort: undefined,
     enabled: false,
   };
 }
@@ -352,6 +350,7 @@ interface SettingsState {
   enableUpdateDialog: boolean;
   textApis: TextApiConfig[];
   activeTextApiId: string | null;
+  textPolishReasoningEffort: TextReasoningEffort | null;
   imagePolishPrompt: string;
   videoApis: VideoApiConfig[];
   activeVideoApiId: string | null;
@@ -376,6 +375,7 @@ interface SettingsState {
   setEnableUpdateDialog: (enabled: boolean) => void;
   setTextApis: (apis: TextApiConfig[]) => void;
   setActiveTextApiId: (id: string | null) => void;
+  setTextPolishReasoningEffort: (effort: TextReasoningEffort | null) => void;
   setImagePolishPrompt: (prompt: string) => void;
   setVideoApis: (apis: VideoApiConfig[]) => void;
   setActiveVideoApiId: (id: string | null) => void;
@@ -445,11 +445,6 @@ export function normalizeTextApiConfigs(input: unknown): TextApiConfig[] {
         : []),
       ...(modelId ? [modelId] : []),
     ]));
-    const reasoningEffort = typeof record.reasoningEffort === 'string'
-      && TEXT_REASONING_EFFORTS.includes(record.reasoningEffort as TextReasoningEffort)
-      ? record.reasoningEffort as TextReasoningEffort
-      : undefined;
-
     return [{
       id,
       name: typeof record.name === 'string' ? record.name.trim() : '',
@@ -458,7 +453,6 @@ export function normalizeTextApiConfigs(input: unknown): TextApiConfig[] {
       modelId: modelId || selectedModelIds[0] || '',
       modelCatalog: normalizeImageModelCatalog(record.modelCatalog),
       selectedModelIds,
-      ...(reasoningEffort ? { reasoningEffort } : {}),
       enabled: record.enabled === true,
     }];
   });
@@ -650,6 +644,10 @@ export const useSettingsStore = create<SettingsState>()(
       activeTextApiId: null,
       setTextApis: (apis) => set({ textApis: normalizeTextApiConfigs(apis) }),
       setActiveTextApiId: (id) => set({ activeTextApiId: id }),
+      textPolishReasoningEffort: null,
+      setTextPolishReasoningEffort: (effort) => set({
+        textPolishReasoningEffort: effort && TEXT_REASONING_EFFORTS.includes(effort) ? effort : null,
+      }),
       imagePolishPrompt: DEFAULT_TEXT_API_PROMPT,
       setImagePolishPrompt: (prompt: string) => set({ imagePolishPrompt: prompt }),
       videoApis: PRESET_VIDEO_APIS,
@@ -665,7 +663,7 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: 'settings-storage',
-      version: 22,
+      version: 23,
       onRehydrateStorage: () => {
         return (_state, error) => {
           if (error) {
@@ -682,6 +680,7 @@ export const useSettingsStore = create<SettingsState>()(
           canvasEdgeRoutingMode?: CanvasEdgeRoutingMode | string;
           textApis?: TextApiConfig[];
           activeTextApiId?: string | null;
+          textPolishReasoningEffort?: TextReasoningEffort | null;
           imagePolishPrompt?: string;
           videoApis?: VideoApiConfig[];
           activeVideoApiId?: string | null;
@@ -714,6 +713,10 @@ export const useSettingsStore = create<SettingsState>()(
             : {}),
           textApis: normalizeTextApiConfigs(state.textApis),
           activeTextApiId: state.activeTextApiId ?? null,
+          textPolishReasoningEffort: state.textPolishReasoningEffort
+            && TEXT_REASONING_EFFORTS.includes(state.textPolishReasoningEffort)
+            ? state.textPolishReasoningEffort
+            : null,
           imagePolishPrompt: state.imagePolishPrompt ?? DEFAULT_TEXT_API_PROMPT,
           videoApis: mergeVideoApis(state.videoApis),
           activeVideoApiId: state.activeVideoApiId ?? null,

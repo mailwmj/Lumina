@@ -151,6 +151,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
   const lastImageModelSelection = useSettingsStore((state) => state.lastImageModelSelection);
   const setLastImageModelSelection = useSettingsStore((state) => state.setLastImageModelSelection);
   const textApis = useSettingsStore((state) => state.textApis);
+  const textPolishReasoningEffort = useSettingsStore((state) => state.textPolishReasoningEffort);
   const imagePolishPrompt = useSettingsStore((state) => state.imagePolishPrompt);
   const selectedTextModel = useMemo(
     () => resolveEnabledTextModelSelection(textApis),
@@ -376,7 +377,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
         text: prompt,
         customPrompt: imagePolishPrompt,
         promptType: 'image',
-        reasoningEffort: selectedTextModel.apiConfig.reasoningEffort,
+        reasoningEffort: textPolishReasoningEffort ?? undefined,
       }, selectedTextModel.apiConfig);
       setPromptDraft(result.polished);
     } catch (err) {
@@ -385,7 +386,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
     } finally {
       setIsPolishing(false);
     }
-  }, [imagePolishPrompt, promptDraft, selectedTextModel, t]);
+  }, [imagePolishPrompt, promptDraft, selectedTextModel, t, textPolishReasoningEffort]);
 
   const handleGenerate = useCallback(async () => {
     if (!hasConfiguredModel) {

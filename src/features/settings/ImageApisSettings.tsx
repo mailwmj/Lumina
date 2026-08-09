@@ -7,7 +7,6 @@ import { UiCheckbox, UiTooltip } from '@/components/ui';
 import { toConfiguredImageModelId } from '@/features/canvas/models';
 import {
   createCustomImageApiConfig,
-  DEFAULT_TEXT_API_PROMPT,
   isCustomImageProviderId,
   type ChaomoImageApiConfig,
   type CustomImageApiConfig,
@@ -21,11 +20,9 @@ interface ImageApisSettingsProps {
   openAiImageApi: OpenAiImageApiConfig;
   chaomoImageApi: ChaomoImageApiConfig;
   customImageApis: CustomImageApiConfig[];
-  imagePolishPrompt: string;
   onOpenAiImageApiChange: (config: OpenAiImageApiConfig) => void;
   onChaomoImageApiChange: (config: ChaomoImageApiConfig) => void;
   onCustomImageApisChange: (configs: CustomImageApiConfig[]) => void;
-  onImagePolishPromptChange: (prompt: string) => void;
 }
 
 interface DiscoveryState {
@@ -213,11 +210,9 @@ export function ImageApisSettings({
   openAiImageApi,
   chaomoImageApi,
   customImageApis,
-  imagePolishPrompt,
   onOpenAiImageApiChange,
   onChaomoImageApiChange,
   onCustomImageApisChange,
-  onImagePolishPromptChange,
 }: ImageApisSettingsProps) {
   const { t } = useTranslation();
   const [discoveryByProvider, setDiscoveryByProvider] = useState<Record<string, DiscoveryState>>({});
@@ -429,28 +424,6 @@ export function ImageApisSettings({
           )}
         />
       ))}
-
-      <section className="py-4">
-        <div className="mb-2 flex items-center justify-between gap-3">
-          <label className="text-sm font-medium text-text-dark">
-            {t('settings.imagePolishPromptTemplate')}
-          </label>
-          <button
-            type="button"
-            onClick={() => onImagePolishPromptChange(DEFAULT_TEXT_API_PROMPT)}
-            className="shrink-0 text-xs text-accent hover:underline"
-          >
-            {t('common.restoreDefault')}
-          </button>
-        </div>
-        <textarea
-          value={imagePolishPrompt}
-          onChange={(event) => onImagePolishPromptChange(event.target.value)}
-          rows={6}
-          placeholder={t('settings.imagePolishPromptPlaceholder')}
-          className="w-full resize-none rounded border border-border-dark bg-surface-dark px-3 py-2 text-sm text-text-dark"
-        />
-      </section>
     </>
   );
 }
