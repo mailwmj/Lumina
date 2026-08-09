@@ -20,13 +20,10 @@ import { useTranslation } from 'react-i18next';
 
 import {
   AUTO_REQUEST_ASPECT_RATIO,
-  CANVAS_NODE_TYPES,
   DEFAULT_IMAGE_OUTPUT_COUNT,
   type ImageEditNodeData,
   type ImageSize,
 } from '@/features/canvas/domain/canvasNodes';
-import { resolveNodeDisplayName } from '@/features/canvas/domain/nodeDisplay';
-import { NodeHeader, NODE_HEADER_FLOATING_POSITION_CLASS } from '@/features/canvas/ui/NodeHeader';
 import { NodeResizeHandle } from '@/features/canvas/ui/NodeResizeHandle';
 import { resolveNodeSurfaceStateClass } from '@/features/canvas/ui/nodeSurfaceStyles';
 import {
@@ -80,6 +77,7 @@ import { useProjectStore } from '@/stores/projectStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { polishText } from '@/features/canvas/infrastructure/textPolishService';
 import { resolveImageProviderRuntime } from '@/features/canvas/application/imageProviderRuntime';
+import { resolveEnabledTextModelSelection } from '@/features/canvas/application/textModelSelection';
 import { openSettingsDialog } from '@/features/settings/settingsEvents';
 import {
   PICKER_FALLBACK_ANCHOR,
@@ -149,10 +147,15 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
   const addEdge = useCanvasStore((state) => state.addEdge);
   const openAiImageApi = useSettingsStore((state) => state.openAiImageApi);
   const chaomoImageApi = useSettingsStore((state) => state.chaomoImageApi);
+  const customImageApis = useSettingsStore((state) => state.customImageApis);
   const lastImageModelSelection = useSettingsStore((state) => state.lastImageModelSelection);
   const setLastImageModelSelection = useSettingsStore((state) => state.setLastImageModelSelection);
   const textApis = useSettingsStore((state) => state.textApis);
   const imagePolishPrompt = useSettingsStore((state) => state.imagePolishPrompt);
+  const selectedTextModel = useMemo(
+    () => resolveEnabledTextModelSelection(textApis),
+    [textApis]
+  );
 
   const incomingImages = useMemo(
     () => graphImageResolver.collectInputImages(id, nodes, edges),
@@ -178,24 +181,29 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
       listConfiguredImageModels({
         openAiImageApi,
         chaomoImageApi,
+        customImageApis,
         lastImageModelSelection,
       }),
-    [chaomoImageApi, lastImageModelSelection, openAiImageApi]
+    [chaomoImageApi, customImageApis, lastImageModelSelection, openAiImageApi]
   );
 
   const configuredModel = useMemo(
     () =>
       resolveConfiguredImageModel(
-        { openAiImageApi, chaomoImageApi, lastImageModelSelection },
+        { openAiImageApi, chaomoImageApi, customImageApis, lastImageModelSelection },
         data.model
       ),
-    [chaomoImageApi, data.model, lastImageModelSelection, openAiImageApi]
+    [chaomoImageApi, customImageApis, data.model, lastImageModelSelection, openAiImageApi]
   );
   const hasConfiguredModel = configuredModel !== null;
   const selectedModel = configuredModel ?? UNCONFIGURED_IMAGE_MODEL;
   const providerRuntime = useMemo(
-    () => resolveImageProviderRuntime(selectedModel.providerId, { openAiImageApi, chaomoImageApi }),
-    [chaomoImageApi, openAiImageApi, selectedModel.providerId]
+    () => resolveImageProviderRuntime(selectedModel.providerId, {
+      openAiImageApi,
+      chaomoImageApi,
+      customImageApis,
+    }),
+    [chaomoImageApi, customImageApis, openAiImageApi, selectedModel.providerId]
   );
   const providerApiKey = providerRuntime.apiKey;
   const effectiveExtraParams = useMemo(
@@ -228,11 +236,6 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
   const requestResolution = selectedModel.resolveRequest({
     referenceImageCount: incomingImages.length,
   });
-
-  const resolvedTitle = useMemo(
-    () => resolveNodeDisplayName(CANVAS_NODE_TYPES.imageEdit, data),
-    [data]
-  );
 
   const resolvedWidth = Math.max(IMAGE_EDIT_NODE_MIN_WIDTH, Math.round(width ?? IMAGE_EDIT_NODE_DEFAULT_WIDTH));
   const resolvedHeight = Math.max(IMAGE_EDIT_NODE_MIN_HEIGHT, Math.round(height ?? IMAGE_EDIT_NODE_DEFAULT_HEIGHT));
@@ -358,9 +361,8 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
   }, []);
 
   const handlePolish = useCallback(async () => {
-    const enabledApi = textApis.find((api) => api.enabled);
-    if (!enabledApi) {
-      void showErrorDialog('请先在设置中启用一个文本API', '润色提示');
+    if (!selectedTextModel) {
+      void showErrorDialog(t('node.textModel.required'), t('settings.polishPrompt'));
       return;
     }
     const prompt = promptDraft.trim();
@@ -374,7 +376,8 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
         text: prompt,
         customPrompt: imagePolishPrompt,
         promptType: 'image',
-      }, enabledApi);
+        reasoningEffort: selectedTextModel.apiConfig.reasoningEffort,
+      }, selectedTextModel.apiConfig);
       setPromptDraft(result.polished);
     } catch (err) {
       const message = err instanceof Error ? err.message : '润色失败';
@@ -382,7 +385,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
     } finally {
       setIsPolishing(false);
     }
-  }, [textApis, imagePolishPrompt, promptDraft]);
+  }, [imagePolishPrompt, promptDraft, selectedTextModel, t]);
 
   const handleGenerate = useCallback(async () => {
     if (!hasConfiguredModel) {
@@ -495,7 +498,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
           }
         }
 
-        await canvasAiGateway.setApiKey(selectedModel.providerId, providerApiKey);
+        await canvasAiGateway.setApiKey(providerRuntime.backendProviderId, providerApiKey);
 
         const projectId = useProjectStore.getState().getCurrentProject()?.id;
         const submissionFailures: Array<ReturnType<typeof markNodeFailed>> = [];
@@ -707,14 +710,6 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
       style={{ width: `${resolvedWidth}px`, height: `${resolvedHeight}px` }}
       onClick={() => setSelectedNode(id)}
     >
-      <NodeHeader
-        className={NODE_HEADER_FLOATING_POSITION_CLASS}
-        icon={<Sparkles className="h-4 w-4" />}
-        titleText={resolvedTitle}
-        editable
-        onTitleChange={(nextTitle) => updateNodeData(id, { displayName: nextTitle })}
-      />
-
       <div className="relative min-h-0 flex-1 rounded-lg border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] p-2">
         <div className="relative h-full min-h-0">
           <div
@@ -826,7 +821,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
                 return;
               }
               updateNodeData(id, { model: modelId });
-              setLastImageModelSelection({ providerId: model.providerId as 'ai-media' | 'chaomo', modelId });
+              setLastImageModelSelection({ providerId: model.providerId, modelId });
             }}
             onResolutionChange={(resolution) => {
               updateNodeData(id, { size: resolution as ImageSize });
@@ -911,13 +906,11 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
         type="target"
         id="target"
         position={Position.Left}
-        className="!h-2 !w-2 !border-surface-dark !bg-[var(--edge)]"
       />
       <Handle
         type="source"
         id="source"
         position={Position.Right}
-        className="!h-2 !w-2 !border-surface-dark !bg-[var(--edge)]"
       />
       <NodeResizeHandle
         minWidth={IMAGE_EDIT_NODE_MIN_WIDTH}

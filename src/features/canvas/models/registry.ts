@@ -99,12 +99,15 @@ export function resolveImageModelResolution(
   );
 }
 
-export function getModelProvider(providerId: string): ModelProviderDefinition {
+export function getModelProvider(
+  providerId: string,
+  fallbackName?: string
+): ModelProviderDefinition {
   return (
     providerMap.get(providerId) ?? {
-      id: 'unknown',
-      name: 'Unknown Provider',
-      label: 'Unknown',
+      id: providerId,
+      name: fallbackName || providerId,
+      label: fallbackName || providerId,
     }
   );
 }

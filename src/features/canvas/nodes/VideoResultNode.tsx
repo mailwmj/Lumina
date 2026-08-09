@@ -15,8 +15,6 @@ import {
 import {
   resolveResizeMinConstraintsByAspect,
 } from '@/features/canvas/application/imageNodeSizing';
-import { resolveNodeDisplayName } from '@/features/canvas/domain/nodeDisplay';
-import { NodeHeader, NODE_HEADER_FLOATING_POSITION_CLASS } from '@/features/canvas/ui/NodeHeader';
 import { NodeResizeHandle } from '@/features/canvas/ui/NodeResizeHandle';
 import { resolveNodeSurfaceStateClass } from '@/features/canvas/ui/nodeSurfaceStyles';
 import { useCanvasStore } from '@/stores/canvasStore';
@@ -227,11 +225,6 @@ export const VideoResultNode = memo(({ id, data, selected, width, height }: Vide
   const resizeMinHeight = resizeConstraints.minHeight;
   const resolvedWidth = resolveNodeDimension(width, VIDEO_RESULT_NODE_DEFAULT_WIDTH);
   const resolvedHeight = resolveNodeDimension(height, VIDEO_RESULT_NODE_DEFAULT_HEIGHT);
-  const resolvedTitle = useMemo(
-    () => resolveNodeDisplayName(CANVAS_NODE_TYPES.exportVideo, data),
-    [data]
-  );
-
   useEffect(() => {
     updateNodeInternals(id);
   }, [id, updateNodeInternals, resolvedWidth, resolvedHeight]);
@@ -294,15 +287,6 @@ export const VideoResultNode = memo(({ id, data, selected, width, height }: Vide
       style={{ width: `${resolvedWidth}px`, height: `${resolvedHeight}px` }}
       onClick={() => setSelectedNode(id)}
     >
-      <NodeHeader
-        className={NODE_HEADER_FLOATING_POSITION_CLASS}
-        icon={<Video className="h-4 w-4" />}
-        titleText={resolvedTitle}
-        titleClassName="inline-block max-w-[220px] truncate whitespace-nowrap align-bottom"
-        editable
-        onTitleChange={(nextTitle) => updateNodeData(id, { displayName: nextTitle })}
-      />
-
       {/* Details toggle button - positioned at top right of video area */}
       {hasGenerationInfo && data.videoUrl && !isGenerating && (
         <button
@@ -512,13 +496,11 @@ export const VideoResultNode = memo(({ id, data, selected, width, height }: Vide
         type="target"
         id="target"
         position={Position.Left}
-        className="!h-2 !w-2 !border-surface-dark !bg-[var(--edge)]"
       />
       <Handle
         type="source"
         id="source"
         position={Position.Right}
-        className="!h-2 !w-2 !border-surface-dark !bg-[var(--edge)]"
       />
       <NodeResizeHandle
         minWidth={resizeMinWidth}

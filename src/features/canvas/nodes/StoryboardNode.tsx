@@ -14,7 +14,7 @@ import {
   useViewport,
   type NodeProps,
 } from '@xyflow/react';
-import { Download, FolderOpen, ImagePlus, Scissors, SlidersHorizontal, SquareArrowOutUpRight } from '@/components/ui/icons';
+import { Download, FolderOpen, ImagePlus, SlidersHorizontal, SquareArrowOutUpRight } from '@/components/ui/icons';
 import { open } from '@tauri-apps/plugin-dialog';
 import { openPath, revealItemInDir } from '@tauri-apps/plugin-opener';
 import { join } from '@tauri-apps/api/path';
@@ -26,7 +26,6 @@ import {
   saveImageSourceToDirectory,
   type MergeStoryboardImagesResult,
 } from '@/commands/image';
-import { NodeHeader, NODE_HEADER_FLOATING_POSITION_CLASS } from '@/features/canvas/ui/NodeHeader';
 import { NodeResizeHandle } from '@/features/canvas/ui/NodeResizeHandle';
 import { resolveNodeSurfaceStateClass } from '@/features/canvas/ui/nodeSurfaceStyles';
 import { CanvasNodeImage } from '@/features/canvas/ui/CanvasNodeImage';
@@ -37,12 +36,11 @@ import type {
   StoryboardSplitNodeData,
 } from '@/features/canvas/domain/canvasNodes';
 import {
-  CANVAS_NODE_TYPES,
   isExportImageNode,
   isImageEditNode,
   isUploadNode,
 } from '@/features/canvas/domain/canvasNodes';
-import { EXPORT_RESULT_DISPLAY_NAME, resolveNodeDisplayName } from '@/features/canvas/domain/nodeDisplay';
+import { EXPORT_RESULT_DISPLAY_NAME } from '@/features/canvas/domain/nodeDisplay';
 import {
   canvasToDataUrl,
   loadImageElement,
@@ -74,9 +72,6 @@ const STORYBOARD_NODE_MIN_HEIGHT_PX = 320;
 const STORYBOARD_GRID_GAP_PX = 1;
 const EXPORT_MAX_DIMENSION = 4096;
 const EXPORT_TRACE_PREFIX = '[StoryboardExport]';
-const STORYBOARD_SPLIT_HEADER_ADJUST = { x: 0, y: 0, scale: 1 };
-const STORYBOARD_SPLIT_ICON_ADJUST = { x: 0, y: 0, scale: 1 };
-const STORYBOARD_SPLIT_TITLE_ADJUST = { x: 0, y: 0, scale: 1 };
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
@@ -472,11 +467,6 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
   useEffect(() => {
     updateNodeInternals(id);
   }, [id, resolvedNodeHeight, resolvedNodeWidth, updateNodeInternals]);
-
-  const resolvedTitle = useMemo(
-    () => resolveNodeDisplayName(CANVAS_NODE_TYPES.storyboardSplit, data),
-    [data]
-  );
 
   const exportOptions = useMemo(
     () => resolveExportOptions(data.exportOptions),
@@ -1020,17 +1010,6 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
       style={{ width: `${resolvedNodeWidth}px`, height: `${resolvedNodeHeight}px` }}
       onClick={() => setSelectedNode(id)}
     >
-      <NodeHeader
-        className={NODE_HEADER_FLOATING_POSITION_CLASS}
-        icon={<Scissors className="h-3.5 w-3.5" />}
-        titleText={resolvedTitle}
-        headerAdjust={STORYBOARD_SPLIT_HEADER_ADJUST}
-        iconAdjust={STORYBOARD_SPLIT_ICON_ADJUST}
-        titleAdjust={STORYBOARD_SPLIT_TITLE_ADJUST}
-        editable
-        onTitleChange={(nextTitle) => updateNodeData(id, { displayName: nextTitle })}
-      />
-
       <div
         className="ui-scrollbar nowheel min-h-0 flex-1 overflow-auto"
         onWheelCapture={(event) => event.stopPropagation()}
@@ -1303,13 +1282,11 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
         type="target"
         id="target"
         position={Position.Left}
-        className="!h-2 !w-2 !border-surface-dark !bg-[var(--edge)]"
       />
       <Handle
         type="source"
         id="source"
         position={Position.Right}
-        className="!h-2 !w-2 !border-surface-dark !bg-[var(--edge)]"
       />
       <NodeResizeHandle
         minWidth={STORYBOARD_NODE_WIDTH_PX}

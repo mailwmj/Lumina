@@ -171,8 +171,8 @@ export const ModelParamsControls = memo(({
   const [panelProviderId, setPanelProviderId] = useState(selectedModel.providerId);
 
   const selectedProvider = useMemo(
-    () => getModelProvider(selectedModel.providerId),
-    [selectedModel.providerId]
+    () => getModelProvider(selectedModel.providerId, selectedModel.providerName),
+    [selectedModel.providerId, selectedModel.providerName]
   );
   const selectedModelName = useMemo(
     () => selectedModel.displayName.replace(/\s*\([^)]*\)\s*$/u, '').trim() || selectedModel.displayName,
@@ -184,7 +184,10 @@ export const ModelParamsControls = memo(({
     const providerIndex = new Map(providerOrder.map((id, index) => [id, index]));
     const uniqueProviderIds = Array.from(new Set(imageModels.map((model) => model.providerId)));
     return uniqueProviderIds
-      .map((providerId) => getModelProvider(providerId))
+      .map((providerId) => {
+        const providerModel = imageModels.find((model) => model.providerId === providerId);
+        return getModelProvider(providerId, providerModel?.providerName);
+      })
       .sort((left, right) => {
         const leftIndex = providerIndex.get(left.id) ?? Number.MAX_SAFE_INTEGER;
         const rightIndex = providerIndex.get(right.id) ?? Number.MAX_SAFE_INTEGER;

@@ -24,7 +24,7 @@ import {
   type StoryboardRatioControlMode,
   type StoryboardGenNodeData,
 } from '@/features/canvas/domain/canvasNodes';
-import { EXPORT_RESULT_DISPLAY_NAME, resolveNodeDisplayName } from '@/features/canvas/domain/nodeDisplay';
+import { EXPORT_RESULT_DISPLAY_NAME } from '@/features/canvas/domain/nodeDisplay';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -68,12 +68,12 @@ import {
 } from '@/features/canvas/models';
 import { ModelParamsControls } from '@/features/canvas/ui/ModelParamsControls';
 import { resolveImageProviderRuntime } from '@/features/canvas/application/imageProviderRuntime';
+import { resolveEnabledTextModelSelection } from '@/features/canvas/application/textModelSelection';
 import { CanvasNodeImage } from '@/features/canvas/ui/CanvasNodeImage';
 import {
   UiButton,
   UiTooltip,
 } from '@/components/ui';
-import { NodeHeader, NODE_HEADER_FLOATING_POSITION_CLASS } from '@/features/canvas/ui/NodeHeader';
 import { NodeResizeHandle } from '@/features/canvas/ui/NodeResizeHandle';
 import { resolveNodeSurfaceStateClass } from '@/features/canvas/ui/nodeSurfaceStyles';
 import {
@@ -115,9 +115,6 @@ const STORYBOARD_GEN_NODE_MIN_WIDTH_PX = 380; // Must fit ModelParamsControls mi
 const STORYBOARD_GEN_NODE_MIN_HEIGHT_PX = 380; // Increased to fit all components including 3-row global prompt
 const STORYBOARD_GLOBAL_PROMPT_HEIGHT_PX = 54; // 3 rows * ~13px line height + padding
 const STORYBOARD_GLOBAL_PROMPT_MARGIN_PX = 8; // mb-2 = 0.5rem = 8px
-const STORYBOARD_GEN_HEADER_ADJUST = { x: 0, y: 0, scale: 1 };
-const STORYBOARD_GEN_ICON_ADJUST = { x: 0, y: 0, scale: 0.95 };
-const STORYBOARD_GEN_TITLE_ADJUST = { x: 0, y: 0, scale: 1 };
 const GRID_CONTROL_CONTAINER_CLASS = 'flex h-5 items-center gap-0.5 rounded-full border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] px-1';
 const GRID_CONTROL_LABEL_CLASS = 'text-[9px] text-text-muted';
 const GRID_CONTROL_BUTTON_CLASS = 'flex h-3 w-3 items-center justify-center rounded text-text-muted transition-colors hover:bg-[var(--ui-hover)] hover:text-text-dark';
@@ -585,6 +582,7 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
   const findNodePosition = useCanvasStore((state) => state.findNodePosition);
   const openAiImageApi = useSettingsStore((state) => state.openAiImageApi);
   const chaomoImageApi = useSettingsStore((state) => state.chaomoImageApi);
+  const customImageApis = useSettingsStore((state) => state.customImageApis);
   const lastImageModelSelection = useSettingsStore((state) => state.lastImageModelSelection);
   const setLastImageModelSelection = useSettingsStore((state) => state.setLastImageModelSelection);
   const storyboardGenKeepStyleConsistent = useSettingsStore(
@@ -629,17 +627,16 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
   const highlightMouseLeaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [polishingFrameIndex, setPolishingFrameIndex] = useState<number | null>(null);
   const nodeData = data as StoryboardGenNodeData;
+  const selectedTextModel = useMemo(
+    () => resolveEnabledTextModelSelection(textApis),
+    [textApis]
+  );
   const [frameDescriptionDrafts, setFrameDescriptionDrafts] = useState<Record<string, string>>(() =>
     buildFrameDescriptionDrafts(nodeData.frames)
   );
   const frameDescriptionDraftsRef = useRef(frameDescriptionDrafts);
   const [globalPromptDraft, setGlobalPromptDraft] = useState<string>(() => nodeData.globalPrompt ?? '');
   const globalPromptDraftRef = useRef(globalPromptDraft);
-  const resolvedTitle = useMemo(
-    () => resolveNodeDisplayName(CANVAS_NODE_TYPES.storyboardGen, nodeData),
-    [nodeData]
-  );
-
   const incomingImages = useMemo(
     () => graphImageResolver.collectInputImages(id, nodes, edges),
     [id, nodes, edges]
@@ -663,24 +660,29 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
       listConfiguredImageModels({
         openAiImageApi,
         chaomoImageApi,
+        customImageApis,
         lastImageModelSelection,
       }),
-    [chaomoImageApi, lastImageModelSelection, openAiImageApi]
+    [chaomoImageApi, customImageApis, lastImageModelSelection, openAiImageApi]
   );
 
   const configuredModel = useMemo(
     () =>
       resolveConfiguredImageModel(
-        { openAiImageApi, chaomoImageApi, lastImageModelSelection },
+        { openAiImageApi, chaomoImageApi, customImageApis, lastImageModelSelection },
         nodeData.model
       ),
-    [chaomoImageApi, lastImageModelSelection, nodeData.model, openAiImageApi]
+    [chaomoImageApi, customImageApis, lastImageModelSelection, nodeData.model, openAiImageApi]
   );
   const hasConfiguredModel = configuredModel !== null;
   const selectedModel = configuredModel ?? UNCONFIGURED_IMAGE_MODEL;
   const providerRuntime = useMemo(
-    () => resolveImageProviderRuntime(selectedModel.providerId, { openAiImageApi, chaomoImageApi }),
-    [chaomoImageApi, openAiImageApi, selectedModel.providerId]
+    () => resolveImageProviderRuntime(selectedModel.providerId, {
+      openAiImageApi,
+      chaomoImageApi,
+      customImageApis,
+    }),
+    [chaomoImageApi, customImageApis, openAiImageApi, selectedModel.providerId]
   );
   const providerApiKey = providerRuntime.apiKey;
   const effectiveExtraParams = useMemo(
@@ -1066,9 +1068,8 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
   ]);
 
   const handlePolishFrame = useCallback(async (frameIndex: number) => {
-    const enabledApi = textApis.find((api) => api.enabled);
-    if (!enabledApi) {
-      void showErrorDialog('请先在设置中启用一个文本API', '润色提示');
+    if (!selectedTextModel) {
+      void showErrorDialog(t('node.textModel.required'), t('settings.polishPrompt'));
       return;
     }
     const frame = nodeData.frames[frameIndex];
@@ -1084,7 +1085,8 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
       const result = await polishText({
         text: frameDescription,
         customPrompt: imagePolishPrompt,
-      }, enabledApi);
+        reasoningEffort: selectedTextModel.apiConfig.reasoningEffort,
+      }, selectedTextModel.apiConfig);
       const newFrames = nodeData.frames.map((f, i) =>
         i === frameIndex ? { ...f, description: result.polished } : f
       );
@@ -1099,7 +1101,7 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
     } finally {
       setPolishingFrameIndex(null);
     }
-  }, [textApis, imagePolishPrompt, nodeData.frames, updateNodeData, id]);
+  }, [imagePolishPrompt, nodeData.frames, selectedTextModel, t, updateNodeData, id]);
 
   const handleGenerate = useCallback(async (previewGridOnly = false) => {
     if (!nodeData) {
@@ -1198,7 +1200,7 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
     setError(null);
 
     try {
-      await canvasAiGateway.setApiKey(selectedModel.providerId, providerApiKey);
+      await canvasAiGateway.setApiKey(providerRuntime.backendProviderId, providerApiKey);
 
       // 生成网格图片作为最后一张参考图片
       const gridImageDataUrl = generateGridImageDataUrl(
@@ -1622,18 +1624,6 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
       }}
       onClick={() => setSelectedNode(id)}
     >
-      {/* Floating title */}
-      <NodeHeader
-        className={NODE_HEADER_FLOATING_POSITION_CLASS}
-        icon={<Sparkles className="h-4 w-4" />}
-        titleText={resolvedTitle}
-        headerAdjust={STORYBOARD_GEN_HEADER_ADJUST}
-        iconAdjust={STORYBOARD_GEN_ICON_ADJUST}
-        titleAdjust={STORYBOARD_GEN_TITLE_ADJUST}
-        editable
-        onTitleChange={(nextTitle) => updateNodeData(id, { displayName: nextTitle })}
-      />
-
       {/* Frame summary + grid settings */}
       <div className="mb-2.5 flex shrink-0 items-center justify-between gap-2">
         <div className="flex items-center gap-1.5">
@@ -1949,7 +1939,7 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
                 return;
               }
               updateNodeData(id, { model: modelId });
-              setLastImageModelSelection({ providerId: model.providerId as 'ai-media' | 'chaomo', modelId });
+              setLastImageModelSelection({ providerId: model.providerId, modelId });
             }}
             onResolutionChange={(resolution) =>
               updateNodeData(id, { size: resolution as ImageSize })
@@ -2005,13 +1995,11 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
         type="target"
         id="target"
         position={Position.Left}
-        className="!h-2 !w-2 !border-surface-dark !bg-[var(--edge)]"
       />
       <Handle
         type="source"
         id="source"
         position={Position.Right}
-        className="!h-2 !w-2 !border-surface-dark !bg-[var(--edge)]"
       />
       <NodeResizeHandle
         minWidth={baseFrameLayout.nodeWidth}

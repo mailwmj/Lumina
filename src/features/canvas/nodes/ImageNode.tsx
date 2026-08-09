@@ -26,11 +26,12 @@ import {
   resolveImageDisplayUrl,
   shouldUseOriginalImageByZoom,
 } from '@/features/canvas/application/imageData';
+import { resolveImageFileName } from '@/features/canvas/application/imageMetadata';
 import { resolveNodeDisplayName } from '@/features/canvas/domain/nodeDisplay';
-import { NodeHeader, NODE_HEADER_FLOATING_POSITION_CLASS } from '@/features/canvas/ui/NodeHeader';
 import { NodeResizeHandle } from '@/features/canvas/ui/NodeResizeHandle';
 import { resolveNodeSurfaceStateClass } from '@/features/canvas/ui/nodeSurfaceStyles';
 import { CanvasNodeImage } from '@/features/canvas/ui/CanvasNodeImage';
+import { SelectedImageMetadata } from '@/features/canvas/ui/SelectedImageMetadata';
 import { useCanvasStore } from '@/stores/canvasStore';
 
 type ImageNodeProps = NodeProps & {
@@ -50,7 +51,6 @@ export const ImageNode = memo(({ id, data, selected, type, width, height }: Imag
   const { t } = useTranslation();
   const updateNodeInternals = useUpdateNodeInternals();
   const setSelectedNode = useCanvasStore((state) => state.setSelectedNode);
-  const updateNodeData = useCanvasStore((state) => state.updateNodeData);
   const { zoom } = useViewport();
   const [now, setNow] = useState(() => Date.now());
   const isExportResultNode = type === CANVAS_NODE_TYPES.exportImage;
@@ -81,6 +81,10 @@ export const ImageNode = memo(({ id, data, selected, type, width, height }: Imag
   const resolvedTitle = useMemo(
     () => resolveNodeDisplayName(type as CanvasNodeType, data),
     [data, type]
+  );
+  const metadataFileName = useMemo(
+    () => resolveImageFileName(data.imageUrl, resolvedTitle),
+    [data.imageUrl, resolvedTitle]
   );
 
   useEffect(() => {
@@ -161,17 +165,6 @@ export const ImageNode = memo(({ id, data, selected, type, width, height }: Imag
       style={{ width: resolvedWidth, height: resolvedHeight }}
       onClick={() => setSelectedNode(id)}
     >
-      <NodeHeader
-        className={NODE_HEADER_FLOATING_POSITION_CLASS}
-        icon={isExportResultNode
-          ? <ImageIcon className="h-4 w-4" />
-          : <Sparkles className="h-4 w-4" />}
-        titleText={resolvedTitle}
-        titleClassName="inline-block max-w-[220px] truncate whitespace-nowrap align-bottom"
-        editable
-        onTitleChange={(nextTitle) => updateNodeData(id, { displayName: nextTitle })}
-      />
-
       <div
         className={`relative h-full w-full overflow-hidden rounded-[var(--node-radius)] ${hasGenerationError ? 'bg-[rgba(127,29,29,0.2)]' : 'bg-bg-dark'}`}
       >
@@ -181,6 +174,7 @@ export const ImageNode = memo(({ id, data, selected, type, width, height }: Imag
             alt={isExportResultNode ? t('node.imageNode.resultAlt') : t('node.imageNode.generatedAlt')}
             viewerSourceUrl={originalImageUrl}
             className="h-full w-full object-contain"
+            showResolutionPreview={false}
           />
         ) : hasGenerationError ? (
           <div className="flex h-full w-full flex-col items-center justify-center gap-2 px-4 text-red-300">
@@ -216,17 +210,22 @@ export const ImageNode = memo(({ id, data, selected, type, width, height }: Imag
         )}
       </div>
 
+      {selected && originalImageUrl && (
+        <SelectedImageMetadata
+          filename={metadataFileName}
+          imageSource={originalImageUrl}
+        />
+      )}
+
       <Handle
         type="target"
         id="target"
         position={Position.Left}
-        className="!h-2 !w-2 !border-surface-dark !bg-[var(--edge)]"
       />
       <Handle
         type="source"
         id="source"
         position={Position.Right}
-        className="!h-2 !w-2 !border-surface-dark !bg-[var(--edge)]"
       />
       <NodeResizeHandle
         minWidth={resizeMinWidth}

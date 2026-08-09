@@ -30,11 +30,9 @@ import {
   resolveResizeMinConstraintsByAspect,
 } from '@/features/canvas/application/imageNodeSizing';
 import {
-  isNodeUsingDefaultDisplayName,
   resolveNodeDisplayName,
 } from '@/features/canvas/domain/nodeDisplay';
 import { canvasEventBus } from '@/features/canvas/application/canvasServices';
-import { NodeHeader, NODE_HEADER_FLOATING_POSITION_CLASS } from '@/features/canvas/ui/NodeHeader';
 import { NodeResizeHandle } from '@/features/canvas/ui/NodeResizeHandle';
 import { resolveNodeSurfaceStateClass } from '@/features/canvas/ui/nodeSurfaceStyles';
 import {
@@ -42,7 +40,9 @@ import {
   resolveImageDisplayUrl,
   shouldUseOriginalImageByZoom,
 } from '@/features/canvas/application/imageData';
+import { resolveImageFileName } from '@/features/canvas/application/imageMetadata';
 import { CanvasNodeImage } from '@/features/canvas/ui/CanvasNodeImage';
+import { SelectedImageMetadata } from '@/features/canvas/ui/SelectedImageMetadata';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -105,18 +105,13 @@ export const UploadNode = memo(({ id, data, selected, width, height }: UploadNod
   });
   const resizeMinWidth = resizeConstraints.minWidth;
   const resizeMinHeight = resizeConstraints.minHeight;
-  const resolvedTitle = useMemo(() => {
-    const sourceFileName = typeof data.sourceFileName === 'string' ? data.sourceFileName.trim() : '';
-    if (
-      useUploadFilenameAsNodeTitle
-      && sourceFileName
-      && isNodeUsingDefaultDisplayName(CANVAS_NODE_TYPES.upload, data)
-    ) {
-      return sourceFileName;
-    }
-
-    return resolveNodeDisplayName(CANVAS_NODE_TYPES.upload, data);
-  }, [data, useUploadFilenameAsNodeTitle]);
+  const metadataFileName = useMemo(
+    () => resolveImageFileName(
+      data.sourceFileName || data.imageUrl,
+      resolveNodeDisplayName(CANVAS_NODE_TYPES.upload, data)
+    ),
+    [data]
+  );
 
   const clearTransientPreview = useCallback(() => {
     setTransientPreviewUrl((current) => {
@@ -319,14 +314,6 @@ export const UploadNode = memo(({ id, data, selected, width, height }: UploadNod
       onDrop={handleDrop}
       onDragOver={handleDragOver}
     >
-      <NodeHeader
-        className={NODE_HEADER_FLOATING_POSITION_CLASS}
-        icon={<Upload className="h-4 w-4" />}
-        titleText={resolvedTitle}
-        editable
-        onTitleChange={(nextTitle) => updateNodeData(id, { displayName: nextTitle })}
-      />
-
       {data.imageUrl || transientPreviewUrl ? (
         <div
           className="block h-full w-full overflow-hidden rounded-[var(--node-radius)] bg-bg-dark"
@@ -337,6 +324,7 @@ export const UploadNode = memo(({ id, data, selected, width, height }: UploadNod
             alt={t('node.upload.uploadedAlt')}
             className="h-full w-full object-contain"
             onLoad={handleImageLoad}
+            showResolutionPreview={false}
           />
         </div>
       ) : (
@@ -357,11 +345,17 @@ export const UploadNode = memo(({ id, data, selected, width, height }: UploadNod
         onChange={handleFileChange}
       />
 
+      {selected && (transientPreviewUrl || data.imageUrl) && (
+        <SelectedImageMetadata
+          filename={metadataFileName}
+          imageSource={transientPreviewUrl ?? resolveImageDisplayUrl(data.imageUrl ?? '')}
+        />
+      )}
+
       <Handle
         type="source"
         id="source"
         position={Position.Right}
-        className="!h-2 !w-2 !border-surface-dark !bg-[var(--edge)]"
       />
       <NodeResizeHandle
         minWidth={resizeMinWidth}

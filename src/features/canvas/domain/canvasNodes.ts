@@ -1,4 +1,5 @@
 import type { Edge, Node, XYPosition } from '@xyflow/react';
+import type { TextReasoningEffort } from '@/features/canvas/models/types';
 
 export const CANVAS_NODE_TYPES = {
   upload: 'uploadNode',
@@ -47,6 +48,12 @@ export type ImageSize = (typeof IMAGE_SIZES)[number];
 export interface NodeDisplayData {
   displayName?: string;
   [key: string]: unknown;
+}
+
+export interface TextModelSelectionData {
+  textApiId?: string;
+  textModelId?: string;
+  textReasoningEffort?: TextReasoningEffort;
 }
 
 export interface NodeImageData extends NodeDisplayData {

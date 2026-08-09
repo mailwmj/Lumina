@@ -32,7 +32,12 @@ export interface DiscoveredImageModel {
 }
 
 export interface DiscoverImageModelsRequest {
-  provider_id: 'ai-media' | 'chaomo';
+  provider_id: string;
+  base_url: string;
+  api_key: string;
+}
+
+export interface DiscoverTextModelsRequest {
   base_url: string;
   api_key: string;
 }
@@ -69,6 +74,12 @@ function truncateBase64Like(value: string): string {
 }
 
 function sanitizeGenerateRequestForLog(request: GenerateRequest): Record<string, unknown> {
+  const providerConfig = Object.fromEntries(
+    Object.entries(request.provider_config ?? {}).map(([key, value]) => [
+      key,
+      /key|secret|token|authorization/i.test(key) ? '[REDACTED]' : value,
+    ])
+  );
   return {
     prompt: truncateText(request.prompt, 240),
     model: request.model,
@@ -79,7 +90,7 @@ function sanitizeGenerateRequestForLog(request: GenerateRequest): Record<string,
       truncateBase64Like(item)
     ),
     extra_params: request.extra_params ?? {},
-    provider_config: request.provider_config ?? {},
+    provider_config: providerConfig,
   };
 }
 
@@ -148,6 +159,15 @@ export async function discoverImageModels(
     throw new Error('当前不是 Tauri 容器环境，请使用 `npm run tauri dev` 启动');
   }
   return await invoke<DiscoveredImageModel[]>('discover_image_models', { request });
+}
+
+export async function discoverTextModels(
+  request: DiscoverTextModelsRequest
+): Promise<DiscoveredImageModel[]> {
+  if (!isTauri()) {
+    throw new Error('当前不是 Tauri 容器环境，请使用 `npm run tauri dev` 启动');
+  }
+  return await invoke<DiscoveredImageModel[]>('discover_text_models', { request });
 }
 
 export async function generateImage(request: GenerateRequest): Promise<string> {

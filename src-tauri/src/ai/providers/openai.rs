@@ -35,11 +35,14 @@ const CHAOMO_LEGACY_NATIVE_4K_MODEL_ID: &str = "chaomo/gpt-image-2-4k-native";
 const CHAOMO_DEFAULT_BASE_URL: &str = "https://www.chaomoapi.com/v1";
 const LEGACY_PROVIDER_ID: &str = "openai";
 const LEGACY_MODEL_ID: &str = "openai/custom";
+const OPENAI_DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
+const OPENAI_DEFAULT_MODEL: &str = "gpt-image-1";
 const POLL_INTERVAL_MS: u64 = 2_000;
 const MAX_SYNC_POLL_ATTEMPTS: usize = 180;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum OpenAiImageProtocol {
+    Standard,
     AiMedia,
     Chaomo,
 }
@@ -99,7 +102,7 @@ impl OpenAiProvider {
             client: Client::new(),
             api_key: Arc::new(RwLock::new(None)),
             provider_id: LEGACY_PROVIDER_ID,
-            protocol: OpenAiImageProtocol::AiMedia,
+            protocol: OpenAiImageProtocol::Standard,
             supported_models: &[LEGACY_MODEL_ID],
         }
     }
@@ -118,6 +121,7 @@ impl OpenAiProvider {
     fn normalize_base_url(&self, input: Option<String>) -> String {
         input
             .unwrap_or_else(|| match self.protocol {
+                OpenAiImageProtocol::Standard => OPENAI_DEFAULT_BASE_URL.to_string(),
                 OpenAiImageProtocol::AiMedia => AI_MEDIA_DEFAULT_BASE_URL.to_string(),
                 OpenAiImageProtocol::Chaomo => CHAOMO_DEFAULT_BASE_URL.to_string(),
             })
@@ -127,6 +131,12 @@ impl OpenAiProvider {
 
     fn resolve_model(&self, request: &GenerateRequest) -> String {
         match self.protocol {
+            OpenAiImageProtocol::Standard => request
+                .model
+                .strip_prefix("openai/")
+                .filter(|model| !model.trim().is_empty() && *model != "custom")
+                .unwrap_or(OPENAI_DEFAULT_MODEL)
+                .to_string(),
             OpenAiImageProtocol::AiMedia => {
                 if self.provider_id == AI_MEDIA_PROVIDER_ID {
                     request
@@ -182,6 +192,9 @@ impl OpenAiProvider {
 
     fn request_quality(&self, request: &GenerateRequest) -> Option<String> {
         match self.protocol {
+            OpenAiImageProtocol::Standard => {
+                Self::resolve_image_quality(&request.size).map(str::to_string)
+            }
             OpenAiImageProtocol::AiMedia => {
                 Self::resolve_image_quality(&request.size).map(str::to_string)
             }
@@ -221,6 +234,18 @@ impl OpenAiProvider {
                 format!("{}x{}", output_width.max(1), long_edge)
             }
             _ => format!("{}x{}", long_edge, long_edge),
+        }
+    }
+
+    fn resolve_standard_image_size(aspect_ratio: &str) -> &'static str {
+        let mut parts = aspect_ratio.split(':');
+        let width = parts.next().and_then(|value| value.parse::<f64>().ok());
+        let height = parts.next().and_then(|value| value.parse::<f64>().ok());
+
+        match (width, height) {
+            (Some(width), Some(height)) if width > height => "1536x1024",
+            (Some(width), Some(height)) if width < height => "1024x1536",
+            _ => "1024x1024",
         }
     }
 
@@ -462,6 +487,16 @@ impl OpenAiProvider {
             .text("n", "1");
 
         form = match self.protocol {
+            OpenAiImageProtocol::Standard => {
+                let mut form = form.text(
+                    "size",
+                    Self::resolve_standard_image_size(&request.aspect_ratio),
+                );
+                if let Some(quality) = self.request_quality(request) {
+                    form = form.text("quality", quality);
+                }
+                form
+            }
             OpenAiImageProtocol::AiMedia => {
                 let mut form = form
                     .text(
@@ -490,12 +525,14 @@ impl OpenAiProvider {
         };
 
         let reference_images = request.reference_images.as_deref().unwrap_or(&[]);
-        let image_field =
-            if self.protocol == OpenAiImageProtocol::Chaomo && reference_images.len() > 1 {
-                "image[]"
-            } else {
-                "image"
-            };
+        let image_field = if (self.protocol == OpenAiImageProtocol::Standard
+            || self.protocol == OpenAiImageProtocol::Chaomo)
+            && reference_images.len() > 1
+        {
+            "image[]"
+        } else {
+            "image"
+        };
         for (index, source) in reference_images.iter().enumerate() {
             let image = self.reference_image_bytes(source).await?;
             let part = Part::bytes(image.bytes)
@@ -514,6 +551,18 @@ impl OpenAiProvider {
         async_mode: bool,
     ) -> Value {
         match self.protocol {
+            OpenAiImageProtocol::Standard => {
+                let mut body = json!({
+                    "model": model,
+                    "prompt": request.prompt,
+                    "size": Self::resolve_standard_image_size(&request.aspect_ratio),
+                    "n": 1,
+                });
+                if let Some(quality) = self.request_quality(request) {
+                    body["quality"] = Value::String(quality);
+                }
+                body
+            }
             OpenAiImageProtocol::AiMedia => {
                 let mut body = json!({
                     "model": model,
@@ -552,9 +601,12 @@ impl OpenAiProvider {
         request: &GenerateRequest,
         async_mode: bool,
     ) -> Result<(StatusCode, Value), AIError> {
-        let api_key = self.api_key.read().await.clone().ok_or_else(|| {
-            AIError::InvalidRequest("OpenAI image API key is not configured".to_string())
-        })?;
+        let api_key = match Self::config_value(request, "api_key") {
+            Some(api_key) => api_key,
+            None => self.api_key.read().await.clone().ok_or_else(|| {
+                AIError::InvalidRequest("OpenAI image API key is not configured".to_string())
+            })?,
+        };
         let base_url = self.normalize_base_url(Self::config_value(request, "base_url"));
         let model = self.resolve_model(request);
         let has_reference_images = request
@@ -791,7 +843,7 @@ impl AIProvider for OpenAiProvider {
     }
 
     fn supports_task_resume(&self) -> bool {
-        true
+        self.protocol != OpenAiImageProtocol::Standard
     }
 
     async fn submit_task(
@@ -799,7 +851,8 @@ impl AIProvider for OpenAiProvider {
         request: GenerateRequest,
     ) -> Result<ProviderTaskSubmission, AIError> {
         let base_url = self.normalize_base_url(Self::config_value(&request, "base_url"));
-        let (status, body) = self.submit_request(&request, true).await?;
+        let async_mode = self.protocol != OpenAiImageProtocol::Standard;
+        let (status, body) = self.submit_request(&request, async_mode).await?;
 
         if status == StatusCode::ACCEPTED {
             let task_id = Self::response_task_id(&body).ok_or_else(|| {
@@ -817,6 +870,13 @@ impl AIProvider for OpenAiProvider {
 
         if let Some(image_source) = Self::response_image_source(&body) {
             return Ok(ProviderTaskSubmission::Succeeded(image_source));
+        }
+
+        if self.protocol == OpenAiImageProtocol::Standard {
+            return Err(AIError::Provider(
+                "OpenAI-compatible image API response did not include data[0].b64_json or data[0].url"
+                    .to_string(),
+            ));
         }
 
         if let Some(task_id) = Self::response_task_id(&body) {
@@ -844,6 +904,11 @@ impl AIProvider for OpenAiProvider {
         })?;
         let base_url = self.normalize_base_url(Some(self.metadata_base_url(&handle)));
         let endpoint = match self.protocol {
+            OpenAiImageProtocol::Standard => {
+                return Err(AIError::Provider(
+                    "Standard OpenAI image requests do not support task polling".to_string(),
+                ));
+            }
             OpenAiImageProtocol::AiMedia => Self::metadata_status_url(&handle)
                 .map(|value| Self::resolve_endpoint(&base_url, &value))
                 .unwrap_or_else(|| {
@@ -1008,6 +1073,21 @@ mod tests {
         assert!(body.get("ratio").is_none());
         assert_eq!(body["response_format"], "b64_json");
         assert_eq!(body["async"], true);
+    }
+
+    #[test]
+    fn standard_generation_uses_openai_fields_without_async_extensions() {
+        let provider = OpenAiProvider::legacy();
+        let request = generate_request("openai/vendor/image-model", "4K", "16:9");
+        let body = provider.build_generation_body(&request, "vendor/image-model", false);
+
+        assert_eq!(provider.resolve_model(&request), "vendor/image-model");
+        assert_eq!(body["model"], "vendor/image-model");
+        assert_eq!(body["size"], "1536x1024");
+        assert_eq!(body["quality"], "high");
+        assert!(body.get("async").is_none());
+        assert!(body.get("response_format").is_none());
+        assert!(!provider.supports_task_resume());
     }
 
     #[test]

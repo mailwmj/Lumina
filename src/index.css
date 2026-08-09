@@ -22,7 +22,9 @@
   --accent-foreground: #09090b;
   --edge: #7c3aed;
   --edge-rgb: 124 58 237;
-  --canvas-dot: rgba(9, 9, 11, 0.11);
+  --canvas-bg: #f4f4f5;
+  --canvas-grid-dot: rgba(9, 9, 11, 0.2);
+  --canvas-grid-line: rgba(9, 9, 11, 0.06);
   --ui-surface-panel: #ffffff;
   --ui-surface-elevated: #ffffff;
   --ui-surface-field: #fafafa;
@@ -35,8 +37,9 @@
   --node-selected-shadow: 0 0 0 1px rgb(var(--accent-rgb) / 0.4), 0 0 18px rgb(var(--accent-rgb) / 0.1);
   --canvas-selection-accent: var(--accent);
   --canvas-selection-active-bg: rgb(var(--accent-rgb) / 0.16);
-  --canvas-selection-connector: var(--edge);
-  --canvas-selection-connector-border: rgb(var(--edge-rgb) / 0.58);
+  --canvas-handle-fill: var(--edge);
+  --canvas-handle-border: #ffffff;
+  --canvas-handle-shadow: 0 0 0 2px rgb(var(--edge-rgb) / 0.16);
   --group-node-bg: color-mix(in srgb, rgb(var(--accent-rgb) / 0.08) 40%, rgb(var(--surface-rgb)));
   --ui-radius-control: 8px;
   --ui-radius-panel: 10px;
@@ -46,8 +49,8 @@
 
 .dark {
   color-scheme: dark;
-  --bg: #09090b;
-  --bg-rgb: 9 9 11;
+  --bg: #0a0a0b;
+  --bg-rgb: 10 10 11;
   --surface: #18181b;
   --surface-rgb: 24 24 27;
   --border: #2d2d32;
@@ -58,7 +61,9 @@
   --text-muted-rgb: 161 161 170;
   --edge: #8b5cf6;
   --edge-rgb: 139 92 246;
-  --canvas-dot: rgba(255, 255, 255, 0.09);
+  --canvas-bg: #030303;
+  --canvas-grid-dot: rgba(255, 255, 255, 0.2);
+  --canvas-grid-line: rgba(255, 255, 255, 0.043);
   --ui-surface-panel: #18181b;
   --ui-surface-elevated: #202024;
   --ui-surface-field: #111113;
@@ -162,9 +167,76 @@ html[data-platform='macos'] #root {
   border-radius: var(--node-radius);
 }
 
-.react-flow__handle {
-  width: 8px;
-  height: 8px;
+.canvas-surface {
+  background-color: var(--canvas-bg);
+}
+
+.canvas-grid-background {
+  --canvas-grid-dot-size: 1.05px;
+  --canvas-grid-line-size: 0.45px;
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  contain: strict;
+  pointer-events: none;
+  opacity: 0.92;
+  will-change: background-position, background-size;
+  background-image:
+    radial-gradient(
+      circle,
+      var(--canvas-grid-dot) 0,
+      var(--canvas-grid-dot) var(--canvas-grid-dot-size),
+      transparent calc(var(--canvas-grid-dot-size) + 0.25px)
+    ),
+    linear-gradient(
+      45deg,
+      transparent calc(50% - var(--canvas-grid-line-size)),
+      var(--canvas-grid-line) calc(50% - var(--canvas-grid-line-size)),
+      var(--canvas-grid-line) calc(50% + var(--canvas-grid-line-size)),
+      transparent calc(50% + var(--canvas-grid-line-size))
+    ),
+    linear-gradient(
+      -45deg,
+      transparent calc(50% - var(--canvas-grid-line-size)),
+      var(--canvas-grid-line) calc(50% - var(--canvas-grid-line-size)),
+      var(--canvas-grid-line) calc(50% + var(--canvas-grid-line-size)),
+      transparent calc(50% + var(--canvas-grid-line-size))
+    );
+  background-size:
+    var(--canvas-grid-size) var(--canvas-grid-size),
+    var(--canvas-grid-size) var(--canvas-grid-size),
+    var(--canvas-grid-size) var(--canvas-grid-size);
+  background-position:
+    var(--canvas-grid-x) var(--canvas-grid-y),
+    var(--canvas-grid-x) var(--canvas-grid-y),
+    var(--canvas-grid-x) var(--canvas-grid-y);
+}
+
+.react-flow__handle,
+.canvas-connection-handle {
+  width: 20px;
+  height: 20px;
+  border: 3px solid var(--canvas-handle-border);
+  background: var(--canvas-handle-fill);
+  box-shadow: var(--canvas-handle-shadow);
+}
+
+.react-flow__node .react-flow__handle {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.react-flow__node:hover .react-flow__handle,
+.react-flow__handle.connectingfrom,
+.react-flow__handle.connectingto {
+  opacity: 1;
+  pointer-events: all;
+}
+
+.canvas-connection-handle {
+  display: block;
+  flex: none;
 }
 
 .ui-panel {

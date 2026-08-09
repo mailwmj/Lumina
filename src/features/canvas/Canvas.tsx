@@ -9,8 +9,6 @@ import {
 } from 'react';
 import {
   ReactFlow,
-  Background,
-  BackgroundVariant,
   SelectionMode,
   useReactFlow,
   type Connection,
@@ -62,6 +60,7 @@ import { SelectedNodeOverlay } from './ui/SelectedNodeOverlay';
 import { CanvasToolbar, type CanvasInteractionMode } from './CanvasToolbar';
 import { CanvasMinimapControl } from './CanvasMinimapControl';
 import { MultiSelectionConnector } from './ui/MultiSelectionConnector';
+import { CanvasGridBackground } from './ui/CanvasGridBackground';
 import { NodeToolDialog } from './ui/NodeToolDialog';
 import { ImageViewerModal } from './ui/ImageViewerModal';
 import { logger } from '@/lib/logger';
@@ -314,6 +313,7 @@ export function Canvas() {
   const navigateImageViewer = useCanvasStore((state) => state.navigateImageViewer);
   const openAiImageApi = useSettingsStore((state) => state.openAiImageApi);
   const chaomoImageApi = useSettingsStore((state) => state.chaomoImageApi);
+  const customImageApis = useSettingsStore((state) => state.customImageApis);
   const useUploadFilenameAsNodeTitle = useSettingsStore((state) => state.useUploadFilenameAsNodeTitle);
   const videoApis = useSettingsStore((state) => state.videoApis);
   const snapToGridEnabled = useSettingsStore((state) => state.snapToGridEnabled);
@@ -459,9 +459,10 @@ export function Canvas() {
             const providerRuntime = resolveImageProviderRuntime(generationProviderId, {
               openAiImageApi,
               chaomoImageApi,
+              customImageApis,
             });
             if (providerRuntime.apiKey) {
-                await canvasAiGateway.setApiKey(generationProviderId, providerRuntime.apiKey).catch((error) => {
+                await canvasAiGateway.setApiKey(providerRuntime.backendProviderId, providerRuntime.apiKey).catch((error) => {
                   logger.warn('[GenerationJob] set_api_key failed before poll', {
                     nodeId: pendingNode.id,
                     generationProviderId,
@@ -563,7 +564,7 @@ export function Canvas() {
         }
       })();
     }
-  }, [chaomoImageApi, nodes, openAiImageApi, updateNodeData]);
+  }, [chaomoImageApi, customImageApis, nodes, openAiImageApi, updateNodeData]);
 
   // Polling for export video nodes
   useEffect(() => {
@@ -2043,22 +2044,16 @@ export function Canvas() {
         selectionMode={SelectionMode.Partial}
         multiSelectionKeyCode={['Shift', 'Control', 'Meta']}
         selectionKeyCode={null}
-        nodesDraggable={interactionMode === 'select'}
-        nodesConnectable={interactionMode === 'select'}
+        nodesDraggable
+        nodesConnectable
         elementsSelectable
         deleteKeyCode={null}
         onlyRenderVisibleElements
         zoomOnDoubleClick={false}
         proOptions={{ hideAttribution: true }}
-        className="bg-bg-dark"
+        className="canvas-surface"
       >
-        <Background
-          variant={BackgroundVariant.Dots}
-          gap={snapGridSize}
-          size={1}
-          color={snapToGridEnabled ? 'rgb(var(--accent-rgb) / 0.16)' : 'var(--canvas-dot)'}
-          lineWidth={0.5}
-        />
+        {snapToGridEnabled && <CanvasGridBackground gap={snapGridSize} />}
         <CanvasMinimapControl />
 
         <SelectedNodeOverlay />

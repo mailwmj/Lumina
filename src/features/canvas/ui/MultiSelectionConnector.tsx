@@ -221,8 +221,10 @@ export const MultiSelectionConnector = memo(({
           <circle
             cx={preview.end.x}
             cy={preview.end.y}
-            r={6}
-            fill="var(--canvas-selection-accent)"
+            r={8}
+            fill="var(--canvas-handle-fill)"
+            stroke="var(--canvas-handle-border)"
+            strokeWidth={3}
           />
         </svg>
       )}
@@ -230,7 +232,7 @@ export const MultiSelectionConnector = memo(({
       <UiTooltip content={t('canvas.multiConnect.dragHandle')}>
         <button
           type="button"
-          className="nodrag nopan absolute z-50 flex h-10 w-10 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-[var(--ui-border-soft)] bg-[var(--ui-surface-panel)] shadow-[var(--ui-shadow-toolbar)]"
+          className="nodrag nopan absolute z-50 flex h-8 w-8 -translate-x-1/2 -translate-y-1/2 cursor-crosshair items-center justify-center rounded-full bg-transparent"
           style={{ left: geometry.connector.x, top: geometry.connector.y }}
           aria-label={t('canvas.multiConnect.dragHandle')}
           onPointerDown={(event) => {
@@ -260,7 +262,7 @@ export const MultiSelectionConnector = memo(({
           }
           }}
         >
-          <span className="h-5 w-5 rounded-full border border-[var(--canvas-selection-connector-border)] bg-[var(--canvas-selection-connector)] shadow-[0_0_0_3px_rgb(var(--edge-rgb)/0.2)]" />
+          <span className="canvas-connection-handle rounded-full" />
         </button>
       </UiTooltip>
     </>

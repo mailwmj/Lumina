@@ -2,7 +2,6 @@ import {
   memo,
   useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
   type ChangeEvent,
@@ -18,15 +17,7 @@ import {
 import { Video } from '@/components/ui/icons';
 import { useTranslation } from 'react-i18next';
 
-import {
-  CANVAS_NODE_TYPES,
-  type VideoUploadRefNodeData,
-} from '@/features/canvas/domain/canvasNodes';
-import {
-  isNodeUsingDefaultDisplayName,
-  resolveNodeDisplayName,
-} from '@/features/canvas/domain/nodeDisplay';
-import { NodeHeader, NODE_HEADER_FLOATING_POSITION_CLASS } from '@/features/canvas/ui/NodeHeader';
+import { type VideoUploadRefNodeData } from '@/features/canvas/domain/canvasNodes';
 import { NodeResizeHandle } from '@/features/canvas/ui/NodeResizeHandle';
 import { resolveNodeSurfaceStateClass } from '@/features/canvas/ui/nodeSurfaceStyles';
 import { useCanvasStore } from '@/stores/canvasStore';
@@ -76,19 +67,6 @@ export const VideoUploadNode = memo(({ id, data, selected, width, height }: Vide
 
   const resolvedWidth = Math.max(MIN_WIDTH, Math.round(width ?? DEFAULT_WIDTH));
   const resolvedHeight = Math.max(MIN_HEIGHT, Math.round(height ?? DEFAULT_HEIGHT));
-
-  const resolvedTitle = useMemo(() => {
-    const sourceFileName = typeof data.sourceFileName === 'string' ? data.sourceFileName.trim() : '';
-    if (
-      useUploadFilenameAsNodeTitle
-      && sourceFileName
-      && isNodeUsingDefaultDisplayName(CANVAS_NODE_TYPES.videoUpload, data)
-    ) {
-      return sourceFileName;
-    }
-
-    return resolveNodeDisplayName(CANVAS_NODE_TYPES.videoUpload, data);
-  }, [data, useUploadFilenameAsNodeTitle]);
 
   const processFile = useCallback(
     async (file: File) => {
@@ -210,14 +188,6 @@ export const VideoUploadNode = memo(({ id, data, selected, width, height }: Vide
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
     >
-      <NodeHeader
-        className={NODE_HEADER_FLOATING_POSITION_CLASS}
-        icon={<Video className="h-4 w-4" />}
-        titleText={resolvedTitle}
-        editable
-        onTitleChange={(nextTitle) => updateNodeData(id, { displayName: nextTitle })}
-      />
-
       {data.videoUrl ? (
         <div className="flex h-full flex-col items-center justify-center gap-2 px-3 py-2">
           <div className="relative h-full w-full overflow-hidden rounded bg-bg-dark">
@@ -264,7 +234,6 @@ export const VideoUploadNode = memo(({ id, data, selected, width, height }: Vide
         type="source"
         id="source"
         position={Position.Right}
-        className="!h-2 !w-2 !border-surface-dark !bg-[var(--edge)]"
       />
 
       {/* 拖动改变大小 */}

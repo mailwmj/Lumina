@@ -1,5 +1,6 @@
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import type { TextApiConfig } from '@/stores/settingsStore';
+import type { TextReasoningEffort } from '@/features/canvas/models/types';
 import { logger } from '@/lib/logger';
 
 export interface TextPolishPayload {
@@ -20,6 +21,7 @@ export interface TextPolishPayload {
   customPrompt?: string;
   // 提示词模板类型：image 或 video
   promptType?: string;
+  reasoningEffort?: TextReasoningEffort;
 }
 
 export interface TextPolishResult {
@@ -128,10 +130,6 @@ export async function polishText(
     throw new Error('当前不是 Tauri 容器环境，请使用 `npm run tauri dev` 启动');
   }
 
-  if (!apiConfig.enabled) {
-    throw new Error('该文本API未启用');
-  }
-
   if (!apiConfig.apiKey) {
     throw new Error('请先配置API密钥');
   }
@@ -169,6 +167,7 @@ export async function polishText(
         video_camera_speed: payload.videoCameraSpeed ?? null,
         is_video_frame: payload.isVideoFrame ?? null,
         prompt_type: payload.promptType ?? null,
+        reasoning_effort: payload.reasoningEffort ?? null,
       },
     });
 
@@ -234,6 +233,7 @@ export async function testTextApi(
         base_url: apiConfig.baseUrl,
         reference_images: null,
         custom_prompt: null,
+        reasoning_effort: apiConfig.reasoningEffort ?? null,
       },
     });
 

@@ -19,8 +19,6 @@ import {
   type VideoGenNodeData,
   type VideoResolution,
 } from '@/features/canvas/domain/canvasNodes';
-import { resolveNodeDisplayName } from '@/features/canvas/domain/nodeDisplay';
-import { NodeHeader, NODE_HEADER_FLOATING_POSITION_CLASS } from '@/features/canvas/ui/NodeHeader';
 import { NodeResizeHandle } from '@/features/canvas/ui/NodeResizeHandle';
 import { resolveNodeSurfaceStateClass } from '@/features/canvas/ui/nodeSurfaceStyles';
 import {
@@ -36,6 +34,7 @@ import {
   insertReferenceToken,
 } from '@/features/canvas/application/referenceTokenEditing';
 import { polishText } from '@/features/canvas/infrastructure/textPolishService';
+import { resolveEnabledTextModelSelection } from '@/features/canvas/application/textModelSelection';
 import {
   NODE_CONTROL_CHIP_CLASS,
   NODE_CONTROL_PARAMS_CHIP_CLASS,
@@ -295,6 +294,10 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
   const findNodePosition = useCanvasStore((state) => state.findNodePosition);
   const videoApis = useSettingsStore((state) => state.videoApis);
   const textApis = useSettingsStore((state) => state.textApis);
+  const selectedTextModel = useMemo(
+    () => resolveEnabledTextModelSelection(textApis),
+    [textApis]
+  );
 
   const [promptDraft, setPromptDraft] = useState(data.prompt || '');
   const [isGenerating] = useState(false);
@@ -514,9 +517,8 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
       nodeId: id,
     });
 
-    const enabledApi = textApis.find((api) => api.enabled);
-    if (!enabledApi) {
-      void showErrorDialog('请先在设置中启用一个文本API', '润色提示');
+    if (!selectedTextModel) {
+      void showErrorDialog(t('node.textModel.required'), t('settings.polishPrompt'));
       return;
     }
 
@@ -588,7 +590,8 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
         isVideoFrame: isVideoFrame,
         customPrompt: effectivePolishPrompt,
         promptType: 'video',
-      }, enabledApi);
+        reasoningEffort: selectedTextModel.apiConfig.reasoningEffort,
+      }, selectedTextModel.apiConfig);
       setPromptDraft(result.polished);
       updateNodeData(id, { prompt: result.polished });
     } catch (err) {
@@ -611,7 +614,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
     } finally {
       setIsPolishing(false);
     }
-  }, [textApis, videoApis, promptDraft, incomingImages, isVideoFrame, maxImages, id, updateNodeData, data]);
+  }, [videoApis, promptDraft, incomingImages, isVideoFrame, maxImages, id, updateNodeData, data, selectedTextModel, t]);
 
   const handleGenerate = useCallback(async () => {
     logger.info('[VideoGen] handleGenerate called', { prompt: promptDraft, model: data.model, hasImages: incomingImages.length });
@@ -926,16 +929,6 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
     updateNodeData(id, { videoUrl: null, previewImageUrl: null });
   }, [id, updateNodeData]);
 
-  const displayName = useMemo(() => {
-    const type = nodes.find(n => n.id === id)?.type;
-    if (type === CANVAS_NODE_TYPES.videoFrame) {
-      return resolveNodeDisplayName(CANVAS_NODE_TYPES.videoFrame, data);
-    } else if (type === CANVAS_NODE_TYPES.videoSingle) {
-      return resolveNodeDisplayName(CANVAS_NODE_TYPES.videoSingle, data);
-    }
-    return resolveNodeDisplayName(CANVAS_NODE_TYPES.videoFrame, data);
-  }, [id, nodes, data]);
-
   const videoModelOptions = useMemo(() => {
     // 显示所有已配置的 API（包括未启用但有有效配置的）
     const configuredApis = videoApis.filter(
@@ -964,23 +957,15 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
       }}
       onClick={() => setSelectedNode(id)}
     >
-      <NodeHeader
-        className={NODE_HEADER_FLOATING_POSITION_CLASS}
-        icon={<Video className="h-4 w-4" />}
-        titleText={displayName}
-        editable
-        onTitleChange={(title) => updateNodeData(id, { displayName: title })}
-      />
-
       {/* 所有视频节点统一使用单个输入Handle */}
       {/* 首尾帧模式需要2个输入Handle（首帧35%，尾帧65%），单图使用单个Handle */}
       {isVideoFrame ? (
         <>
-          <Handle type="target" id="target-first" position={Position.Left} className="!h-2 !w-2 !border-surface-dark !bg-[var(--edge)]" style={{ top: '35%' }} />
-          <Handle type="target" id="target-last" position={Position.Left} className="!h-2 !w-2 !border-surface-dark !bg-[var(--edge)]" style={{ top: '65%' }} />
+          <Handle type="target" id="target-first" position={Position.Left} style={{ top: '35%' }} />
+          <Handle type="target" id="target-last" position={Position.Left} style={{ top: '65%' }} />
         </>
       ) : (
-        <Handle type="target" id="target" position={Position.Left} className="!h-2 !w-2 !border-surface-dark !bg-[var(--edge)]" />
+        <Handle type="target" id="target" position={Position.Left} />
       )}
 
       <div className="flex h-full flex-col gap-2 overflow-y-auto">
@@ -1398,7 +1383,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
         </div>
       </div>
 
-      <Handle type="source" id="source" position={Position.Right} className="!h-2 !w-2 !border-surface-dark !bg-[var(--edge)]" />
+      <Handle type="source" id="source" position={Position.Right} />
 
       <NodeResizeHandle
         minWidth={VIDEO_GEN_NODE_MIN_WIDTH}

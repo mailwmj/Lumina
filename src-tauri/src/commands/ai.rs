@@ -324,6 +324,12 @@ pub struct DiscoverImageModelsRequest {
     pub api_key: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct DiscoverTextModelsRequest {
+    pub base_url: String,
+    pub api_key: String,
+}
+
 #[derive(Debug, Serialize)]
 pub struct DiscoveredImageModelDto {
     pub id: String,
@@ -332,14 +338,186 @@ pub struct DiscoveredImageModelDto {
 }
 
 fn resolve_models_endpoint(base_url: &str) -> Result<String, String> {
-    let normalized = base_url.trim().trim_end_matches('/');
+    let normalized = base_url.trim();
     if normalized.is_empty() {
         return Err("请填写 Base URL".to_string());
     }
-    if normalized.ends_with("/v1") {
-        return Ok(format!("{}/models", normalized));
+
+    let mut url = reqwest::Url::parse(normalized)
+        .map_err(|error| format!("Base URL 无效: {error}"))?;
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err("Base URL 仅支持 HTTP(S)".to_string());
     }
-    Ok(format!("{}/v1/models", normalized))
+
+    let base_path = url.path().trim_end_matches('/');
+    let endpoint_path = if base_path.ends_with("/models") {
+        base_path.to_string()
+    } else if base_path.is_empty() {
+        "/v1/models".to_string()
+    } else {
+        format!("{base_path}/models")
+    };
+
+    url.set_path(&endpoint_path);
+    Ok(url.to_string())
+}
+
+fn resolve_chat_completions_endpoint(base_url: &str) -> Result<String, String> {
+    let normalized = base_url.trim();
+    if normalized.is_empty() {
+        return Err("请填写 Base URL".to_string());
+    }
+
+    let mut url = reqwest::Url::parse(normalized)
+        .map_err(|error| format!("Base URL 无效: {error}"))?;
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err("Base URL 仅支持 HTTP(S)".to_string());
+    }
+
+    let base_path = url.path().trim_end_matches('/');
+    let endpoint_path = if base_path.ends_with("/chat/completions") {
+        base_path.to_string()
+    } else if base_path.ends_with("/api/coding") {
+        format!("{base_path}/v3/chat/completions")
+    } else if base_path.is_empty() {
+        "/v1/chat/completions".to_string()
+    } else {
+        format!("{base_path}/chat/completions")
+    };
+
+    url.set_path(&endpoint_path);
+    Ok(url.to_string())
+}
+
+#[cfg(test)]
+mod text_api_endpoint_tests {
+    use serde_json::Value;
+
+    use super::{
+        resolve_chat_completions_endpoint, resolve_models_endpoint, ChatContent, ChatMessage,
+        ChatRequest, ResponsesRequest, ResponsesReasoning,
+    };
+
+    #[test]
+    fn resolves_models_from_standard_openai_versioned_base_url() {
+        assert_eq!(
+            resolve_models_endpoint("https://gateway.example/openai/v1/").unwrap(),
+            "https://gateway.example/openai/v1/models"
+        );
+    }
+
+    #[test]
+    fn accepts_full_models_endpoint() {
+        assert_eq!(
+            resolve_models_endpoint("https://gateway.example/openai/v1/models").unwrap(),
+            "https://gateway.example/openai/v1/models"
+        );
+    }
+
+    #[test]
+    fn adds_openai_v1_models_path_to_origin_only_url() {
+        assert_eq!(
+            resolve_models_endpoint("https://gateway.example").unwrap(),
+            "https://gateway.example/v1/models"
+        );
+    }
+
+    #[test]
+    fn rejects_non_http_models_base_url() {
+        assert_eq!(
+            resolve_models_endpoint("file:///tmp/models").unwrap_err(),
+            "Base URL 仅支持 HTTP(S)"
+        );
+    }
+
+    #[test]
+    fn resolves_standard_openai_versioned_base_url() {
+        assert_eq!(
+            resolve_chat_completions_endpoint("https://gateway.example/v1").unwrap(),
+            "https://gateway.example/v1/chat/completions"
+        );
+    }
+
+    #[test]
+    fn accepts_full_chat_completions_endpoint() {
+        assert_eq!(
+            resolve_chat_completions_endpoint(
+                "https://gateway.example/openai/v1/chat/completions/"
+            )
+            .unwrap(),
+            "https://gateway.example/openai/v1/chat/completions"
+        );
+    }
+
+    #[test]
+    fn adds_openai_v1_path_to_origin_only_url() {
+        assert_eq!(
+            resolve_chat_completions_endpoint("https://gateway.example").unwrap(),
+            "https://gateway.example/v1/chat/completions"
+        );
+    }
+
+    #[test]
+    fn preserves_volc_coding_plan_chat_path() {
+        assert_eq!(
+            resolve_chat_completions_endpoint(
+                "https://ark.cn-beijing.volces.com/api/coding"
+            )
+            .unwrap(),
+            "https://ark.cn-beijing.volces.com/api/coding/v3/chat/completions"
+        );
+    }
+
+    #[test]
+    fn rejects_empty_base_url() {
+        assert_eq!(
+            resolve_chat_completions_endpoint("  ").unwrap_err(),
+            "请填写 Base URL"
+        );
+    }
+
+    #[test]
+    fn serializes_reasoning_effort_for_openai_compatible_requests() {
+        let chat = serde_json::to_value(ChatRequest {
+            model: "test-model".to_string(),
+            messages: vec![ChatMessage {
+                role: "user".to_string(),
+                content: ChatContent::Text("hello".to_string()),
+            }],
+            stream: Some(false),
+            reasoning_effort: Some("high".to_string()),
+        })
+        .unwrap();
+        assert_eq!(chat.get("reasoning_effort").and_then(Value::as_str), Some("high"));
+
+        let responses = serde_json::to_value(ResponsesRequest {
+            model: "test-model".to_string(),
+            input: Vec::new(),
+            reasoning: Some(ResponsesReasoning {
+                effort: "high".to_string(),
+            }),
+        })
+        .unwrap();
+        assert_eq!(
+            responses
+                .get("reasoning")
+                .and_then(|reasoning| reasoning.get("effort"))
+                .and_then(Value::as_str),
+            Some("high")
+        );
+    }
+
+    #[test]
+    fn omits_reasoning_effort_when_node_uses_provider_default() {
+        let chat = serde_json::to_value(ChatRequest {
+            model: "test-model".to_string(),
+            messages: Vec::new(),
+            stream: Some(false),
+            reasoning_effort: None,
+        })
+        .unwrap();
+        assert!(chat.get("reasoning_effort").is_none());
+    }
 }
 
 fn model_list_from_response(payload: &Value) -> Vec<DiscoveredImageModelDto> {
@@ -390,49 +568,79 @@ fn model_list_from_response(payload: &Value) -> Vec<DiscoveredImageModelDto> {
         .collect()
 }
 
+fn model_list_error_message(payload: &Value, status: reqwest::StatusCode) -> String {
+    payload
+        .get("error")
+        .and_then(|error| {
+            error
+                .as_str()
+                .map(str::to_string)
+                .or_else(|| error.get("message").and_then(Value::as_str).map(str::to_string))
+        })
+        .unwrap_or_else(|| format!("HTTP {status}"))
+}
+
+async fn fetch_openai_compatible_models(
+    base_url: &str,
+    api_key: &str,
+) -> Result<Vec<DiscoveredImageModelDto>, String> {
+    if api_key.trim().is_empty() {
+        return Err("请填写 API Key".to_string());
+    }
+
+    let endpoint = resolve_models_endpoint(base_url)?;
+    let response = Client::new()
+        .get(&endpoint)
+        .bearer_auth(api_key.trim())
+        .timeout(Duration::from_secs(15))
+        .send()
+        .await
+        .map_err(|error| format!("获取模型列表失败：{error}"))?;
+    let status = response.status();
+    let payload = response
+        .json::<Value>()
+        .await
+        .map_err(|error| format!("模型列表返回的数据无法解析：{error}"))?;
+
+    if !status.is_success() {
+        return Err(format!(
+            "获取模型列表失败：{}",
+            model_list_error_message(&payload, status)
+        ));
+    }
+
+    Ok(model_list_from_response(&payload))
+}
+
 #[tauri::command]
 pub async fn discover_image_models(
     request: DiscoverImageModelsRequest,
 ) -> Result<Vec<DiscoveredImageModelDto>, String> {
-    if request.provider_id != "ai-media" && request.provider_id != "chaomo" {
+    let is_custom_openai_provider = request
+        .provider_id
+        .strip_prefix("custom-openai:")
+        .is_some_and(|suffix| !suffix.trim().is_empty());
+    if request.provider_id != "ai-media"
+        && request.provider_id != "chaomo"
+        && !is_custom_openai_provider
+    {
         return Err("不支持该生图 Provider 的模型发现".to_string());
     }
-    if request.api_key.trim().is_empty() {
-        return Err("请填写 API Key".to_string());
-    }
-
     let endpoint = resolve_models_endpoint(&request.base_url)?;
     info!(
         "Discovering image models for provider {} at {}",
         request.provider_id, endpoint
     );
-    let response = Client::new()
-        .get(&endpoint)
-        .bearer_auth(request.api_key.trim())
-        .timeout(Duration::from_secs(15))
-        .send()
-        .await
-        .map_err(|error| format!("获取模型列表失败：{}", error))?;
-    let status = response.status();
-    let payload = response
-        .json::<Value>()
-        .await
-        .map_err(|error| format!("模型列表返回的数据无法解析：{}", error))?;
+    fetch_openai_compatible_models(&request.base_url, &request.api_key).await
+}
 
-    if !status.is_success() {
-        let message = payload
-            .get("error")
-            .and_then(|error| {
-                error
-                    .as_str()
-                    .map(str::to_string)
-                    .or_else(|| error.get("message").and_then(Value::as_str).map(str::to_string))
-            })
-            .unwrap_or_else(|| format!("HTTP {}", status));
-        return Err(format!("获取模型列表失败：{}", message));
-    }
-
-    Ok(model_list_from_response(&payload))
+#[tauri::command]
+pub async fn discover_text_models(
+    request: DiscoverTextModelsRequest,
+) -> Result<Vec<DiscoveredImageModelDto>, String> {
+    let endpoint = resolve_models_endpoint(&request.base_url)?;
+    info!("Discovering text models at {}", endpoint);
+    fetch_openai_compatible_models(&request.base_url, &request.api_key).await
 }
 
 #[tauri::command]
@@ -857,6 +1065,8 @@ pub struct PolishTextRequest {
     // 提示词模板类型：image 或 video，用于选择对应的默认模板
     #[serde(default)]
     pub prompt_type: Option<String>,
+    #[serde(default)]
+    pub reasoning_effort: Option<String>,
 }
 
 // 图片润色提示词模板的备用默认值（当用户未设置自定义模板时使用）
@@ -919,6 +1129,8 @@ struct ChatRequest {
     messages: Vec<ChatMessage>,
     #[serde(skip_serializing_if = "Option::is_none")]
     stream: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reasoning_effort: Option<String>,
 }
 
 // Responses API 格式 - 用于图片输入
@@ -942,6 +1154,13 @@ struct ResponsesInput {
 struct ResponsesRequest {
     model: String,
     input: Vec<ResponsesInput>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reasoning: Option<ResponsesReasoning>,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct ResponsesReasoning {
+    effort: String,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -1110,6 +1329,7 @@ pub async fn polish_text(request: PolishTextRequest) -> Result<String, String> {
                 role: "user".to_string(),
                 content: content_parts,
             }],
+            reasoning: request.reasoning_effort.clone().map(|effort| ResponsesReasoning { effort }),
         };
 
         info!("[PolishText] calling Responses API endpoint: {}", endpoint);
@@ -1161,7 +1381,7 @@ pub async fn polish_text(request: PolishTextRequest) -> Result<String, String> {
         }
     } else {
         // 使用 Chat API 格式（OpenAI兼容）
-        let endpoint = format!("{}/v3/chat/completions", request.base_url.trim_end_matches('/'));
+        let endpoint = resolve_chat_completions_endpoint(&request.base_url)?;
 
         info!("[PolishText] using Chat API format, endpoint: {}", endpoint);
 
@@ -1255,6 +1475,7 @@ pub async fn polish_text(request: PolishTextRequest) -> Result<String, String> {
         model: model.clone(),
         messages,
         stream: Some(false),
+        reasoning_effort: request.reasoning_effort.clone(),
     };
 
     let response = client
@@ -1312,8 +1533,7 @@ pub async fn test_text_api(
     let model = request.model.clone();
     let client = reqwest::Client::new();
 
-    // 使用 /v3/chat/completions 端点（OpenAI兼容）
-    let endpoint = format!("{}/v3/chat/completions", request.base_url.trim_end_matches('/'));
+    let endpoint = resolve_chat_completions_endpoint(&request.base_url)?;
 
     let messages = vec![
         ChatMessage {
@@ -1326,6 +1546,7 @@ pub async fn test_text_api(
         model: model.clone(),
         messages,
         stream: Some(false),
+        reasoning_effort: request.reasoning_effort.clone(),
     };
 
     let response = client

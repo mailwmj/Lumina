@@ -1,5 +1,16 @@
 export type MediaModelType = 'image' | 'video' | 'audio';
 
+export const TEXT_REASONING_EFFORTS = [
+  'none',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+] as const;
+export type TextReasoningEffort = (typeof TEXT_REASONING_EFFORTS)[number];
+
 export interface ModelProviderDefinition {
   id: string;
   name: string;
@@ -41,6 +52,7 @@ export interface ImageModelDefinition {
   mediaType: 'image';
   displayName: string;
   providerId: string;
+  providerName?: string;
   description: string;
   eta: string;
   expectedDurationMs?: number;

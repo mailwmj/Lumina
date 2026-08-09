@@ -8,6 +8,7 @@ import {
 
 function createSettings(): ImageModelSettings {
   return {
+    customImageApis: [],
     openAiImageApi: {
       apiKey: 'test-key',
       baseUrl: 'https://example.test/v1',
@@ -89,6 +90,31 @@ describe('available image models', () => {
     expect(models.some((model) => model.id === 'chaomo/gpt-image2-4K')).toBe(true);
     expect(resolveConfiguredImageModel(settings, 'ai-media/gpt-image-2')?.providerId).toBe(
       'chaomo'
+    );
+  });
+
+  it('keeps a custom provider identity while routing its remote model through OpenAI', () => {
+    const settings = createSettings();
+    settings.openAiImageApi.apiKey = '';
+    settings.chaomoImageApi.apiKey = '';
+    settings.customImageApis = [{
+      id: 'custom-openai:internal',
+      name: 'Internal Gateway',
+      apiKey: 'custom-key',
+      baseUrl: 'https://gateway.example/v1',
+      modelCatalog: {
+        models: [{ id: 'custom-openai:internal/vendor/image-model' }],
+        refreshedAt: 1,
+      },
+      selectedModelIds: ['custom-openai:internal/vendor/image-model'],
+    }];
+
+    const [model] = listConfiguredImageModels(settings);
+
+    expect(model.providerId).toBe('custom-openai:internal');
+    expect(model.providerName).toBe('Internal Gateway');
+    expect(model.resolveRequest({ referenceImageCount: 0 }).requestModel).toBe(
+      'openai/vendor/image-model'
     );
   });
 });

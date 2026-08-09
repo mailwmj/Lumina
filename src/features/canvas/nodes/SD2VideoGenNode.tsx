@@ -15,7 +15,7 @@ import {
   useUpdateNodeInternals,
   type NodeProps,
 } from '@xyflow/react';
-import { Sparkles, Video, Image as ImageIcon, Music } from '@/components/ui/icons';
+import { Video, Image as ImageIcon, Music } from '@/components/ui/icons';
 import { useTranslation } from 'react-i18next';
 
 import {
@@ -24,7 +24,6 @@ import {
   type SD2GenerationMode,
 } from '@/features/canvas/domain/canvasNodes';
 import { useCanvasStore } from '@/stores/canvasStore';
-import { NodeHeader, NODE_HEADER_FLOATING_POSITION_CLASS } from '@/features/canvas/ui/NodeHeader';
 import { NodeResizeHandle } from '@/features/canvas/ui/NodeResizeHandle';
 import { resolveNodeSurfaceStateClass } from '@/features/canvas/ui/nodeSurfaceStyles';
 import { resolveImageDisplayUrl, resolveVideoDisplayUrl, resolveAudioDisplayUrl } from '@/features/canvas/application/imageData';
@@ -599,19 +598,12 @@ export const SD2VideoGenNode = memo(({ id, data, selected, width, height }: SD2V
         setSelectedNode(id);
       }}
     >
-      <NodeHeader
-        className={NODE_HEADER_FLOATING_POSITION_CLASS}
-        icon={<Sparkles className="h-4 w-4" />}
-        titleText={t('node.menu.sd2VideoGen')}
-      />
-
       {/* 输入 Handle（左侧） */}
       {limits.images > 0 && (
         <Handle
           type="target"
           id="target-images"
           position={Position.Left}
-          className="!h-2 !w-2 !border-surface-dark !bg-[var(--edge)]"
           style={{ top: '15%' }}
         />
       )}
@@ -620,7 +612,6 @@ export const SD2VideoGenNode = memo(({ id, data, selected, width, height }: SD2V
           type="target"
           id="target-audios"
           position={Position.Left}
-          className="!h-2 !w-2 !border-surface-dark !bg-[var(--edge)]"
           style={{ top: '50%' }}
         />
       )}
@@ -629,7 +620,6 @@ export const SD2VideoGenNode = memo(({ id, data, selected, width, height }: SD2V
           type="target"
           id="target-videos"
           position={Position.Left}
-          className="!h-2 !w-2 !border-surface-dark !bg-[var(--edge)]"
           style={{ top: '85%' }}
         />
       )}
@@ -970,7 +960,6 @@ export const SD2VideoGenNode = memo(({ id, data, selected, width, height }: SD2V
         type="source"
         id="source"
         position={Position.Right}
-        className="!h-2 !w-2 !border-surface-dark !bg-[var(--edge)]"
       />
 
       {/* 拖动改变大小 */}

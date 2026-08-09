@@ -7,9 +7,16 @@ import {
   migrateAccentColor,
   normalizeAccentColor,
 } from '@/features/settings/application/accentColor';
+import {
+  TEXT_REASONING_EFFORTS,
+  type TextReasoningEffort,
+} from '@/features/canvas/models/types';
 
 export type CanvasEdgeRoutingMode = 'spline' | 'orthogonal' | 'smartOrthogonal';
-export type ImageProviderId = 'ai-media' | 'chaomo';
+export type BuiltInImageProviderId = 'ai-media' | 'chaomo';
+export const CUSTOM_IMAGE_PROVIDER_ID_PREFIX = 'custom-openai:';
+export type CustomImageProviderId = `${typeof CUSTOM_IMAGE_PROVIDER_ID_PREFIX}${string}`;
+export type ImageProviderId = BuiltInImageProviderId | CustomImageProviderId;
 
 export const DEFAULT_OPENAI_IMAGE_BASE_URL = 'https://api.ai-media.vip/v1';
 export const DEFAULT_CHAOMO_IMAGE_BASE_URL = 'https://www.chaomoapi.com/v1';
@@ -25,7 +32,7 @@ export interface ImageModelCatalog {
 }
 
 export interface ImageModelSelection {
-  providerId: ImageProviderId;
+  providerId: string;
   modelId: string;
 }
 
@@ -38,6 +45,29 @@ export interface ImageProviderApiConfig {
 
 export type OpenAiImageApiConfig = ImageProviderApiConfig;
 export type ChaomoImageApiConfig = ImageProviderApiConfig;
+
+export interface CustomImageApiConfig extends ImageProviderApiConfig {
+  id: CustomImageProviderId;
+  name: string;
+}
+
+export function isCustomImageProviderId(providerId: string): providerId is CustomImageProviderId {
+  return providerId.startsWith(CUSTOM_IMAGE_PROVIDER_ID_PREFIX)
+    && providerId.length > CUSTOM_IMAGE_PROVIDER_ID_PREFIX.length;
+}
+
+export function createCustomImageApiConfig(
+  id: CustomImageProviderId = `${CUSTOM_IMAGE_PROVIDER_ID_PREFIX}${crypto.randomUUID()}`
+): CustomImageApiConfig {
+  return {
+    id,
+    name: '',
+    apiKey: '',
+    baseUrl: '',
+    modelCatalog: null,
+    selectedModelIds: [],
+  };
+}
 
 export function createDefaultOpenAiImageApiConfig(): OpenAiImageApiConfig {
   return {
@@ -63,7 +93,24 @@ export interface TextApiConfig {
   apiKey: string;
   baseUrl: string;
   modelId: string;
+  modelCatalog: ImageModelCatalog | null;
+  selectedModelIds: string[];
+  reasoningEffort?: TextReasoningEffort;
   enabled: boolean;
+}
+
+export function createTextApiConfig(): TextApiConfig {
+  return {
+    id: `custom-${crypto.randomUUID()}`,
+    name: '',
+    apiKey: '',
+    baseUrl: '',
+    modelId: '',
+    modelCatalog: null,
+    selectedModelIds: [],
+    reasoningEffort: undefined,
+    enabled: false,
+  };
 }
 
 export interface VideoApiConfig {
@@ -84,6 +131,8 @@ export const PRESET_TEXT_APIS: TextApiConfig[] = [
     apiKey: '',
     baseUrl: 'https://ark.cn-beijing.volces.com/api/coding',
     modelId: 'doubao-seed-2.0-pro',
+    modelCatalog: null,
+    selectedModelIds: ['doubao-seed-2.0-pro'],
     enabled: false,
   },
   {
@@ -92,6 +141,8 @@ export const PRESET_TEXT_APIS: TextApiConfig[] = [
     apiKey: '',
     baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
     modelId: 'doubao-seed-2-0-pro-260215',
+    modelCatalog: null,
+    selectedModelIds: ['doubao-seed-2-0-pro-260215'],
     enabled: false,
   },
 ];
@@ -284,6 +335,7 @@ interface SettingsState {
   isHydrated: boolean;
   openAiImageApi: OpenAiImageApiConfig;
   chaomoImageApi: ChaomoImageApiConfig;
+  customImageApis: CustomImageApiConfig[];
   downloadPresetPaths: string[];
   useUploadFilenameAsNodeTitle: boolean;
   storyboardGenKeepStyleConsistent: boolean;
@@ -306,6 +358,7 @@ interface SettingsState {
   lastImageModelSelection: ImageModelSelection | null;
   setOpenAiImageApi: (config: OpenAiImageApiConfig) => void;
   setChaomoImageApi: (config: ChaomoImageApiConfig) => void;
+  setCustomImageApis: (configs: CustomImageApiConfig[]) => void;
   setLastImageModelSelection: (selection: ImageModelSelection | null) => void;
   setDownloadPresetPaths: (paths: string[]) => void;
   setUseUploadFilenameAsNodeTitle: (enabled: boolean) => void;
@@ -367,6 +420,50 @@ function normalizeImageModelCatalog(input: unknown): ImageModelCatalog | null {
   return { models, refreshedAt };
 }
 
+export function normalizeTextApiConfigs(input: unknown): TextApiConfig[] {
+  const source = Array.isArray(input) ? input : PRESET_TEXT_APIS;
+  const seenIds = new Set<string>();
+
+  return source.flatMap((item) => {
+    if (!item || typeof item !== 'object') {
+      return [];
+    }
+    const record = item as Record<string, unknown>;
+    const id = typeof record.id === 'string' ? record.id.trim() : '';
+    if (!id || seenIds.has(id)) {
+      return [];
+    }
+    seenIds.add(id);
+
+    const modelId = typeof record.modelId === 'string' ? record.modelId.trim() : '';
+    const selectedModelIds = Array.from(new Set([
+      ...(Array.isArray(record.selectedModelIds)
+        ? record.selectedModelIds
+          .filter((value): value is string => typeof value === 'string')
+          .map((value) => value.trim())
+          .filter(Boolean)
+        : []),
+      ...(modelId ? [modelId] : []),
+    ]));
+    const reasoningEffort = typeof record.reasoningEffort === 'string'
+      && TEXT_REASONING_EFFORTS.includes(record.reasoningEffort as TextReasoningEffort)
+      ? record.reasoningEffort as TextReasoningEffort
+      : undefined;
+
+    return [{
+      id,
+      name: typeof record.name === 'string' ? record.name.trim() : '',
+      apiKey: normalizeApiKey(typeof record.apiKey === 'string' ? record.apiKey : ''),
+      baseUrl: typeof record.baseUrl === 'string' ? record.baseUrl.trim() : '',
+      modelId: modelId || selectedModelIds[0] || '',
+      modelCatalog: normalizeImageModelCatalog(record.modelCatalog),
+      selectedModelIds,
+      ...(reasoningEffort ? { reasoningEffort } : {}),
+      enabled: record.enabled === true,
+    }];
+  });
+}
+
 function normalizeSelectedModelIds(input: unknown, catalog: ImageModelCatalog | null): string[] {
   if (!catalog || !Array.isArray(input)) {
     return [];
@@ -413,6 +510,37 @@ function normalizeChaomoImageApiConfig(
   };
 }
 
+function normalizeCustomImageApiConfigs(input: unknown): CustomImageApiConfig[] {
+  if (!Array.isArray(input)) {
+    return [];
+  }
+
+  const seenIds = new Set<string>();
+  return input.flatMap((item) => {
+    if (!item || typeof item !== 'object') {
+      return [];
+    }
+    const record = item as Record<string, unknown>;
+    const id = typeof record.id === 'string' ? record.id.trim() : '';
+    if (!isCustomImageProviderId(id) || seenIds.has(id)) {
+      return [];
+    }
+    seenIds.add(id);
+
+    const name = typeof record.name === 'string' ? record.name.trim() : '';
+    const baseUrl = typeof record.baseUrl === 'string' ? record.baseUrl.trim() : '';
+    const modelCatalog = normalizeImageModelCatalog(record.modelCatalog);
+    return [{
+      id,
+      name,
+      apiKey: normalizeApiKey(typeof record.apiKey === 'string' ? record.apiKey : ''),
+      baseUrl,
+      modelCatalog,
+      selectedModelIds: normalizeSelectedModelIds(record.selectedModelIds, modelCatalog),
+    }];
+  });
+}
+
 function normalizeImageModelSelection(input: unknown): ImageModelSelection | null {
   if (!input || typeof input !== 'object') {
     return null;
@@ -420,7 +548,12 @@ function normalizeImageModelSelection(input: unknown): ImageModelSelection | nul
   const record = input as Record<string, unknown>;
   const providerId = record.providerId;
   const modelId = typeof record.modelId === 'string' ? record.modelId.trim() : '';
-  if ((providerId !== 'ai-media' && providerId !== 'chaomo') || !modelId) {
+  if (
+    (providerId !== 'ai-media'
+      && providerId !== 'chaomo'
+      && !(typeof providerId === 'string' && isCustomImageProviderId(providerId)))
+    || !modelId
+  ) {
     return null;
   }
   return { providerId, modelId };
@@ -441,6 +574,7 @@ export const useSettingsStore = create<SettingsState>()(
       isHydrated: false,
       openAiImageApi: createDefaultOpenAiImageApiConfig(),
       chaomoImageApi: createDefaultChaomoImageApiConfig(),
+      customImageApis: [],
       downloadPresetPaths: [],
       useUploadFilenameAsNodeTitle: true,
       storyboardGenKeepStyleConsistent: true,
@@ -452,7 +586,7 @@ export const useSettingsStore = create<SettingsState>()(
       accentColor: DEFAULT_ACCENT_COLOR,
       canvasEdgeRoutingMode: 'spline',
       snapToGridEnabled: false,
-      snapGridSize: 20,
+      snapGridSize: 72,
       autoCheckAppUpdateOnLaunch: true,
       enableUpdateDialog: true,
       setOpenAiImageApi: (config) =>
@@ -472,6 +606,19 @@ export const useSettingsStore = create<SettingsState>()(
             ? null
             : state.lastImageModelSelection;
           return { chaomoImageApi, lastImageModelSelection };
+        }),
+      setCustomImageApis: (configs) =>
+        set((state) => {
+          const customImageApis = normalizeCustomImageApiConfigs(configs);
+          const lastSelection = state.lastImageModelSelection;
+          const selectedProvider = lastSelection && isCustomImageProviderId(lastSelection.providerId)
+            ? customImageApis.find((config) => config.id === lastSelection.providerId)
+            : undefined;
+          const lastImageModelSelection = lastSelection && isCustomImageProviderId(lastSelection.providerId)
+            && (!selectedProvider || !selectedProvider.selectedModelIds.includes(lastSelection.modelId))
+            ? null
+            : lastSelection;
+          return { customImageApis, lastImageModelSelection };
         }),
       setDownloadPresetPaths: (paths) => {
         const uniquePaths = Array.from(
@@ -501,7 +648,7 @@ export const useSettingsStore = create<SettingsState>()(
       setEnableUpdateDialog: (enabled) => set({ enableUpdateDialog: enabled }),
       textApis: PRESET_TEXT_APIS,
       activeTextApiId: null,
-      setTextApis: (apis) => set({ textApis: apis }),
+      setTextApis: (apis) => set({ textApis: normalizeTextApiConfigs(apis) }),
       setActiveTextApiId: (id) => set({ activeTextApiId: id }),
       imagePolishPrompt: DEFAULT_TEXT_API_PROMPT,
       setImagePolishPrompt: (prompt: string) => set({ imagePolishPrompt: prompt }),
@@ -518,7 +665,7 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: 'settings-storage',
-      version: 18,
+      version: 22,
       onRehydrateStorage: () => {
         return (_state, error) => {
           if (error) {
@@ -527,10 +674,11 @@ export const useSettingsStore = create<SettingsState>()(
           useSettingsStore.setState({ isHydrated: true });
         };
       },
-      migrate: (persistedState: unknown) => {
+      migrate: (persistedState: unknown, persistedVersion: number) => {
         const state = migrateAppearanceSettings(persistedState) as Record<string, unknown> & {
           openAiImageApi?: Partial<OpenAiImageApiConfig>;
           chaomoImageApi?: Partial<ChaomoImageApiConfig>;
+          customImageApis?: CustomImageApiConfig[];
           canvasEdgeRoutingMode?: CanvasEdgeRoutingMode | string;
           textApis?: TextApiConfig[];
           activeTextApiId?: string | null;
@@ -558,9 +706,13 @@ export const useSettingsStore = create<SettingsState>()(
           isHydrated: true,
           openAiImageApi: normalizeOpenAiImageApiConfig(state.openAiImageApi),
           chaomoImageApi: normalizeChaomoImageApiConfig(state.chaomoImageApi),
+          customImageApis: normalizeCustomImageApiConfigs(state.customImageApis),
           canvasEdgeRoutingMode: normalizeCanvasEdgeRoutingMode(state.canvasEdgeRoutingMode),
           accentColor: migrateAccentColor(state.accentColor),
-          textApis: state.textApis ?? PRESET_TEXT_APIS,
+          ...(persistedVersion < 22 && (state.snapGridSize === 20 || state.snapGridSize === 36)
+            ? { snapGridSize: 72 }
+            : {}),
+          textApis: normalizeTextApiConfigs(state.textApis),
           activeTextApiId: state.activeTextApiId ?? null,
           imagePolishPrompt: state.imagePolishPrompt ?? DEFAULT_TEXT_API_PROMPT,
           videoApis: mergeVideoApis(state.videoApis),

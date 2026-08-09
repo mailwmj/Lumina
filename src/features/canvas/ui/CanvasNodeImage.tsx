@@ -1,4 +1,13 @@
-import { memo, useCallback, useState, useRef, useEffect, type ImgHTMLAttributes, type MouseEvent } from 'react';
+import {
+  memo,
+  useCallback,
+  useState,
+  useRef,
+  useEffect,
+  type ImgHTMLAttributes,
+  type MouseEvent,
+  type SyntheticEvent,
+} from 'react';
 import { createPortal } from 'react-dom';
 
 import { useCanvasStore } from '@/stores/canvasStore';
@@ -49,6 +58,9 @@ export const CanvasNodeImage = memo(({
   showResolutionPreview = true,
   resolutionOverride = null,
   onDoubleClick,
+  onLoad,
+  onMouseEnter,
+  onMouseLeave,
   src,
   ...props
 }: CanvasNodeImageProps) => {
@@ -83,7 +95,7 @@ export const CanvasNodeImage = memo(({
   }, [disableViewer, onDoubleClick, openImageViewer, src, viewerImageList, viewerSourceUrl]);
 
   const handleMouseEnter = useCallback((event: MouseEvent<HTMLImageElement>) => {
-    if (!showResolutionPreview) return;
+    onMouseEnter?.(event);
     const img = event.currentTarget;
     const anchorRect = img.getBoundingClientRect();
     currentAnchorRectRef.current = anchorRect;
@@ -121,9 +133,10 @@ export const CanvasNodeImage = memo(({
         }
       }, 100);
     }
-  }, [showResolutionPreview, resolutionOverride, viewerSourceUrl]);
+  }, [onMouseEnter, resolutionOverride, viewerSourceUrl]);
 
-  const handleImageLoad = useCallback((event: MouseEvent<HTMLImageElement>) => {
+  const handleImageLoad = useCallback((event: SyntheticEvent<HTMLImageElement>) => {
+    onLoad?.(event);
     if (!showResolutionPreview) return;
     const img = event.currentTarget;
     const anchorRect = img.getBoundingClientRect();
@@ -147,16 +160,17 @@ export const CanvasNodeImage = memo(({
         anchorRect,
       });
     }
-  }, [showResolutionPreview, resolutionOverride, viewerSourceUrl]);
+  }, [onLoad, showResolutionPreview, resolutionOverride, viewerSourceUrl]);
 
-  const handleMouseLeave = useCallback(() => {
+  const handleMouseLeave = useCallback((event: MouseEvent<HTMLImageElement>) => {
+    onMouseLeave?.(event);
     isHoveringRef.current = false;
     if (loadTimeoutRef.current) {
       clearTimeout(loadTimeoutRef.current);
       loadTimeoutRef.current = null;
     }
     setResolutionHover(null);
-  }, []);
+  }, [onMouseLeave]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -178,9 +192,9 @@ export const CanvasNodeImage = memo(({
             : undefined
         }
         onDoubleClick={handleDoubleClick}
-        onMouseEnter={handleMouseEnter}
-        onMouseLeave={handleMouseLeave}
-        onLoad={handleImageLoad}
+        onMouseEnter={showResolutionPreview ? handleMouseEnter : onMouseEnter}
+        onMouseLeave={showResolutionPreview ? handleMouseLeave : onMouseLeave}
+        onLoad={showResolutionPreview ? handleImageLoad : onLoad}
       />
       {resolutionHover && typeof document !== 'undefined' && createPortal(
         <div

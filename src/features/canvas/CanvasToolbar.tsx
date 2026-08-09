@@ -135,7 +135,7 @@ export const CanvasToolbar = memo(({
         <div className="mx-1 h-5 w-px shrink-0 bg-[var(--ui-border-soft)]" />
 
         <CanvasToolbarButton
-          label={t('canvas.toolbar.snapToGrid')}
+          label={t('canvas.toolbar.toggleGrid')}
           onClick={() => setSnapToGridEnabled(!snapToGridEnabled)}
           active={snapToGridEnabled}
           aria-pressed={snapToGridEnabled}

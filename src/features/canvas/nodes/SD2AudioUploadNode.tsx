@@ -2,7 +2,6 @@ import {
   memo,
   useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
   type ChangeEvent,
@@ -17,16 +16,8 @@ import {
 import { Music, Play, Pause, Volume2 } from '@/components/ui/icons';
 import { useTranslation } from 'react-i18next';
 
-import {
-  CANVAS_NODE_TYPES,
-  type AudioUploadRefNodeData,
-} from '@/features/canvas/domain/canvasNodes';
+import { type AudioUploadRefNodeData } from '@/features/canvas/domain/canvasNodes';
 import { resolveAudioDisplayUrl } from '@/features/canvas/application/imageData';
-import {
-  isNodeUsingDefaultDisplayName,
-  resolveNodeDisplayName,
-} from '@/features/canvas/domain/nodeDisplay';
-import { NodeHeader, NODE_HEADER_FLOATING_POSITION_CLASS } from '@/features/canvas/ui/NodeHeader';
 import { NodeResizeHandle } from '@/features/canvas/ui/NodeResizeHandle';
 import { resolveNodeSurfaceStateClass } from '@/features/canvas/ui/nodeSurfaceStyles';
 import { useCanvasStore } from '@/stores/canvasStore';
@@ -77,19 +68,6 @@ export const AudioUploadNode = memo(({ id, data, selected, width, height }: Audi
 
   const resolvedWidth = Math.max(MIN_WIDTH, Math.round(width ?? DEFAULT_WIDTH));
   const resolvedHeight = Math.max(MIN_HEIGHT, Math.round(height ?? DEFAULT_HEIGHT));
-
-  const resolvedTitle = useMemo(() => {
-    const sourceFileName = typeof data.sourceFileName === 'string' ? data.sourceFileName.trim() : '';
-    if (
-      useUploadFilenameAsNodeTitle
-      && sourceFileName
-      && isNodeUsingDefaultDisplayName(CANVAS_NODE_TYPES.audioUpload, data)
-    ) {
-      return sourceFileName;
-    }
-
-    return resolveNodeDisplayName(CANVAS_NODE_TYPES.audioUpload, data);
-  }, [data, useUploadFilenameAsNodeTitle]);
 
   const processFile = useCallback(
     async (file: File) => {
@@ -224,14 +202,6 @@ export const AudioUploadNode = memo(({ id, data, selected, width, height }: Audi
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
     >
-      <NodeHeader
-        className={NODE_HEADER_FLOATING_POSITION_CLASS}
-        icon={<Music className="h-4 w-4" />}
-        titleText={resolvedTitle}
-        editable
-        onTitleChange={(nextTitle) => updateNodeData(id, { displayName: nextTitle })}
-      />
-
       {data.audioUrl ? (
         <div className="flex h-full flex-col items-center justify-center gap-2 px-3 py-2">
           {/* Hidden native audio for playback */}
@@ -305,7 +275,6 @@ export const AudioUploadNode = memo(({ id, data, selected, width, height }: Audi
         type="source"
         id="source"
         position={Position.Right}
-        className="!h-2 !w-2 !border-surface-dark !bg-[var(--edge)]"
       />
 
       {/* 拖动改变大小 */}
