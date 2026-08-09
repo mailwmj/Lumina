@@ -52,6 +52,19 @@ import {
   resolveReferenceAwareDeleteRange,
 } from '@/features/canvas/application/referenceTokenEditing';
 import {
+  beginCompositionInput,
+  commitCompositionInputOnBlur,
+  completeCompositionInput,
+  createCompositionInputState,
+  shouldSuppressKeyboardCommand,
+  updateCompositionInputDraft,
+} from '@/features/canvas/application/compositionInputState';
+import {
+  TEXT_GENERATION_MAX_HEIGHT,
+  TEXT_GENERATION_MAX_WIDTH,
+  resolveTextGenerationLayout,
+} from '@/features/canvas/application/textGenerationLayout';
+import {
   IMAGE_GENERATION_ASPECT_RATIO_OPTIONS,
   IMAGE_GENERATION_RESOLUTION_OPTIONS,
   listConfiguredImageModels,
@@ -81,6 +94,7 @@ import { useSettingsStore } from '@/stores/settingsStore';
 import { polishText } from '@/features/canvas/infrastructure/textPolishService';
 import { resolveImageProviderRuntime } from '@/features/canvas/application/imageProviderRuntime';
 import { resolveEnabledTextModelSelection } from '@/features/canvas/application/textModelSelection';
+import { locateReferencedNode } from '@/features/canvas/application/referencedNodeLocation';
 import { openSettingsDialog } from '@/features/settings/settingsEvents';
 import {
   PICKER_FALLBACK_ANCHOR,
@@ -101,13 +115,6 @@ interface AspectRatioChoice {
   label: string;
 }
 
-const IMAGE_EDIT_NODE_MIN_WIDTH = 390;
-const IMAGE_EDIT_NODE_MIN_HEIGHT = 180;
-const IMAGE_EDIT_NODE_MAX_WIDTH = 1400;
-const IMAGE_EDIT_NODE_MAX_HEIGHT = 1000;
-const IMAGE_EDIT_NODE_DEFAULT_WIDTH = 520;
-const IMAGE_EDIT_NODE_DEFAULT_HEIGHT = 320;
-
 function buildAiResultNodeTitle(prompt: string, fallbackTitle: string): string {
   const normalizedPrompt = prompt.trim();
   if (!normalizedPrompt) {
@@ -119,7 +126,7 @@ function buildAiResultNodeTitle(prompt: string, fallbackTitle: string): string {
 
 export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageEditNodeProps) => {
   const { t } = useTranslation();
-  const { fitView } = useReactFlow();
+  const reactFlow = useReactFlow();
   const updateNodeInternals = useUpdateNodeInternals();
   const [error, setError] = useState<string | null>(null);
   const [isPolishing, setIsPolishing] = useState(false);
@@ -131,6 +138,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
   const promptHighlightRef = useRef<HTMLDivElement>(null);
   const [promptDraft, setPromptDraft] = useState(() => data.prompt ?? '');
   const promptDraftRef = useRef(promptDraft);
+  const promptCompositionStateRef = useRef(createCompositionInputState(data.prompt ?? ''));
   const [showImagePicker, setShowImagePicker] = useState(false);
   const [pickerCursor, setPickerCursor] = useState<number | null>(null);
   const [pickerActiveIndex, setPickerActiveIndex] = useState(0);
@@ -245,8 +253,16 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
     referenceImageCount: incomingImages.length,
   });
 
-  const resolvedWidth = Math.max(IMAGE_EDIT_NODE_MIN_WIDTH, Math.round(width ?? IMAGE_EDIT_NODE_DEFAULT_WIDTH));
-  const resolvedHeight = Math.max(IMAGE_EDIT_NODE_MIN_HEIGHT, Math.round(height ?? IMAGE_EDIT_NODE_DEFAULT_HEIGHT));
+  const layout = resolveTextGenerationLayout({
+    width,
+    height,
+    hasTextContext: workflowInputs.textInputs.length > 0,
+    hasImageContext: workflowInputs.imageInputs.length > 0,
+    hasResult: false,
+    isSizeManuallyAdjusted: data.isSizeManuallyAdjusted,
+  });
+  const resolvedWidth = layout.width;
+  const resolvedHeight = layout.height;
 
   useEffect(() => {
     updateNodeInternals(id);
@@ -254,16 +270,54 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
 
   useEffect(() => {
     const externalPrompt = data.prompt ?? '';
-    if (externalPrompt !== promptDraftRef.current) {
-      promptDraftRef.current = externalPrompt;
-      setPromptDraft(externalPrompt);
+    if (
+      promptCompositionStateRef.current.isComposing ||
+      externalPrompt === promptCompositionStateRef.current.committedValue
+    ) {
+      return;
     }
+    const nextState = createCompositionInputState(externalPrompt);
+    promptCompositionStateRef.current = nextState;
+    promptDraftRef.current = nextState.draft;
+    setPromptDraft(nextState.draft);
   }, [data.prompt]);
 
   const commitPromptDraft = useCallback((nextPrompt: string) => {
+    if (promptCompositionStateRef.current.isComposing) {
+      return;
+    }
     promptDraftRef.current = nextPrompt;
     updateNodeData(id, { prompt: nextPrompt });
   }, [id, updateNodeData]);
+
+  const applyPromptDraftTransition = useCallback((transition: ReturnType<typeof updateCompositionInputDraft>) => {
+    promptCompositionStateRef.current = transition.state;
+    promptDraftRef.current = transition.state.draft;
+    setPromptDraft(transition.state.draft);
+    if (transition.committedValue !== null) {
+      commitPromptDraft(transition.committedValue);
+    }
+  }, [commitPromptDraft]);
+
+  const beginPromptComposition = useCallback(() => {
+    promptCompositionStateRef.current = beginCompositionInput(promptCompositionStateRef.current);
+  }, []);
+
+  const handlePromptChange = useCallback((value: string, nativeIsComposing: boolean) => {
+    applyPromptDraftTransition(updateCompositionInputDraft(
+      promptCompositionStateRef.current,
+      value,
+      nativeIsComposing
+    ));
+  }, [applyPromptDraftTransition]);
+
+  const completePromptComposition = useCallback((value: string) => {
+    applyPromptDraftTransition(completeCompositionInput(promptCompositionStateRef.current, value));
+  }, [applyPromptDraftTransition]);
+
+  const commitPromptOnBlur = useCallback((value: string) => {
+    applyPromptDraftTransition(commitCompositionInputOnBlur(promptCompositionStateRef.current, value));
+  }, [applyPromptDraftTransition]);
 
   useEffect(() => {
     if (!hasConfiguredModel) {
@@ -386,6 +440,14 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
         promptType: 'image',
         reasoningEffort: textPolishReasoningEffort ?? undefined,
       }, selectedTextModel.apiConfig);
+      if (promptCompositionStateRef.current.isComposing) {
+        return;
+      }
+      promptCompositionStateRef.current = {
+        ...promptCompositionStateRef.current,
+        draft: result.polished,
+      };
+      promptDraftRef.current = result.polished;
       setPromptDraft(result.polished);
     } catch (err) {
       const message = err instanceof Error ? err.message : '润色失败';
@@ -459,7 +521,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
       if (outputCount > 1) {
         window.requestAnimationFrame(() => {
           window.requestAnimationFrame(() => {
-            void fitView({
+            void reactFlow.fitView({
               nodes: [{ id }, ...resultNodes.map(({ nodeId }) => ({ id: nodeId }))],
               padding: 0.16,
               duration: 320,
@@ -604,7 +666,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
     providerApiKey,
     providerRuntime.providerConfig,
     findNodePosition,
-    fitView,
+    reactFlow,
     promptDraft,
     effectiveExtraParams,
     hasConfiguredModel,
@@ -634,13 +696,18 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
   };
 
   const insertImageReference = useCallback((imageIndex: number) => {
+    if (promptCompositionStateRef.current.isComposing) {
+      return;
+    }
     const marker = `@图${imageIndex + 1}`;
     const currentPrompt = promptDraftRef.current;
     const cursor = pickerCursor ?? currentPrompt.length;
     const { nextText: nextPrompt, nextCursor } = insertReferenceToken(currentPrompt, cursor, marker);
 
-    setPromptDraft(nextPrompt);
-    commitPromptDraft(nextPrompt);
+    applyPromptDraftTransition(updateCompositionInputDraft(
+      promptCompositionStateRef.current,
+      nextPrompt
+    ));
     setShowImagePicker(false);
     setPickerCursor(null);
     setPickerActiveIndex(0);
@@ -650,9 +717,13 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
       promptRef.current?.setSelectionRange(nextCursor, nextCursor);
       syncPromptHighlightScroll();
     });
-  }, [commitPromptDraft, pickerCursor]);
+  }, [applyPromptDraftTransition, pickerCursor]);
 
   const handlePromptKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (shouldSuppressKeyboardCommand(event.nativeEvent)) {
+      return;
+    }
+
     if (event.key === 'Backspace' || event.key === 'Delete') {
       const currentPrompt = promptDraftRef.current;
       const selectionStart = event.currentTarget.selectionStart ?? currentPrompt.length;
@@ -668,8 +739,10 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
       if (deleteRange) {
         event.preventDefault();
         const { nextText, nextCursor } = removeTextRange(currentPrompt, deleteRange);
-        setPromptDraft(nextText);
-        commitPromptDraft(nextText);
+        applyPromptDraftTransition(updateCompositionInputDraft(
+          promptCompositionStateRef.current,
+          nextText
+        ));
         requestAnimationFrame(() => {
           promptRef.current?.focus();
           promptRef.current?.setSelectionRange(nextCursor, nextCursor);
@@ -729,27 +802,39 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
     <div
       ref={rootRef}
       className={`
-        group relative flex h-full flex-col overflow-visible rounded-[var(--node-radius)] border bg-surface-dark/90 p-2 transition-colors duration-150
+        group relative flex h-full flex-col gap-2 overflow-visible rounded-[var(--node-radius)] border bg-surface-dark/90 p-2 transition-colors duration-150
         ${resolveNodeSurfaceStateClass(selected)}
       `}
-      style={{ width: `${resolvedWidth}px`, height: `${resolvedHeight}px` }}
+      style={{ width: resolvedWidth, height: resolvedHeight }}
       onClick={() => setSelectedNode(id)}
     >
       <TextGenerationUpstreamContext
         textInputs={workflowInputs.textInputs}
         imageInputs={workflowInputs.imageInputs}
-        maxHeight={Math.min(110, Math.round(resolvedHeight * 0.25))}
+        textContextHeight={layout.upstreamTextHeight}
+        referenceImagesHeight={layout.referenceImagesHeight}
         onLocate={(nodeId) => {
-          setSelectedNode(nodeId);
-          void fitView({ nodes: [{ id: nodeId }], padding: 0.65, duration: 240 });
+          void locateReferencedNode(nodeId, {
+            setSelectedNode,
+            getInternalNode: reactFlow.getInternalNode,
+            getViewport: reactFlow.getViewport,
+            setCenter: reactFlow.setCenter,
+          });
         }}
         onDisconnect={deleteEdge}
         onReorder={(kind, draggedSourceId, targetSourceId) => {
           reorderNodeInput(id, kind, draggedSourceId, targetSourceId);
         }}
       />
-      <div className="relative min-h-0 flex-1 rounded-lg border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] p-2">
-        <div className="relative h-full min-h-0">
+      <section className="min-w-0 shrink-0">
+        <div className="mb-1 text-[10px] font-medium text-text-muted">
+          {t('node.imageEdit.promptLabel')}
+        </div>
+        <div
+          className="nodrag nowheel relative rounded-lg border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)]"
+          style={{ height: layout.promptHeight }}
+        >
+          <div className="relative h-full min-h-0 p-2">
           <div
             ref={promptHighlightRef}
             aria-hidden="true"
@@ -770,10 +855,15 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
             value={promptDraft}
             onChange={(event) => {
               const nextValue = event.target.value;
-              setPromptDraft(nextValue);
-              commitPromptDraft(nextValue);
+              handlePromptChange(
+                nextValue,
+                (event.nativeEvent as InputEvent).isComposing === true
+              );
             }}
             onKeyDown={handlePromptKeyDown}
+            onCompositionStart={beginPromptComposition}
+            onCompositionEnd={(event) => completePromptComposition(event.currentTarget.value)}
+            onBlur={(event) => commitPromptOnBlur(event.currentTarget.value)}
             onScroll={syncPromptHighlightScroll}
             onMouseDown={(event) => event.stopPropagation()}
             placeholder={t('node.imageEdit.promptPlaceholder')}
@@ -842,9 +932,10 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
           </div>,
           document.body
         )}
-      </div>
+        </div>
+      </section>
 
-      <div className="mt-2 flex shrink-0 items-center gap-1">
+      <div className="mt-auto flex h-8 shrink-0 items-center gap-1 px-1">
         {hasConfiguredModel ? (
           <ModelParamsControls
             imageModels={imageModels}
@@ -891,7 +982,11 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
           <UiButton
             variant="muted"
             size="sm"
-            onClick={() => openSettingsDialog({ category: 'imageApis' })}
+            className={`nodrag nowheel shrink-0 ${NODE_CONTROL_CHIP_CLASS}`}
+            onClick={(event) => {
+              event.stopPropagation();
+              openSettingsDialog({ category: 'imageApis' });
+            }}
           >
             {t('modelParams.configureImageModel')}
           </UiButton>
@@ -906,7 +1001,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
             }}
             variant="muted"
             size="sm"
-            className={`shrink-0 ${NODE_CONTROL_ICON_BUTTON_CLASS}`}
+            className={`nodrag nowheel shrink-0 ${NODE_CONTROL_ICON_BUTTON_CLASS}`}
             disabled={isPolishing}
           >
             {isPolishing ? (
@@ -925,7 +1020,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
             void handleGenerate();
           }}
           variant="primary"
-          className={`shrink-0 ${NODE_CONTROL_PRIMARY_BUTTON_CLASS}`}
+          className={`nodrag nowheel shrink-0 ${NODE_CONTROL_PRIMARY_BUTTON_CLASS}`}
           disabled={!hasConfiguredModel || isSubmitting}
           aria-busy={isSubmitting}
         >
@@ -951,10 +1046,10 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
         position={Position.Right}
       />
       <NodeResizeHandle
-        minWidth={IMAGE_EDIT_NODE_MIN_WIDTH}
-        minHeight={IMAGE_EDIT_NODE_MIN_HEIGHT}
-        maxWidth={IMAGE_EDIT_NODE_MAX_WIDTH}
-        maxHeight={IMAGE_EDIT_NODE_MAX_HEIGHT}
+        minWidth={layout.minWidth}
+        minHeight={layout.minHeight}
+        maxWidth={TEXT_GENERATION_MAX_WIDTH}
+        maxHeight={TEXT_GENERATION_MAX_HEIGHT}
       />
     </div>
   );

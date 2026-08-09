@@ -196,6 +196,7 @@
       "apiKeyRequired": "Please set API key in Settings",
       "modelRequired": "Fetch and select an image model in Settings first",
       "resultTitle": "Result Image",
+      "promptLabel": "Prompt",
       "promptPlaceholder": "Describe anything you want to generate or edit",
       "polishPrompt": "Polish prompt"
     },
@@ -230,8 +231,10 @@
     },
     "textGeneration": {
       "upstreamContext": "Upstream context",
+      "upstreamText": "Upstream text context",
+      "upstreamImages": "Image context",
       "disconnectInput": "Disconnect input",
-      "localInput": "User input",
+      "localInput": "Prompt",
       "inputPlaceholder": "Enter text for the model to process",
       "generatedResult": "Generated result",
       "clearResult": "Clear generated result",

@@ -94,6 +94,8 @@ export interface TextGenerationNodeData extends NodeDisplayData, TextModelSelect
   inputText: string;
   /** Latest non-empty generated result. Null means the composite input is effective. */
   generatedText: string | null;
+  /** Locks context-driven default dimensions after the user resizes this node. */
+  isSizeManuallyAdjusted?: boolean;
   /** Runtime-only state; restored projects always start idle. */
   isGenerating?: boolean;
   generationError?: string | null;

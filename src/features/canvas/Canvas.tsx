@@ -39,6 +39,7 @@ import {
   CURRENT_RUNTIME_SESSION_ID,
 } from '@/features/canvas/application/generationErrorReport';
 import { showErrorDialog } from '@/features/canvas/application/errorDialog';
+import { shouldSuppressKeyboardCommand } from '@/features/canvas/application/compositionInputState';
 import { resolveImageProviderRuntime } from '@/features/canvas/application/imageProviderRuntime';
 import {
   buildBatchConnectionPlan,
@@ -1123,6 +1124,10 @@ export function Canvas() {
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (shouldSuppressKeyboardCommand(event)) {
+        return;
+      }
+
       if (isTypingTarget(event.target)) {
         return;
       }

@@ -31,12 +31,19 @@ import {
   canStartTextGeneration,
 } from '@/features/canvas/application/textGenerationRun';
 import {
+  beginCompositionInput,
+  commitCompositionInputOnBlur,
+  completeCompositionInput,
+  createCompositionInputState,
+  shouldSuppressKeyboardCommand,
+  updateCompositionInputDraft,
+} from '@/features/canvas/application/compositionInputState';
+import {
   TEXT_GENERATION_MAX_HEIGHT,
   TEXT_GENERATION_MAX_WIDTH,
-  TEXT_GENERATION_MIN_HEIGHT,
-  TEXT_GENERATION_MIN_WIDTH,
   resolveTextGenerationLayout,
 } from '@/features/canvas/application/textGenerationLayout';
+import { locateReferencedNode } from '@/features/canvas/application/referencedNodeLocation';
 import { resolveTextModelSelection } from '@/features/canvas/application/textModelSelection';
 import type { TextGenerationNodeData } from '@/features/canvas/domain/canvasNodes';
 import { NodeResizeHandle } from '@/features/canvas/ui/NodeResizeHandle';
@@ -108,6 +115,10 @@ export const TextGenerationNode = memo(({
   );
   const controllerRef = useRef(new TextGenerationRunController<RunSnapshot>());
   const resultTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const inputCompositionStateRef = useRef(createCompositionInputState(data.inputText ?? ''));
+  const resultCompositionStateRef = useRef(createCompositionInputState(data.generatedText ?? ''));
+  const [inputDraft, setInputDraft] = useState(inputCompositionStateRef.current.draft);
+  const [resultDraft, setResultDraft] = useState(resultCompositionStateRef.current.draft);
   const [isRunning, setIsRunning] = useState(false);
   const [nodeError, setNodeError] = useState<NodeError | null>(null);
   const [showErrorDetails, setShowErrorDetails] = useState(false);
@@ -124,12 +135,15 @@ export const TextGenerationNode = memo(({
     () => resolveTextModelSelection(textApis, data.textApiId, data.textModelId),
     [data.textApiId, data.textModelId, textApis]
   );
-  const hasContext = inputs.textInputs.length > 0 || inputs.imageInputs.length > 0;
+  const hasTextContext = inputs.textInputs.length > 0;
+  const hasImageContext = inputs.imageInputs.length > 0;
   const layout = resolveTextGenerationLayout({
     width,
     height,
-    hasContext,
+    hasTextContext,
+    hasImageContext,
     hasResult: Boolean(generatedText),
+    isSizeManuallyAdjusted: data.isSizeManuallyAdjusted,
   });
   const unavailableImageNames = inputs.imageInputs
     .filter((input) => !input.imageUrl)
@@ -156,10 +170,104 @@ export const TextGenerationNode = memo(({
     controllerRef.current.stop();
   }, []);
 
+  useEffect(() => {
+    const externalInput = data.inputText ?? '';
+    if (
+      inputCompositionStateRef.current.isComposing ||
+      externalInput === inputCompositionStateRef.current.committedValue
+    ) {
+      return;
+    }
+    const nextState = createCompositionInputState(externalInput);
+    inputCompositionStateRef.current = nextState;
+    setInputDraft(nextState.draft);
+  }, [data.inputText]);
+
+  useEffect(() => {
+    const externalResult = data.generatedText ?? '';
+    if (
+      resultCompositionStateRef.current.isComposing ||
+      externalResult === resultCompositionStateRef.current.committedValue
+    ) {
+      return;
+    }
+    const nextState = createCompositionInputState(externalResult);
+    resultCompositionStateRef.current = nextState;
+    setResultDraft(nextState.draft);
+  }, [data.generatedText]);
+
   const locateNode = useCallback((nodeId: string) => {
-    setSelectedNode(nodeId);
-    void reactFlow.fitView({ nodes: [{ id: nodeId }], padding: 0.65, duration: 240 });
+    void locateReferencedNode(nodeId, {
+      setSelectedNode,
+      getInternalNode: reactFlow.getInternalNode,
+      getViewport: reactFlow.getViewport,
+      setCenter: reactFlow.setCenter,
+    });
   }, [reactFlow, setSelectedNode]);
+
+  const applyInputDraftTransition = useCallback((transition: ReturnType<typeof updateCompositionInputDraft>) => {
+    inputCompositionStateRef.current = transition.state;
+    setInputDraft(transition.state.draft);
+    if (transition.committedValue !== null) {
+      updateNodeDataCoalesced(
+        id,
+        { inputText: transition.committedValue },
+        'text-generation-local-input'
+      );
+    }
+  }, [id, updateNodeDataCoalesced]);
+
+  const applyResultDraftTransition = useCallback((transition: ReturnType<typeof updateCompositionInputDraft>) => {
+    resultCompositionStateRef.current = transition.state;
+    setResultDraft(transition.state.draft);
+    if (transition.committedValue !== null) {
+      updateNodeDataCoalesced(
+        id,
+        { generatedText: transition.committedValue.trim() ? transition.committedValue : null },
+        'text-generation-result'
+      );
+    }
+  }, [id, updateNodeDataCoalesced]);
+
+  const beginInputComposition = useCallback(() => {
+    inputCompositionStateRef.current = beginCompositionInput(inputCompositionStateRef.current);
+  }, []);
+
+  const beginResultComposition = useCallback(() => {
+    resultCompositionStateRef.current = beginCompositionInput(resultCompositionStateRef.current);
+  }, []);
+
+  const handleInputChange = useCallback((value: string, nativeIsComposing: boolean) => {
+    applyInputDraftTransition(updateCompositionInputDraft(
+      inputCompositionStateRef.current,
+      value,
+      nativeIsComposing
+    ));
+  }, [applyInputDraftTransition]);
+
+  const handleResultChange = useCallback((value: string, nativeIsComposing: boolean) => {
+    applyResultDraftTransition(updateCompositionInputDraft(
+      resultCompositionStateRef.current,
+      value,
+      nativeIsComposing
+    ));
+  }, [applyResultDraftTransition]);
+
+  const completeInputComposition = useCallback((value: string) => {
+    applyInputDraftTransition(completeCompositionInput(inputCompositionStateRef.current, value));
+  }, [applyInputDraftTransition]);
+
+  const completeResultComposition = useCallback((value: string) => {
+    applyResultDraftTransition(completeCompositionInput(resultCompositionStateRef.current, value));
+  }, [applyResultDraftTransition]);
+
+  const commitInputOnBlur = useCallback((value: string) => {
+    applyInputDraftTransition(commitCompositionInputOnBlur(inputCompositionStateRef.current, value));
+  }, [applyInputDraftTransition]);
+
+  const commitResultOnBlur = useCallback((value: string) => {
+    applyResultDraftTransition(commitCompositionInputOnBlur(resultCompositionStateRef.current, value));
+  }, [applyResultDraftTransition]);
 
   const stopRun = useCallback(() => {
     if (controllerRef.current.stop()) {
@@ -225,6 +333,9 @@ export const TextGenerationNode = memo(({
   ]);
 
   const handleGenerateShortcut = useCallback((event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (shouldSuppressKeyboardCommand(event.nativeEvent)) {
+      return;
+    }
     if ((event.metaKey || event.ctrlKey) && event.key === 'Enter' && !isRunning) {
       event.preventDefault();
       void startRun();
@@ -233,13 +344,13 @@ export const TextGenerationNode = memo(({
 
   return (
     <div
-      className={`group relative flex h-full w-full flex-col overflow-visible rounded-[var(--node-radius)] border bg-surface-dark/95 transition-colors duration-150 ${resolveNodeSurfaceStateClass(selected)}`}
+      className={`group relative flex h-full w-full flex-col gap-2 overflow-visible rounded-[var(--node-radius)] border bg-surface-dark/95 p-2 transition-colors duration-150 ${resolveNodeSurfaceStateClass(selected)}`}
       style={{ width: layout.width, height: layout.height }}
       onClick={() => setSelectedNode(id)}
     >
       <NodeResizeHandle
-        minWidth={TEXT_GENERATION_MIN_WIDTH}
-        minHeight={TEXT_GENERATION_MIN_HEIGHT}
+        minWidth={layout.minWidth}
+        minHeight={layout.minHeight}
         maxWidth={TEXT_GENERATION_MAX_WIDTH}
         maxHeight={TEXT_GENERATION_MAX_HEIGHT}
       />
@@ -247,7 +358,8 @@ export const TextGenerationNode = memo(({
       <TextGenerationUpstreamContext
         textInputs={inputs.textInputs}
         imageInputs={inputs.imageInputs}
-        maxHeight={layout.contextMaxHeight}
+        textContextHeight={layout.upstreamTextHeight}
+        referenceImagesHeight={layout.referenceImagesHeight}
         onLocate={locateNode}
         onDisconnect={deleteEdge}
         onReorder={(kind, draggedSourceId, targetSourceId) => {
@@ -255,59 +367,68 @@ export const TextGenerationNode = memo(({
         }}
       />
 
-      <main
-        className="grid min-h-0 flex-1"
-        style={{ gridTemplateRows: layout.bodyGridTemplateRows }}
-      >
-        <section className="relative min-h-0 overflow-hidden border-b border-[var(--ui-border-soft)]">
-          <label className="pointer-events-none absolute left-3 top-2 z-10 text-[10px] font-medium text-text-muted">
-            {t('node.textGeneration.localInput')}
-          </label>
+      <section className="min-w-0 shrink-0">
+        <div className="mb-1 text-[10px] font-medium text-text-muted">
+          {t('node.textGeneration.localInput')}
+        </div>
+        <div
+          className="nodrag nowheel relative overflow-hidden rounded-lg border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)]"
+          style={{ height: layout.promptHeight }}
+        >
           <textarea
-            value={data.inputText ?? ''}
+            value={inputDraft}
             placeholder={t('node.textGeneration.inputPlaceholder')}
             onKeyDown={handleGenerateShortcut}
-            onChange={(event) => updateNodeDataCoalesced(
-              id,
-              { inputText: event.target.value },
-              'text-generation-local-input'
+            onCompositionStart={beginInputComposition}
+            onCompositionEnd={(event) => completeInputComposition(event.currentTarget.value)}
+            onBlur={(event) => commitInputOnBlur(event.currentTarget.value)}
+            onChange={(event) => handleInputChange(
+              event.target.value,
+              (event.nativeEvent as InputEvent).isComposing === true
             )}
-            className="nodrag nowheel h-full w-full resize-none border-0 bg-transparent px-3 pb-2 pt-7 text-sm leading-5 text-text-dark outline-none placeholder:text-text-muted/65"
+            className="ui-scrollbar nodrag nowheel h-full w-full resize-none overflow-y-auto border-0 bg-transparent px-3 py-2 text-sm leading-5 text-text-dark outline-none placeholder:text-text-muted/65"
           />
-        </section>
+        </div>
+      </section>
 
-        {generatedText && (
-          <section className="relative min-h-0 overflow-hidden">
-            <label className="pointer-events-none absolute left-3 top-2 z-10 text-[10px] font-medium text-text-muted">
-              {t('node.textGeneration.generatedResult')}
-            </label>
+      {generatedText && (
+        <section className="min-w-0 shrink-0">
+          <div className="mb-1 text-[10px] font-medium text-text-muted">
+            {t('node.textGeneration.generatedResult')}
+          </div>
+          <div
+            className="nodrag nowheel relative overflow-hidden rounded-lg border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)]/70"
+            style={{ height: layout.resultHeight }}
+          >
             <button
               type="button"
               disabled={isRunning}
               aria-label={t('node.textGeneration.clearResult')}
               title={t('node.textGeneration.clearResult')}
               onClick={() => updateNodeData(id, { generatedText: null })}
-              className="nodrag absolute right-2 top-1.5 z-10 rounded p-1 text-text-muted hover:bg-[var(--ui-hover)] hover:text-text-dark disabled:cursor-not-allowed disabled:opacity-40"
+              className="nodrag nowheel absolute right-2 top-1.5 z-10 rounded p-1 text-text-muted hover:bg-[var(--ui-hover)] hover:text-text-dark disabled:cursor-not-allowed disabled:opacity-40"
             >
               <X className="h-3.5 w-3.5" />
             </button>
             <textarea
               ref={resultTextareaRef}
-              value={generatedText}
+              value={resultDraft}
               readOnly={isRunning}
               onKeyDown={handleGenerateShortcut}
-              onChange={(event) => updateNodeDataCoalesced(
-                id,
-                { generatedText: event.target.value.trim() ? event.target.value : null },
-                'text-generation-result'
+              onCompositionStart={beginResultComposition}
+              onCompositionEnd={(event) => completeResultComposition(event.currentTarget.value)}
+              onBlur={(event) => commitResultOnBlur(event.currentTarget.value)}
+              onChange={(event) => handleResultChange(
+                event.target.value,
+                (event.nativeEvent as InputEvent).isComposing === true
               )}
-              className="nodrag nowheel h-full w-full resize-none border-0 bg-[var(--ui-surface-field)]/35 px-3 pb-2 pt-7 text-sm leading-5 text-text-dark outline-none read-only:cursor-default"
+              className="ui-scrollbar nodrag nowheel h-full w-full resize-none overflow-y-auto border-0 bg-transparent px-3 py-2 pr-8 text-sm leading-5 text-text-dark outline-none read-only:cursor-default"
             />
-          </section>
-        )}
-      </main>
+          </div>
+        </section>
+      )}
 
-      <footer className="nodrag flex h-10 shrink-0 items-center justify-between gap-2 border-t border-[var(--ui-border-soft)] px-2">
+      <footer className="mt-auto flex h-8 shrink-0 items-center justify-between gap-2 px-1">
         <TextModelSelector
           textApis={textApis}
           textApiId={data.textApiId}
@@ -325,7 +446,7 @@ export const TextGenerationNode = memo(({
           type="button"
           variant={isRunning ? 'muted' : 'primary'}
           size="sm"
-          className={`shrink-0 ${NODE_CONTROL_PRIMARY_BUTTON_CLASS}`}
+          className={`nodrag nowheel shrink-0 ${NODE_CONTROL_PRIMARY_BUTTON_CLASS}`}
           disabled={!isRunning && !canGenerate}
           onClick={() => isRunning ? stopRun() : void startRun()}
         >
@@ -344,7 +465,7 @@ export const TextGenerationNode = memo(({
         <button
           type="button"
           onClick={() => setShowErrorDetails(true)}
-          className="nodrag absolute right-2 top-2 z-20 flex max-w-[65%] items-center gap-1 rounded-md border border-red-400/40 bg-red-950/85 px-2 py-1 text-left text-[10px] text-red-200 shadow-sm"
+          className="nodrag nowheel absolute right-2 top-2 z-20 flex max-w-[65%] items-center gap-1 rounded-md border border-red-400/40 bg-red-950/85 px-2 py-1 text-left text-[10px] text-red-200 shadow-sm"
         >
           <AlertTriangle className="h-3 w-3 shrink-0" />
           <span className="truncate">{nodeError.message}</span>

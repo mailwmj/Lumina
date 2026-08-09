@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { UiButton } from '@/components/ui';
+import { UiButton, UiSelect } from '@/components/ui';
 import {
   listConfiguredTextModels,
   resolveTextModelSelection,
@@ -56,7 +56,8 @@ export function TextModelSelector({
       <UiButton
         variant="muted"
         size="sm"
-        className={`shrink-0 ${className}`}
+        className={`nodrag nowheel shrink-0 ${NODE_CONTROL_CHIP_CLASS} ${className}`}
+        onMouseDown={(event) => event.stopPropagation()}
         onClick={(event) => {
           event.stopPropagation();
           openSettingsDialog({ category: 'textApis' });
@@ -75,50 +76,58 @@ export function TextModelSelector({
     });
 
   return (
-    <div className={`flex min-w-0 flex-1 items-center gap-1 ${className}`}>
-      <select
-        aria-label={t('node.textModel.select')}
+    <div className={`flex min-w-0 shrink-0 items-center gap-1 ${className}`}>
+      <div
         title={selectedLabel}
-        value={value}
         onMouseDown={(event) => event.stopPropagation()}
-        onChange={(event) => {
-          const option = options.find((candidate) =>
-            optionValue(candidate.apiId, candidate.modelId) === event.target.value
-          );
-          if (option) {
-            onChange({ textApiId: option.apiId, textModelId: option.modelId });
-          }
-        }}
-        className={`nodrag nowheel min-w-0 flex-1 border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] font-mono text-text-dark ${NODE_CONTROL_CHIP_CLASS}`}
+        className="nodrag nowheel w-[208px] shrink-0"
       >
-        {hasUnavailableSelection && (
-          <option value={requestedValue} disabled>
-            {selectedLabel}
-          </option>
-        )}
-        {options.map((option) => (
-          <option key={optionValue(option.apiId, option.modelId)} value={optionValue(option.apiId, option.modelId)}>
-            {`${option.apiName} / ${option.modelId}`}
-          </option>
-        ))}
-      </select>
-      <select
-        aria-label={t('node.textModel.reasoningEffort')}
+        <UiSelect
+          aria-label={t('node.textModel.select')}
+          value={value}
+          onChange={(event) => {
+            const option = options.find((candidate) =>
+              optionValue(candidate.apiId, candidate.modelId) === event.target.value
+            );
+            if (option) {
+              onChange({ textApiId: option.apiId, textModelId: option.modelId });
+            }
+          }}
+          className={`nodrag nowheel !w-full font-mono text-text-dark ${NODE_CONTROL_CHIP_CLASS}`}
+        >
+          {hasUnavailableSelection && (
+            <option value={requestedValue} disabled>
+              {selectedLabel}
+            </option>
+          )}
+          {options.map((option) => (
+            <option key={optionValue(option.apiId, option.modelId)} value={optionValue(option.apiId, option.modelId)}>
+              {`${option.apiName} / ${option.modelId}`}
+            </option>
+          ))}
+        </UiSelect>
+      </div>
+      <div
         title={t('node.textModel.reasoningEffort')}
-        value={reasoningEffort ?? ''}
         onMouseDown={(event) => event.stopPropagation()}
-        onChange={(event) => onReasoningEffortChange(
-          event.target.value ? event.target.value as TextReasoningEffort : undefined
-        )}
-        className={`nodrag nowheel max-w-[80px] shrink-0 border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] font-mono text-text-dark ${NODE_CONTROL_CHIP_CLASS}`}
+        className="nodrag nowheel w-[76px] shrink-0"
       >
-        <option value="">{t('node.textModel.reasoningDefault')}</option>
-        {TEXT_REASONING_EFFORTS.map((effort) => (
-          <option key={effort} value={effort}>
-            {t(`node.textModel.reasoning.${effort}`)}
-          </option>
-        ))}
-      </select>
+        <UiSelect
+          aria-label={t('node.textModel.reasoningEffort')}
+          value={reasoningEffort ?? ''}
+          onChange={(event) => onReasoningEffortChange(
+            event.target.value ? event.target.value as TextReasoningEffort : undefined
+          )}
+          className={`nodrag nowheel !w-full font-mono text-text-dark ${NODE_CONTROL_CHIP_CLASS}`}
+        >
+          <option value="">{t('node.textModel.reasoningDefault')}</option>
+          {TEXT_REASONING_EFFORTS.map((effort) => (
+            <option key={effort} value={effort}>
+              {t(`node.textModel.reasoning.${effort}`)}
+            </option>
+          ))}
+        </UiSelect>
+      </div>
     </div>
   );
 }

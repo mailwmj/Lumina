@@ -228,6 +228,43 @@ describe('canvas store text editing history', () => {
   });
 });
 
+describe('canvas store text generation sizing', () => {
+  afterEach(() => {
+    useCanvasStore.getState().setCanvasData([], []);
+  });
+
+  it('locks context-driven dimensions after a user resize', () => {
+    const node = createNode(CANVAS_NODE_TYPES.textGeneration, 'text-node');
+    useCanvasStore.getState().setCanvasData([node], []);
+
+    useCanvasStore.getState().onNodesChange([{
+      id: node.id,
+      type: 'dimensions',
+      dimensions: { width: 760, height: 480 },
+      resizing: false,
+    }]);
+
+    expect(useCanvasStore.getState().nodes.find((item) => item.id === node.id)?.data)
+      .toMatchObject({ isSizeManuallyAdjusted: true });
+  });
+
+  it('does not treat a programmatic size sync as a manual text-node resize', () => {
+    const node = createNode(CANVAS_NODE_TYPES.textGeneration, 'text-node');
+    useCanvasStore.getState().setCanvasData([node], []);
+
+    useCanvasStore.getState().onNodesChange([{
+      id: node.id,
+      type: 'dimensions',
+      dimensions: { width: 760, height: 480 },
+      resizing: false,
+      setAttributes: true,
+    }]);
+
+    expect(useCanvasStore.getState().nodes.find((item) => item.id === node.id)?.data)
+      .toMatchObject({ isSizeManuallyAdjusted: false });
+  });
+});
+
 describe('new text generation node defaults', () => {
   afterEach(() => {
     useCanvasStore.getState().setCanvasData([], []);

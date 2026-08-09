@@ -377,7 +377,7 @@ export const ModelParamsControls = memo(({
   };
 
   return (
-    <div ref={containerRef} className="flex items-center gap-1">
+    <div ref={containerRef} className="nodrag nowheel flex items-center gap-1">
       <div ref={modelTriggerRef} className="relative flex">
         <UiChipButton
           active={openPanel === 'model'}

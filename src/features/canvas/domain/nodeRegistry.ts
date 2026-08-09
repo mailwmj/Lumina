@@ -220,6 +220,7 @@ const textGenerationNodeDefinition: CanvasNodeDefinition<TextGenerationNodeData>
     displayName: DEFAULT_NODE_DISPLAY_NAME[CANVAS_NODE_TYPES.textGeneration],
     inputText: '',
     generatedText: null,
+    isSizeManuallyAdjusted: false,
     isGenerating: false,
     generationError: null,
     generationErrorDetails: null,

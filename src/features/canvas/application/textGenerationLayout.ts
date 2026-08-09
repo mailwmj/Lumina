@@ -1,23 +1,39 @@
 export const TEXT_GENERATION_DEFAULT_WIDTH = 520;
-export const TEXT_GENERATION_DEFAULT_HEIGHT = 360;
+export const TEXT_GENERATION_DEFAULT_HEIGHT = 240;
 export const TEXT_GENERATION_MIN_WIDTH = 390;
 export const TEXT_GENERATION_MIN_HEIGHT = 240;
 export const TEXT_GENERATION_MAX_WIDTH = 1400;
 export const TEXT_GENERATION_MAX_HEIGHT = 1000;
-export const TEXT_GENERATION_FOOTER_HEIGHT = 40;
+export const TEXT_GENERATION_FOOTER_HEIGHT = 32;
+export const TEXT_GENERATION_UPSTREAM_TEXT_HEIGHT = 96;
+export const TEXT_GENERATION_REFERENCE_IMAGES_HEIGHT = 88;
+export const TEXT_GENERATION_PROMPT_HEIGHT = 160;
+export const TEXT_GENERATION_PROMPT_WITH_RESULT_HEIGHT = 120;
+export const TEXT_GENERATION_RESULT_HEIGHT = 136;
+
+const NODE_VERTICAL_INSET = 16;
+const NODE_SECTION_GAP = 8;
+const NODE_SECTION_LABEL_HEIGHT = 16;
 
 interface TextGenerationLayoutInput {
   width?: number;
   height?: number;
-  hasContext: boolean;
+  hasContext?: boolean;
+  hasTextContext?: boolean;
+  hasImageContext?: boolean;
   hasResult: boolean;
+  isSizeManuallyAdjusted?: boolean;
 }
 
 export interface TextGenerationLayout {
   width: number;
   height: number;
-  contextMaxHeight: number;
-  bodyGridTemplateRows: string;
+  minWidth: number;
+  minHeight: number;
+  upstreamTextHeight: number;
+  referenceImagesHeight: number;
+  promptHeight: number;
+  resultHeight: number;
 }
 
 function clampDimension(
@@ -27,7 +43,7 @@ function clampDimension(
   max: number
 ): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
-    return fallback;
+    return Math.min(max, Math.max(min, fallback));
   }
   return Math.min(max, Math.max(min, Math.round(value)));
 }
@@ -35,29 +51,52 @@ function clampDimension(
 export function resolveTextGenerationLayout({
   width,
   height,
-  hasContext,
+  hasContext = false,
+  hasTextContext = false,
+  hasImageContext = false,
   hasResult,
+  isSizeManuallyAdjusted = false,
 }: TextGenerationLayoutInput): TextGenerationLayout {
+  const showTextContext = hasTextContext || (hasContext && !hasImageContext);
+  const showImageContext = hasImageContext;
+  const upstreamTextHeight = showTextContext ? TEXT_GENERATION_UPSTREAM_TEXT_HEIGHT : 0;
+  const referenceImagesHeight = showImageContext ? TEXT_GENERATION_REFERENCE_IMAGES_HEIGHT : 0;
+  const promptHeight = hasResult
+    ? TEXT_GENERATION_PROMPT_WITH_RESULT_HEIGHT
+    : TEXT_GENERATION_PROMPT_HEIGHT;
+  const resultHeight = hasResult ? TEXT_GENERATION_RESULT_HEIGHT : 0;
+  const sectionHeights = [
+    showTextContext ? NODE_SECTION_LABEL_HEIGHT + upstreamTextHeight : 0,
+    showImageContext ? NODE_SECTION_LABEL_HEIGHT + referenceImagesHeight : 0,
+    NODE_SECTION_LABEL_HEIGHT + promptHeight,
+    hasResult ? NODE_SECTION_LABEL_HEIGHT + resultHeight : 0,
+    TEXT_GENERATION_FOOTER_HEIGHT,
+  ].filter((sectionHeight) => sectionHeight > 0);
+  const automaticHeight = NODE_VERTICAL_INSET
+    + sectionHeights.reduce((total, sectionHeight) => total + sectionHeight, 0)
+    + Math.max(0, sectionHeights.length - 1) * NODE_SECTION_GAP;
+  const minHeight = Math.max(TEXT_GENERATION_MIN_HEIGHT, automaticHeight);
   const resolvedWidth = clampDimension(
-    width,
+    isSizeManuallyAdjusted ? width : undefined,
     TEXT_GENERATION_DEFAULT_WIDTH,
     TEXT_GENERATION_MIN_WIDTH,
     TEXT_GENERATION_MAX_WIDTH
   );
   const resolvedHeight = clampDimension(
-    height,
-    TEXT_GENERATION_DEFAULT_HEIGHT,
-    TEXT_GENERATION_MIN_HEIGHT,
+    isSizeManuallyAdjusted ? height : undefined,
+    automaticHeight,
+    minHeight,
     TEXT_GENERATION_MAX_HEIGHT
   );
-  const usableHeight = Math.max(0, resolvedHeight - TEXT_GENERATION_FOOTER_HEIGHT);
 
   return {
     width: resolvedWidth,
     height: resolvedHeight,
-    contextMaxHeight: hasContext
-      ? Math.min(120, Math.round(usableHeight * 0.25))
-      : 0,
-    bodyGridTemplateRows: hasResult ? '45fr 55fr' : '1fr',
+    minWidth: TEXT_GENERATION_MIN_WIDTH,
+    minHeight,
+    upstreamTextHeight,
+    referenceImagesHeight,
+    promptHeight,
+    resultHeight,
   };
 }

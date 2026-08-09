@@ -444,6 +444,10 @@ function isImageAutoResizableType(type: CanvasNodeType): boolean {
     || type === CANVAS_NODE_TYPES.exportImage;
 }
 
+function isContextAwareGenerationNode(type: CanvasNodeType): boolean {
+  return type === CANVAS_NODE_TYPES.textGeneration || type === CANVAS_NODE_TYPES.imageEdit;
+}
+
 function withManualSizeLock(node: CanvasNode): CanvasNode {
   const nodeData = node.data as CanvasNodeData & { isSizeManuallyAdjusted?: boolean };
   if (nodeData.isSizeManuallyAdjusted) {
@@ -688,11 +692,28 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
           )
           .map((change) => change.id)
       );
+      const contextAwareGenerationResizeIds = new Set(
+        changes
+          .filter(
+            (change): change is NodeChange<CanvasNode> & { id: string } =>
+              change.type === 'dimensions'
+              && 'resizing' in change
+              && (
+                change.resizing === true
+                || (change.resizing === false && change.setAttributes !== true)
+              )
+              && typeof change.id === 'string'
+          )
+          .map((change) => change.id)
+      );
 
       let nextNodes = applyNodeChanges<CanvasNode>(changes, state.nodes);
-      if (resizedNodeIds.size > 0) {
+      if (resizedNodeIds.size > 0 || contextAwareGenerationResizeIds.size > 0) {
         nextNodes = nextNodes.map((node) => {
-          if (!resizedNodeIds.has(node.id) || !isImageAutoResizableType(node.type)) {
+          const shouldLockImageSize = resizedNodeIds.has(node.id) && isImageAutoResizableType(node.type);
+          const shouldLockContextAwareGenerationSize =
+            contextAwareGenerationResizeIds.has(node.id) && isContextAwareGenerationNode(node.type);
+          if (!shouldLockImageSize && !shouldLockContextAwareGenerationSize) {
             return node;
           }
           return withManualSizeLock(node);

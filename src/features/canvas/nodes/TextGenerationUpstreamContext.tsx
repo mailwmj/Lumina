@@ -18,7 +18,8 @@ interface DraggedInput {
 interface TextGenerationUpstreamContextProps {
   textInputs: ResolvedTextInput[];
   imageInputs: ResolvedImageInput[];
-  maxHeight: number;
+  textContextHeight: number;
+  referenceImagesHeight: number;
   onLocate: (nodeId: string) => void;
   onDisconnect: (edgeId: string) => void;
   onReorder: (
@@ -31,15 +32,15 @@ interface TextGenerationUpstreamContextProps {
 export const TextGenerationUpstreamContext = memo(({
   textInputs,
   imageInputs,
-  maxHeight,
+  textContextHeight,
+  referenceImagesHeight,
   onLocate,
   onDisconnect,
   onReorder,
 }: TextGenerationUpstreamContextProps) => {
   const { t } = useTranslation();
   const draggedInputRef = useRef<DraggedInput | null>(null);
-  const hasInputs = textInputs.length > 0 || imageInputs.length > 0;
-  if (!hasInputs) {
+  if (textInputs.length === 0 && imageInputs.length === 0) {
     return null;
   }
 
@@ -67,79 +68,42 @@ export const TextGenerationUpstreamContext = memo(({
   };
 
   return (
-    <section
-      className="nodrag nowheel shrink-0 overflow-y-auto border-b border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)]/55 px-2 py-1.5"
-      style={{ maxHeight }}
-      aria-label={t('node.textGeneration.upstreamContext')}
-    >
+    <>
       {textInputs.length > 0 && (
-        <div className="flex min-w-0 gap-1.5 overflow-x-auto pb-1">
-          {textInputs.map((input) => (
-            <article
-              key={input.edgeId}
-              draggable
-              onDragStart={(event) => startDrag(event, 'text', input.nodeId)}
-              onDragOver={(event) => event.preventDefault()}
-              onDrop={(event) => dropOn(event, 'text', input.nodeId)}
-              onClick={() => onLocate(input.nodeId)}
-              className="group/input relative w-36 shrink-0 cursor-pointer rounded-md border border-[var(--ui-border-soft)] bg-surface-dark/65 px-2 py-1 text-left hover:border-[var(--ui-border-strong)]"
-            >
-              <div className="truncate pr-4 text-[10px] font-medium text-text-muted">
-                {input.displayName}
-              </div>
-              <div
-                className="overflow-hidden break-words text-[11px] leading-4 text-text-dark"
-                style={{ display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2 }}
-              >
-                {input.text}
-              </div>
-              <button
-                type="button"
-                aria-label={t('node.textGeneration.disconnectInput')}
-                className="absolute right-1 top-1 rounded p-0.5 text-text-muted opacity-0 hover:bg-[var(--ui-hover)] hover:text-text-dark group-hover/input:opacity-100"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onDisconnect(input.edgeId);
-                }}
-              >
-                <Unlink2 className="h-3 w-3" />
-              </button>
-            </article>
-          ))}
-        </div>
-      )}
-
-      {imageInputs.length > 0 && (
-        <div className="flex min-w-0 gap-1.5 overflow-x-auto">
-          {imageInputs.map((input) => {
-            const preview = input.previewImageUrl || input.imageUrl;
-            return (
+        <section className="min-w-0 shrink-0" aria-label={t('node.textGeneration.upstreamText')}>
+          <div className="mb-1 text-[10px] font-medium text-text-muted">
+            {t('node.textGeneration.upstreamText')}
+          </div>
+          <div
+            className="ui-scrollbar nodrag nowheel space-y-1 overflow-y-auto rounded-lg border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)]/70 p-1.5"
+            style={{ height: textContextHeight }}
+          >
+            {textInputs.map((input) => (
               <article
                 key={input.edgeId}
                 draggable
-                title={input.displayName}
-                onDragStart={(event) => startDrag(event, 'image', input.nodeId)}
+                onDragStart={(event) => startDrag(event, 'text', input.nodeId)}
                 onDragOver={(event) => event.preventDefault()}
-                onDrop={(event) => dropOn(event, 'image', input.nodeId)}
-                onClick={() => onLocate(input.nodeId)}
-                className="group/input relative h-12 w-12 shrink-0 cursor-pointer overflow-hidden rounded-md border border-[var(--ui-border-soft)] bg-bg-dark hover:border-[var(--ui-border-strong)]"
+                onDrop={(event) => dropOn(event, 'text', input.nodeId)}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onLocate(input.nodeId);
+                }}
+                className="nodrag nowheel group/input relative cursor-grab rounded-md border border-[var(--ui-border-soft)] bg-surface-dark/65 px-2 py-1.5 text-left active:cursor-grabbing hover:border-[var(--ui-border-strong)]"
               >
-                {preview ? (
-                  <img
-                    src={resolveImageDisplayUrl(preview)}
-                    alt={input.displayName}
-                    className="h-full w-full object-cover"
-                    draggable={false}
-                  />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center text-red-300">
-                    <AlertTriangle className="h-4 w-4" />
-                  </div>
-                )}
+                <div className="truncate pr-4 text-[10px] font-medium text-text-muted">
+                  {input.displayName}
+                </div>
+                <div
+                  className="overflow-hidden break-words text-[11px] leading-4 text-text-dark"
+                  style={{ display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 3 }}
+                >
+                  {input.text}
+                </div>
                 <button
                   type="button"
                   aria-label={t('node.textGeneration.disconnectInput')}
-                  className="absolute right-0.5 top-0.5 rounded bg-black/55 p-0.5 text-white opacity-0 group-hover/input:opacity-100"
+                  className="nodrag nowheel absolute right-1 top-1 rounded p-0.5 text-text-muted opacity-0 hover:bg-[var(--ui-hover)] hover:text-text-dark group-hover/input:opacity-100"
                   onClick={(event) => {
                     event.stopPropagation();
                     onDisconnect(input.edgeId);
@@ -148,11 +112,66 @@ export const TextGenerationUpstreamContext = memo(({
                   <Unlink2 className="h-3 w-3" />
                 </button>
               </article>
-            );
-          })}
-        </div>
+            ))}
+          </div>
+        </section>
       )}
-    </section>
+
+      {imageInputs.length > 0 && (
+        <section className="min-w-0 shrink-0" aria-label={t('node.textGeneration.upstreamImages')}>
+          <div className="mb-1 text-[10px] font-medium text-text-muted">
+            {t('node.textGeneration.upstreamImages')}
+          </div>
+          <div
+            className="ui-scrollbar nodrag nowheel flex min-w-0 gap-1.5 overflow-x-auto overflow-y-hidden rounded-lg border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)]/70 p-2"
+            style={{ height: referenceImagesHeight }}
+          >
+            {imageInputs.map((input) => {
+              const preview = input.previewImageUrl || input.imageUrl;
+              return (
+                <article
+                  key={input.edgeId}
+                  draggable
+                  title={input.displayName}
+                  onDragStart={(event) => startDrag(event, 'image', input.nodeId)}
+                  onDragOver={(event) => event.preventDefault()}
+                  onDrop={(event) => dropOn(event, 'image', input.nodeId)}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onLocate(input.nodeId);
+                  }}
+                  className="nodrag nowheel group/input relative h-16 w-16 shrink-0 cursor-grab overflow-hidden rounded-md border border-[var(--ui-border-soft)] bg-bg-dark active:cursor-grabbing hover:border-[var(--ui-border-strong)]"
+                >
+                  {preview ? (
+                    <img
+                      src={resolveImageDisplayUrl(preview)}
+                      alt={input.displayName}
+                      className="h-full w-full object-cover"
+                      draggable={false}
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center text-red-300">
+                      <AlertTriangle className="h-4 w-4" />
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    aria-label={t('node.textGeneration.disconnectInput')}
+                    className="nodrag nowheel absolute right-0.5 top-0.5 rounded bg-black/55 p-0.5 text-white opacity-0 group-hover/input:opacity-100"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onDisconnect(input.edgeId);
+                    }}
+                  >
+                    <Unlink2 className="h-3 w-3" />
+                  </button>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+      )}
+    </>
   );
 });
 
