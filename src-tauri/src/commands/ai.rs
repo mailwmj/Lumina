@@ -394,9 +394,10 @@ mod text_api_endpoint_tests {
     use serde_json::Value;
 
     use super::{
-        build_generate_text_chat_request, extract_generated_text, resolve_chat_completions_endpoint,
-        resolve_models_endpoint, ChatContent, ChatMessage, ChatRequest, GenerateTextRequest,
-        ResponsesRequest, ResponsesReasoning,
+        build_generate_text_chat_request, build_generate_text_responses_request,
+        extract_generated_text, resolve_chat_completions_endpoint, resolve_models_endpoint,
+        ChatContent, ChatMessage, ChatRequest, GenerateTextRequest, ResponsesReasoning,
+        ResponsesRequest,
     };
 
     #[test]
@@ -542,6 +543,75 @@ mod text_api_endpoint_tests {
     }
 
     #[test]
+    fn generic_text_requests_interleave_numbered_labels_and_images_in_reference_order() {
+        let request = GenerateTextRequest {
+            text: "衣服参考图片 1；帽子参考图片 2。".to_string(),
+            model: "vision-model".to_string(),
+            api_key: "secret".to_string(),
+            base_url: "https://gateway.example/v1".to_string(),
+            reference_images: Some(vec![
+                "https://images.example/red-clothes.png".to_string(),
+                "https://images.example/yellow-hat.png".to_string(),
+            ]),
+            reasoning_effort: None,
+        };
+
+        let chat = serde_json::to_value(build_generate_text_chat_request(&request).unwrap())
+            .unwrap();
+        let chat_content = chat
+            .get("messages")
+            .and_then(Value::as_array)
+            .and_then(|messages| messages.first())
+            .and_then(|message| message.get("content"));
+        assert_eq!(
+            chat_content,
+            Some(&serde_json::json!([
+                { "type": "text", "text": "图片 1：" },
+                {
+                    "type": "image_url",
+                    "image_url": { "url": "https://images.example/red-clothes.png" }
+                },
+                { "type": "text", "text": "图片 2：" },
+                {
+                    "type": "image_url",
+                    "image_url": { "url": "https://images.example/yellow-hat.png" }
+                },
+                {
+                    "type": "text",
+                    "text": "衣服参考图片 1；帽子参考图片 2。"
+                }
+            ]))
+        );
+
+        let responses =
+            serde_json::to_value(build_generate_text_responses_request(&request).unwrap()).unwrap();
+        let responses_content = responses
+            .get("input")
+            .and_then(Value::as_array)
+            .and_then(|input| input.first())
+            .and_then(|message| message.get("content"));
+        assert_eq!(
+            responses_content,
+            Some(&serde_json::json!([
+                { "type": "input_text", "text": "图片 1：" },
+                {
+                    "type": "input_image",
+                    "image_url": "https://images.example/red-clothes.png"
+                },
+                { "type": "input_text", "text": "图片 2：" },
+                {
+                    "type": "input_image",
+                    "image_url": "https://images.example/yellow-hat.png"
+                },
+                {
+                    "type": "input_text",
+                    "text": "衣服参考图片 1；帽子参考图片 2。"
+                }
+            ]))
+        );
+    }
+
+    #[test]
     fn generic_text_request_rejects_an_unreadable_image_reference() {
         let request = GenerateTextRequest {
             text: "describe".to_string(),
@@ -556,7 +626,7 @@ mod text_api_endpoint_tests {
     }
 
     #[test]
-    fn image_only_text_generation_omits_an_empty_text_part() {
+    fn image_only_text_generation_omits_an_empty_user_prompt_part() {
         let request = GenerateTextRequest {
             text: "   ".to_string(),
             model: "vision-model".to_string(),
@@ -575,8 +645,10 @@ mod text_api_endpoint_tests {
             .and_then(Value::as_array)
             .unwrap();
 
-        assert_eq!(content.len(), 1);
-        assert_eq!(content[0].get("type").and_then(Value::as_str), Some("image_url"));
+        assert_eq!(content.len(), 2);
+        assert_eq!(content[0].get("type").and_then(Value::as_str), Some("text"));
+        assert_eq!(content[0].get("text").and_then(Value::as_str), Some("图片 1："));
+        assert_eq!(content[1].get("type").and_then(Value::as_str), Some("image_url"));
     }
 
     #[test]
@@ -1332,6 +1404,10 @@ fn validate_text_reference_image(image_url: &str) -> Result<(), String> {
     Err("参考图片无法读取，请重新连接或上传图片".to_string())
 }
 
+fn reference_image_label(index: usize) -> String {
+    format!("图片 {}：", index + 1)
+}
+
 fn build_generate_text_chat_request(request: &GenerateTextRequest) -> Result<ChatRequest, String> {
     validate_generate_text_request(request)?;
     let images = request.reference_images.as_deref().unwrap_or(&[]);
@@ -1342,16 +1418,21 @@ fn build_generate_text_chat_request(request: &GenerateTextRequest) -> Result<Cha
     let content = if images.is_empty() {
         ChatContent::Text(request.text.clone())
     } else {
-        let mut parts = images
-            .iter()
-            .map(|image_url| ContentPart {
+        let mut parts = Vec::with_capacity(images.len() * 2 + 1);
+        for (index, image_url) in images.iter().enumerate() {
+            parts.push(ContentPart {
+                part_type: "text".to_string(),
+                text: Some(reference_image_label(index)),
+                image_url: None,
+            });
+            parts.push(ContentPart {
                 part_type: "image_url".to_string(),
                 text: None,
                 image_url: Some(ImageUrl {
                     url: image_url.clone(),
                 }),
-            })
-            .collect::<Vec<_>>();
+            });
+        }
         if !request.text.trim().is_empty() {
             parts.push(ContentPart {
                 part_type: "text".to_string(),
@@ -1378,9 +1459,14 @@ fn build_generate_text_responses_request(
 ) -> Result<ResponsesRequest, String> {
     validate_generate_text_request(request)?;
     let images = request.reference_images.as_deref().unwrap_or(&[]);
-    let mut content = Vec::with_capacity(images.len() + 1);
-    for image_url in images {
+    let mut content = Vec::with_capacity(images.len() * 2 + 1);
+    for (index, image_url) in images.iter().enumerate() {
         validate_text_reference_image(image_url)?;
+        content.push(ResponsesInputContent {
+            part_type: "input_text".to_string(),
+            image_url: None,
+            text: Some(reference_image_label(index)),
+        });
         content.push(ResponsesInputContent {
             part_type: "input_image".to_string(),
             image_url: Some(image_url.clone()),

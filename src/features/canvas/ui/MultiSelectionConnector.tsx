@@ -38,8 +38,6 @@ interface MultiSelectionConnectorProps {
   ) => void;
 }
 
-const CONNECTOR_OFFSET_PX = 44;
-
 function createPreviewPath(start: Point, end: Point): string {
   const deltaX = end.x - start.x;
   const curveStrength = Math.max(36, Math.min(160, Math.abs(deltaX) * 0.42));
@@ -115,7 +113,9 @@ export const MultiSelectionConnector = memo(({
 
     return {
       connector: {
-        x: right - wrapperRect.left + CONNECTOR_OFFSET_PX,
+        // Center the handle on the selection outline instead of leaving it
+        // floating in the empty space beside the selected nodes.
+        x: right - wrapperRect.left,
         y: (top + bottom) / 2 - wrapperRect.top,
       },
       sourceAnchors,

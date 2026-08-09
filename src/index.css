@@ -155,6 +155,29 @@ html[data-platform='macos'] #root {
   background: rgba(148, 163, 184, 0.72);
 }
 
+.ui-scrollbar-y {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.56) transparent;
+}
+
+.ui-scrollbar-y::-webkit-scrollbar {
+  width: 7px;
+  height: 0;
+}
+
+.ui-scrollbar-y::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.ui-scrollbar-y::-webkit-scrollbar-thumb {
+  border-radius: 9999px;
+  background: rgba(148, 163, 184, 0.5);
+}
+
+.ui-scrollbar-y:hover::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.72);
+}
+
 /* 隐藏滚动条但保留滚动功能 */
 .no-scrollbar::-webkit-scrollbar {
   display: none;

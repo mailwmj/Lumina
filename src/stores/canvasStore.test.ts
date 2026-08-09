@@ -1,7 +1,12 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { canvasNodeFactory } from '@/features/canvas/application/canvasServices';
-import { CANVAS_NODE_TYPES, type CanvasNode } from '@/features/canvas/domain/canvasNodes';
+import { createImageReferencePromptToken } from '@/features/canvas/application/imageReferencePrompt';
+import {
+  CANVAS_NODE_TYPES,
+  type CanvasEdge,
+  type CanvasNode,
+} from '@/features/canvas/domain/canvasNodes';
 
 import { useCanvasStore } from './canvasStore';
 import { useSettingsStore } from './settingsStore';
@@ -10,6 +15,17 @@ function createNode(type: CanvasNode['type'], id: string): CanvasNode {
   return {
     ...canvasNodeFactory.createNode(type, { x: 0, y: 0 }),
     id,
+  };
+}
+
+function imageInputEdge(id: string, source: string, target: string, inputOrder: number): CanvasEdge {
+  return {
+    id,
+    source,
+    target,
+    sourceHandle: 'source',
+    targetHandle: 'target',
+    data: { valueType: 'image', inputOrder },
   };
 }
 
@@ -78,6 +94,98 @@ describe('canvas store batch connections', () => {
     expect(useCanvasStore.getState().redo()).toBe(true);
     expect(useCanvasStore.getState().nodes).toHaveLength(5);
     expect(useCanvasStore.getState().edges).toHaveLength(4);
+  });
+});
+
+describe('canvas store image reference cleanup', () => {
+  afterEach(() => {
+    useCanvasStore.getState().setCanvasData([], []);
+  });
+
+  it('removes only the disconnected edge tag in the same undo step', () => {
+    const red = createNode(CANVAS_NODE_TYPES.upload, 'red');
+    const yellow = createNode(CANVAS_NODE_TYPES.upload, 'yellow');
+    const target = createNode(CANVAS_NODE_TYPES.textGeneration, 'target');
+    target.data = {
+      ...target.data,
+      inputText: [
+        '衣服参考',
+        createImageReferencePromptToken('red-edge'),
+        '；帽子参考',
+        createImageReferencePromptToken('yellow-edge'),
+        '。',
+      ].join(''),
+    };
+    useCanvasStore.getState().setCanvasData([red, yellow, target], [
+      imageInputEdge('red-edge', red.id, target.id, 0),
+      imageInputEdge('yellow-edge', yellow.id, target.id, 1),
+    ]);
+
+    useCanvasStore.getState().deleteEdge('red-edge');
+
+    expect(useCanvasStore.getState().edges.map((edge) => edge.id)).toEqual(['yellow-edge']);
+    expect(useCanvasStore.getState().nodes.find((node) => node.id === target.id)?.data)
+      .toMatchObject({
+        inputText: `衣服参考；帽子参考${createImageReferencePromptToken('yellow-edge')}。`,
+      });
+    expect(useCanvasStore.getState().history.past).toHaveLength(1);
+
+    expect(useCanvasStore.getState().undo()).toBe(true);
+    expect(useCanvasStore.getState().edges.map((edge) => edge.id)).toEqual([
+      'red-edge',
+      'yellow-edge',
+    ]);
+    expect(useCanvasStore.getState().nodes.find((node) => node.id === target.id)?.data)
+      .toMatchObject({
+        inputText: target.data.inputText,
+      });
+  });
+
+  it('cleans tags for React Flow edge and node removal paths across both supported nodes', () => {
+    const red = createNode(CANVAS_NODE_TYPES.upload, 'red');
+    const textTarget = createNode(CANVAS_NODE_TYPES.textGeneration, 'text-target');
+    textTarget.data = {
+      ...textTarget.data,
+      inputText: `文字${createImageReferencePromptToken('text-edge')}`,
+    };
+    const imageTarget = createNode(CANVAS_NODE_TYPES.imageEdit, 'image-target');
+    imageTarget.data = {
+      ...imageTarget.data,
+      prompt: `图片${createImageReferencePromptToken('image-edge')}`,
+    };
+    useCanvasStore.getState().setCanvasData([red, textTarget, imageTarget], [
+      imageInputEdge('text-edge', red.id, textTarget.id, 0),
+      imageInputEdge('image-edge', red.id, imageTarget.id, 0),
+    ]);
+
+    useCanvasStore.getState().onEdgesChange([{ id: 'text-edge', type: 'remove' }]);
+    expect(useCanvasStore.getState().nodes.find((node) => node.id === textTarget.id)?.data)
+      .toMatchObject({ inputText: '文字' });
+    expect(useCanvasStore.getState().nodes.find((node) => node.id === imageTarget.id)?.data)
+      .toMatchObject({ prompt: `图片${createImageReferencePromptToken('image-edge')}` });
+
+    useCanvasStore.getState().onNodesChange([{ id: red.id, type: 'remove' }]);
+    expect(useCanvasStore.getState().edges).toEqual([]);
+    expect(useCanvasStore.getState().nodes.find((node) => node.id === imageTarget.id)?.data)
+      .toMatchObject({ prompt: '图片' });
+  });
+
+  it('cleans tags when the canvas delete command removes an image source', () => {
+    const source = createNode(CANVAS_NODE_TYPES.upload, 'source');
+    const target = createNode(CANVAS_NODE_TYPES.imageEdit, 'target');
+    target.data = {
+      ...target.data,
+      prompt: `外套参考${createImageReferencePromptToken('source-edge')}`,
+    };
+    useCanvasStore.getState().setCanvasData([source, target], [
+      imageInputEdge('source-edge', source.id, target.id, 0),
+    ]);
+
+    useCanvasStore.getState().deleteNodes([source.id]);
+
+    expect(useCanvasStore.getState().edges).toEqual([]);
+    expect(useCanvasStore.getState().nodes).toHaveLength(1);
+    expect(useCanvasStore.getState().nodes[0]?.data).toMatchObject({ prompt: '外套参考' });
   });
 });
 

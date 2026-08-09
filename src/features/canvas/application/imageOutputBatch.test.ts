@@ -15,31 +15,31 @@ describe('image output batch layout', () => {
     });
   });
 
-  it('lays out two outputs in one right-side column', () => {
+  it('lays out two outputs in one compact row', () => {
     expect(resolveImageOutputBatchLayout(2, 384, 288)).toEqual({
-      width: 384,
+      width: 796,
+      height: 288,
+      offsets: [
+        { x: 0, y: 0 },
+        { x: 412, y: 0 },
+      ],
+    });
+  });
+
+  it('lays out four outputs in a compact two-by-two grid', () => {
+    expect(resolveImageOutputBatchLayout(4, 384, 288)).toEqual({
+      width: 796,
       height: 604,
       offsets: [
         { x: 0, y: 0 },
+        { x: 412, y: 0 },
         { x: 0, y: 316 },
+        { x: 412, y: 316 },
       ],
     });
   });
 
-  it('lays out four outputs in one right-side column', () => {
-    expect(resolveImageOutputBatchLayout(4, 384, 288)).toEqual({
-      width: 384,
-      height: 1236,
-      offsets: [
-        { x: 0, y: 0 },
-        { x: 0, y: 316 },
-        { x: 0, y: 632 },
-        { x: 0, y: 948 },
-      ],
-    });
-  });
-
-  it('creates and connects one vertically aligned result node per output', () => {
+  it('creates and connects one result node per output in reading order', () => {
     type CreateBatchInput = Parameters<typeof createImageOutputBatchNodes>[0];
     type BatchNodeInput = Parameters<CreateBatchInput['addNodeBatch']>[0][number];
     const addedNodes: BatchNodeInput[] = [];
@@ -78,9 +78,9 @@ describe('image output batch layout', () => {
     ]);
     expect(addedNodes.map(({ position }) => position)).toEqual([
       { x: 640, y: 24 },
+      { x: 956, y: 24 },
       { x: 640, y: 340 },
-      { x: 640, y: 656 },
-      { x: 640, y: 972 },
+      { x: 956, y: 340 },
     ]);
     expect(addedNodes.map(({ type }) => type)).toEqual(
       Array.from({ length: 4 }, () => CANVAS_NODE_TYPES.exportImage)

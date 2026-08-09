@@ -71,12 +71,22 @@ export function resolveImageOutputBatchLayout(
   nodeWidth: number,
   nodeHeight: number
 ): ImageOutputBatchLayout {
+  if (outputCount === 1) {
+    return {
+      width: nodeWidth,
+      height: nodeHeight,
+      offsets: [{ x: 0, y: 0 }],
+    };
+  }
+
+  const columnCount = 2;
+  const rowCount = Math.ceil(outputCount / columnCount);
   return {
-    width: nodeWidth,
-    height: outputCount * nodeHeight + (outputCount - 1) * IMAGE_OUTPUT_BATCH_GAP,
+    width: columnCount * nodeWidth + (columnCount - 1) * IMAGE_OUTPUT_BATCH_GAP,
+    height: rowCount * nodeHeight + (rowCount - 1) * IMAGE_OUTPUT_BATCH_GAP,
     offsets: Array.from({ length: outputCount }, (_, index) => ({
-      x: 0,
-      y: index * (nodeHeight + IMAGE_OUTPUT_BATCH_GAP),
+      x: (index % columnCount) * (nodeWidth + IMAGE_OUTPUT_BATCH_GAP),
+      y: Math.floor(index / columnCount) * (nodeHeight + IMAGE_OUTPUT_BATCH_GAP),
     })),
   };
 }

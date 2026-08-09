@@ -117,6 +117,11 @@
     "copyErrorReport": "Copy Error",
     "copied": "Copied",
     "download": "Download",
+    "downloadAllImages": "Download all images ({{count}})",
+    "downloadedImages": "Downloaded {{count}} images",
+    "chooseDirectory": "Choose folder…",
+    "downloadImagesPartialFailure": "Downloaded {{saved}}/{{total}} images; the remaining images could not be saved",
+    "downloadImagesFailed": "Failed to download selected images",
     "ungroup": "Ungroup",
     "saveAs": "Save as...",
     "noDownloadPresetPathsHint": "No preset path. Add one in Settings > General.",
@@ -147,7 +152,7 @@
   "node": {
     "menu": {
       "uploadImage": "Upload Image",
-      "aiImageGeneration": "AI Image",
+      "aiImageGeneration": "AI Image Generation",
       "storyboard": "Storyboard Node",
       "storyboardGen": "Storyboard Generation",
       "textGeneration": "Text Node",
@@ -200,6 +205,9 @@
       "promptPlaceholder": "Describe anything you want to generate or edit",
       "polishPrompt": "Polish prompt"
     },
+    "imageReference": {
+      "label": "Image {{index}}"
+    },
     "upload": {
       "uploadedAlt": "Uploaded image",
       "hint": "Click or drag to upload image"
@@ -231,8 +239,8 @@
     },
     "textGeneration": {
       "upstreamContext": "Upstream context",
-      "upstreamText": "Upstream text context",
-      "upstreamImages": "Image context",
+      "upstreamText": "Referenced text",
+      "upstreamImages": "Referenced images",
       "disconnectInput": "Disconnect input",
       "localInput": "Prompt",
       "inputPlaceholder": "Enter text for the model to process",

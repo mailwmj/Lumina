@@ -6,6 +6,7 @@ import {
   resolveEffectivePromptForNode,
   resolveTextGenerationInputs,
 } from './textGenerationInputs';
+import { createImageReferencePromptToken } from './imageReferencePrompt';
 import {
   CANVAS_NODE_TYPES,
   type CanvasEdge,
@@ -140,6 +141,43 @@ describe('text generation inputs', () => {
     expect(resolved.imageInputs[0].imageUrl).toBeNull();
     expect(resolved.blockingImageNodeIds).toEqual(['image-b']);
     expect(resolved.referenceImages).toEqual(['data:image/png;base64,AAA']);
+  });
+
+  it('materializes edge-bound image tags against the same ordered image snapshot sent to the model', () => {
+    const red = createNode(CANVAS_NODE_TYPES.upload, 'red') as CanvasNode;
+    red.data = { ...red.data, imageUrl: 'data:image/png;base64,RED' };
+    const yellow = createNode(CANVAS_NODE_TYPES.upload, 'yellow') as CanvasNode;
+    yellow.data = { ...yellow.data, imageUrl: 'data:image/png;base64,YELLOW' };
+    const target = createNode(CANVAS_NODE_TYPES.textGeneration, 'target', {
+      inputText: [
+        '衣服参考',
+        createImageReferencePromptToken('red-edge'),
+        '；帽子参考',
+        createImageReferencePromptToken('yellow-edge'),
+        '。',
+      ].join(''),
+    });
+    const edges = [
+      inputEdge('red-edge', red.id, target.id, 'image', 0),
+      inputEdge('yellow-edge', yellow.id, target.id, 'image', 1),
+    ];
+
+    const first = resolveTextGenerationInputs(target.id, [red, yellow, target], edges);
+    expect(first.effectivePrompt).toBe('衣服参考图片 1；帽子参考图片 2。');
+    expect(first.referenceImages).toEqual([
+      'data:image/png;base64,RED',
+      'data:image/png;base64,YELLOW',
+    ]);
+
+    const reordered = resolveTextGenerationInputs(target.id, [red, yellow, target], [
+      { ...edges[0], data: { valueType: 'image', inputOrder: 1 } },
+      { ...edges[1], data: { valueType: 'image', inputOrder: 0 } },
+    ]);
+    expect(reordered.effectivePrompt).toBe('衣服参考图片 2；帽子参考图片 1。');
+    expect(reordered.referenceImages).toEqual([
+      'data:image/png;base64,YELLOW',
+      'data:image/png;base64,RED',
+    ]);
   });
 
   it('composes upstream effective text with an image node local prompt', () => {

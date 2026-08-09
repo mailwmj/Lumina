@@ -117,6 +117,11 @@
     "copyErrorReport": "复制报错",
     "copied": "已复制",
     "download": "下载",
+    "downloadAllImages": "下载全部图片（{{count}}）",
+    "downloadedImages": "已下载 {{count}} 张图片",
+    "chooseDirectory": "选择文件夹…",
+    "downloadImagesPartialFailure": "已下载 {{saved}}/{{total}} 张图片，剩余图片下载失败",
+    "downloadImagesFailed": "批量下载图片失败",
     "ungroup": "解散",
     "saveAs": "另存为...",
     "noDownloadPresetPathsHint": "暂无预设路径，请在设置 - 通用中添加",
@@ -147,7 +152,7 @@
   "node": {
     "menu": {
       "uploadImage": "上传图片",
-      "aiImageGeneration": "AI 图片",
+      "aiImageGeneration": "AI生图",
       "storyboard": "分镜节点",
       "storyboardGen": "分镜生成",
       "textGeneration": "文本节点",
@@ -200,6 +205,9 @@
       "promptPlaceholder": "描述任何你想要生成或编辑的内容",
       "polishPrompt": "润色提示词"
     },
+    "imageReference": {
+      "label": "图片 {{index}}"
+    },
     "upload": {
       "uploadedAlt": "已上传图片",
       "hint": "点击或拖拽上传图片"
@@ -231,8 +239,8 @@
     },
     "textGeneration": {
       "upstreamContext": "上游上下文",
-      "upstreamText": "上游文本上下文",
-      "upstreamImages": "图片上下文",
+      "upstreamText": "引用文字",
+      "upstreamImages": "引用图片",
       "disconnectInput": "断开输入",
       "localInput": "提示词",
       "inputPlaceholder": "输入需要模型处理的文本",

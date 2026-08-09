@@ -7,7 +7,7 @@ import {
 
 export const DEFAULT_NODE_DISPLAY_NAME: Record<CanvasNodeType, string> = {
   [CANVAS_NODE_TYPES.upload]: '上传图片',
-  [CANVAS_NODE_TYPES.imageEdit]: 'AI 图片',
+  [CANVAS_NODE_TYPES.imageEdit]: 'AI生图',
   [CANVAS_NODE_TYPES.exportImage]: '结果图片',
   [CANVAS_NODE_TYPES.textGeneration]: '文本节点',
   [CANVAS_NODE_TYPES.textAnnotation]: '文本注释',

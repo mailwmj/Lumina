@@ -12,6 +12,7 @@ import {
 } from '../domain/canvasNodes';
 import { resolveNodeDisplayName } from '../domain/nodeDisplay';
 import { getNodeSourceDataTypes } from '../domain/nodeRegistry';
+import { materializeImageReferencePrompt } from './imageReferencePrompt';
 
 export interface ResolvedTextInput {
   edgeId: string;
@@ -115,7 +116,13 @@ function resolveNodeText(
   visiting.delete(node.id);
 
   const localInput = nonEmptyText(node.data.inputText);
-  return [...upstreamTexts, ...(localInput ? [localInput] : [])].join('\n\n');
+  const materializedLocalInput = localInput
+    ? materializeImageReferencePrompt(
+      localInput,
+      resolveImageInputs(node.id, nodesById, edges)
+    )
+    : null;
+  return [...upstreamTexts, ...(materializedLocalInput ? [materializedLocalInput] : [])].join('\n\n');
 }
 
 function extractImageSource(node: CanvasNode): Pick<ResolvedImageInput, 'imageUrl' | 'previewImageUrl'> {
@@ -139,6 +146,33 @@ function extractImageSource(node: CanvasNode): Pick<ResolvedImageInput, 'imageUr
   return { imageUrl: null, previewImageUrl: null };
 }
 
+function resolveImageInputs(
+  nodeId: string,
+  nodesById: Map<string, CanvasNode>,
+  edges: CanvasEdge[]
+): ResolvedImageInput[] {
+  const imageEdges = edges.filter((edge) => {
+    if (edge.target !== nodeId) {
+      return false;
+    }
+    const sourceNode = nodesById.get(edge.source);
+    return Boolean(sourceNode && resolveEdgeValueType(edge, sourceNode) === 'image');
+  });
+
+  return sortInputEdges(imageEdges).flatMap((edge): ResolvedImageInput[] => {
+    const sourceNode = nodesById.get(edge.source);
+    if (!sourceNode) {
+      return [];
+    }
+    return [{
+      edgeId: edge.id,
+      nodeId: sourceNode.id,
+      displayName: resolveNodeDisplayName(sourceNode.type, sourceNode.data),
+      ...extractImageSource(sourceNode),
+    }];
+  });
+}
+
 export function resolveTextGenerationInputs(
   nodeId: string,
   nodes: CanvasNode[],
@@ -148,7 +182,6 @@ export function resolveTextGenerationInputs(
   const targetNode = nodesById.get(nodeId);
   const incomingEdges = edges.filter((edge) => edge.target === nodeId);
   const textEdges: CanvasEdge[] = [];
-  const imageEdges: CanvasEdge[] = [];
 
   for (const edge of incomingEdges) {
     const sourceNode = nodesById.get(edge.source);
@@ -158,8 +191,6 @@ export function resolveTextGenerationInputs(
     const valueType = resolveEdgeValueType(edge, sourceNode);
     if (valueType === 'text') {
       textEdges.push(edge);
-    } else if (valueType === 'image') {
-      imageEdges.push(edge);
     }
   }
 
@@ -177,25 +208,17 @@ export function resolveTextGenerationInputs(
     }];
   });
 
-  const imageInputs = sortInputEdges(imageEdges).flatMap((edge): ResolvedImageInput[] => {
-    const sourceNode = nodesById.get(edge.source);
-    if (!sourceNode) {
-      return [];
-    }
-    return [{
-      edgeId: edge.id,
-      nodeId: sourceNode.id,
-      displayName: resolveNodeDisplayName(sourceNode.type, sourceNode.data),
-      ...extractImageSource(sourceNode),
-    }];
-  });
+  const imageInputs = resolveImageInputs(nodeId, nodesById, edges);
 
   const localInput = targetNode?.type === CANVAS_NODE_TYPES.textGeneration
     ? nonEmptyText(targetNode.data.inputText)
     : null;
+  const materializedLocalInput = localInput
+    ? materializeImageReferencePrompt(localInput, imageInputs)
+    : null;
   const effectivePrompt = [
     ...textInputs.map((input) => input.text).filter(Boolean),
-    ...(localInput ? [localInput] : []),
+    ...(materializedLocalInput ? [materializedLocalInput] : []),
   ].join('\n\n');
 
   return {

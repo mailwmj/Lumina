@@ -7,7 +7,6 @@ import {
   useEffect,
   useRef,
 } from 'react';
-import { createPortal } from 'react-dom';
 import {
   Handle,
   Position,
@@ -34,12 +33,12 @@ import {
   resolveEffectivePromptForNode,
   resolveTextGenerationInputs,
 } from '@/features/canvas/application/textGenerationInputs';
-import { showErrorDialog } from '@/features/canvas/application/errorDialog';
 import {
-  detectAspectRatio,
-  parseAspectRatio,
-  resolveImageDisplayUrl,
-} from '@/features/canvas/application/imageData';
+  buildImageReferenceModelPrompt,
+  materializeImageReferencePrompt,
+} from '@/features/canvas/application/imageReferencePrompt';
+import { showErrorDialog } from '@/features/canvas/application/errorDialog';
+import { detectAspectRatio, parseAspectRatio } from '@/features/canvas/application/imageData';
 import {
   buildGenerationErrorReport,
   CURRENT_RUNTIME_SESSION_ID,
@@ -48,16 +47,10 @@ import {
   type GenerationDebugContext,
 } from '@/features/canvas/application/generationErrorReport';
 import {
-  insertReferenceToken,
-  removeTextRange,
-  resolveReferenceAwareDeleteRange,
-} from '@/features/canvas/application/referenceTokenEditing';
-import {
   beginCompositionInput,
   commitCompositionInputOnBlur,
   completeCompositionInput,
   createCompositionInputState,
-  shouldSuppressKeyboardCommand,
   updateCompositionInputDraft,
 } from '@/features/canvas/application/compositionInputState';
 import {
@@ -88,7 +81,6 @@ import {
   markImageOutputNodeFailed,
 } from '@/features/canvas/application/imageOutputBatch';
 import { ModelParamsControls } from '@/features/canvas/ui/ModelParamsControls';
-import { CanvasNodeImage } from '@/features/canvas/ui/CanvasNodeImage';
 import { UiButton, UiTooltip } from '@/components/ui';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useProjectStore } from '@/stores/projectStore';
@@ -98,14 +90,9 @@ import { resolveImageProviderRuntime } from '@/features/canvas/application/image
 import { resolveTextModelSelection } from '@/features/canvas/application/textModelSelection';
 import { locateReferencedNode } from '@/features/canvas/application/referencedNodeLocation';
 import { openSettingsDialog } from '@/features/settings/settingsEvents';
-import {
-  PICKER_FALLBACK_ANCHOR,
-  renderPromptWithHighlights,
-  resolvePickerAnchor,
-  type PickerAnchor,
-} from '@/features/canvas/ui/imageEditPromptOverlay';
 import { TextGenerationUpstreamContext } from './TextGenerationUpstreamContext';
 import { usePreserveNodeCenterOnAutoResize } from '@/features/canvas/ui/usePreserveNodeCenterOnAutoResize';
+import { ImageReferencePromptInput } from '@/features/canvas/ui/ImageReferencePromptInput';
 
 type ImageEditNodeProps = NodeProps & {
   id: string;
@@ -137,21 +124,8 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
 
   const rootRef = useRef<HTMLDivElement>(null);
   const generationSubmissionLockRef = useRef(false);
-  const promptRef = useRef<HTMLTextAreaElement>(null);
-  const promptHighlightRef = useRef<HTMLDivElement>(null);
   const [promptDraft, setPromptDraft] = useState(() => data.prompt ?? '');
-  const promptDraftRef = useRef(promptDraft);
   const promptCompositionStateRef = useRef(createCompositionInputState(data.prompt ?? ''));
-  const [showImagePicker, setShowImagePicker] = useState(false);
-  const [pickerCursor, setPickerCursor] = useState<number | null>(null);
-  const [pickerActiveIndex, setPickerActiveIndex] = useState(0);
-  const [pickerAnchor, setPickerAnchor] = useState<PickerAnchor>(PICKER_FALLBACK_ANCHOR);
-  const [referenceHover, setReferenceHover] = useState<{
-    index: number;
-    imageUrl: string;
-    anchorRect: DOMRect;
-  } | null>(null);
-  const highlightMouseLeaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const nodes = useCanvasStore((state) => state.nodes);
   const edges = useCanvasStore((state) => state.edges);
@@ -183,20 +157,6 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
     [id, nodes, edges]
   );
   const incomingImages = workflowInputs.referenceImages;
-
-  const incomingImageItems = useMemo(
-    () =>
-      incomingImages.map((imageUrl, index) => ({
-        imageUrl,
-        displayUrl: resolveImageDisplayUrl(imageUrl),
-        label: `图${index + 1}`,
-      })),
-    [incomingImages]
-  );
-  const incomingImageViewerList = useMemo(
-    () => incomingImageItems.map((item) => resolveImageDisplayUrl(item.imageUrl)),
-    [incomingImageItems]
-  );
 
   const imageModels = useMemo(
     () =>
@@ -290,7 +250,6 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
     }
     const nextState = createCompositionInputState(externalPrompt);
     promptCompositionStateRef.current = nextState;
-    promptDraftRef.current = nextState.draft;
     setPromptDraft(nextState.draft);
   }, [data.prompt]);
 
@@ -298,13 +257,11 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
     if (promptCompositionStateRef.current.isComposing) {
       return;
     }
-    promptDraftRef.current = nextPrompt;
     updateNodeData(id, { prompt: nextPrompt });
   }, [id, updateNodeData]);
 
   const applyPromptDraftTransition = useCallback((transition: ReturnType<typeof updateCompositionInputDraft>) => {
     promptCompositionStateRef.current = transition.state;
-    promptDraftRef.current = transition.state.draft;
     setPromptDraft(transition.state.draft);
     if (transition.committedValue !== null) {
       commitPromptDraft(transition.committedValue);
@@ -358,88 +315,15 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
     updateNodeData,
   ]);
 
-  useEffect(() => {
-    if (incomingImages.length === 0) {
-      setShowImagePicker(false);
-      setPickerCursor(null);
-      setPickerActiveIndex(0);
-      return;
-    }
-
-    setPickerActiveIndex((previous) => Math.min(previous, incomingImages.length - 1));
-  }, [incomingImages.length]);
-
-  useEffect(() => {
-    const handleOutside = (event: MouseEvent) => {
-      if (rootRef.current?.contains(event.target as globalThis.Node)) {
-        return;
-      }
-
-      setShowImagePicker(false);
-      setPickerCursor(null);
-    };
-
-    document.addEventListener('mousedown', handleOutside, true);
-    return () => {
-      document.removeEventListener('mousedown', handleOutside, true);
-    };
-  }, []);
-
-  // Handle @图x hover preview by checking if mouse is over a highlight span
-  useEffect(() => {
-    const checkHighlightUnderMouse = (event: MouseEvent) => {
-      const highlightSpans = rootRef.current?.querySelectorAll('[data-highlight-ref]');
-      if (!highlightSpans || highlightSpans.length === 0) return;
-
-      for (const span of highlightSpans) {
-        const spanRect = span.getBoundingClientRect();
-        const isOverSpan =
-          event.clientX >= spanRect.left &&
-          event.clientX <= spanRect.right &&
-          event.clientY >= spanRect.top &&
-          event.clientY <= spanRect.bottom;
-
-        if (isOverSpan) {
-          const imageUrl = (span as HTMLElement).dataset.imageUrl;
-          const index = (span as HTMLElement).dataset.index;
-          if (imageUrl && index) {
-            if (highlightMouseLeaveTimeoutRef.current) {
-              clearTimeout(highlightMouseLeaveTimeoutRef.current);
-              highlightMouseLeaveTimeoutRef.current = null;
-            }
-            setReferenceHover({
-              index: parseInt(index, 10),
-              imageUrl,
-              anchorRect: spanRect,
-            });
-          }
-          return;
-        }
-      }
-
-      if (!highlightMouseLeaveTimeoutRef.current) {
-        highlightMouseLeaveTimeoutRef.current = setTimeout(() => {
-          setReferenceHover(null);
-          highlightMouseLeaveTimeoutRef.current = null;
-        }, 100);
-      }
-    };
-
-    document.addEventListener('mousemove', checkHighlightUnderMouse, true);
-    return () => {
-      document.removeEventListener('mousemove', checkHighlightUnderMouse, true);
-      if (highlightMouseLeaveTimeoutRef.current) {
-        clearTimeout(highlightMouseLeaveTimeoutRef.current);
-      }
-    };
-  }, []);
-
   const handlePolish = useCallback(async () => {
     if (!selectedPolishModel) {
       void showErrorDialog(t('node.textModel.required'), t('settings.polishPrompt'));
       return;
     }
-    const prompt = promptDraft.trim();
+    const prompt = materializeImageReferencePrompt(
+      promptDraft,
+      workflowInputs.imageInputs
+    ).trim();
     if (!prompt) {
       void showErrorDialog('请填写提示词后再润色', '润色提示');
       return;
@@ -455,19 +339,17 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
       if (promptCompositionStateRef.current.isComposing) {
         return;
       }
-      promptCompositionStateRef.current = {
-        ...promptCompositionStateRef.current,
-        draft: result.polished,
-      };
-      promptDraftRef.current = result.polished;
-      setPromptDraft(result.polished);
+      const nextState = createCompositionInputState(result.polished);
+      promptCompositionStateRef.current = nextState;
+      setPromptDraft(nextState.draft);
+      updateNodeData(id, { prompt: result.polished });
     } catch (err) {
       const message = err instanceof Error ? err.message : '润色失败';
       void showErrorDialog(message, '润色失败');
     } finally {
       setIsPolishing(false);
     }
-  }, [imagePolishConfig, promptDraft, selectedPolishModel, t]);
+  }, [id, imagePolishConfig, promptDraft, selectedPolishModel, t, updateNodeData, workflowInputs.imageInputs]);
 
   const handleGenerate = useCallback(async () => {
     if (!hasConfiguredModel) {
@@ -479,8 +361,9 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
 
     if (workflowInputs.blockingImageNodeIds.length > 0) {
       const unavailableNames = workflowInputs.imageInputs
-        .filter((input) => !input.imageUrl)
-        .map((input) => input.displayName)
+        .flatMap((input, index) => !input.imageUrl
+          ? [t('node.imageReference.label', { index: index + 1 })]
+          : [])
         .join(', ');
       const errorMessage = unavailableNames
         ? t('node.textGeneration.imageUnavailableSources', { names: unavailableNames })
@@ -490,14 +373,23 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
       return;
     }
 
-    const localPrompt = promptDraft.replace(/@(?=图\d+)/g, '').trim();
-    const prompt = resolveEffectivePromptForNode(id, localPrompt, nodes, edges);
-    if (!prompt) {
+    const referenceImageSnapshot = workflowInputs.imageInputs.flatMap((input) => input.imageUrl
+      ? [{ edgeId: input.edgeId, imageUrl: input.imageUrl, previewImageUrl: input.previewImageUrl }]
+      : []
+    );
+    const referenceImages = referenceImageSnapshot.map((input) => input.imageUrl);
+    const localPrompt = materializeImageReferencePrompt(
+      promptDraft,
+      referenceImageSnapshot
+    ).trim();
+    const userPrompt = resolveEffectivePromptForNode(id, localPrompt, nodes, edges);
+    if (!userPrompt) {
       const errorMessage = t('node.imageEdit.promptRequired');
       setError(errorMessage);
       void showErrorDialog(errorMessage, t('common.error'));
       return;
     }
+    const prompt = buildImageReferenceModelPrompt(userPrompt, referenceImageSnapshot);
 
     if (!providerApiKey) {
       const errorMessage = t('node.imageEdit.apiKeyRequired');
@@ -515,7 +407,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
     try {
       const generationDurationMs = selectedModel.expectedDurationMs ?? 60000;
       const generationStartedAt = Date.now();
-      const resultNodeTitle = buildAiResultNodeTitle(prompt, t('node.imageEdit.resultTitle'));
+      const resultNodeTitle = buildAiResultNodeTitle(userPrompt, t('node.imageEdit.resultTitle'));
       let resolvedRequestAspectRatio = selectedAspectRatio.value;
       const outputAspectRatio = resolvedRequestAspectRatio === AUTO_REQUEST_ASPECT_RATIO
         ? DEFAULT_ASPECT_RATIO
@@ -556,8 +448,8 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
         requestAspectRatio: resolvedRequestAspectRatio,
         prompt,
         extraParams: effectiveExtraParams,
-        referenceImageCount: incomingImages.length,
-        referenceImagePlaceholders: createReferenceImagePlaceholders(incomingImages.length),
+        referenceImageCount: referenceImages.length,
+        referenceImagePlaceholders: createReferenceImagePlaceholders(referenceImages.length),
         outputCount,
         outputIndex: outputIndex + 1,
         appVersion: runtimeDiagnostics.appVersion,
@@ -582,9 +474,9 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
 
       try {
         if (resolvedRequestAspectRatio === AUTO_REQUEST_ASPECT_RATIO) {
-          if (incomingImages.length > 0) {
+          if (referenceImages.length > 0) {
             try {
-              const sourceAspectRatio = await detectAspectRatio(incomingImages[0]);
+              const sourceAspectRatio = await detectAspectRatio(referenceImages[0]);
               const sourceAspectRatioValue = parseAspectRatio(sourceAspectRatio);
               resolvedRequestAspectRatio = pickClosestImageGenerationAspectRatio(
                 sourceAspectRatioValue
@@ -607,7 +499,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
             model: requestResolution.requestModel,
             size: selectedResolution.value,
             aspectRatio: resolvedRequestAspectRatio,
-            referenceImages: incomingImages,
+            referenceImages,
             extraParams: effectiveExtraParams,
             providerConfig: providerRuntime.providerConfig,
             projectId,
@@ -686,7 +578,6 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
     effectiveExtraParams,
     hasConfiguredModel,
     id,
-    incomingImages,
     edges,
     nodes,
     outputCount,
@@ -699,114 +590,10 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
     t,
     updateNodeData,
     workflowInputs.blockingImageNodeIds.length,
+    workflowInputs.imageInputs,
   ]);
 
-  const syncPromptHighlightScroll = () => {
-    if (!promptRef.current || !promptHighlightRef.current) {
-      return;
-    }
-
-    promptHighlightRef.current.scrollTop = promptRef.current.scrollTop;
-    promptHighlightRef.current.scrollLeft = promptRef.current.scrollLeft;
-  };
-
-  const insertImageReference = useCallback((imageIndex: number) => {
-    if (promptCompositionStateRef.current.isComposing) {
-      return;
-    }
-    const marker = `@图${imageIndex + 1}`;
-    const currentPrompt = promptDraftRef.current;
-    const cursor = pickerCursor ?? currentPrompt.length;
-    const { nextText: nextPrompt, nextCursor } = insertReferenceToken(currentPrompt, cursor, marker);
-
-    applyPromptDraftTransition(updateCompositionInputDraft(
-      promptCompositionStateRef.current,
-      nextPrompt
-    ));
-    setShowImagePicker(false);
-    setPickerCursor(null);
-    setPickerActiveIndex(0);
-
-    requestAnimationFrame(() => {
-      promptRef.current?.focus();
-      promptRef.current?.setSelectionRange(nextCursor, nextCursor);
-      syncPromptHighlightScroll();
-    });
-  }, [applyPromptDraftTransition, pickerCursor]);
-
-  const handlePromptKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (shouldSuppressKeyboardCommand(event.nativeEvent)) {
-      return;
-    }
-
-    if (event.key === 'Backspace' || event.key === 'Delete') {
-      const currentPrompt = promptDraftRef.current;
-      const selectionStart = event.currentTarget.selectionStart ?? currentPrompt.length;
-      const selectionEnd = event.currentTarget.selectionEnd ?? selectionStart;
-      const deletionDirection = event.key === 'Backspace' ? 'backward' : 'forward';
-      const deleteRange = resolveReferenceAwareDeleteRange(
-        currentPrompt,
-        selectionStart,
-        selectionEnd,
-        deletionDirection,
-        incomingImages.length
-      );
-      if (deleteRange) {
-        event.preventDefault();
-        const { nextText, nextCursor } = removeTextRange(currentPrompt, deleteRange);
-        applyPromptDraftTransition(updateCompositionInputDraft(
-          promptCompositionStateRef.current,
-          nextText
-        ));
-        requestAnimationFrame(() => {
-          promptRef.current?.focus();
-          promptRef.current?.setSelectionRange(nextCursor, nextCursor);
-          syncPromptHighlightScroll();
-        });
-        return;
-      }
-    }
-
-    if (showImagePicker && incomingImages.length > 0) {
-      if (event.key === 'ArrowDown') {
-        event.preventDefault();
-        setPickerActiveIndex((previous) => (previous + 1) % incomingImages.length);
-        return;
-      }
-
-      if (event.key === 'ArrowUp') {
-        event.preventDefault();
-        setPickerActiveIndex((previous) =>
-          previous === 0 ? incomingImages.length - 1 : previous - 1
-        );
-        return;
-      }
-
-      if (event.key === 'Enter') {
-        event.preventDefault();
-        insertImageReference(pickerActiveIndex);
-        return;
-      }
-    }
-
-    if (event.key === '@' && incomingImages.length > 0) {
-      event.preventDefault();
-      const cursor = event.currentTarget.selectionStart ?? promptDraftRef.current.length;
-      setPickerAnchor(resolvePickerAnchor(rootRef.current, event.currentTarget, cursor));
-      setPickerCursor(cursor);
-      setShowImagePicker(true);
-      setPickerActiveIndex(0);
-      return;
-    }
-
-    if (event.key === 'Escape' && showImagePicker) {
-      event.preventDefault();
-      setShowImagePicker(false);
-      setPickerCursor(null);
-      setPickerActiveIndex(0);
-      return;
-    }
-
+  const handlePromptKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
       event.preventDefault();
       void handleGenerate();
@@ -846,107 +633,20 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
           {t('node.imageEdit.promptLabel')}
         </div>
         <div
-          className="nodrag nowheel relative rounded-lg border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)]"
+          className="nodrag nowheel relative overflow-visible rounded-lg border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)]"
           style={{ height: layout.promptHeight }}
         >
-          <div className="relative h-full min-h-0 p-2">
-          <div
-            ref={promptHighlightRef}
-            aria-hidden="true"
-            className="ui-scrollbar absolute inset-2 overflow-y-auto overflow-x-hidden text-sm leading-6 text-text-dark"
-            style={{ scrollbarGutter: 'stable', pointerEvents: 'none' }}
-          >
-            <div className="min-h-full whitespace-pre-wrap break-words px-1 py-0.5">
-              {renderPromptWithHighlights(
-                promptDraft,
-                incomingImages.length,
-                incomingImages
-              )}
-            </div>
-          </div>
-
-          <textarea
-            ref={promptRef}
+          <ImageReferencePromptInput
             value={promptDraft}
-            onChange={(event) => {
-              const nextValue = event.target.value;
-              handlePromptChange(
-                nextValue,
-                (event.nativeEvent as InputEvent).isComposing === true
-              );
-            }}
+            imageInputs={workflowInputs.imageInputs}
+            placeholder={t('node.imageEdit.promptPlaceholder')}
+            ariaLabel={t('node.imageEdit.promptLabel')}
             onKeyDown={handlePromptKeyDown}
             onCompositionStart={beginPromptComposition}
-            onCompositionEnd={(event) => completePromptComposition(event.currentTarget.value)}
-            onBlur={(event) => commitPromptOnBlur(event.currentTarget.value)}
-            onScroll={syncPromptHighlightScroll}
-            onMouseDown={(event) => event.stopPropagation()}
-            placeholder={t('node.imageEdit.promptPlaceholder')}
-            className="ui-scrollbar nodrag nowheel relative z-10 h-full w-full resize-none overflow-y-auto overflow-x-hidden border-none bg-transparent px-1 py-0.5 text-sm leading-6 text-transparent caret-text-dark outline-none selection:text-transparent placeholder:text-text-muted/80 focus:border-transparent whitespace-pre-wrap break-words"
-            style={{ scrollbarGutter: 'stable' }}
+            onCompositionEnd={completePromptComposition}
+            onBlur={commitPromptOnBlur}
+            onValueChange={handlePromptChange}
           />
-        </div>
-
-        {showImagePicker && incomingImageItems.length > 0 && (
-          <div
-            className="nowheel absolute z-30 w-[120px] overflow-hidden rounded-[10px] border border-[var(--ui-border-soft)] bg-[var(--ui-surface-elevated)] shadow-[var(--ui-shadow-panel)]"
-            style={{ left: pickerAnchor.left, top: pickerAnchor.top }}
-            onMouseDown={(event) => event.stopPropagation()}
-            onWheelCapture={(event) => event.stopPropagation()}
-          >
-            <div
-              className="ui-scrollbar nowheel max-h-[180px] overflow-y-auto"
-              onWheelCapture={(event) => event.stopPropagation()}
-            >
-              {incomingImageItems.map((item, index) => (
-                <button
-                  key={`${item.imageUrl}-${index}`}
-                  type="button"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    insertImageReference(index);
-                  }}
-                  onMouseEnter={() => setPickerActiveIndex(index)}
-                  className={`flex w-full items-center gap-2 border border-transparent bg-transparent px-2 py-2 text-left text-sm text-text-dark transition-colors hover:bg-[var(--ui-hover)] ${pickerActiveIndex === index
-                      ? 'border-accent/45 bg-accent/10'
-                      : ''
-                    }`}
-                >
-                  <CanvasNodeImage
-                    src={item.displayUrl}
-                    alt={item.label}
-                    viewerSourceUrl={resolveImageDisplayUrl(item.imageUrl)}
-                    viewerImageList={incomingImageViewerList}
-                    className="h-8 w-8 rounded object-cover"
-                    draggable={false}
-                    showResolutionPreview={false}
-                  />
-                  <span>{item.label}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {referenceHover && typeof document !== 'undefined' && createPortal(
-          <div
-            className="pointer-events-none fixed z-[9999] overflow-hidden rounded-lg border border-[var(--ui-border-soft)] bg-[var(--ui-surface-elevated)] shadow-[var(--ui-shadow-tooltip)]"
-            style={{
-              left: Math.max(10, referenceHover.anchorRect.left + referenceHover.anchorRect.width / 2 - 75),
-              top: referenceHover.anchorRect.bottom + 10,
-              width: 150,
-              height: 150,
-            }}
-          >
-            <img
-              src={resolveImageDisplayUrl(referenceHover.imageUrl)}
-              alt={`图${referenceHover.index}`}
-              className="h-full w-full object-contain"
-              draggable={false}
-            />
-          </div>,
-          document.body
-        )}
         </div>
       </section>
 

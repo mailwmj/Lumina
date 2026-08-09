@@ -24,6 +24,7 @@ import {
   resolveTextGenerationInputs,
   type ResolvedTextGenerationInputs,
 } from '@/features/canvas/application/textGenerationInputs';
+import { materializeImageReferencePrompt } from '@/features/canvas/application/imageReferencePrompt';
 import { textGenerationGateway } from '@/features/canvas/application/canvasServices';
 import type { TextProviderRuntimeConfig } from '@/features/canvas/application/ports';
 import {
@@ -61,6 +62,7 @@ import { useCanvasStore } from '@/stores/canvasStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { TextGenerationUpstreamContext } from './TextGenerationUpstreamContext';
 import { usePreserveNodeCenterOnAutoResize } from '@/features/canvas/ui/usePreserveNodeCenterOnAutoResize';
+import { ImageReferencePromptInput } from '@/features/canvas/ui/ImageReferencePromptInput';
 
 type TextGenerationNodeProps = NodeProps & {
   id: string;
@@ -168,8 +170,9 @@ export const TextGenerationNode = memo(({
     enabled: !data.isSizeManuallyAdjusted,
   });
   const unavailableImageNames = inputs.imageInputs
-    .filter((input) => !input.imageUrl)
-    .map((input) => input.displayName)
+    .flatMap((input, index) => !input.imageUrl
+      ? [t('node.imageReference.label', { index: index + 1 })]
+      : [])
     .join(', ');
   const canGenerate = canStartTextGeneration({
     effectivePrompt: inputs.effectivePrompt,
@@ -302,7 +305,10 @@ export const TextGenerationNode = memo(({
       );
       return;
     }
-    const prompt = inputCompositionStateRef.current.draft.trim();
+    const prompt = materializeImageReferencePrompt(
+      inputCompositionStateRef.current.draft,
+      inputs.imageInputs
+    ).trim();
     if (!prompt) {
       void showErrorDialog(
         t('node.textGeneration.polishInputRequired'),
@@ -332,7 +338,7 @@ export const TextGenerationNode = memo(({
     } finally {
       setIsPolishing(false);
     }
-  }, [id, isRunning, selectedPolishModel, t, textPolishConfig, updateNodeData]);
+  }, [id, inputs.imageInputs, isRunning, selectedPolishModel, t, textPolishConfig, updateNodeData]);
 
   const stopRun = useCallback(() => {
     if (controllerRef.current.stop()) {
@@ -397,7 +403,7 @@ export const TextGenerationNode = memo(({
     updateNodeData,
   ]);
 
-  const handleGenerateShortcut = useCallback((event: KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleGenerateShortcut = useCallback((event: KeyboardEvent<HTMLElement>) => {
     if (shouldSuppressKeyboardCommand(event.nativeEvent)) {
       return;
     }
@@ -437,23 +443,20 @@ export const TextGenerationNode = memo(({
           {t('node.textGeneration.localInput')}
         </div>
         <div
-          className="nodrag nowheel relative overflow-hidden rounded-lg border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)]"
+          className="nodrag nowheel relative overflow-visible rounded-lg border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)]"
           style={{ height: layout.promptHeight }}
         >
-          <textarea
+          <ImageReferencePromptInput
             value={inputDraft}
             placeholder={t('node.textGeneration.inputPlaceholder')}
+            ariaLabel={t('node.textGeneration.localInput')}
+            imageInputs={inputs.imageInputs}
             onKeyDown={handleGenerateShortcut}
             onCompositionStart={beginInputComposition}
-            onCompositionEnd={(event) => completeInputComposition(event.currentTarget.value)}
-            onBlur={(event) => commitInputOnBlur(event.currentTarget.value)}
-            onChange={(event) => handleInputChange(
-              event.target.value,
-              (event.nativeEvent as InputEvent).isComposing === true
-            )}
-            className={`ui-scrollbar nodrag nowheel h-full w-full resize-none overflow-y-auto border-0 bg-transparent px-3 py-2 text-sm leading-6 text-text-dark outline-none placeholder:text-text-muted/65 ${
-              isRunning ? 'pr-20' : ''
-            }`}
+            onCompositionEnd={completeInputComposition}
+            onBlur={commitInputOnBlur}
+            onValueChange={handleInputChange}
+            className={isRunning ? 'pr-20' : ''}
           />
           {isRunning && (
             <div className="pointer-events-none absolute right-2 top-2 z-10 flex items-center gap-1 rounded-md border border-[var(--ui-border-soft)] bg-[var(--ui-surface-elevated)]/95 px-1.5 py-0.5 text-[10px] text-text-muted shadow-sm">

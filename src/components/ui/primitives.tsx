@@ -25,6 +25,10 @@ import {
 import { useDialogTransition } from './useDialogTransition';
 import { UiIcon } from './Icon';
 import { UiTooltip } from './Tooltip';
+import {
+  resolveSelectMenuHorizontalGeometry,
+  resolveSelectMenuVerticalGeometry,
+} from './selectMenuGeometry';
 
 type ButtonVariant = 'primary' | 'muted' | 'ghost' | 'danger';
 
@@ -220,10 +224,16 @@ export function UiSelect({ className = '', children, ...props }: UiSelectProps) 
   const hiddenSelectRef = useRef<HTMLSelectElement | null>(null);
   const listboxIdRef = useRef(`ui-select-${Math.random().toString(36).slice(2, 10)}`);
   const [isOpen, setIsOpen] = useState(false);
-  const [menuStyle, setMenuStyle] = useState<{ left: number; top: number; width: number }>({
+  const [menuStyle, setMenuStyle] = useState<{
+    left: number;
+    top: number;
+    width: number;
+    maxHeight: number;
+  }>({
     left: 0,
     top: 0,
     width: 0,
+    maxHeight: 0,
   });
   const { shouldRender: shouldRenderMenu, isVisible: isMenuVisible } = useDialogTransition(
     isOpen,
@@ -282,13 +292,22 @@ export function UiSelect({ className = '', children, ...props }: UiSelectProps) 
       }
 
       const rect = trigger.getBoundingClientRect();
-      const viewportHeight = window.innerHeight;
-      const estimatedMenuHeight = Math.min(Math.max(parsedOptions.length * 38 + 12, 60), 240);
-      const openAbove = rect.bottom + 8 + estimatedMenuHeight > viewportHeight && rect.top > estimatedMenuHeight;
+      const horizontalGeometry = resolveSelectMenuHorizontalGeometry(
+        rect.left,
+        rect.width,
+        window.innerWidth
+      );
+      const verticalGeometry = resolveSelectMenuVerticalGeometry(
+        rect.top,
+        rect.bottom,
+        parsedOptions.length,
+        window.innerHeight
+      );
       setMenuStyle({
-        left: rect.left,
-        top: openAbove ? Math.max(8, rect.top - estimatedMenuHeight - 8) : rect.bottom + 8,
-        width: rect.width,
+        left: horizontalGeometry.left,
+        top: verticalGeometry.top,
+        width: horizontalGeometry.width,
+        maxHeight: verticalGeometry.maxHeight,
       });
     };
 
@@ -306,7 +325,7 @@ export function UiSelect({ className = '', children, ...props }: UiSelectProps) 
       return;
     }
 
-    const handlePointerDown = (event: MouseEvent) => {
+    const handlePointerDown = (event: PointerEvent) => {
       const target = event.target as Node | null;
       if (triggerRef.current?.contains(target ?? null)) {
         return;
@@ -327,10 +346,10 @@ export function UiSelect({ className = '', children, ...props }: UiSelectProps) 
       }
     };
 
-    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('pointerdown', handlePointerDown, true);
     document.addEventListener('keydown', handleEscape);
     return () => {
-      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('pointerdown', handlePointerDown, true);
       document.removeEventListener('keydown', handleEscape);
     };
   }, [isOpen]);
@@ -435,11 +454,14 @@ export function UiSelect({ className = '', children, ...props }: UiSelectProps) 
                 left: menuStyle.left,
                 top: menuStyle.top,
                 width: menuStyle.width,
-                maxHeight: 240,
+                maxHeight: menuStyle.maxHeight,
                 transitionDuration: `${UI_POPOVER_TRANSITION_MS}ms`,
               }}
             >
-              <div className="ui-scrollbar max-h-[228px] overflow-y-auto">
+              <div
+                className="ui-scrollbar overflow-x-hidden overflow-y-auto"
+                style={{ maxHeight: Math.max(0, menuStyle.maxHeight - 10) }}
+              >
                 {parsedOptions.map((option) => {
                   const isSelected = option.value === selectedValue;
                   return (

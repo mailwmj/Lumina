@@ -49,6 +49,7 @@ import {
   resolveMinEdgeFittedSize,
   resolveFittedImageNodeSize,
 } from '@/features/canvas/application/imageNodeSizing';
+import { pruneImageReferencePromptTokensForEdges } from '@/features/canvas/application/imageReferencePrompt';
 
 export type {
   ActiveToolDialog,
@@ -685,6 +686,18 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
 
   onNodesChange: (changes) => {
     set((state) => {
+      const removedNodeIds = new Set(
+        changes
+          .filter((change): change is NodeChange<CanvasNode> & { id: string } =>
+            change.type === 'remove' && typeof change.id === 'string'
+          )
+          .map((change) => change.id)
+      );
+      const removedEdges = removedNodeIds.size > 0
+        ? state.edges.filter(
+          (edge) => removedNodeIds.has(edge.source) || removedNodeIds.has(edge.target)
+        )
+        : [];
       const resizedNodeIds = new Set(
         changes
           .filter(
@@ -712,6 +725,15 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       );
 
       let nextNodes = applyNodeChanges<CanvasNode>(changes, state.nodes);
+      if (removedEdges.length > 0) {
+        nextNodes = pruneImageReferencePromptTokensForEdges(
+          nextNodes,
+          removedEdges.map((edge) => edge.id)
+        );
+      }
+      const nextEdges = removedEdges.length > 0
+        ? state.edges.filter((edge) => !removedNodeIds.has(edge.source) && !removedNodeIds.has(edge.target))
+        : state.edges;
       if (resizedNodeIds.size > 0 || contextAwareGenerationResizeIds.size > 0) {
         nextNodes = nextNodes.map((node) => {
           const shouldLockImageSize = resizedNodeIds.has(node.id) && isImageAutoResizableType(node.type);
@@ -775,6 +797,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
 
       return {
         nodes: nextNodes,
+        edges: nextEdges,
         selectedNodeId: resolveSelectedNodeId(state.selectedNodeId, nextNodes),
         activeToolDialog: resolveActiveToolDialog(state.activeToolDialog, nextNodes),
         history: nextHistory,
@@ -786,13 +809,20 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   onEdgesChange: (changes) => {
     set((state) => {
       const nextEdges = applyEdgeChanges<CanvasEdge>(changes, state.edges);
+      const removedEdgeIds = changes
+        .filter((change): change is EdgeChange<CanvasEdge> & { id: string } =>
+          change.type === 'remove' && typeof change.id === 'string'
+        )
+        .map((change) => change.id);
+      const nextNodes = pruneImageReferencePromptTokensForEdges(state.nodes, removedEdgeIds);
       const hasMeaningfulChange = changes.some((change) => change.type !== 'select');
 
       if (!hasMeaningfulChange) {
-        return { edges: nextEdges };
+        return { nodes: nextNodes, edges: nextEdges };
       }
 
       return {
+        nodes: nextNodes,
         edges: nextEdges,
         history: {
           past: pushSnapshot(state.history.past, createSnapshot(state.nodes, state.edges)),
@@ -1848,7 +1878,14 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       }
 
       const deleteSet = collectNodeIdsWithDescendants(state.nodes, existingIds);
-      const nextNodes = state.nodes.filter((node) => !deleteSet.has(node.id));
+      const removedEdges = state.edges.filter(
+        (edge) => deleteSet.has(edge.source) || deleteSet.has(edge.target)
+      );
+      const remainingNodes = state.nodes.filter((node) => !deleteSet.has(node.id));
+      const nextNodes = pruneImageReferencePromptTokensForEdges(
+        remainingNodes,
+        removedEdges.map((edge) => edge.id)
+      );
       const nextEdges = state.edges.filter(
         (edge) => !deleteSet.has(edge.source) && !deleteSet.has(edge.target)
       );
@@ -2080,6 +2117,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       }
 
       return {
+        nodes: pruneImageReferencePromptTokensForEdges(state.nodes, [edgeId]),
         edges: state.edges.filter((edge) => edge.id !== edgeId),
         history: {
           past: pushSnapshot(state.history.past, createSnapshot(state.nodes, state.edges)),

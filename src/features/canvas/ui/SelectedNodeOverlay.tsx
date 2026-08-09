@@ -2,6 +2,7 @@ import { memo, useMemo } from 'react';
 
 import { useCanvasStore } from '@/stores/canvasStore';
 import { NodeActionToolbar } from './NodeActionToolbar';
+import { MultiSelectionActionToolbar } from './MultiSelectionActionToolbar';
 
 export const SelectedNodeOverlay = memo(() => {
   const nodes = useCanvasStore((state) => state.nodes);
@@ -14,6 +15,15 @@ export const SelectedNodeOverlay = memo(() => {
 
     return nodes.find((node) => node.id === selectedNodeId) ?? null;
   }, [nodes, selectedNodeId]);
+
+  const selectedNodes = useMemo(
+    () => nodes.filter((node) => Boolean(node.selected)),
+    [nodes]
+  );
+
+  if (selectedNodes.length > 1) {
+    return <MultiSelectionActionToolbar selectedNodes={selectedNodes} />;
+  }
 
   if (!selectedNode) {
     return null;

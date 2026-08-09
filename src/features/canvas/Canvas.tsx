@@ -1409,6 +1409,12 @@ export function Canvas() {
     setPreviewConnectionVisual(null);
   }, [openNodeMenuAtClientPosition, setSelectedNode]);
 
+  const handlePaneContextMenu = useCallback((event: MouseEvent | ReactMouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    openNodeMenuAtClientPosition(event.clientX, event.clientY);
+  }, [openNodeMenuAtClientPosition]);
+
   const handleNodeSelect = useCallback(
     (type: CanvasNodeType) => {
       const newNodeId = addNode(type, flowPosition);
@@ -2046,6 +2052,7 @@ export function Canvas() {
         onNodeDrag={handleNodeDrag}
         onNodeDragStop={handleNodeDragStop}
         onPaneClick={handlePaneClick}
+        onPaneContextMenu={handlePaneContextMenu}
         onMove={handleMove}
         onMoveStart={handleMoveStart}
         onMoveEnd={handleMoveEnd}
