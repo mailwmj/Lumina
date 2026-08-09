@@ -78,6 +78,7 @@ import { NodeResizeHandle } from '@/features/canvas/ui/NodeResizeHandle';
 import { resolveNodeSurfaceStateClass } from '@/features/canvas/ui/nodeSurfaceStyles';
 import {
   NODE_CONTROL_CHIP_CLASS,
+  NODE_CONTROL_FOOTER_CLASS,
   NODE_CONTROL_ICON_CLASS,
   NODE_CONTROL_MODEL_CHIP_CLASS,
   NODE_CONTROL_PARAMS_CHIP_CLASS,
@@ -127,6 +128,10 @@ const CONTROL_ROW_MARGIN_BOTTOM_PX = 10;
 const FRAME_GRID_MARGIN_BOTTOM_PX = 8;
 const PARAM_ROW_HEIGHT_PX = 20;
 const NODE_VERTICAL_PADDING_PX = 24;
+// The storyboard card uses p-3 while the shared generation footer baseline is
+// tuned for p-2 cards. Pulling the row 9px into that padding keeps its 24px
+// controls at the same measured 8px bottom inset as the image generation node.
+const STORYBOARD_FOOTER_BOTTOM_OFFSET_PX = 9;
 const FRAME_CELL_MIN_WIDTH_PX = 24;
 const FRAME_CELL_MIN_HEIGHT_PX = 16;
 const GRID_LINE_THICKNESS_PERCENT = 0.4;
@@ -1764,7 +1769,7 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
             }}
             placeholder={t('node.storyboardGen.globalPromptPlaceholder') || '整体提示词（可选）：如画风、情节、氛围等描述'}
             wrap="soft"
-            className="ui-scrollbar nodrag nowheel absolute inset-0 z-10 h-full w-full resize-none overflow-y-auto overflow-x-hidden bg-transparent px-1.5 py-1 text-left text-[10px] leading-4 text-transparent caret-text-dark placeholder:text-text-muted/50 focus:border-accent/50 focus:outline-none"
+            className="ui-scrollbar nodrag nowheel absolute inset-0 z-10 h-full w-full resize-none overflow-y-auto overflow-x-hidden bg-transparent px-1.5 py-1 text-left text-[10px] leading-4 text-transparent caret-text-dark selection:text-transparent placeholder:text-text-muted/50 focus:border-accent/50 focus:outline-none"
             style={{ scrollbarGutter: 'stable' }}
           />
         </div>
@@ -1836,7 +1841,7 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
                     index: String(index + 1).padStart(2, '0'),
                   })}
                   wrap="soft"
-                  className="ui-scrollbar nodrag nowheel relative z-10 h-full w-full resize-none overflow-y-auto overflow-x-hidden bg-transparent px-1.5 py-1 text-left text-[10px] leading-4 text-transparent caret-text-dark placeholder:text-text-muted/40 focus:border-accent/50 focus:outline-none whitespace-pre-wrap break-words"
+                  className="ui-scrollbar nodrag nowheel relative z-10 h-full w-full resize-none overflow-y-auto overflow-x-hidden bg-transparent px-1.5 py-1 text-left text-[10px] leading-4 text-transparent caret-text-dark selection:text-transparent placeholder:text-text-muted/40 focus:border-accent/50 focus:outline-none whitespace-pre-wrap break-words"
                   style={{ scrollbarGutter: 'stable' }}
                 />
                 <UiTooltip content={t('node.imageEdit.polishPrompt')}>
@@ -1927,8 +1932,11 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
 
       {/* AI Parameters */}
       <div
-        className="relative mx-auto mt-auto flex shrink-0 items-center justify-between"
-        style={{ width: `${frameLayout.paramsRowWidth}px` }}
+        className={`${NODE_CONTROL_FOOTER_CLASS} relative mx-auto justify-between`}
+        style={{
+          width: `${frameLayout.paramsRowWidth}px`,
+          marginBottom: -STORYBOARD_FOOTER_BOTTOM_OFFSET_PX,
+        }}
       >
         {hasConfiguredModel ? (
           <ModelParamsControls

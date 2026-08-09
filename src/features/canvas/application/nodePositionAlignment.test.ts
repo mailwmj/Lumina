@@ -8,13 +8,20 @@ import {
 
 type TestNode = Node<{ label: string }, 'test'>;
 
-function node(id: string, x: number, y: number, parentId?: string): TestNode {
+function node(
+  id: string,
+  x: number,
+  y: number,
+  parentId?: string,
+  measured?: { width: number; height: number }
+): TestNode {
   return {
     id,
     type: 'test',
     position: { x, y },
     data: { label: id },
     parentId,
+    measured,
   };
 }
 
@@ -57,6 +64,38 @@ describe('node position alignment', () => {
     ]);
 
     expect(changes).toEqual([change]);
+  });
+
+  it('snaps different-height nodes to the same horizontal center line', () => {
+    const changes = snapNodePositionChanges([
+      {
+        id: 'moving',
+        type: 'position',
+        position: { x: 500, y: 159 },
+        dragging: true,
+      },
+    ], [
+      node('target', 100, 200, undefined, { width: 520, height: 200 }),
+      node('moving', 500, 300, undefined, { width: 520, height: 300 }),
+    ]);
+
+    expect(changes[0]).toMatchObject({ position: { x: 500, y: 150 } });
+  });
+
+  it('snaps different-height nodes to the same bottom edge', () => {
+    const changes = snapNodePositionChanges([
+      {
+        id: 'moving',
+        type: 'position',
+        position: { x: 500, y: 109 },
+        dragging: true,
+      },
+    ], [
+      node('target', 100, 200, undefined, { width: 520, height: 200 }),
+      node('moving', 500, 300, undefined, { width: 520, height: 300 }),
+    ]);
+
+    expect(changes[0]).toMatchObject({ position: { x: 500, y: 100 } });
   });
 
   it('does not distort a multi-node drag', () => {

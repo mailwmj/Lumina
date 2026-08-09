@@ -839,7 +839,7 @@ export const SD2VideoGenNode = memo(({ id, data, selected, width, height }: SD2V
               onScroll={syncPromptHighlightScroll}
               onMouseDown={(e) => e.stopPropagation()}
               placeholder={t('node.videoGen.promptPlaceholder')}
-              className="ui-scrollbar nodrag nowheel relative z-10 h-full w-full resize-none overflow-y-auto overflow-x-hidden border-none bg-transparent px-1 py-0.5 text-sm leading-6 text-transparent caret-text-dark outline-none placeholder:text-text-muted/80 focus:border-transparent whitespace-pre-wrap break-words"
+              className="ui-scrollbar nodrag nowheel relative z-10 h-full w-full resize-none overflow-y-auto overflow-x-hidden border-none bg-transparent px-1 py-0.5 text-sm leading-6 text-transparent caret-text-dark outline-none selection:text-transparent placeholder:text-text-muted/80 focus:border-transparent whitespace-pre-wrap break-words"
               style={{ scrollbarGutter: 'stable' }}
             />
           </div>

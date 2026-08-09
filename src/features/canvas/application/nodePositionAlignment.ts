@@ -7,25 +7,51 @@ interface AlignableNode extends NodeBase {
   parentId?: string;
 }
 
+type NodeDimension = 'width' | 'height';
+
 function isPositionChange<NodeType extends NodeBase>(
   change: NodeChange<NodeType>
 ): change is NodePositionChange & { position: XYPosition } {
   return change.type === 'position' && Boolean(change.position);
 }
 
-function closestCoordinate(
+function resolveNodeDimension(node: AlignableNode, dimension: NodeDimension): number | null {
+  const measured = node.measured?.[dimension];
+  if (typeof measured === 'number' && Number.isFinite(measured)) {
+    return measured;
+  }
+
+  const declared = node[dimension];
+  return typeof declared === 'number' && Number.isFinite(declared) ? declared : null;
+}
+
+function alignmentOffsets(size: number | null): number[] {
+  return size === null ? [0] : [0, size / 2, size];
+}
+
+function closestAlignedCoordinate(
   coordinate: number,
-  candidates: number[],
+  movingSize: number | null,
+  siblingNodes: AlignableNode[],
+  axis: keyof XYPosition,
+  dimension: NodeDimension,
   distance: number
 ): number | null {
+  const movingOffsets = alignmentOffsets(movingSize);
   let nearest: number | null = null;
   let nearestDistance = distance;
 
-  for (const candidate of candidates) {
-    const candidateDistance = Math.abs(candidate - coordinate);
-    if (candidateDistance <= nearestDistance) {
-      nearest = candidate;
-      nearestDistance = candidateDistance;
+  for (const siblingNode of siblingNodes) {
+    const siblingOffsets = alignmentOffsets(resolveNodeDimension(siblingNode, dimension));
+    const comparableAnchorCount = Math.min(movingOffsets.length, siblingOffsets.length);
+
+    for (let index = 0; index < comparableAnchorCount; index += 1) {
+      const candidate = siblingNode.position[axis] + siblingOffsets[index] - movingOffsets[index];
+      const candidateDistance = Math.abs(candidate - coordinate);
+      if (candidateDistance <= nearestDistance) {
+        nearest = candidate;
+        nearestDistance = candidateDistance;
+      }
     }
   }
 
@@ -33,9 +59,9 @@ function closestCoordinate(
 }
 
 /**
- * Makes a single dragged node magnetically align its top or left edge with a
- * sibling node. Grid snapping remains independent; this also works when the
- * grid is hidden and aligns directly to the thing the user can see.
+ * Makes a single dragged node magnetically align corresponding outer edges or
+ * center lines with a sibling node. Grid snapping remains independent; this
+ * also works when the grid is hidden and aligns directly to visible geometry.
  */
 export function snapNodePositionChanges<NodeType extends AlignableNode>(
   changes: NodeChange<NodeType>[],
@@ -56,14 +82,20 @@ export function snapNodePositionChanges<NodeType extends AlignableNode>(
   const siblingNodes = nodes.filter(
     (node) => node.id !== movingNode.id && node.parentId === movingNode.parentId
   );
-  const alignedX = closestCoordinate(
+  const alignedX = closestAlignedCoordinate(
     positionChange.position.x,
-    siblingNodes.map((node) => node.position.x),
+    resolveNodeDimension(movingNode, 'width'),
+    siblingNodes,
+    'x',
+    'width',
     distance
   );
-  const alignedY = closestCoordinate(
+  const alignedY = closestAlignedCoordinate(
     positionChange.position.y,
-    siblingNodes.map((node) => node.position.y),
+    resolveNodeDimension(movingNode, 'height'),
+    siblingNodes,
+    'y',
+    'height',
     distance
   );
 
