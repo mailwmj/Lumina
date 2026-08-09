@@ -1,6 +1,6 @@
-# OpenCanvas 画布 Agent
+# Lumina（流光）画布 Agent
 
-本上下文描述 OpenCanvas 中由 Agent 协助完成图片创作的领域语言，以及 Agent 产物与画布之间的关系。
+本上下文描述 Lumina（流光）中由 Agent 协助完成图片创作的领域语言，以及 Agent 产物与画布之间的关系。
 
 ## Agent 与会话
 

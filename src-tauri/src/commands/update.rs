@@ -48,7 +48,7 @@ async fn fetch_latest_release_tag() -> Result<String, String> {
         .get(GITHUB_RELEASES_LATEST_API)
         .header(header::ACCEPT, "application/vnd.github+json")
         .header("X-GitHub-Api-Version", "2022-11-28")
-        .header(header::USER_AGENT, "Storyboard-Copilot-Updater")
+        .header(header::USER_AGENT, "Lumina-Updater")
         .send()
         .await
         .map_err(|error| format!("github api request failed: {error}"))?;
@@ -67,7 +67,7 @@ async fn fetch_latest_release_tag() -> Result<String, String> {
     let redirect_client = build_http_client(false)?;
     let redirect_response = redirect_client
         .get(GITHUB_RELEASES_LATEST_REDIRECT)
-        .header(header::USER_AGENT, "Storyboard-Copilot-Updater")
+        .header(header::USER_AGENT, "Lumina-Updater")
         .send()
         .await
         .map_err(|error| format!("github releases redirect request failed: {error}"))?;

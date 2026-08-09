@@ -2660,6 +2660,42 @@ dependencies = [
 ]
 
 [[package]]
+name = "lumina"
+version = "0.2.2"
+dependencies = [
+ "ab_glyph",
+ "arboard",
+ "async-trait",
+ "automod",
+ "base64 0.22.1",
+ "directories",
+ "fast_image_resize",
+ "hex",
+ "hmac",
+ "image",
+ "imageproc",
+ "inventory",
+ "md5",
+ "png 0.17.16",
+ "reqwest 0.12.28",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "tauri-plugin-opener",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
+ "urlencoding",
+ "uuid",
+]
+
+[[package]]
 name = "mac"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4766,42 +4802,6 @@ name = "stable_deref_trait"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
-
-[[package]]
-name = "storyboard-copilot"
-version = "0.2.2"
-dependencies = [
- "ab_glyph",
- "arboard",
- "async-trait",
- "automod",
- "base64 0.22.1",
- "directories",
- "fast_image_resize",
- "hex",
- "hmac",
- "image",
- "imageproc",
- "inventory",
- "md5",
- "png 0.17.16",
- "reqwest 0.12.28",
- "rusqlite",
- "serde",
- "serde_json",
- "sha2",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "tauri-plugin-opener",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "tracing-appender",
- "tracing-subscriber",
- "urlencoding",
- "uuid",
-]
 
 [[package]]
 name = "strength_reduce"

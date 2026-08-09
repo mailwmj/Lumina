@@ -44,9 +44,11 @@ export interface ImageReferencePromptInputProps {
   onKeyDown?: (event: KeyboardEvent<HTMLDivElement>) => void;
 }
 
+const CARET_ANCHOR_CHARACTER = '\u200B';
+
 function readEditorNode(node: Node): string {
   if (node.nodeType === Node.TEXT_NODE) {
-    return node.textContent ?? '';
+    return (node.textContent ?? '').replace(/\u200B/g, '');
   }
   if (node.nodeType !== Node.ELEMENT_NODE) {
     return '';
@@ -56,6 +58,9 @@ function readEditorNode(node: Node): string {
   const edgeId = element.dataset.imageReferenceEdgeId;
   if (edgeId) {
     return `{{image-ref:${edgeId}}}`;
+  }
+  if (element.dataset.imageReferenceCaretAnchor) {
+    return (element.textContent ?? '').replace(/\u200B/g, '');
   }
   if (element.tagName === 'BR') {
     return '\n';
@@ -114,10 +119,32 @@ function getSelectionOffsets(root: HTMLElement): { start: number; end: number } 
   return { start: Math.min(anchor, focus), end: Math.max(anchor, focus) };
 }
 
-function setSelectionOffset(root: HTMLElement, requestedOffset: number): void {
+type ReferenceCaretAffinity = 'before' | 'after';
+
+function setSelectionOffset(
+  root: HTMLElement,
+  requestedOffset: number,
+  affinity?: ReferenceCaretAffinity
+): void {
   const offset = Math.max(0, Math.min(requestedOffset, readEditorValue(root).length));
-  let remaining = offset;
   const range = document.createRange();
+
+  if (affinity) {
+    const anchor = root.querySelector<HTMLElement>(
+      `[data-image-reference-caret-anchor="${affinity}"][data-image-reference-cursor-offset="${offset}"]`
+    );
+    const anchorText = anchor?.firstChild;
+    if (anchorText?.nodeType === Node.TEXT_NODE) {
+      range.setStart(anchorText, anchorText.textContent?.length ?? 0);
+      range.collapse(true);
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+      return;
+    }
+  }
+
+  let remaining = offset;
 
   for (const child of Array.from(root.childNodes)) {
     const length = readEditorNode(child).length;
@@ -180,6 +207,40 @@ function isCompositionKeyboardEvent(event: KeyboardEvent<HTMLDivElement>): boole
   return event.nativeEvent.isComposing === true || event.nativeEvent.keyCode === 229;
 }
 
+function isImageReferenceTrigger(event: KeyboardEvent<HTMLDivElement>): boolean {
+  return event.key === '@'
+    || (event.key === '2' && event.shiftKey && event.code === 'Digit2');
+}
+
+export function resolveImageReferenceCursorMove(
+  value: string,
+  selection: { start: number; end: number },
+  direction: 'backward' | 'forward'
+): number | null {
+  const tokens = findImageReferencePromptTokens(value);
+  if (tokens.length === 0) {
+    return null;
+  }
+
+  if (selection.start !== selection.end) {
+    const touchesTag = tokens.some(
+      (token) => token.end > selection.start && token.start < selection.end
+    );
+    if (touchesTag) {
+      return direction === 'backward' ? selection.start : selection.end;
+    }
+    return null;
+  }
+
+  const cursor = selection.start;
+  const adjacentTag = direction === 'backward'
+    ? tokens.find((token) => token.end === cursor)
+    : tokens.find((token) => token.start === cursor);
+  return adjacentTag
+    ? direction === 'backward' ? adjacentTag.start : adjacentTag.end
+    : null;
+}
+
 export function ImageReferencePromptInput({
   value,
   imageInputs,
@@ -197,6 +258,7 @@ export function ImageReferencePromptInput({
   const rootRef = useRef<HTMLDivElement | null>(null);
   const renderedImageInputsKeyRef = useRef<string | null>(null);
   const pendingSelectionOffsetRef = useRef<number | null>(null);
+  const pendingSelectionAffinityRef = useRef<ReferenceCaretAffinity | null>(null);
   const isComposingRef = useRef(false);
   const [showPicker, setShowPicker] = useState(false);
   const [pickerActiveIndex, setPickerActiveIndex] = useState(0);
@@ -222,6 +284,19 @@ export function ImageReferencePromptInput({
     const fragment = document.createDocumentFragment();
     const tokens = findImageReferencePromptTokens(nextValue);
     let lastIndex = 0;
+    const createCaretAnchor = (
+      offset: number,
+      affinity: ReferenceCaretAffinity
+    ): HTMLSpanElement => {
+      const anchor = document.createElement('span');
+      anchor.contentEditable = 'true';
+      anchor.dataset.imageReferenceCaretAnchor = affinity;
+      anchor.dataset.imageReferenceCursorOffset = String(offset);
+      anchor.setAttribute('aria-hidden', 'true');
+      anchor.className = 'inline-block w-px align-baseline caret-text-dark';
+      anchor.textContent = CARET_ANCHOR_CHARACTER;
+      return anchor;
+    };
 
     for (const token of tokens) {
       if (token.start > lastIndex) {
@@ -234,7 +309,7 @@ export function ImageReferencePromptInput({
         const chip = document.createElement('span');
         chip.contentEditable = 'false';
         chip.dataset.imageReferenceEdgeId = token.edgeId;
-        chip.className = 'mx-0.5 inline-flex h-6 max-w-full select-none items-center gap-1 rounded-md border border-[var(--ui-border-strong)] bg-[var(--ui-surface-elevated)] py-0.5 pl-0.5 pr-1.5 align-middle text-xs font-medium leading-none text-text-dark shadow-sm';
+        chip.className = 'mx-0.5 inline-flex h-6 max-w-full select-none items-center gap-1 rounded-md border border-[var(--ui-border-strong)] bg-[var(--ui-surface-elevated)] py-0.5 pl-0.5 pr-1.5 align-text-bottom text-sm font-medium leading-none text-text-dark shadow-sm';
 
         const previewSource = reference.item.previewImageUrl || reference.item.imageUrl;
         if (previewSource) {
@@ -252,9 +327,12 @@ export function ImageReferencePromptInput({
         }
 
         const text = document.createElement('span');
+        text.className = 'truncate';
         text.textContent = label;
         chip.append(text);
+        fragment.append(createCaretAnchor(token.start, 'before'));
         fragment.append(chip);
+        fragment.append(createCaretAnchor(token.end, 'after'));
       }
       lastIndex = token.end;
     }
@@ -281,12 +359,14 @@ export function ImageReferencePromptInput({
     }
 
     const preservedOffset = pendingSelectionOffsetRef.current ?? getSelectionOffset(root);
+    const preservedAffinity = pendingSelectionAffinityRef.current ?? undefined;
     renderEditor(root, value);
     renderedImageInputsKeyRef.current = imageInputsKey;
     pendingSelectionOffsetRef.current = null;
+    pendingSelectionAffinityRef.current = null;
     setIsVisuallyEmpty(value.length === 0);
     if (document.activeElement === root && preservedOffset !== null) {
-      setSelectionOffset(root, preservedOffset);
+      setSelectionOffset(root, preservedOffset, preservedAffinity);
     }
   }, [imageInputsKey, renderEditor, value]);
 
@@ -322,21 +402,22 @@ export function ImageReferencePromptInput({
     const valueWithoutSelection = `${value.slice(0, selection.start)}${value.slice(selection.end)}`;
     const result = insertImageReferencePromptToken(valueWithoutSelection, selection.start, item.edgeId);
     pendingSelectionOffsetRef.current = result.nextOffset;
+    pendingSelectionAffinityRef.current = 'after';
     emitValue(result.nextText, false);
     closePicker();
     requestAnimationFrame(() => {
       root.focus();
-      setSelectionOffset(root, result.nextOffset);
+      setSelectionOffset(root, result.nextOffset, 'after');
     });
   }, [closePicker, emitValue, imageInputs, pickerSelection, value]);
 
-  const openPicker = useCallback(() => {
+  const openPicker = useCallback((requestedOffset?: number) => {
     const root = rootRef.current;
     if (!root || imageInputs.length === 0 || isComposingRef.current) {
       return;
     }
     const selectionOffsets = getSelectionOffsets(root);
-    const cursor = selectionOffsets?.start ?? value.length;
+    const cursor = requestedOffset ?? selectionOffsets?.start ?? value.length;
     const selection = window.getSelection();
     const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
     const rootRect = root.getBoundingClientRect();
@@ -345,17 +426,59 @@ export function ImageReferencePromptInput({
       left: Math.max(0, (rangeRect?.left ?? rootRect.left) - rootRect.left),
       top: Math.max(0, (rangeRect?.bottom ?? rootRect.top + 20) - rootRect.top + 4),
     });
-    setPickerSelection({ start: cursor, end: selectionOffsets?.end ?? cursor });
+    setPickerSelection({
+      start: cursor,
+      end: requestedOffset === undefined ? selectionOffsets?.end ?? cursor : cursor,
+    });
     setPickerActiveIndex(0);
     setShowPicker(true);
   }, [imageInputs.length, value.length]);
 
+  const handleBeforeInput = useCallback((event: FormEvent<HTMLDivElement>) => {
+    const nativeEvent = event.nativeEvent as InputEvent;
+    if (
+      nativeEvent.data !== '@'
+      || nativeEvent.isComposing === true
+      || isComposingRef.current
+      || imageInputs.length === 0
+    ) {
+      return;
+    }
+    event.preventDefault();
+    openPicker();
+  }, [imageInputs.length, openPicker]);
+
   const handleInput = useCallback((event: FormEvent<HTMLDivElement>) => {
-    emitValue(
-      readEditorValue(event.currentTarget),
-      (event.nativeEvent as InputEvent).isComposing === true
-    );
-  }, [emitValue]);
+    const root = event.currentTarget;
+    const nextValue = readEditorValue(root);
+    const nativeIsComposing = (event.nativeEvent as InputEvent).isComposing === true;
+    const cursor = getSelectionOffset(root);
+
+    // `beforeinput` is not consistently emitted by every keyboard/input-method
+    // combination. If a literal @ reached the editor, turn it into the picker
+    // here instead of leaving an inert character behind.
+    if (
+      !nativeIsComposing
+      && !isComposingRef.current
+      && imageInputs.length > 0
+      && cursor !== null
+      && cursor > 0
+      && nextValue[cursor - 1] === '@'
+    ) {
+      const triggerOffset = cursor - 1;
+      const valueWithoutTrigger = `${nextValue.slice(0, triggerOffset)}${nextValue.slice(cursor)}`;
+      pendingSelectionOffsetRef.current = triggerOffset;
+      emitValue(valueWithoutTrigger, false);
+      requestAnimationFrame(() => {
+        root.focus();
+        setSelectionOffset(root, triggerOffset);
+        openPicker(triggerOffset);
+      });
+      return;
+    }
+
+    emitValue(nextValue, nativeIsComposing);
+  }, [emitValue, imageInputs.length, openPicker]);
 
   const handleCompositionStart = useCallback(() => {
     isComposingRef.current = true;
@@ -385,6 +508,18 @@ export function ImageReferencePromptInput({
   }, []);
 
   const handleKeyDown = useCallback((event: KeyboardEvent<HTMLDivElement>) => {
+    // Some IMEs report keyCode 229 for punctuation even when they emit a real
+    // `@` character. Handle the trigger before the composition-key fallback.
+    if (
+      isImageReferenceTrigger(event)
+      && event.nativeEvent.isComposing !== true
+      && imageInputs.length > 0
+    ) {
+      event.preventDefault();
+      openPicker();
+      return;
+    }
+
     if (isCompositionKeyboardEvent(event)) {
       return;
     }
@@ -440,10 +575,31 @@ export function ImageReferencePromptInput({
       }
     }
 
-    if (event.key === '@' && imageInputs.length > 0) {
-      event.preventDefault();
-      openPicker();
-      return;
+    if (
+      !showPicker
+      && !event.shiftKey
+      && !event.altKey
+      && !event.ctrlKey
+      && !event.metaKey
+      && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')
+    ) {
+      const selection = getSelectionOffsets(root);
+      const nextOffset = selection
+        ? resolveImageReferenceCursorMove(
+          value,
+          selection,
+          event.key === 'ArrowLeft' ? 'backward' : 'forward'
+        )
+        : null;
+      if (nextOffset !== null) {
+        event.preventDefault();
+        setSelectionOffset(
+          root,
+          nextOffset,
+          event.key === 'ArrowLeft' ? 'before' : 'after'
+        );
+        return;
+      }
     }
 
     onKeyDown?.(event);
@@ -464,6 +620,7 @@ export function ImageReferencePromptInput({
         aria-label={ariaLabel}
         aria-disabled={disabled || undefined}
         data-placeholder={isVisuallyEmpty ? placeholder : undefined}
+        onBeforeInput={handleBeforeInput}
         onInput={handleInput}
         onKeyDown={handleKeyDown}
         onCompositionStart={handleCompositionStart}

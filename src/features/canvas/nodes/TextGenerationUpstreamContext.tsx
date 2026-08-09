@@ -258,7 +258,7 @@ export const TextGenerationUpstreamContext = memo(({
                     )}
                     <span
                       aria-hidden="true"
-                      className="pointer-events-none absolute -bottom-1 -right-1 z-10 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[11px] font-semibold leading-none text-white shadow-sm"
+                      className="pointer-events-none absolute bottom-0.5 right-0.5 z-10 flex h-5 min-w-5 items-center justify-center rounded-full border border-white/25 bg-black/70 px-1 text-[10px] font-semibold leading-none text-white shadow-md backdrop-blur-sm"
                     >
                       {index + 1}
                     </span>

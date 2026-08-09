@@ -11,6 +11,7 @@ import {
 } from './imageReferencePrompt';
 import { canvasNodeFactory } from './canvasServices';
 import { CANVAS_NODE_TYPES, type CanvasNode } from '../domain/canvasNodes';
+import { resolveImageReferenceCursorMove } from '../ui/ImageReferencePromptInput';
 
 function createNode(type: CanvasNode['type'], id: string): CanvasNode {
   return {
@@ -85,5 +86,24 @@ describe('image reference prompt', () => {
       '',
       '衣服参考图片 1；帽子参考图片 2。',
     ].join('\n'));
+  });
+
+  it('moves the caret across a reference tag as one atomic item', () => {
+    const token = createImageReferencePromptToken('red');
+    const prompt = `衣服${token}帽子`;
+    const [reference] = findImageReferencePromptTokens(prompt);
+    expect(reference).toBeDefined();
+    if (!reference) {
+      return;
+    }
+
+    expect(resolveImageReferenceCursorMove(prompt, {
+      start: reference.end,
+      end: reference.end,
+    }, 'backward')).toBe(reference.start);
+    expect(resolveImageReferenceCursorMove(prompt, {
+      start: reference.start,
+      end: reference.start,
+    }, 'forward')).toBe(reference.end);
   });
 });

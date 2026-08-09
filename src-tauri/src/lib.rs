@@ -43,7 +43,7 @@ pub(crate) fn resolve_log_dir() -> Option<PathBuf> {
 
 fn setup_logging() {
     let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| "info,storyboard_copilot=debug".into());
+        .unwrap_or_else(|_| "info,lumina_lib=debug".into());
 
     if let Some(log_dir) = resolve_log_dir() {
         let file_appender = tracing_appender::rolling::daily(log_dir, "storyboard.log");
@@ -61,7 +61,7 @@ fn setup_logging() {
             .init();
     }
 
-    info!("Storyboard Copilot starting...");
+    info!("Lumina (流光) starting...");
 
     if let Some(log_dir) = resolve_log_dir() {
         commands::cleanup::cleanup_old_logs(&log_dir);
