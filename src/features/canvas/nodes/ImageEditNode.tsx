@@ -105,6 +105,7 @@ import {
   type PickerAnchor,
 } from '@/features/canvas/ui/imageEditPromptOverlay';
 import { TextGenerationUpstreamContext } from './TextGenerationUpstreamContext';
+import { usePreserveNodeCenterOnAutoResize } from '@/features/canvas/ui/usePreserveNodeCenterOnAutoResize';
 
 type ImageEditNodeProps = NodeProps & {
   id: string;
@@ -268,6 +269,12 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
   });
   const resolvedWidth = layout.width;
   const resolvedHeight = layout.height;
+
+  usePreserveNodeCenterOnAutoResize({
+    nodeId: id,
+    height: resolvedHeight,
+    enabled: !data.isSizeManuallyAdjusted,
+  });
 
   useEffect(() => {
     updateNodeInternals(id);

@@ -48,6 +48,13 @@ describe('text generation node layout', () => {
     expect(layout.height).toBeGreaterThan(TEXT_GENERATION_DEFAULT_HEIGHT);
   });
 
+  it('accounts for the rendered label and margin height of optional context sections', () => {
+    expect(resolveTextGenerationLayout({
+      hasTextContext: true,
+      hasResult: false,
+    }).height).toBe(355);
+  });
+
   it('adds a compact generated-result region and preserves a manual size above the active minimum', () => {
     const layout = resolveTextGenerationLayout({
       width: 900,
@@ -64,7 +71,7 @@ describe('text generation node layout', () => {
       promptHeight: TEXT_GENERATION_PROMPT_WITH_RESULT_HEIGHT,
     });
     expect(layout.resultHeight).toBeGreaterThan(TEXT_GENERATION_RESULT_HEIGHT);
-    expect(layout.resultHeight).toBe(452);
+    expect(layout.resultHeight).toBe(443);
     expect(layout.minHeight).toBeGreaterThan(TEXT_GENERATION_MIN_HEIGHT);
   });
 

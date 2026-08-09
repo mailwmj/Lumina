@@ -9,6 +9,14 @@ interface AlignableNode extends NodeBase {
 
 type NodeDimension = 'width' | 'height';
 
+export function resolveCenterPreservingPositionY(
+  currentY: number,
+  previousHeight: number,
+  nextHeight: number
+): number {
+  return currentY + (previousHeight - nextHeight) / 2;
+}
+
 function isPositionChange<NodeType extends NodeBase>(
   change: NodeChange<NodeType>
 ): change is NodePositionChange & { position: XYPosition } {

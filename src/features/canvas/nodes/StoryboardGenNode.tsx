@@ -128,9 +128,9 @@ const CONTROL_ROW_MARGIN_BOTTOM_PX = 10;
 const FRAME_GRID_MARGIN_BOTTOM_PX = 8;
 const PARAM_ROW_HEIGHT_PX = 20;
 const NODE_VERTICAL_PADDING_PX = 24;
-// The storyboard card uses p-3 while the shared generation footer baseline is
-// tuned for p-2 cards. Pulling the row 9px into that padding keeps its 24px
-// controls at the same measured 8px bottom inset as the image generation node.
+// The p-3 storyboard card leaves 9px more below its centered 24px buttons
+// than the p-2 generation cards. Pull the shared footer into that padding so
+// every model row keeps the same measured 8px button-to-border inset.
 const STORYBOARD_FOOTER_BOTTOM_OFFSET_PX = 9;
 const FRAME_CELL_MIN_WIDTH_PX = 24;
 const FRAME_CELL_MIN_HEIGHT_PX = 16;

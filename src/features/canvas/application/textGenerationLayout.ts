@@ -1,7 +1,8 @@
 export const TEXT_GENERATION_DEFAULT_WIDTH = 520;
-// The compact node has 232px of actual content: 16px outer padding, a 176px
-// prompt section, an 8px gap, and a 32px footer. Keeping the minimum equal to
-// that composition prevents an artificial blank band below the controls.
+// The compact node has 232px of rendered geometry: 13px of effective
+// border/edge inset, a 179px labeled prompt section, an 8px gap, and a 32px
+// footer. Keeping the minimum equal to that composition prevents an anonymous
+// blank band below the controls.
 export const TEXT_GENERATION_DEFAULT_HEIGHT = 232;
 export const TEXT_GENERATION_MIN_WIDTH = 390;
 export const TEXT_GENERATION_MIN_HEIGHT = 232;
@@ -14,9 +15,9 @@ export const TEXT_GENERATION_PROMPT_HEIGHT = 160;
 export const TEXT_GENERATION_PROMPT_WITH_RESULT_HEIGHT = 120;
 export const TEXT_GENERATION_RESULT_HEIGHT = 136;
 
-const NODE_VERTICAL_INSET = 16;
+const NODE_VERTICAL_INSET = 13;
 const NODE_SECTION_GAP = 8;
-const NODE_SECTION_LABEL_HEIGHT = 16;
+const NODE_SECTION_LABEL_HEIGHT = 19;
 
 interface TextGenerationLayoutInput {
   width?: number;

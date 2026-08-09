@@ -60,6 +60,7 @@ import { TextModelSelector } from '@/features/canvas/ui/TextModelSelector';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { TextGenerationUpstreamContext } from './TextGenerationUpstreamContext';
+import { usePreserveNodeCenterOnAutoResize } from '@/features/canvas/ui/usePreserveNodeCenterOnAutoResize';
 
 type TextGenerationNodeProps = NodeProps & {
   id: string;
@@ -159,6 +160,12 @@ export const TextGenerationNode = memo(({
     hasImageContext,
     hasResult: Boolean(generatedText),
     isSizeManuallyAdjusted: data.isSizeManuallyAdjusted,
+  });
+
+  usePreserveNodeCenterOnAutoResize({
+    nodeId: id,
+    height: layout.height,
+    enabled: !data.isSizeManuallyAdjusted,
   });
   const unavailableImageNames = inputs.imageInputs
     .filter((input) => !input.imageUrl)

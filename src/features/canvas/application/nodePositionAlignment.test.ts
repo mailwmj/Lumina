@@ -3,6 +3,7 @@ import type { Node } from '@xyflow/react';
 
 import {
   NODE_ALIGNMENT_SNAP_DISTANCE,
+  resolveCenterPreservingPositionY,
   snapNodePositionChanges,
 } from './nodePositionAlignment';
 
@@ -26,6 +27,10 @@ function node(
 }
 
 describe('node position alignment', () => {
+  it('keeps the handle center fixed when an automatic layout changes node height', () => {
+    expect(resolveCenterPreservingPositionY(280, 232, 355)).toBe(218.5);
+  });
+
   it('snaps a dragged node to a sibling top and left edge inside the threshold', () => {
     const changes = snapNodePositionChanges([
       {
