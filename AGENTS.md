@@ -115,6 +115,7 @@
 
 - 图片节点和上传节点使用 `image` 模板；视频节点使用 `video` 模板。
 - 所有润色调用 `textApis`，不得改走 `videoApis`；`base_url`、`api_key`、`model_id` 均来自用户配置。
+- 媒体节点润色统一使用设置页选定的全局文本 API、模型与思考等级；图片、分镜和视频节点只触发润色，不持有这些运行时配置。
 - 模板入口为 `src/features/canvas/infrastructure/textPolishService.ts`；后端命令为 `polish_text`。
 - 图片模板使用 `imagePolishPrompt`；视频模板使用对应 `VideoApiConfig.polishPrompt` 或 `defaultPolishPrompt`。
 
