@@ -46,9 +46,8 @@ import { resolveTextModelSelection } from '@/features/canvas/application/textMod
 import { resolveConfiguredImageModel } from '@/features/canvas/models';
 import { useSettingsStore } from '@/stores/settingsStore';
 import {
-  ensureAtLeastOneMinEdge,
   resolveMinEdgeFittedSize,
-  resolveSizeInsideTargetBox,
+  resolveFittedImageNodeSize,
 } from '@/features/canvas/application/imageNodeSizing';
 
 export type {
@@ -146,6 +145,8 @@ interface CanvasState {
       type: CanvasNodeType;
       position: { x: number; y: number };
       data?: Partial<CanvasNodeData>;
+      width?: number;
+      height?: number;
     }>
   ) => string[];
   addEdge: (source: string, target: string) => string | null;
@@ -482,14 +483,17 @@ function resolveGeneratedImageNodeDimensions(
     minHeight?: number;
   }
 ): { width: number; height: number } {
-  const size = resolveSizeInsideTargetBox(aspectRatio, {
-    width: EXPORT_RESULT_NODE_DEFAULT_WIDTH,
-    height: EXPORT_RESULT_NODE_LAYOUT_HEIGHT,
-  });
   const minWidth = options?.minWidth ?? IMAGE_NODE_VISUAL_MIN_EDGE;
   const minHeight = options?.minHeight ?? IMAGE_NODE_VISUAL_MIN_EDGE;
 
-  return ensureAtLeastOneMinEdge(size, { minWidth, minHeight });
+  return resolveFittedImageNodeSize(
+    aspectRatio,
+    {
+      width: EXPORT_RESULT_NODE_DEFAULT_WIDTH,
+      height: EXPORT_RESULT_NODE_LAYOUT_HEIGHT,
+    },
+    { minWidth, minHeight }
+  );
 }
 
 function resolveDerivedAspectRatio(
@@ -558,7 +562,7 @@ function maybeApplyImageAutoResize(node: CanvasNode, patch: Partial<CanvasNodeDa
 
   const nextAspectRatio = patchData.aspectRatio ?? nodeData.aspectRatio ?? DEFAULT_ASPECT_RATIO;
   const nextSize = node.type === CANVAS_NODE_TYPES.exportImage
-    ? resolveAutoImageNodeDimensions(nextAspectRatio, {
+    ? resolveGeneratedImageNodeDimensions(nextAspectRatio, {
       minWidth: EXPORT_RESULT_NODE_MIN_WIDTH,
       minHeight: EXPORT_RESULT_NODE_MIN_HEIGHT,
     })
@@ -1006,13 +1010,31 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       return [];
     }
     const state = get();
-    const newNodes = nodeInputs.map(({ type, position, data = {} }) =>
-      canvasNodeFactory.createNode(
+    const newNodes = nodeInputs.map(({ type, position, data = {}, width, height }) => {
+      const node = canvasNodeFactory.createNode(
         type,
         position,
         applyNodeModelDefaults(type, data)
-      )
-    );
+      );
+      const hasExplicitSize =
+        typeof width === 'number' && Number.isFinite(width) && width > 1
+        && typeof height === 'number' && Number.isFinite(height) && height > 1;
+      if (!hasExplicitSize) {
+        return node;
+      }
+      const resolvedWidth = Math.round(width);
+      const resolvedHeight = Math.round(height);
+      return {
+        ...node,
+        width: resolvedWidth,
+        height: resolvedHeight,
+        style: {
+          ...(node.style ?? {}),
+          width: resolvedWidth,
+          height: resolvedHeight,
+        },
+      };
+    });
     set({
       nodes: [...state.nodes, ...newNodes],
       history: {

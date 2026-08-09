@@ -41,6 +41,18 @@ export interface TextGenerationModelSelection {
   modelId: string;
 }
 
+/**
+ * A persisted reference to a configured text API and model used for prompt
+ * polishing. It deliberately stores no credentials: the selected API remains
+ * the single source of truth for connection details.
+ */
+export interface PromptPolishConfig {
+  textApiId: string | null;
+  textModelId: string | null;
+  reasoningEffort: TextReasoningEffort | null;
+  prompt: string;
+}
+
 export interface ImageProviderApiConfig {
   apiKey: string;
   baseUrl: string;
@@ -150,7 +162,7 @@ export const PRESET_TEXT_APIS: TextApiConfig[] = [
   },
 ];
 
-export const DEFAULT_TEXT_API_PROMPT = `你是专业的AI绘画提示词润色专家。我将为你提供待优化的原始AI绘画提示词（可能包含参考图片的@引用标记），请按照以下要求进行深度优化：
+export const DEFAULT_IMAGE_POLISH_PROMPT = `你是专业的AI绘画提示词润色专家。我将为你提供待优化的原始AI绘画提示词（可能包含参考图片的@引用标记），请按照以下要求进行深度优化：
 
 1. 核心任务：深度理解原始提示词的核心语义和用户期望的视觉目标
 2. 视觉增强：从画面构图、风格流派、色彩调性、光影效果、主体元素、质感表现、氛围情绪等维度进行专业增强
@@ -158,6 +170,24 @@ export const DEFAULT_TEXT_API_PROMPT = `你是专业的AI绘画提示词润色�
 4. 输出要求：直接输出润色后的提示词，不需要任何解释或前缀说明
 
 请直接输出优化后的提示词文本。`;
+
+export const DEFAULT_TEXT_POLISH_PROMPT = `你是专业的文本提示词润色助手。我将为你提供一段需要交给文本模型处理的提示词，请按照以下要求优化：
+
+1. 保留原始任务、事实、限制条件、语气和输出要求，不擅自改变用户意图
+2. 消除歧义与重复，补全必要的上下文、对象、步骤与验收条件，使指令清晰可执行
+3. 使用结构化、自然且简洁的表达；只有原始内容确实需要时才补充合理细节
+4. 输出要求：只输出润色后的提示词，不解释修改过程，不添加前缀或结语
+
+请直接输出优化后的文本提示词。`;
+
+export function createPromptPolishConfig(prompt: string): PromptPolishConfig {
+  return {
+    textApiId: null,
+    textModelId: null,
+    reasoningEffort: null,
+    prompt,
+  };
+}
 
 export const DEFAULT_VIDEO_API_PROMPT = `你是专业的 AI 视频生成提示词润色专家，具备丰富的镜头语言、视觉美学和 AI 生成适配经验。我将为你提供参考图片和待优化的原始 AI 视频提示词（可能为空），请严格遵循以下要求，完成深度优化，确保优化后的提示词精准适配 AI 视频生成工具，能直接生成符合预期的视觉效果：
 核心前提：深度拆解原始提示词的核心语义、镜头逻辑、动态需求和视觉预期，不偏离用户核心诉求，不添加无关元素，同时弥补原始提示词的细节缺失。
@@ -309,7 +339,7 @@ export const PRESET_VIDEO_APIS: VideoApiConfig[] = [
  */
 function mergeVideoApis(existingApis?: VideoApiConfig[]): VideoApiConfig[] {
   // 记录到全局变量供调试
-  (window as unknown as { __DEBUG_VIDEO_APIS__?: unknown }).__DEBUG_VIDEO_APIS__ = {
+  (globalThis as { __DEBUG_VIDEO_APIS__?: unknown }).__DEBUG_VIDEO_APIS__ = {
     input: existingApis,
     timestamp: Date.now(),
   };
@@ -355,8 +385,8 @@ interface SettingsState {
   enableUpdateDialog: boolean;
   textApis: TextApiConfig[];
   activeTextApiId: string | null;
-  textPolishReasoningEffort: TextReasoningEffort | null;
-  imagePolishPrompt: string;
+  imagePolishConfig: PromptPolishConfig;
+  textPolishConfig: PromptPolishConfig;
   videoApis: VideoApiConfig[];
   activeVideoApiId: string | null;
   lastImageModelSelection: ImageModelSelection | null;
@@ -384,8 +414,8 @@ interface SettingsState {
   setEnableUpdateDialog: (enabled: boolean) => void;
   setTextApis: (apis: TextApiConfig[]) => void;
   setActiveTextApiId: (id: string | null) => void;
-  setTextPolishReasoningEffort: (effort: TextReasoningEffort | null) => void;
-  setImagePolishPrompt: (prompt: string) => void;
+  setImagePolishConfig: (config: PromptPolishConfig) => void;
+  setTextPolishConfig: (config: PromptPolishConfig) => void;
   setVideoApis: (apis: VideoApiConfig[]) => void;
   setActiveVideoApiId: (id: string | null) => void;
 }
@@ -574,6 +604,62 @@ function normalizeTextGenerationModelSelection(
   return apiId && modelId ? { apiId, modelId } : null;
 }
 
+export function normalizePromptPolishConfig(
+  input: unknown,
+  defaultPrompt: string
+): PromptPolishConfig {
+  if (!input || typeof input !== 'object') {
+    return createPromptPolishConfig(defaultPrompt);
+  }
+  const record = input as Record<string, unknown>;
+  const textApiId = typeof record.textApiId === 'string' && record.textApiId.trim()
+    ? record.textApiId.trim()
+    : null;
+  const textModelId = typeof record.textModelId === 'string' && record.textModelId.trim()
+    ? record.textModelId.trim()
+    : null;
+  const reasoningEffort = typeof record.reasoningEffort === 'string'
+    && TEXT_REASONING_EFFORTS.includes(record.reasoningEffort as TextReasoningEffort)
+    ? record.reasoningEffort as TextReasoningEffort
+    : null;
+  return {
+    textApiId,
+    textModelId,
+    reasoningEffort,
+    prompt: typeof record.prompt === 'string' ? record.prompt : defaultPrompt,
+  };
+}
+
+function resolveLegacyPromptPolishSelection(
+  textApis: TextApiConfig[]
+): TextGenerationModelSelection | null {
+  const api = textApis.find((candidate) => candidate.enabled);
+  if (!api) {
+    return null;
+  }
+  const modelIds = api.selectedModelIds.length > 0
+    ? api.selectedModelIds
+    : api.modelId ? [api.modelId] : [];
+  const modelId = modelIds.includes(api.modelId) ? api.modelId : modelIds[0];
+  return modelId ? { apiId: api.id, modelId } : null;
+}
+
+function createLegacyImagePolishConfig(
+  textApis: TextApiConfig[],
+  reasoningEffort: TextReasoningEffort | null | undefined,
+  prompt: string | undefined
+): PromptPolishConfig {
+  const selection = resolveLegacyPromptPolishSelection(textApis);
+  return {
+    textApiId: selection?.apiId ?? null,
+    textModelId: selection?.modelId ?? null,
+    reasoningEffort: reasoningEffort && TEXT_REASONING_EFFORTS.includes(reasoningEffort)
+      ? reasoningEffort
+      : null,
+    prompt: prompt ?? DEFAULT_IMAGE_POLISH_PROMPT,
+  };
+}
+
 function normalizeCanvasEdgeRoutingMode(
   input: CanvasEdgeRoutingMode | string | null | undefined
 ): CanvasEdgeRoutingMode {
@@ -581,6 +667,82 @@ function normalizeCanvasEdgeRoutingMode(
     return input;
   }
   return 'spline';
+}
+
+export function migrateSettingsState(persistedState: unknown, persistedVersion: number) {
+  const state = migrateAppearanceSettings(persistedState) as Record<string, unknown> & {
+    openAiImageApi?: Partial<OpenAiImageApiConfig>;
+    chaomoImageApi?: Partial<ChaomoImageApiConfig>;
+    customImageApis?: CustomImageApiConfig[];
+    canvasEdgeRoutingMode?: CanvasEdgeRoutingMode | string;
+    textApis?: TextApiConfig[];
+    activeTextApiId?: string | null;
+    textPolishReasoningEffort?: TextReasoningEffort | null;
+    imagePolishPrompt?: string;
+    imagePolishConfig?: PromptPolishConfig;
+    textPolishConfig?: PromptPolishConfig;
+    videoApis?: VideoApiConfig[];
+    activeVideoApiId?: string | null;
+    lastImageModelSelection?: ImageModelSelection | null;
+    lastTextGenerationModelSelection?: TextGenerationModelSelection | null;
+    accentColor?: unknown;
+  };
+  const {
+    apiKey: _legacyApiKey,
+    apiKeys: _legacyApiKeys,
+    grsaiNanoBananaProModel: _legacyGrsaiModel,
+    hideProviderGuidePopover: _legacyProviderGuide,
+    showNodePrice: _legacyShowNodePrice,
+    priceDisplayCurrencyMode: _legacyPriceCurrency,
+    usdToCnyRate: _legacyUsdToCnyRate,
+    preferDiscountedPrice: _legacyDiscountPreference,
+    grsaiCreditTierId: _legacyGrsaiCreditTier,
+    textPolishReasoningEffort: legacyTextPolishReasoningEffort,
+    imagePolishPrompt: legacyImagePolishPrompt,
+    ...retainedState
+  } = state;
+
+  const textApis = normalizeTextApiConfigs(state.textApis);
+  const legacyImagePolishConfig = createLegacyImagePolishConfig(
+    textApis,
+    legacyTextPolishReasoningEffort,
+    legacyImagePolishPrompt
+  );
+  const imagePolishConfig = normalizePromptPolishConfig(
+    state.imagePolishConfig ?? legacyImagePolishConfig,
+    DEFAULT_IMAGE_POLISH_PROMPT
+  );
+
+  return {
+    ...retainedState,
+    isHydrated: true,
+    openAiImageApi: normalizeOpenAiImageApiConfig(state.openAiImageApi),
+    chaomoImageApi: normalizeChaomoImageApiConfig(state.chaomoImageApi),
+    customImageApis: normalizeCustomImageApiConfigs(state.customImageApis),
+    canvasEdgeRoutingMode: normalizeCanvasEdgeRoutingMode(state.canvasEdgeRoutingMode),
+    accentColor: migrateAccentColor(state.accentColor),
+    ...(persistedVersion < 22 && (state.snapGridSize === 20 || state.snapGridSize === 36)
+      ? { snapGridSize: 72 }
+      : {}),
+    textApis,
+    activeTextApiId: state.activeTextApiId ?? null,
+    imagePolishConfig,
+    textPolishConfig: normalizePromptPolishConfig(
+      state.textPolishConfig ?? {
+        textApiId: imagePolishConfig.textApiId,
+        textModelId: imagePolishConfig.textModelId,
+        reasoningEffort: imagePolishConfig.reasoningEffort,
+        prompt: DEFAULT_TEXT_POLISH_PROMPT,
+      },
+      DEFAULT_TEXT_POLISH_PROMPT
+    ),
+    videoApis: mergeVideoApis(state.videoApis),
+    activeVideoApiId: state.activeVideoApiId ?? null,
+    lastImageModelSelection: normalizeImageModelSelection(state.lastImageModelSelection),
+    lastTextGenerationModelSelection: normalizeTextGenerationModelSelection(
+      state.lastTextGenerationModelSelection
+    ),
+  };
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -665,12 +827,14 @@ export const useSettingsStore = create<SettingsState>()(
       activeTextApiId: null,
       setTextApis: (apis) => set({ textApis: normalizeTextApiConfigs(apis) }),
       setActiveTextApiId: (id) => set({ activeTextApiId: id }),
-      textPolishReasoningEffort: null,
-      setTextPolishReasoningEffort: (effort) => set({
-        textPolishReasoningEffort: effort && TEXT_REASONING_EFFORTS.includes(effort) ? effort : null,
+      imagePolishConfig: createPromptPolishConfig(DEFAULT_IMAGE_POLISH_PROMPT),
+      textPolishConfig: createPromptPolishConfig(DEFAULT_TEXT_POLISH_PROMPT),
+      setImagePolishConfig: (config) => set({
+        imagePolishConfig: normalizePromptPolishConfig(config, DEFAULT_IMAGE_POLISH_PROMPT),
       }),
-      imagePolishPrompt: DEFAULT_TEXT_API_PROMPT,
-      setImagePolishPrompt: (prompt: string) => set({ imagePolishPrompt: prompt }),
+      setTextPolishConfig: (config) => set({
+        textPolishConfig: normalizePromptPolishConfig(config, DEFAULT_TEXT_POLISH_PROMPT),
+      }),
       videoApis: PRESET_VIDEO_APIS,
       activeVideoApiId: null,
       lastImageModelSelection: null,
@@ -688,7 +852,7 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: 'settings-storage',
-      version: 24,
+      version: 25,
       onRehydrateStorage: () => {
         return (_state, error) => {
           if (error) {
@@ -697,61 +861,7 @@ export const useSettingsStore = create<SettingsState>()(
           useSettingsStore.setState({ isHydrated: true });
         };
       },
-      migrate: (persistedState: unknown, persistedVersion: number) => {
-        const state = migrateAppearanceSettings(persistedState) as Record<string, unknown> & {
-          openAiImageApi?: Partial<OpenAiImageApiConfig>;
-          chaomoImageApi?: Partial<ChaomoImageApiConfig>;
-          customImageApis?: CustomImageApiConfig[];
-          canvasEdgeRoutingMode?: CanvasEdgeRoutingMode | string;
-          textApis?: TextApiConfig[];
-          activeTextApiId?: string | null;
-          textPolishReasoningEffort?: TextReasoningEffort | null;
-          imagePolishPrompt?: string;
-          videoApis?: VideoApiConfig[];
-          activeVideoApiId?: string | null;
-          lastImageModelSelection?: ImageModelSelection | null;
-          lastTextGenerationModelSelection?: TextGenerationModelSelection | null;
-          accentColor?: unknown;
-        };
-        const {
-          apiKey: _legacyApiKey,
-          apiKeys: _legacyApiKeys,
-          grsaiNanoBananaProModel: _legacyGrsaiModel,
-          hideProviderGuidePopover: _legacyProviderGuide,
-          showNodePrice: _legacyShowNodePrice,
-          priceDisplayCurrencyMode: _legacyPriceCurrency,
-          usdToCnyRate: _legacyUsdToCnyRate,
-          preferDiscountedPrice: _legacyDiscountPreference,
-          grsaiCreditTierId: _legacyGrsaiCreditTier,
-          ...retainedState
-        } = state;
-
-        return {
-          ...retainedState,
-          isHydrated: true,
-          openAiImageApi: normalizeOpenAiImageApiConfig(state.openAiImageApi),
-          chaomoImageApi: normalizeChaomoImageApiConfig(state.chaomoImageApi),
-          customImageApis: normalizeCustomImageApiConfigs(state.customImageApis),
-          canvasEdgeRoutingMode: normalizeCanvasEdgeRoutingMode(state.canvasEdgeRoutingMode),
-          accentColor: migrateAccentColor(state.accentColor),
-          ...(persistedVersion < 22 && (state.snapGridSize === 20 || state.snapGridSize === 36)
-            ? { snapGridSize: 72 }
-            : {}),
-          textApis: normalizeTextApiConfigs(state.textApis),
-          activeTextApiId: state.activeTextApiId ?? null,
-          textPolishReasoningEffort: state.textPolishReasoningEffort
-            && TEXT_REASONING_EFFORTS.includes(state.textPolishReasoningEffort)
-            ? state.textPolishReasoningEffort
-            : null,
-          imagePolishPrompt: state.imagePolishPrompt ?? DEFAULT_TEXT_API_PROMPT,
-          videoApis: mergeVideoApis(state.videoApis),
-          activeVideoApiId: state.activeVideoApiId ?? null,
-          lastImageModelSelection: normalizeImageModelSelection(state.lastImageModelSelection),
-          lastTextGenerationModelSelection: normalizeTextGenerationModelSelection(
-            state.lastTextGenerationModelSelection
-          ),
-        };
-      },
+      migrate: migrateSettingsState,
     }
   )
 );

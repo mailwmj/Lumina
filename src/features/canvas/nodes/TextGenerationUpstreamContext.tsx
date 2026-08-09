@@ -91,11 +91,8 @@ export const TextGenerationUpstreamContext = memo(({
                 }}
                 className="nodrag nowheel group/input relative cursor-grab rounded-md border border-[var(--ui-border-soft)] bg-surface-dark/65 px-2 py-1.5 text-left active:cursor-grabbing hover:border-[var(--ui-border-strong)]"
               >
-                <div className="truncate pr-4 text-[10px] font-medium text-text-muted">
-                  {input.displayName}
-                </div>
                 <div
-                  className="overflow-hidden break-words text-[11px] leading-4 text-text-dark"
+                  className="overflow-hidden break-words pr-4 text-[11px] leading-4 text-text-dark"
                   style={{ display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 3 }}
                 >
                   {input.text}

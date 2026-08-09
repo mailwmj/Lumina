@@ -1,7 +1,10 @@
 export const TEXT_GENERATION_DEFAULT_WIDTH = 520;
-export const TEXT_GENERATION_DEFAULT_HEIGHT = 240;
+// The compact node has 232px of actual content: 16px outer padding, a 176px
+// prompt section, an 8px gap, and a 32px footer. Keeping the minimum equal to
+// that composition prevents an artificial blank band below the controls.
+export const TEXT_GENERATION_DEFAULT_HEIGHT = 232;
 export const TEXT_GENERATION_MIN_WIDTH = 390;
-export const TEXT_GENERATION_MIN_HEIGHT = 240;
+export const TEXT_GENERATION_MIN_HEIGHT = 232;
 export const TEXT_GENERATION_MAX_WIDTH = 1400;
 export const TEXT_GENERATION_MAX_HEIGHT = 1000;
 export const TEXT_GENERATION_FOOTER_HEIGHT = 32;
@@ -64,12 +67,12 @@ export function resolveTextGenerationLayout({
   const promptHeight = hasResult
     ? TEXT_GENERATION_PROMPT_WITH_RESULT_HEIGHT
     : TEXT_GENERATION_PROMPT_HEIGHT;
-  const resultHeight = hasResult ? TEXT_GENERATION_RESULT_HEIGHT : 0;
+  const baseResultHeight = hasResult ? TEXT_GENERATION_RESULT_HEIGHT : 0;
   const sectionHeights = [
     showTextContext ? NODE_SECTION_LABEL_HEIGHT + upstreamTextHeight : 0,
     showImageContext ? NODE_SECTION_LABEL_HEIGHT + referenceImagesHeight : 0,
     NODE_SECTION_LABEL_HEIGHT + promptHeight,
-    hasResult ? NODE_SECTION_LABEL_HEIGHT + resultHeight : 0,
+    hasResult ? NODE_SECTION_LABEL_HEIGHT + baseResultHeight : 0,
     TEXT_GENERATION_FOOTER_HEIGHT,
   ].filter((sectionHeight) => sectionHeight > 0);
   const automaticHeight = NODE_VERTICAL_INSET
@@ -88,6 +91,11 @@ export function resolveTextGenerationLayout({
     minHeight,
     TEXT_GENERATION_MAX_HEIGHT
   );
+  // When a text-result node is manually enlarged, its result area—not an
+  // anonymous spacer above the controls—owns every additional vertical pixel.
+  const resultHeight = hasResult
+    ? baseResultHeight + Math.max(0, resolvedHeight - automaticHeight)
+    : 0;
 
   return {
     width: resolvedWidth,

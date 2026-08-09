@@ -1,11 +1,15 @@
 import {
+  DEFAULT_ASPECT_RATIO,
   CANVAS_NODE_TYPES,
+  EXPORT_RESULT_NODE_DEFAULT_WIDTH,
+  EXPORT_RESULT_NODE_LAYOUT_HEIGHT,
   EXPORT_RESULT_NODE_MIN_HEIGHT,
   EXPORT_RESULT_NODE_MIN_WIDTH,
   type CanvasNodeData,
   type CanvasNodeType,
   type ImageOutputCount,
 } from '@/features/canvas/domain/canvasNodes';
+import { resolveFittedImageNodeSize } from '@/features/canvas/application/imageNodeSizing';
 import {
   resolveErrorContent,
   type ResolvedErrorContent,
@@ -28,6 +32,7 @@ export interface ImageOutputBatchNode {
 interface CreateImageOutputBatchInput {
   sourceNodeId: string;
   outputCount: ImageOutputCount;
+  aspectRatio?: string;
   resultNodeTitle: string;
   generationStartedAt: number;
   generationDurationMs: number;
@@ -36,6 +41,8 @@ interface CreateImageOutputBatchInput {
       type: CanvasNodeType;
       position: { x: number; y: number };
       data?: Partial<CanvasNodeData>;
+      width?: number;
+      height?: number;
     }>
   ) => string[];
   addEdge: (source: string, target: string) => string | null;
@@ -80,25 +87,36 @@ export function createImageOutputBatchNodes({
   resultNodeTitle,
   generationStartedAt,
   generationDurationMs,
+  aspectRatio = DEFAULT_ASPECT_RATIO,
   addNodeBatch,
   addEdge,
   findNodePosition,
 }: CreateImageOutputBatchInput): ImageOutputBatchNode[] {
-  const layout = resolveImageOutputBatchLayout(
-    outputCount,
-    EXPORT_RESULT_NODE_MIN_WIDTH,
-    EXPORT_RESULT_NODE_MIN_HEIGHT
+  const outputSize = resolveFittedImageNodeSize(
+    aspectRatio,
+    {
+      width: EXPORT_RESULT_NODE_DEFAULT_WIDTH,
+      height: EXPORT_RESULT_NODE_LAYOUT_HEIGHT,
+    },
+    {
+      minWidth: EXPORT_RESULT_NODE_MIN_WIDTH,
+      minHeight: EXPORT_RESULT_NODE_MIN_HEIGHT,
+    }
   );
+  const layout = resolveImageOutputBatchLayout(outputCount, outputSize.width, outputSize.height);
   const batchPosition = findNodePosition(sourceNodeId, layout.width, layout.height);
 
   const nodeIds = addNodeBatch(
     layout.offsets.map((offset, outputIndex) => ({
       type: CANVAS_NODE_TYPES.exportImage,
+      width: outputSize.width,
+      height: outputSize.height,
       position: {
         x: batchPosition.x + offset.x,
         y: batchPosition.y + offset.y,
       },
       data: {
+        aspectRatio,
         isGenerating: true,
         generationStartedAt,
         generationDurationMs,

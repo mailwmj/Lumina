@@ -61,6 +61,7 @@ describe('image output batch layout', () => {
     const result = createImageOutputBatchNodes({
       sourceNodeId: 'source-1',
       outputCount: 4,
+      aspectRatio: '1:1',
       resultNodeTitle: 'City at dusk',
       generationStartedAt: 123,
       generationDurationMs: 45_000,
@@ -77,9 +78,9 @@ describe('image output batch layout', () => {
     ]);
     expect(addedNodes.map(({ position }) => position)).toEqual([
       { x: 640, y: 24 },
-      { x: 640, y: 220 },
-      { x: 640, y: 416 },
-      { x: 640, y: 612 },
+      { x: 640, y: 340 },
+      { x: 640, y: 656 },
+      { x: 640, y: 972 },
     ]);
     expect(addedNodes.map(({ type }) => type)).toEqual(
       Array.from({ length: 4 }, () => CANVAS_NODE_TYPES.exportImage)
@@ -91,6 +92,13 @@ describe('image output batch layout', () => {
       'City at dusk · 4/4',
     ]);
     expect(addedNodes.map(({ data }) => data?.generationBatchIndex)).toEqual([0, 1, 2, 3]);
+    expect(addedNodes.map(({ data }) => data?.aspectRatio)).toEqual(['1:1', '1:1', '1:1', '1:1']);
+    expect(addedNodes.map(({ width, height }) => ({ width, height }))).toEqual([
+      { width: 288, height: 288 },
+      { width: 288, height: 288 },
+      { width: 288, height: 288 },
+      { width: 288, height: 288 },
+    ]);
     expect(edges).toEqual([
       { source: 'source-1', target: 'result-1' },
       { source: 'source-1', target: 'result-2' },

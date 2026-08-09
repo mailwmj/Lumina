@@ -62,8 +62,9 @@ describe('text generation node layout', () => {
       width: 900,
       height: 900,
       promptHeight: TEXT_GENERATION_PROMPT_WITH_RESULT_HEIGHT,
-      resultHeight: TEXT_GENERATION_RESULT_HEIGHT,
     });
+    expect(layout.resultHeight).toBeGreaterThan(TEXT_GENERATION_RESULT_HEIGHT);
+    expect(layout.resultHeight).toBe(452);
     expect(layout.minHeight).toBeGreaterThan(TEXT_GENERATION_MIN_HEIGHT);
   });
 

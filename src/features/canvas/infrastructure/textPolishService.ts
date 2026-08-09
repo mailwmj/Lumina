@@ -19,7 +19,7 @@ export interface TextPolishPayload {
   isVideoFrame?: boolean;
   // 自定义润色提示词模板（可选）
   customPrompt?: string;
-  // 提示词模板类型：image 或 video
+  // 提示词模板类型：image、text 或 video
   promptType?: string;
   reasoningEffort?: TextReasoningEffort;
 }

@@ -7,6 +7,7 @@ import {
   type ChaomoImageApiConfig,
   type CustomImageApiConfig,
   type OpenAiImageApiConfig,
+  type PromptPolishConfig,
   type TextApiConfig,
   type VideoApiConfig,
   DEFAULT_VIDEO_SD10_POLISH_PROMPT,
@@ -62,10 +63,10 @@ export function SettingsDialog({
     setCanvasEdgeRoutingMode,
     textApis,
     setTextApis,
-    textPolishReasoningEffort,
-    setTextPolishReasoningEffort,
-    imagePolishPrompt,
-    setImagePolishPrompt,
+    imagePolishConfig,
+    setImagePolishConfig,
+    textPolishConfig,
+    setTextPolishConfig,
     videoApis,
     setVideoApis,
   } = useSettingsStore();
@@ -98,10 +99,12 @@ export function SettingsDialog({
   const [localAccentColor, setLocalAccentColor] = useState(accentColor);
   const [localCanvasEdgeRoutingMode, setLocalCanvasEdgeRoutingMode] = useState(canvasEdgeRoutingMode);
   const [localTextApis, setLocalTextApis] = useState<TextApiConfig[]>(textApis);
-  const [localTextPolishReasoningEffort, setLocalTextPolishReasoningEffort] = useState(
-    textPolishReasoningEffort
+  const [localImagePolishConfig, setLocalImagePolishConfig] = useState<PromptPolishConfig>(
+    imagePolishConfig
   );
-  const [localImagePolishPrompt, setLocalImagePolishPrompt] = useState<string>(imagePolishPrompt);
+  const [localTextPolishConfig, setLocalTextPolishConfig] = useState<PromptPolishConfig>(
+    textPolishConfig
+  );
   const [localVideoApis, setLocalVideoApis] = useState<VideoApiConfig[]>(videoApis);
   const { shouldRender, isVisible } = useDialogTransition(isOpen, UI_DIALOG_TRANSITION_MS);
 
@@ -122,8 +125,8 @@ export function SettingsDialog({
     setLocalAccentColor(accentColor);
     setLocalCanvasEdgeRoutingMode(canvasEdgeRoutingMode);
     setLocalTextApis(textApis);
-    setLocalTextPolishReasoningEffort(textPolishReasoningEffort);
-    setLocalImagePolishPrompt(imagePolishPrompt);
+    setLocalImagePolishConfig(imagePolishConfig);
+    setLocalTextPolishConfig(textPolishConfig);
     setLocalVideoApis(videoApis);
     setLocalDownloadPathInput('');
   }, [
@@ -141,8 +144,8 @@ export function SettingsDialog({
     accentColor,
     canvasEdgeRoutingMode,
     textApis,
-    textPolishReasoningEffort,
-    imagePolishPrompt,
+    imagePolishConfig,
+    textPolishConfig,
     videoApis,
   ]);
 
@@ -168,8 +171,8 @@ export function SettingsDialog({
     setAccentColor(localAccentColor);
     setCanvasEdgeRoutingMode(localCanvasEdgeRoutingMode);
     setTextApis(localTextApis);
-    setTextPolishReasoningEffort(localTextPolishReasoningEffort);
-    setImagePolishPrompt(localImagePolishPrompt);
+    setImagePolishConfig(localImagePolishConfig);
+    setTextPolishConfig(localTextPolishConfig);
     setVideoApis(localVideoApis);
     onClose();
   }, [
@@ -186,8 +189,8 @@ export function SettingsDialog({
     localAccentColor,
     localCanvasEdgeRoutingMode,
     localTextApis,
-    localTextPolishReasoningEffort,
-    localImagePolishPrompt,
+    localImagePolishConfig,
+    localTextPolishConfig,
     localVideoApis,
     setOpenAiImageApi,
     setChaomoImageApi,
@@ -202,8 +205,8 @@ export function SettingsDialog({
     setAccentColor,
     setCanvasEdgeRoutingMode,
     setTextApis,
-    setTextPolishReasoningEffort,
-    setImagePolishPrompt,
+    setImagePolishConfig,
+    setTextPolishConfig,
     setVideoApis,
     onClose,
   ]);
@@ -650,12 +653,11 @@ export function SettingsDialog({
                 <div className="ui-scrollbar flex-1 overflow-y-auto px-6 py-2">
                   <PromptPolishSettings
                     textApis={localTextApis}
-                    reasoningEffort={localTextPolishReasoningEffort}
-                    imagePrompt={localImagePolishPrompt}
+                    imagePolishConfig={localImagePolishConfig}
+                    textPolishConfig={localTextPolishConfig}
                     videoApis={localVideoApis}
-                    onTextApisChange={setLocalTextApis}
-                    onReasoningEffortChange={setLocalTextPolishReasoningEffort}
-                    onImagePromptChange={setLocalImagePolishPrompt}
+                    onImagePolishConfigChange={setLocalImagePolishConfig}
+                    onTextPolishConfigChange={setLocalTextPolishConfig}
                     onVideoApisChange={setLocalVideoApis}
                   />
                 </div>

@@ -18,8 +18,8 @@ import {
 } from '@xyflow/react';
 import { useTranslation } from 'react-i18next';
 
-import { UiButton, UiModal } from '@/components/ui';
-import { AlertTriangle, Loader2, Sparkles, Square, X } from '@/components/ui/icons';
+import { UiButton, UiModal, UiTooltip } from '@/components/ui';
+import { AlertTriangle, Loader2, Sparkles, Square, Wand2, X } from '@/components/ui/icons';
 import {
   resolveTextGenerationInputs,
   type ResolvedTextGenerationInputs,
@@ -45,9 +45,14 @@ import {
 } from '@/features/canvas/application/textGenerationLayout';
 import { locateReferencedNode } from '@/features/canvas/application/referencedNodeLocation';
 import { resolveTextModelSelection } from '@/features/canvas/application/textModelSelection';
+import { showErrorDialog } from '@/features/canvas/application/errorDialog';
+import { polishText } from '@/features/canvas/infrastructure/textPolishService';
 import type { TextGenerationNodeData } from '@/features/canvas/domain/canvasNodes';
 import { NodeResizeHandle } from '@/features/canvas/ui/NodeResizeHandle';
 import {
+  NODE_CONTROL_ICON_BUTTON_CLASS,
+  NODE_CONTROL_ICON_CLASS,
+  NODE_CONTROL_FOOTER_CLASS,
   NODE_CONTROL_PRIMARY_BUTTON_CLASS,
 } from '@/features/canvas/ui/nodeControlStyles';
 import { resolveNodeSurfaceStateClass } from '@/features/canvas/ui/nodeSurfaceStyles';
@@ -110,6 +115,7 @@ export const TextGenerationNode = memo(({
   const updateNodeData = useCanvasStore((state) => state.updateNodeData);
   const updateNodeDataCoalesced = useCanvasStore((state) => state.updateNodeDataCoalesced);
   const textApis = useSettingsStore((state) => state.textApis);
+  const textPolishConfig = useSettingsStore((state) => state.textPolishConfig);
   const setLastTextGenerationModelSelection = useSettingsStore(
     (state) => state.setLastTextGenerationModelSelection
   );
@@ -120,6 +126,7 @@ export const TextGenerationNode = memo(({
   const [inputDraft, setInputDraft] = useState(inputCompositionStateRef.current.draft);
   const [resultDraft, setResultDraft] = useState(resultCompositionStateRef.current.draft);
   const [isRunning, setIsRunning] = useState(false);
+  const [isPolishing, setIsPolishing] = useState(false);
   const [nodeError, setNodeError] = useState<NodeError | null>(null);
   const [showErrorDetails, setShowErrorDetails] = useState(false);
   const [resultScrollResetVersion, setResultScrollResetVersion] = useState(0);
@@ -134,6 +141,14 @@ export const TextGenerationNode = memo(({
   const selectedModel = useMemo(
     () => resolveTextModelSelection(textApis, data.textApiId, data.textModelId),
     [data.textApiId, data.textModelId, textApis]
+  );
+  const selectedPolishModel = useMemo(
+    () => resolveTextModelSelection(
+      textApis,
+      textPolishConfig.textApiId ?? undefined,
+      textPolishConfig.textModelId ?? undefined
+    ),
+    [textApis, textPolishConfig.textApiId, textPolishConfig.textModelId]
   );
   const hasTextContext = inputs.textInputs.length > 0;
   const hasImageContext = inputs.imageInputs.length > 0;
@@ -269,6 +284,49 @@ export const TextGenerationNode = memo(({
     applyResultDraftTransition(commitCompositionInputOnBlur(resultCompositionStateRef.current, value));
   }, [applyResultDraftTransition]);
 
+  const polishInput = useCallback(async () => {
+    if (inputCompositionStateRef.current.isComposing || isRunning) {
+      return;
+    }
+    if (!selectedPolishModel) {
+      void showErrorDialog(
+        t('node.textGeneration.polishModelRequired'),
+        t('settings.promptPolish')
+      );
+      return;
+    }
+    const prompt = inputCompositionStateRef.current.draft.trim();
+    if (!prompt) {
+      void showErrorDialog(
+        t('node.textGeneration.polishInputRequired'),
+        t('node.textGeneration.polishPrompt')
+      );
+      return;
+    }
+
+    setIsPolishing(true);
+    try {
+      const result = await polishText({
+        text: prompt,
+        customPrompt: textPolishConfig.prompt,
+        promptType: 'text',
+        reasoningEffort: textPolishConfig.reasoningEffort ?? undefined,
+      }, selectedPolishModel.apiConfig);
+      if (inputCompositionStateRef.current.isComposing) {
+        return;
+      }
+      const nextState = createCompositionInputState(result.polished);
+      inputCompositionStateRef.current = nextState;
+      setInputDraft(nextState.draft);
+      updateNodeData(id, { inputText: result.polished });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t('common.error');
+      void showErrorDialog(message, t('node.textGeneration.polishPrompt'));
+    } finally {
+      setIsPolishing(false);
+    }
+  }, [id, isRunning, selectedPolishModel, t, textPolishConfig, updateNodeData]);
+
   const stopRun = useCallback(() => {
     if (controllerRef.current.stop()) {
       setIsRunning(false);
@@ -386,8 +444,16 @@ export const TextGenerationNode = memo(({
               event.target.value,
               (event.nativeEvent as InputEvent).isComposing === true
             )}
-            className="ui-scrollbar nodrag nowheel h-full w-full resize-none overflow-y-auto border-0 bg-transparent px-3 py-2 text-sm leading-5 text-text-dark outline-none placeholder:text-text-muted/65"
+            className={`ui-scrollbar nodrag nowheel h-full w-full resize-none overflow-y-auto border-0 bg-transparent px-3 py-2 text-sm leading-6 text-text-dark outline-none placeholder:text-text-muted/65 ${
+              isRunning ? 'pr-20' : ''
+            }`}
           />
+          {isRunning && (
+            <div className="pointer-events-none absolute right-2 top-2 z-10 flex items-center gap-1 rounded-md border border-[var(--ui-border-soft)] bg-[var(--ui-surface-elevated)]/95 px-1.5 py-0.5 text-[10px] text-text-muted shadow-sm">
+              <Loader2 className="h-2.5 w-2.5 animate-spin" />
+              {t('node.textGeneration.generating')}
+            </div>
+          )}
         </div>
       </section>
 
@@ -422,13 +488,13 @@ export const TextGenerationNode = memo(({
                 event.target.value,
                 (event.nativeEvent as InputEvent).isComposing === true
               )}
-              className="ui-scrollbar nodrag nowheel h-full w-full resize-none overflow-y-auto border-0 bg-transparent px-3 py-2 pr-8 text-sm leading-5 text-text-dark outline-none read-only:cursor-default"
+              className="ui-scrollbar nodrag nowheel h-full w-full resize-none overflow-y-auto border-0 bg-transparent px-3 py-2 pr-8 text-sm leading-6 text-text-dark outline-none read-only:cursor-default"
             />
           </div>
         </section>
       )}
 
-      <footer className="mt-auto flex h-8 shrink-0 items-center justify-between gap-2 px-1">
+      <footer className={`${NODE_CONTROL_FOOTER_CLASS} justify-between gap-2`}>
         <TextModelSelector
           textApis={textApis}
           textApiId={data.textApiId}
@@ -442,12 +508,30 @@ export const TextGenerationNode = memo(({
             updateNodeData(id, { textReasoningEffort })
           }
         />
+        <UiTooltip content={t('node.textGeneration.polishPrompt')}>
+          <UiButton
+            type="button"
+            aria-label={t('node.textGeneration.polishPrompt')}
+            onClick={() => void polishInput()}
+            variant="muted"
+            size="sm"
+            className={`nodrag nowheel shrink-0 ${NODE_CONTROL_ICON_BUTTON_CLASS}`}
+            disabled={isPolishing || isRunning}
+          >
+            {isPolishing ? (
+              <Loader2 className={`${NODE_CONTROL_ICON_CLASS} animate-spin`} strokeWidth={2.8} />
+            ) : (
+              <Wand2 className={NODE_CONTROL_ICON_CLASS} strokeWidth={2.8} />
+            )}
+          </UiButton>
+        </UiTooltip>
+        <div className="ml-auto" />
         <UiButton
           type="button"
           variant={isRunning ? 'muted' : 'primary'}
           size="sm"
           className={`nodrag nowheel shrink-0 ${NODE_CONTROL_PRIMARY_BUTTON_CLASS}`}
-          disabled={!isRunning && !canGenerate}
+          disabled={isPolishing || (!isRunning && !canGenerate)}
           onClick={() => isRunning ? stopRun() : void startRun()}
         >
           {isRunning ? <Square className="h-3 w-3" /> : <Sparkles className="h-3 w-3" />}
@@ -455,12 +539,6 @@ export const TextGenerationNode = memo(({
         </UiButton>
       </footer>
 
-      {isRunning && (
-        <div className="pointer-events-none absolute right-2 top-2 z-20 flex items-center gap-1 rounded-md border border-[var(--ui-border-soft)] bg-[var(--ui-surface-elevated)]/95 px-2 py-1 text-[10px] text-text-muted shadow-sm">
-          <Loader2 className="h-3 w-3 animate-spin" />
-          {t('node.textGeneration.generating')}
-        </div>
-      )}
       {nodeError && !isRunning && (
         <button
           type="button"

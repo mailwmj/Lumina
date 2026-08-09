@@ -28,6 +28,7 @@ import { useSettingsStore } from '@/stores/settingsStore';
 import { canvasAiGateway, canvasEventBus } from '@/features/canvas/application/canvasServices';
 import {
   CANVAS_NODE_TYPES,
+  DEFAULT_ASPECT_RATIO,
   type CanvasEdge,
   type CanvasNode,
   type CanvasNodeType,
@@ -40,6 +41,7 @@ import {
 } from '@/features/canvas/application/generationErrorReport';
 import { showErrorDialog } from '@/features/canvas/application/errorDialog';
 import { shouldSuppressKeyboardCommand } from '@/features/canvas/application/compositionInputState';
+import { snapNodePositionChanges } from '@/features/canvas/application/nodePositionAlignment';
 import { resolveImageProviderRuntime } from '@/features/canvas/application/imageProviderRuntime';
 import {
   buildBatchConnectionPlan,
@@ -277,7 +279,7 @@ export function Canvas() {
   );
   const [previewConnectionVisual, setPreviewConnectionVisual] =
     useState<PreviewConnectionVisual | null>(null);
-  const [interactionMode, setInteractionMode] = useState<CanvasInteractionMode>('select');
+  const [interactionMode, setInteractionMode] = useState<CanvasInteractionMode>('pan');
 
   const isRestoringCanvasRef = useRef(true);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -539,7 +541,10 @@ export function Canvas() {
               updateNodeData(pendingNode.id, {
                 imageUrl: imageWithMetadata,
                 previewImageUrl: imageWithMetadata,
-                aspectRatio: '',
+                aspectRatio: typeof currentData.aspectRatio === 'string'
+                  && currentData.aspectRatio.trim().length > 0
+                  ? currentData.aspectRatio
+                  : DEFAULT_ASPECT_RATIO,
                 isGenerating: false,
                 generationStartedAt: null,
                 generationJobId: null,
@@ -781,7 +786,7 @@ export function Canvas() {
 
   const handleNodesChange = useCallback(
     (changes: NodeChange<CanvasNode>[]) => {
-      applyNodesChange(changes);
+      applyNodesChange(snapNodePositionChanges(changes, nodes));
 
       const hasDragMove = changes.some(
         (change) =>
@@ -821,7 +826,7 @@ export function Canvas() {
 
       scheduleCanvasPersist();
     },
-    [applyNodesChange, scheduleCanvasPersist]
+    [applyNodesChange, nodes, scheduleCanvasPersist]
   );
 
   const handleEdgesChange = useCallback(

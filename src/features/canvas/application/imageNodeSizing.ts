@@ -99,3 +99,14 @@ export function ensureAtLeastOneMinEdge(
 
   return resolveMinSizeByRatio(ratio, { minWidth, minHeight });
 }
+
+export function resolveFittedImageNodeSize(
+  aspectRatio: string,
+  target: ImageNodeSize,
+  minimum: ImageNodeMinSize
+): ImageNodeSize {
+  return ensureAtLeastOneMinEdge(
+    resolveSizeInsideTargetBox(aspectRatio, target),
+    minimum
+  );
+}

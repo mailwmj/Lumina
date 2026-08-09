@@ -68,7 +68,7 @@ import {
 } from '@/features/canvas/models';
 import { ModelParamsControls } from '@/features/canvas/ui/ModelParamsControls';
 import { resolveImageProviderRuntime } from '@/features/canvas/application/imageProviderRuntime';
-import { resolveEnabledTextModelSelection } from '@/features/canvas/application/textModelSelection';
+import { resolveTextModelSelection } from '@/features/canvas/application/textModelSelection';
 import { CanvasNodeImage } from '@/features/canvas/ui/CanvasNodeImage';
 import {
   UiButton,
@@ -604,8 +604,7 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
     (state) => state.showStoryboardGenAdvancedRatioControls
   );
   const textApis = useSettingsStore((state) => state.textApis);
-  const textPolishReasoningEffort = useSettingsStore((state) => state.textPolishReasoningEffort);
-  const imagePolishPrompt = useSettingsStore((state) => state.imagePolishPrompt);
+  const imagePolishConfig = useSettingsStore((state) => state.imagePolishConfig);
 
   const [error, setError] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -628,9 +627,13 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
   const highlightMouseLeaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [polishingFrameIndex, setPolishingFrameIndex] = useState<number | null>(null);
   const nodeData = data as StoryboardGenNodeData;
-  const selectedTextModel = useMemo(
-    () => resolveEnabledTextModelSelection(textApis),
-    [textApis]
+  const selectedPolishModel = useMemo(
+    () => resolveTextModelSelection(
+      textApis,
+      imagePolishConfig.textApiId ?? undefined,
+      imagePolishConfig.textModelId ?? undefined
+    ),
+    [imagePolishConfig.textApiId, imagePolishConfig.textModelId, textApis]
   );
   const [frameDescriptionDrafts, setFrameDescriptionDrafts] = useState<Record<string, string>>(() =>
     buildFrameDescriptionDrafts(nodeData.frames)
@@ -1069,7 +1072,7 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
   ]);
 
   const handlePolishFrame = useCallback(async (frameIndex: number) => {
-    if (!selectedTextModel) {
+    if (!selectedPolishModel) {
       void showErrorDialog(t('node.textModel.required'), t('settings.polishPrompt'));
       return;
     }
@@ -1085,9 +1088,10 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
     try {
       const result = await polishText({
         text: frameDescription,
-        customPrompt: imagePolishPrompt,
-        reasoningEffort: textPolishReasoningEffort ?? undefined,
-      }, selectedTextModel.apiConfig);
+        customPrompt: imagePolishConfig.prompt,
+        promptType: 'image',
+        reasoningEffort: imagePolishConfig.reasoningEffort ?? undefined,
+      }, selectedPolishModel.apiConfig);
       const newFrames = nodeData.frames.map((f, i) =>
         i === frameIndex ? { ...f, description: result.polished } : f
       );
@@ -1102,7 +1106,7 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
     } finally {
       setPolishingFrameIndex(null);
     }
-  }, [imagePolishPrompt, nodeData.frames, selectedTextModel, t, textPolishReasoningEffort, updateNodeData, id]);
+  }, [imagePolishConfig, nodeData.frames, selectedPolishModel, t, updateNodeData, id]);
 
   const handleGenerate = useCallback(async (previewGridOnly = false) => {
     if (!nodeData) {

@@ -1152,7 +1152,7 @@ pub struct PolishTextRequest {
     // 是否为首尾帧模式
     #[serde(default)]
     pub is_video_frame: Option<bool>,
-    // 提示词模板类型：image 或 video，用于选择对应的默认模板
+    // 提示词模板类型：image、text 或 video，用于选择对应的默认模板
     #[serde(default)]
     pub prompt_type: Option<String>,
     #[serde(default)]
@@ -1178,6 +1178,13 @@ const BACKUP_TEXT_POLISH_TEMPLATE: &str = "你是专业的AI绘画提示词润�
 AI适配：结合AI绘画工具的生成逻辑进行优化补充
 输出要求：直接输出润色后的提示词，不需要任何解释或前缀说明
 请直接输出优化后的提示词文本。";
+
+// 文本节点润色提示词模板的备用默认值（当用户未设置自定义模板时使用）
+const BACKUP_TEXT_NODE_POLISH_TEMPLATE: &str = "你是专业的文本提示词润色助手。我将为你提供一段需要交给文本模型处理的提示词，请按照以下要求优化：
+保留原始任务、事实、限制条件、语气和输出要求，不擅自改变用户意图。
+消除歧义与重复，补全必要的上下文、对象、步骤与验收条件，使指令清晰可执行。
+使用结构化、自然且简洁的表达；只有原始内容确实需要时才补充合理细节。
+只输出润色后的提示词，不解释修改过程，不添加前缀或结语。";
 
 // 视频润色提示词模板的备用默认值（当用户未设置自定义模板时使用）
 const BACKUP_VIDEO_POLISH_TEMPLATE: &str = "你是专业的 AI 视频生成提示词润色专家，具备丰富的镜头语言、视觉美学和 AI 生成适配经验。我将为你提供参考图片和待优化的原始 AI 视频提示词（可能为空），请严格遵循以下要求，完成深度优化，确保优化后的提示词精准适配 AI 视频生成工具，能直接生成符合预期的视觉效果：
@@ -1618,6 +1625,7 @@ pub async fn polish_text(request: PolishTextRequest) -> Result<String, String> {
         // 构建用户提示词 - 根据 prompt_type 选择默认模板
         let default_template = match request.prompt_type.as_deref() {
             Some("image") => BACKUP_TEXT_POLISH_TEMPLATE,
+            Some("text") => BACKUP_TEXT_NODE_POLISH_TEMPLATE,
             Some("video") | None => BACKUP_VIDEO_POLISH_TEMPLATE,
             _ => BACKUP_VIDEO_POLISH_TEMPLATE,
         };
@@ -1743,6 +1751,7 @@ pub async fn polish_text(request: PolishTextRequest) -> Result<String, String> {
         // 如果有自定义提示词模板，使用它；否则根据 prompt_type 选择默认模板
         let default_template = match request.prompt_type.as_deref() {
             Some("image") => BACKUP_TEXT_POLISH_TEMPLATE,
+            Some("text") => BACKUP_TEXT_NODE_POLISH_TEMPLATE,
             Some("video") | None => BACKUP_VIDEO_POLISH_TEMPLATE, // 默认用视频模板
             _ => BACKUP_VIDEO_POLISH_TEMPLATE,
         };

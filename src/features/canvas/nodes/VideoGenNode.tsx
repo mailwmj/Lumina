@@ -34,7 +34,7 @@ import {
   insertReferenceToken,
 } from '@/features/canvas/application/referenceTokenEditing';
 import { polishText } from '@/features/canvas/infrastructure/textPolishService';
-import { resolveEnabledTextModelSelection } from '@/features/canvas/application/textModelSelection';
+import { resolveTextModelSelection } from '@/features/canvas/application/textModelSelection';
 import {
   NODE_CONTROL_CHIP_CLASS,
   NODE_CONTROL_PARAMS_CHIP_CLASS,
@@ -294,10 +294,14 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
   const findNodePosition = useCanvasStore((state) => state.findNodePosition);
   const videoApis = useSettingsStore((state) => state.videoApis);
   const textApis = useSettingsStore((state) => state.textApis);
-  const textPolishReasoningEffort = useSettingsStore((state) => state.textPolishReasoningEffort);
-  const selectedTextModel = useMemo(
-    () => resolveEnabledTextModelSelection(textApis),
-    [textApis]
+  const imagePolishConfig = useSettingsStore((state) => state.imagePolishConfig);
+  const selectedPolishModel = useMemo(
+    () => resolveTextModelSelection(
+      textApis,
+      imagePolishConfig.textApiId ?? undefined,
+      imagePolishConfig.textModelId ?? undefined
+    ),
+    [imagePolishConfig.textApiId, imagePolishConfig.textModelId, textApis]
   );
 
   const [promptDraft, setPromptDraft] = useState(data.prompt || '');
@@ -518,7 +522,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
       nodeId: id,
     });
 
-    if (!selectedTextModel) {
+    if (!selectedPolishModel) {
       void showErrorDialog(t('node.textModel.required'), t('settings.polishPrompt'));
       return;
     }
@@ -591,8 +595,8 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
         isVideoFrame: isVideoFrame,
         customPrompt: effectivePolishPrompt,
         promptType: 'video',
-        reasoningEffort: textPolishReasoningEffort ?? undefined,
-      }, selectedTextModel.apiConfig);
+        reasoningEffort: imagePolishConfig.reasoningEffort ?? undefined,
+      }, selectedPolishModel.apiConfig);
       setPromptDraft(result.polished);
       updateNodeData(id, { prompt: result.polished });
     } catch (err) {
@@ -615,7 +619,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
     } finally {
       setIsPolishing(false);
     }
-  }, [videoApis, promptDraft, incomingImages, isVideoFrame, maxImages, id, updateNodeData, data, selectedTextModel, t, textPolishReasoningEffort]);
+  }, [videoApis, promptDraft, incomingImages, isVideoFrame, maxImages, id, updateNodeData, data, selectedPolishModel, t, imagePolishConfig.reasoningEffort]);
 
   const handleGenerate = useCallback(async () => {
     logger.info('[VideoGen] handleGenerate called', { prompt: promptDraft, model: data.model, hasImages: incomingImages.length });

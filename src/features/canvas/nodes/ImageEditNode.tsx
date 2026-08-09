@@ -20,6 +20,7 @@ import { useTranslation } from 'react-i18next';
 
 import {
   AUTO_REQUEST_ASPECT_RATIO,
+  DEFAULT_ASPECT_RATIO,
   DEFAULT_IMAGE_OUTPUT_COUNT,
   type ImageEditNodeData,
   type ImageSize,
@@ -75,6 +76,7 @@ import {
 } from '@/features/canvas/models';
 import {
   NODE_CONTROL_CHIP_CLASS,
+  NODE_CONTROL_FOOTER_CLASS,
   NODE_CONTROL_ICON_BUTTON_CLASS,
   NODE_CONTROL_ICON_CLASS,
   NODE_CONTROL_MODEL_CHIP_CLASS,
@@ -93,7 +95,7 @@ import { useProjectStore } from '@/stores/projectStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { polishText } from '@/features/canvas/infrastructure/textPolishService';
 import { resolveImageProviderRuntime } from '@/features/canvas/application/imageProviderRuntime';
-import { resolveEnabledTextModelSelection } from '@/features/canvas/application/textModelSelection';
+import { resolveTextModelSelection } from '@/features/canvas/application/textModelSelection';
 import { locateReferencedNode } from '@/features/canvas/application/referencedNodeLocation';
 import { openSettingsDialog } from '@/features/settings/settingsEvents';
 import {
@@ -165,11 +167,14 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
   const lastImageModelSelection = useSettingsStore((state) => state.lastImageModelSelection);
   const setLastImageModelSelection = useSettingsStore((state) => state.setLastImageModelSelection);
   const textApis = useSettingsStore((state) => state.textApis);
-  const textPolishReasoningEffort = useSettingsStore((state) => state.textPolishReasoningEffort);
-  const imagePolishPrompt = useSettingsStore((state) => state.imagePolishPrompt);
-  const selectedTextModel = useMemo(
-    () => resolveEnabledTextModelSelection(textApis),
-    [textApis]
+  const imagePolishConfig = useSettingsStore((state) => state.imagePolishConfig);
+  const selectedPolishModel = useMemo(
+    () => resolveTextModelSelection(
+      textApis,
+      imagePolishConfig.textApiId ?? undefined,
+      imagePolishConfig.textModelId ?? undefined
+    ),
+    [imagePolishConfig.textApiId, imagePolishConfig.textModelId, textApis]
   );
 
   const workflowInputs = useMemo(
@@ -423,7 +428,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
   }, []);
 
   const handlePolish = useCallback(async () => {
-    if (!selectedTextModel) {
+    if (!selectedPolishModel) {
       void showErrorDialog(t('node.textModel.required'), t('settings.polishPrompt'));
       return;
     }
@@ -436,10 +441,10 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
     try {
       const result = await polishText({
         text: prompt,
-        customPrompt: imagePolishPrompt,
+        customPrompt: imagePolishConfig.prompt,
         promptType: 'image',
-        reasoningEffort: textPolishReasoningEffort ?? undefined,
-      }, selectedTextModel.apiConfig);
+        reasoningEffort: imagePolishConfig.reasoningEffort ?? undefined,
+      }, selectedPolishModel.apiConfig);
       if (promptCompositionStateRef.current.isComposing) {
         return;
       }
@@ -455,7 +460,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
     } finally {
       setIsPolishing(false);
     }
-  }, [imagePolishPrompt, promptDraft, selectedTextModel, t, textPolishReasoningEffort]);
+  }, [imagePolishConfig, promptDraft, selectedPolishModel, t]);
 
   const handleGenerate = useCallback(async () => {
     if (!hasConfiguredModel) {
@@ -504,12 +509,17 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
       const generationDurationMs = selectedModel.expectedDurationMs ?? 60000;
       const generationStartedAt = Date.now();
       const resultNodeTitle = buildAiResultNodeTitle(prompt, t('node.imageEdit.resultTitle'));
+      let resolvedRequestAspectRatio = selectedAspectRatio.value;
+      const outputAspectRatio = resolvedRequestAspectRatio === AUTO_REQUEST_ASPECT_RATIO
+        ? DEFAULT_ASPECT_RATIO
+        : resolvedRequestAspectRatio;
       const runtimeDiagnostics = await getRuntimeDiagnostics();
       setError(null);
 
       const resultNodes = createImageOutputBatchNodes({
         sourceNodeId: id,
         outputCount,
+        aspectRatio: outputAspectRatio,
         resultNodeTitle,
         generationStartedAt,
         generationDurationMs,
@@ -530,8 +540,6 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
           });
         });
       }
-
-      let resolvedRequestAspectRatio = selectedAspectRatio.value;
 
       const buildDebugContext = (outputIndex: number): GenerationDebugContext => ({
         sourceType: 'imageEdit',
@@ -935,7 +943,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
         </div>
       </section>
 
-      <div className="mt-auto flex h-8 shrink-0 items-center gap-1 px-1">
+      <div className={`${NODE_CONTROL_FOOTER_CLASS} gap-1`}>
         {hasConfiguredModel ? (
           <ModelParamsControls
             imageModels={imageModels}
