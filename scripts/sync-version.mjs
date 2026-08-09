@@ -30,7 +30,7 @@ function updateCargoTomlVersion(filePath, nextVersion) {
 
 function updateCargoLockVersion(filePath, nextVersion) {
   const content = fs.readFileSync(filePath, "utf8");
-  const packagePattern = /(\[\[package\]\]\nname = "lumina"\nversion = ")([^"]+)(")/;
+  const packagePattern = /(\[\[package\]\]\r?\nname = "lumina"\r?\nversion = ")([^"]+)(")/;
   if (!packagePattern.test(content)) {
     fail('Cannot locate the lumina package version in src-tauri/Cargo.lock');
   }
