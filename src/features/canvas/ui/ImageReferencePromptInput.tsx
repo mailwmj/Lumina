@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -14,20 +15,22 @@ import {
 import { useTranslation } from 'react-i18next';
 
 import {
+  DEFAULT_IMAGE_REFERENCE_PICKER_INDEX,
   findImageReferencePromptTokens,
   insertImageReferencePromptToken,
+  moveImageReferencePickerIndex,
   removeImageReferencePromptToken,
   type ImageReferencePromptInput,
 } from '@/features/canvas/application/imageReferencePrompt';
 import { resolveImageDisplayUrl } from '@/features/canvas/application/imageData';
+import {
+  resolveImageReferencePickerAnchor,
+  shouldCloseImageReferencePickerOnPointerDown,
+  type ImageReferencePickerAnchor,
+} from '@/features/canvas/application/imageReferencePicker';
 
 export interface ImageReferencePromptItem extends ImageReferencePromptInput {
   previewImageUrl?: string | null;
-}
-
-interface PickerAnchor {
-  left: number;
-  top: number;
 }
 
 export interface ImageReferencePromptInputProps {
@@ -273,15 +276,25 @@ export function ImageReferencePromptInput({
 }: ImageReferencePromptInputProps) {
   const { t } = useTranslation();
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const pickerRef = useRef<HTMLDivElement | null>(null);
   const renderedImageInputsKeyRef = useRef<string | null>(null);
   const pendingSelectionOffsetRef = useRef<number | null>(null);
   const pendingSelectionAffinityRef = useRef<ReferenceCaretAffinity | null>(null);
   const isComposingRef = useRef(false);
+  const pickerOpenRef = useRef(false);
+  const pickerActiveIndexRef = useRef(DEFAULT_IMAGE_REFERENCE_PICKER_INDEX);
   const [showPicker, setShowPicker] = useState(false);
-  const [pickerActiveIndex, setPickerActiveIndex] = useState(0);
-  const [pickerAnchor, setPickerAnchor] = useState<PickerAnchor>({ left: 8, top: 24 });
+  const [pickerActiveIndex, setPickerActiveIndex] = useState(
+    DEFAULT_IMAGE_REFERENCE_PICKER_INDEX
+  );
+  const [pickerAnchor, setPickerAnchor] = useState<ImageReferencePickerAnchor>({ left: 8, top: 24 });
   const [pickerSelection, setPickerSelection] = useState<{ start: number; end: number } | null>(null);
   const [isVisuallyEmpty, setIsVisuallyEmpty] = useState(value.length === 0);
+
+  const setActivePickerIndex = useCallback((index: number) => {
+    pickerActiveIndexRef.current = index;
+    setPickerActiveIndex(index);
+  }, []);
 
   const imageInputsKey = useMemo(
     () => imageInputs.map((input, index) => [
@@ -378,12 +391,15 @@ export function ImageReferencePromptInput({
   }, [imageInputsKey, renderEditor, value]);
 
   useLayoutEffect(() => {
-    setPickerActiveIndex((current) => Math.min(current, Math.max(0, imageInputs.length - 1)));
+    setActivePickerIndex(
+      Math.min(pickerActiveIndexRef.current, Math.max(0, imageInputs.length - 1))
+    );
     if (imageInputs.length === 0) {
+      pickerOpenRef.current = false;
       setShowPicker(false);
       setPickerSelection(null);
     }
-  }, [imageInputs.length]);
+  }, [imageInputs.length, setActivePickerIndex]);
 
   const emitValue = useCallback((nextValue: string, nativeIsComposing: boolean) => {
     setIsVisuallyEmpty(nextValue.length === 0);
@@ -391,10 +407,29 @@ export function ImageReferencePromptInput({
   }, [onValueChange]);
 
   const closePicker = useCallback(() => {
+    pickerOpenRef.current = false;
     setShowPicker(false);
     setPickerSelection(null);
-    setPickerActiveIndex(0);
-  }, []);
+    setActivePickerIndex(DEFAULT_IMAGE_REFERENCE_PICKER_INDEX);
+  }, [setActivePickerIndex]);
+
+  useEffect(() => {
+    if (!showPicker) {
+      return;
+    }
+
+    const handleDocumentPointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      const isPointerInsidePicker = target instanceof Node
+        && pickerRef.current?.contains(target) === true;
+      if (shouldCloseImageReferencePickerOnPointerDown(isPointerInsidePicker)) {
+        closePicker();
+      }
+    };
+
+    document.addEventListener('pointerdown', handleDocumentPointerDown, true);
+    return () => document.removeEventListener('pointerdown', handleDocumentPointerDown, true);
+  }, [closePicker, showPicker]);
 
   const insertReference = useCallback((index: number) => {
     const root = rootRef.current;
@@ -420,7 +455,7 @@ export function ImageReferencePromptInput({
 
   const openPicker = useCallback((requestedOffset?: number) => {
     const root = rootRef.current;
-    if (!root || imageInputs.length === 0 || isComposingRef.current) {
+    if (!root || imageInputs.length === 0 || isComposingRef.current || pickerOpenRef.current) {
       return;
     }
     const selectionOffsets = getSelectionOffsets(root);
@@ -429,17 +464,20 @@ export function ImageReferencePromptInput({
     const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
     const rootRect = root.getBoundingClientRect();
     const rangeRect = range?.getBoundingClientRect();
-    setPickerAnchor({
-      left: Math.max(0, (rangeRect?.left ?? rootRect.left) - rootRect.left),
-      top: Math.max(0, (rangeRect?.bottom ?? rootRect.top + 20) - rootRect.top + 4),
-    });
+    pickerOpenRef.current = true;
+    setPickerAnchor(resolveImageReferencePickerAnchor(rootRect, rangeRect ?? null));
     setPickerSelection({
       start: cursor,
       end: requestedOffset === undefined ? selectionOffsets?.end ?? cursor : cursor,
     });
-    setPickerActiveIndex(0);
+    setActivePickerIndex(DEFAULT_IMAGE_REFERENCE_PICKER_INDEX);
     setShowPicker(true);
-  }, [imageInputs.length, value.length]);
+    requestAnimationFrame(() => {
+      if (pickerOpenRef.current) {
+        root.focus();
+      }
+    });
+  }, [imageInputs.length, setActivePickerIndex, value.length]);
 
   const handleBeforeInput = useCallback((event: FormEvent<HTMLDivElement>) => {
     const nativeEvent = event.nativeEvent as InputEvent;
@@ -559,20 +597,33 @@ export function ImageReferencePromptInput({
       }
     }
 
-    if (showPicker) {
+    const pickerIsOpen = pickerOpenRef.current;
+    if (pickerIsOpen) {
       if (event.key === 'ArrowDown') {
         event.preventDefault();
-        setPickerActiveIndex((current) => (current + 1) % imageInputs.length);
+        setActivePickerIndex(
+          moveImageReferencePickerIndex(
+            pickerActiveIndexRef.current,
+            imageInputs.length,
+            'next'
+          )
+        );
         return;
       }
       if (event.key === 'ArrowUp') {
         event.preventDefault();
-        setPickerActiveIndex((current) => (current - 1 + imageInputs.length) % imageInputs.length);
+        setActivePickerIndex(
+          moveImageReferencePickerIndex(
+            pickerActiveIndexRef.current,
+            imageInputs.length,
+            'previous'
+          )
+        );
         return;
       }
       if (event.key === 'Enter') {
         event.preventDefault();
-        insertReference(pickerActiveIndex);
+        insertReference(pickerActiveIndexRef.current);
         return;
       }
       if (event.key === 'Escape') {
@@ -583,7 +634,7 @@ export function ImageReferencePromptInput({
     }
 
     if (
-      !showPicker
+      !pickerIsOpen
       && !event.shiftKey
       && !event.altKey
       && !event.ctrlKey
@@ -610,7 +661,7 @@ export function ImageReferencePromptInput({
     }
 
     onKeyDown?.(event);
-  }, [closePicker, emitValue, imageInputs.length, insertReference, onKeyDown, openPicker, pickerActiveIndex, showPicker, value]);
+  }, [closePicker, emitValue, imageInputs.length, insertReference, onKeyDown, openPicker, setActivePickerIndex, value]);
 
   const stopPropagation = useCallback((event: MouseEvent<HTMLDivElement>) => {
     event.stopPropagation();
@@ -640,6 +691,7 @@ export function ImageReferencePromptInput({
 
       {showPicker && imageInputs.length > 0 && (
         <div
+          ref={pickerRef}
           className="nowheel absolute z-30 w-[172px] overflow-hidden rounded-[10px] border border-[var(--ui-border-soft)] bg-[var(--ui-surface-elevated)] shadow-[var(--ui-shadow-panel)]"
           style={{ left: pickerAnchor.left, top: pickerAnchor.top }}
           onMouseDown={(event) => event.preventDefault()}
@@ -654,10 +706,11 @@ export function ImageReferencePromptInput({
                   key={item.edgeId}
                   type="button"
                   onClick={() => insertReference(index)}
-                  onMouseEnter={() => setPickerActiveIndex(index)}
-                  className={`flex w-full items-center gap-2 border border-transparent bg-transparent px-2 py-2 text-left text-sm text-text-dark transition-colors hover:bg-[var(--ui-hover)] ${pickerActiveIndex === index
-                    ? 'border-accent/45 bg-accent/10'
-                    : ''
+                  onMouseEnter={() => setActivePickerIndex(index)}
+                  data-active={pickerActiveIndex === index || undefined}
+                  className={`flex w-full items-center gap-2 border px-2 py-2 text-left text-sm text-text-dark transition-colors ${pickerActiveIndex === index
+                    ? 'border-accent bg-accent/20 ring-1 ring-inset ring-accent/60'
+                    : 'border-transparent hover:bg-[var(--ui-hover)]'
                   }`}
                 >
                   {previewSource ? (

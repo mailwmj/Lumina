@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  DEFAULT_IMAGE_REFERENCE_PICKER_INDEX,
+  moveImageReferencePickerIndex,
   buildImageReferenceModelPrompt,
   createImageReferencePromptToken,
   findImageReferencePromptTokens,
@@ -21,6 +23,13 @@ function createNode(type: CanvasNode['type'], id: string): CanvasNode {
 }
 
 describe('image reference prompt', () => {
+  it('starts the picker at the first image and cycles it with the arrow keys', () => {
+    expect(DEFAULT_IMAGE_REFERENCE_PICKER_INDEX).toBe(0);
+    expect(moveImageReferencePickerIndex(0, 3, 'next')).toBe(1);
+    expect(moveImageReferencePickerIndex(0, 3, 'previous')).toBe(2);
+    expect(moveImageReferencePickerIndex(2, 3, 'next')).toBe(0);
+  });
+
   it('keeps a selected image identity while its visible ordinal changes after reorder', () => {
     const redEdgeId = 'red-edge';
     const yellowEdgeId = 'yellow-edge';

@@ -70,6 +70,7 @@ import { MultiSelectionConnector } from './ui/MultiSelectionConnector';
 import { CanvasGridBackground } from './ui/CanvasGridBackground';
 import { NodeToolDialog } from './ui/NodeToolDialog';
 import { ImageViewerModal } from './ui/ImageViewerModal';
+import { resolveCanvasConnectionRadius } from './application/connectionSnap';
 import { logger } from '@/lib/logger';
 
 const DEFAULT_VIEWPORT: Viewport = { x: 0, y: 0, zoom: 1 };
@@ -2053,6 +2054,7 @@ export function Canvas() {
         onConnectStart={handleConnectStart}
         onConnectEnd={handleConnectEnd}
         isValidConnection={isValidConnection}
+        connectionRadius={resolveCanvasConnectionRadius(currentViewport.zoom)}
         onNodeDragStart={handleNodeDragStart}
         onNodeDrag={handleNodeDrag}
         onNodeDragStop={handleNodeDragStop}

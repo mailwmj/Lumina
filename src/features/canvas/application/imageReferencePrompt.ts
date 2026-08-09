@@ -25,6 +25,26 @@ export interface ImageReferencePromptToken {
   end: number;
 }
 
+export const DEFAULT_IMAGE_REFERENCE_PICKER_INDEX = 0;
+
+export function moveImageReferencePickerIndex(
+  currentIndex: number,
+  itemCount: number,
+  direction: 'next' | 'previous'
+): number {
+  const safeItemCount = Math.max(0, Math.trunc(itemCount));
+  if (safeItemCount === 0) {
+    return DEFAULT_IMAGE_REFERENCE_PICKER_INDEX;
+  }
+
+  const normalizedIndex = (
+    Math.trunc(currentIndex) % safeItemCount + safeItemCount
+  ) % safeItemCount;
+  return direction === 'next'
+    ? (normalizedIndex + 1) % safeItemCount
+    : (normalizedIndex - 1 + safeItemCount) % safeItemCount;
+}
+
 export function createImageReferencePromptToken(edgeId: string): string {
   return `${IMAGE_REFERENCE_TOKEN_PREFIX}${edgeId}${IMAGE_REFERENCE_TOKEN_SUFFIX}`;
 }
