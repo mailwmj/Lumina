@@ -65,14 +65,14 @@ export function resolveTextGenerationLayout({
   const showImageContext = hasImageContext;
   const upstreamTextHeight = showTextContext ? TEXT_GENERATION_UPSTREAM_TEXT_HEIGHT : 0;
   const referenceImagesHeight = showImageContext ? TEXT_GENERATION_REFERENCE_IMAGES_HEIGHT : 0;
-  const promptHeight = hasResult
+  const basePromptHeight = hasResult
     ? TEXT_GENERATION_PROMPT_WITH_RESULT_HEIGHT
     : TEXT_GENERATION_PROMPT_HEIGHT;
   const baseResultHeight = hasResult ? TEXT_GENERATION_RESULT_HEIGHT : 0;
   const sectionHeights = [
     showTextContext ? NODE_SECTION_LABEL_HEIGHT + upstreamTextHeight : 0,
     showImageContext ? NODE_SECTION_LABEL_HEIGHT + referenceImagesHeight : 0,
-    NODE_SECTION_LABEL_HEIGHT + promptHeight,
+    NODE_SECTION_LABEL_HEIGHT + basePromptHeight,
     hasResult ? NODE_SECTION_LABEL_HEIGHT + baseResultHeight : 0,
     TEXT_GENERATION_FOOTER_HEIGHT,
   ].filter((sectionHeight) => sectionHeight > 0);
@@ -92,10 +92,14 @@ export function resolveTextGenerationLayout({
     minHeight,
     TEXT_GENERATION_MAX_HEIGHT
   );
-  // When a text-result node is manually enlarged, its result area—not an
-  // anonymous spacer above the controls—owns every additional vertical pixel.
+  const additionalHeight = Math.max(0, resolvedHeight - automaticHeight);
+  // Give all manually added vertical space to the editable content region so
+  // a larger node never leaves an inert band above its controls.
+  const promptHeight = hasResult
+    ? basePromptHeight
+    : basePromptHeight + additionalHeight;
   const resultHeight = hasResult
-    ? baseResultHeight + Math.max(0, resolvedHeight - automaticHeight)
+    ? baseResultHeight + additionalHeight
     : 0;
 
   return {

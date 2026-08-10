@@ -75,6 +75,20 @@ describe('text generation node layout', () => {
     expect(layout.minHeight).toBeGreaterThan(TEXT_GENERATION_MIN_HEIGHT);
   });
 
+  it('expands the prompt editor when a result-free node is manually enlarged', () => {
+    const layout = resolveTextGenerationLayout({
+      height: 620,
+      hasResult: false,
+      isSizeManuallyAdjusted: true,
+    });
+
+    expect(layout.height).toBe(620);
+    expect(layout.promptHeight).toBe(
+      TEXT_GENERATION_PROMPT_HEIGHT + (620 - TEXT_GENERATION_DEFAULT_HEIGHT)
+    );
+    expect(layout.resultHeight).toBe(0);
+  });
+
   it('enforces the minimum and maximum dimensions', () => {
     const contextLayout = resolveTextGenerationLayout({
       width: 1,

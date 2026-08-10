@@ -11,7 +11,7 @@ import {
   saveCanvasImagesToDirectory,
 } from '@/features/canvas/application/imageBatchDownload';
 import { showErrorDialog } from '@/features/canvas/application/errorDialog';
-import type { CanvasNode } from '@/features/canvas/domain/canvasNodes';
+import type { CanvasWorkflowNode } from '@/features/canvas/domain/canvasNodes';
 import { logger } from '@/lib/logger';
 import { useSettingsStore } from '@/stores/settingsStore';
 import {
@@ -22,7 +22,7 @@ import {
 } from './nodeToolbarConfig';
 
 interface MultiSelectionActionToolbarProps {
-  selectedNodes: CanvasNode[];
+  selectedNodes: readonly CanvasWorkflowNode[];
 }
 
 type DownloadFeedback = 'idle' | 'saving' | 'saved';

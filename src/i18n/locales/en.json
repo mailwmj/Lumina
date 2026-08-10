@@ -94,6 +94,15 @@
     "multiConnect": {
       "dragHandle": "Drag to connect selection",
       "invalidTarget": "Not all selected nodes can connect to this target"
+    },
+    "nodeContextMenu": {
+      "label": "Node actions",
+      "duplicate": "Duplicate",
+      "duplicateHint": "Create now",
+      "paste": "Paste",
+      "copyShortcut": "Ctrl+C",
+      "pasteShortcut": "Ctrl+V",
+      "deleteShortcut": "Del"
     }
   },
   "tool": {

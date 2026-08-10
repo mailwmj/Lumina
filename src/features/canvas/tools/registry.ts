@@ -1,4 +1,4 @@
-import type { CanvasNode, NodeToolType } from '../domain/canvasNodes';
+import type { CanvasWorkflowNode, NodeToolType } from '../domain/canvasNodes';
 import { builtInToolPlugins } from './builtInTools';
 import type { CanvasToolPlugin } from './types';
 
@@ -10,6 +10,6 @@ export function getToolPlugin(toolType: NodeToolType): CanvasToolPlugin | null {
   return toolRegistry.get(toolType) ?? null;
 }
 
-export function getNodeToolPlugins(node: CanvasNode): CanvasToolPlugin[] {
+export function getNodeToolPlugins(node: CanvasWorkflowNode): CanvasToolPlugin[] {
   return builtInToolPlugins.filter((plugin) => plugin.supportsNode(node));
 }

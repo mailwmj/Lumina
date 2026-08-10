@@ -24,6 +24,7 @@ import {
   type SD2GenerationMode,
 } from '@/features/canvas/domain/canvasNodes';
 import { useCanvasStore } from '@/stores/canvasStore';
+import { selectWorkflowNodes } from '@/features/canvas/application/canvasNodeSelectors';
 import { NodeResizeHandle } from '@/features/canvas/ui/NodeResizeHandle';
 import { resolveNodeSurfaceStateClass } from '@/features/canvas/ui/nodeSurfaceStyles';
 import { resolveImageDisplayUrl, resolveVideoDisplayUrl, resolveAudioDisplayUrl } from '@/features/canvas/application/imageData';
@@ -214,7 +215,7 @@ export const SD2VideoGenNode = memo(({ id, data, selected, width, height }: SD2V
   const { t } = useTranslation();
   const updateNodeInternals = useUpdateNodeInternals();
   const updateNodeData = useCanvasStore((state) => state.updateNodeData);
-  const nodes = useCanvasStore((state) => state.nodes);
+  const workflowNodes = useCanvasStore(selectWorkflowNodes);
   const edges = useCanvasStore((state) => state.edges);
 
   const resolvedWidth = Math.max(MIN_WIDTH, Math.round(width ?? DEFAULT_WIDTH));
@@ -252,9 +253,9 @@ export const SD2VideoGenNode = memo(({ id, data, selected, width, height }: SD2V
       (e) => e.target === id && e.targetHandle === 'target-images'
     );
     return imageEdges
-      .map((e) => nodes.find((n) => n.id === e.source))
+      .map((edge) => workflowNodes.find((node) => node.id === edge.source))
       .filter((n) => n && n.type === CANVAS_NODE_TYPES.upload);
-  }, [edges, id, nodes, limits.images]);
+  }, [edges, id, workflowNodes, limits.images]);
 
   const connectedAudioNodes = useMemo(() => {
     if (limits.audios === 0 || !isModeSupportingAudio(generationMode)) return [];
@@ -262,14 +263,14 @@ export const SD2VideoGenNode = memo(({ id, data, selected, width, height }: SD2V
       (e) => e.target === id && e.targetHandle === 'target-audios'
     );
     return audioEdges
-      .map((e) => nodes.find((n) => n.id === e.source))
+      .map((edge) => workflowNodes.find((node) => node.id === edge.source))
       .filter(
         (n) =>
           n &&
           (n.type === CANVAS_NODE_TYPES.audioUpload ||
             n.type === CANVAS_NODE_TYPES.audioUploadRef)
       );
-  }, [edges, id, nodes, limits.audios, limits.images, generationMode]);
+  }, [edges, id, workflowNodes, limits.audios, limits.images, generationMode]);
 
   const connectedVideoNodes = useMemo(() => {
     if (limits.videos === 0) return [];
@@ -277,14 +278,14 @@ export const SD2VideoGenNode = memo(({ id, data, selected, width, height }: SD2V
       (e) => e.target === id && e.targetHandle === 'target-videos'
     );
     return videoEdges
-      .map((e) => nodes.find((n) => n.id === e.source))
+      .map((edge) => workflowNodes.find((node) => node.id === edge.source))
       .filter(
         (n) =>
           n &&
           (n.type === CANVAS_NODE_TYPES.videoUpload ||
             n.type === CANVAS_NODE_TYPES.videoUploadRef)
       );
-  }, [edges, id, nodes, limits.videos]);
+  }, [edges, id, workflowNodes, limits.videos]);
 
   // Prepare display URLs and labels for references
   const imageUrlsForHighlight = useMemo(() => {

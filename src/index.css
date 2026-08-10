@@ -344,6 +344,16 @@ html[data-platform='macos'] #root {
   cursor: grabbing;
 }
 
+.canvas-mode-select.canvas-space-pan-active .react-flow__pane,
+.canvas-mode-select.canvas-space-pan-active .react-flow__node {
+  cursor: grab;
+}
+
+.canvas-mode-select.canvas-space-pan-active .react-flow__pane:active,
+.canvas-mode-select.canvas-space-pan-active .react-flow__node:active {
+  cursor: grabbing;
+}
+
 .canvas-multi-select-active .react-flow__node.selected .react-flow__handle.source {
   opacity: 0;
   pointer-events: none;

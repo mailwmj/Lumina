@@ -69,6 +69,7 @@ import {
 import { ModelParamsControls } from '@/features/canvas/ui/ModelParamsControls';
 import { resolveImageProviderRuntime } from '@/features/canvas/application/imageProviderRuntime';
 import { resolveTextModelSelection } from '@/features/canvas/application/textModelSelection';
+import { selectWorkflowNodes } from '@/features/canvas/application/canvasNodeSelectors';
 import { CanvasNodeImage } from '@/features/canvas/ui/CanvasNodeImage';
 import {
   UiButton,
@@ -579,7 +580,7 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
   const { zoom } = useViewport();
   const updateNodeInternals = useUpdateNodeInternals();
   const setSelectedNode = useCanvasStore((state) => state.setSelectedNode);
-  const nodes = useCanvasStore((state) => state.nodes);
+  const workflowNodes = useCanvasStore(selectWorkflowNodes);
   const edges = useCanvasStore((state) => state.edges);
   const updateNodeData = useCanvasStore((state) => state.updateNodeData);
   const addNode = useCanvasStore((state) => state.addNode);
@@ -647,8 +648,8 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
   const [globalPromptDraft, setGlobalPromptDraft] = useState<string>(() => nodeData.globalPrompt ?? '');
   const globalPromptDraftRef = useRef(globalPromptDraft);
   const incomingImages = useMemo(
-    () => graphImageResolver.collectInputImages(id, nodes, edges),
-    [id, nodes, edges]
+    () => graphImageResolver.collectInputImages(id, workflowNodes, edges),
+    [id, workflowNodes, edges]
   );
   const incomingImageItems = useMemo(
     () =>

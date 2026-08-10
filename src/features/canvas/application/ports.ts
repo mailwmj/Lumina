@@ -5,6 +5,7 @@ import type {
   CanvasNode,
   CanvasNodeData,
   CanvasNodeType,
+  CanvasWorkflowNode,
   NodeToolType,
   StoryboardFrameItem,
 } from '../domain/canvasNodes';
@@ -29,7 +30,11 @@ export interface NodeFactory {
 }
 
 export interface GraphImageResolver {
-  collectInputImages: (nodeId: string, nodes: CanvasNode[], edges: CanvasEdge[]) => string[];
+  collectInputImages: (
+    nodeId: string,
+    nodes: readonly CanvasWorkflowNode[],
+    edges: readonly CanvasEdge[]
+  ) => string[];
 }
 
 export interface GenerateImagePayload {

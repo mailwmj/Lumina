@@ -1,4 +1,4 @@
-import type { CanvasNode, NodeToolType } from '../domain/canvasNodes';
+import type { CanvasWorkflowNode, NodeToolType } from '../domain/canvasNodes';
 import type { ToolProcessorResult } from '../application/ports';
 
 export type ToolOptionPrimitive = string | number | boolean;
@@ -55,8 +55,8 @@ export interface CanvasToolPlugin {
   label: string;
   icon: ToolIconKey;
   editor: ToolEditorKind;
-  supportsNode: (node: CanvasNode) => boolean;
-  createInitialOptions: (node: CanvasNode) => ToolOptions;
+  supportsNode: (node: CanvasWorkflowNode) => boolean;
+  createInitialOptions: (node: CanvasWorkflowNode) => ToolOptions;
   fields: ToolFieldSchema[];
   execute: (
     sourceImageUrl: string,

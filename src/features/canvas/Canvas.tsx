@@ -1,13 +1,12 @@
 import {
-  Profiler,
   useState,
   useCallback,
   useEffect,
   useMemo,
   useRef,
+  type CSSProperties,
   type MouseEvent as ReactMouseEvent,
   type DragEvent as ReactDragEvent,
-  type ProfilerOnRenderCallback,
 } from 'react';
 import {
   ReactFlow,
@@ -44,6 +43,10 @@ import {
 import { showErrorDialog } from '@/features/canvas/application/errorDialog';
 import { shouldSuppressKeyboardCommand } from '@/features/canvas/application/compositionInputState';
 import { snapNodePositionChanges } from '@/features/canvas/application/nodePositionAlignment';
+import {
+  selectSelectedNodeIds,
+  selectWorkflowNodes,
+} from '@/features/canvas/application/canvasNodeSelectors';
 import { resolveImageProviderRuntime } from '@/features/canvas/application/imageProviderRuntime';
 import {
   buildBatchConnectionPlan,
@@ -72,27 +75,20 @@ import { MultiSelectionConnector } from './ui/MultiSelectionConnector';
 import { CanvasGridBackground } from './ui/CanvasGridBackground';
 import { NodeToolDialog } from './ui/NodeToolDialog';
 import { ImageViewerModal } from './ui/ImageViewerModal';
+import { NodeContextMenu } from './ui/NodeContextMenu';
 import { resolveCanvasConnectionRadius } from './application/connectionSnap';
 import { logger } from '@/lib/logger';
 
 const DEFAULT_VIEWPORT: Viewport = { x: 0, y: 0, zoom: 1 };
-
-const recordDragProfilerSample: ProfilerOnRenderCallback = (
-  id,
-  phase,
-  actualDuration,
-  baseDuration
-) => {
-  const target = window as Window & {
-    __luminaDragProfiler?: Array<{
-      id: string;
-      phase: string;
-      actualDuration: number;
-      baseDuration: number;
-    }>;
-  };
-  target.__luminaDragProfiler?.push({ id, phase, actualDuration, baseDuration });
+const DEFAULT_EDGE_OPTIONS = { type: 'disconnectableEdge' };
+const CONNECTION_LINE_STYLE: CSSProperties = {
+  stroke: 'var(--accent)',
+  strokeWidth: 2.5,
+  strokeDasharray: '10 7',
+  strokeLinecap: 'round',
 };
+const MULTI_SELECTION_KEY_CODES = ['Shift', 'Control', 'Meta'];
+const REACT_FLOW_PRO_OPTIONS = { hideAttribution: true };
 
 interface PendingConnectStart {
   nodeId: string;
@@ -120,6 +116,12 @@ interface ClipboardSnapshot {
   edges: CanvasEdge[];
 }
 
+interface NodeContextMenuState {
+  id: number;
+  position: { x: number; y: number };
+  nodeIds: string[];
+}
+
 interface DuplicateOptions {
   explicitOffset?: { x: number; y: number };
   disableOffsetIteration?: boolean;
@@ -134,6 +136,9 @@ interface DuplicateResult {
 
 const ALT_DRAG_COPY_Z_INDEX = 2000;
 const GENERATION_JOB_POLL_INTERVAL_MS = 1400;
+const NODE_CONTEXT_MENU_WIDTH = 256;
+const NODE_CONTEXT_MENU_HEIGHT = 216;
+const NODE_CONTEXT_MENU_INSET = 8;
 
 interface GenerationStoryboardMetadata {
   gridRows: number;
@@ -301,12 +306,16 @@ export function Canvas() {
   const [previewConnectionVisual, setPreviewConnectionVisual] =
     useState<PreviewConnectionVisual | null>(null);
   const [interactionMode, setInteractionMode] = useState<CanvasInteractionMode>('pan');
+  const [isSpacePanActive, setIsSpacePanActive] = useState(false);
+  const [hasCopiedNodes, setHasCopiedNodes] = useState(false);
+  const [nodeContextMenu, setNodeContextMenu] = useState<NodeContextMenuState | null>(null);
 
   const isRestoringCanvasRef = useRef(true);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const copiedSnapshotRef = useRef<ClipboardSnapshot | null>(null);
   const pasteIterationRef = useRef(0);
   const pasteImageHandledRef = useRef(false);
+  const nodeContextMenuSequenceRef = useRef(0);
   const activeGenerationPollNodeIdsRef = useRef(new Set<string>());
   const duplicateNodesRef = useRef<((sourceNodeIds: string[]) => string | null) | null>(null);
   const altDragCopyRef = useRef<{
@@ -327,6 +336,8 @@ export function Canvas() {
   } | null>(null);
 
   const nodes = useCanvasStore((state) => state.nodes);
+  const workflowNodes = useCanvasStore(selectWorkflowNodes);
+  const selectedNodeIds = useCanvasStore(selectSelectedNodeIds);
   const edges = useCanvasStore((state) => state.edges);
   const history = useCanvasStore((state) => state.history);
   const dragHistorySnapshot = useCanvasStore((state) => state.dragHistorySnapshot);
@@ -360,6 +371,10 @@ export function Canvas() {
   const videoApis = useSettingsStore((state) => state.videoApis);
   const snapToGridEnabled = useSettingsStore((state) => state.snapToGridEnabled);
   const snapGridSize = useSettingsStore((state) => state.snapGridSize);
+  const snapGrid = useMemo<[number, number] | undefined>(
+    () => snapToGridEnabled ? [snapGridSize, snapGridSize] : undefined,
+    [snapGridSize, snapToGridEnabled]
+  );
 
   const getCurrentProject = useProjectStore((state) => state.getCurrentProject);
   const saveCurrentProject = useProjectStore((state) => state.saveCurrentProject);
@@ -807,7 +822,8 @@ export function Canvas() {
 
   const handleNodesChange = useCallback(
     (changes: NodeChange<CanvasNode>[]) => {
-      applyNodesChange(snapNodePositionChanges(changes, nodes));
+      const currentNodes = useCanvasStore.getState().nodes;
+      applyNodesChange(snapNodePositionChanges(changes, currentNodes));
 
       const hasDragMove = changes.some(
         (change) =>
@@ -847,7 +863,7 @@ export function Canvas() {
 
       scheduleCanvasPersist();
     },
-    [applyNodesChange, nodes, scheduleCanvasPersist]
+    [applyNodesChange, scheduleCanvasPersist]
   );
 
   const handleEdgesChange = useCallback(
@@ -877,10 +893,10 @@ export function Canvas() {
     event.stopPropagation();
   }, []);
 
-  const isValidConnection = useCallback(
-    (connection: Connection | CanvasEdge) => isCanvasConnectionValid(connection, nodes, edges),
-    [edges, nodes]
-  );
+  const isValidConnection = useCallback((connection: Connection | CanvasEdge) => {
+    const state = useCanvasStore.getState();
+    return isCanvasConnectionValid(connection, state.nodes, state.edges);
+  }, []);
 
   const handleConnect = useCallback(
     (connection: Connection) => {
@@ -1042,21 +1058,19 @@ export function Canvas() {
     setViewportState,
   ]);
 
-  const selectedNodeIds = useMemo(
-    () => nodes.filter((node) => Boolean(node.selected)).map((node) => node.id),
-    [nodes]
-  );
   const selectedConnectSourceNodeIds = useMemo(
-    () =>
-      nodes
+    () => {
+      const selectedNodeIdSet = new Set(selectedNodeIds);
+      return workflowNodes
         .filter(
           (node) =>
-            Boolean(node.selected) &&
+            selectedNodeIdSet.has(node.id) &&
             nodeHasSourceHandle(node.type) &&
             canNodeTypeBeManualConnectionSource(node.type)
         )
-        .map((node) => node.id),
-    [nodes]
+        .map((node) => node.id);
+    },
+    [selectedNodeIds, workflowNodes]
   );
   const hasMultiSelectionConnector =
     interactionMode === 'select' && selectedConnectSourceNodeIds.length >= 2;
@@ -1102,12 +1116,12 @@ export function Canvas() {
     if (selectedNodeIds.length !== 1) {
       return null;
     }
-    const selectedNode = nodes.find((node) => node.id === selectedNodeIds[0]);
+    const selectedNode = workflowNodes.find((node) => node.id === selectedNodeIds[0]);
     if (!selectedNode || selectedNode.type !== CANVAS_NODE_TYPES.upload) {
       return null;
     }
     return selectedNode.id;
-  }, [nodes, selectedNodeIds]);
+  }, [selectedNodeIds, workflowNodes]);
 
   useEffect(() => {
     if (selectedNodeIds.length === 1) {
@@ -1121,6 +1135,70 @@ export function Canvas() {
       setSelectedNode(null);
     }
   }, [selectedNodeId, selectedNodeIds, setSelectedNode]);
+
+  useEffect(() => {
+    setIsSpacePanActive(false);
+    if (interactionMode !== 'select') {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.code === 'Space' && !isTypingTarget(event.target)) {
+        setIsSpacePanActive(true);
+      }
+    };
+    const handleKeyUp = (event: KeyboardEvent) => {
+      if (event.code === 'Space') {
+        setIsSpacePanActive(false);
+      }
+    };
+    const handleWindowBlur = () => setIsSpacePanActive(false);
+
+    document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('blur', handleWindowBlur);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('blur', handleWindowBlur);
+    };
+  }, [interactionMode]);
+
+  const copyNodesToClipboard = useCallback((nodeIds: string[]) => {
+    const sourceNodeIds = new Set(nodeIds);
+    if (sourceNodeIds.size === 0) {
+      return false;
+    }
+
+    const state = useCanvasStore.getState();
+    const copiedNodes = state.nodes.filter((node) => sourceNodeIds.has(node.id));
+    if (copiedNodes.length === 0) {
+      return false;
+    }
+
+    copiedSnapshotRef.current = {
+      nodes: copiedNodes,
+      edges: state.edges.filter(
+        (edge) => sourceNodeIds.has(edge.source) && sourceNodeIds.has(edge.target)
+      ),
+    };
+    setHasCopiedNodes(true);
+    return true;
+  }, []);
+
+  const deleteNodeIds = useCallback((nodeIds: string[]) => {
+    const uniqueNodeIds = Array.from(new Set(nodeIds));
+    if (uniqueNodeIds.length === 0) {
+      return;
+    }
+
+    if (uniqueNodeIds.length === 1) {
+      deleteNode(uniqueNodeIds[0]);
+    } else {
+      deleteNodes(uniqueNodeIds);
+    }
+    scheduleCanvasPersist(0);
+  }, [deleteNode, deleteNodes, scheduleCanvasPersist]);
 
   useEffect(() => {
     const handlePaste = (event: ClipboardEvent) => {
@@ -1177,13 +1255,7 @@ export function Canvas() {
           return;
         }
         event.preventDefault();
-        const selectedIdSet = new Set(selectedNodeIds);
-        copiedSnapshotRef.current = {
-          nodes: nodes.filter((node) => selectedIdSet.has(node.id)),
-          edges: edges.filter(
-            (edge) => selectedIdSet.has(edge.source) && selectedIdSet.has(edge.target)
-          ),
-        };
+        copyNodesToClipboard(selectedNodeIds);
         return;
       }
 
@@ -1248,12 +1320,7 @@ export function Canvas() {
       }
 
       event.preventDefault();
-      if (idsToDelete.length === 1) {
-        deleteNode(idsToDelete[0]);
-      } else {
-        deleteNodes(idsToDelete);
-      }
-      scheduleCanvasPersist(0);
+      deleteNodeIds(idsToDelete);
     };
 
     document.addEventListener('keydown', handleKeyDown);
@@ -1261,12 +1328,10 @@ export function Canvas() {
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, [
-    edges,
-    nodes,
     selectedNodeId,
     selectedNodeIds,
-    deleteNode,
-    deleteNodes,
+    copyNodesToClipboard,
+    deleteNodeIds,
     groupNodes,
     undo,
     redo,
@@ -1293,6 +1358,7 @@ export function Canvas() {
     setMenuAllowedTypes(undefined);
     setPendingConnectStart(null);
     setPreviewConnectionVisual(null);
+    setNodeContextMenu(null);
     setShowNodeMenu(true);
   }, [reactFlowInstance]);
 
@@ -1432,11 +1498,13 @@ export function Canvas() {
     setMenuAllowedTypes(undefined);
     setPendingConnectStart(null);
     setPreviewConnectionVisual(null);
+    setNodeContextMenu(null);
   }, [openNodeMenuAtClientPosition, setSelectedNode]);
 
   const handlePaneContextMenu = useCallback((event: MouseEvent | ReactMouseEvent) => {
     event.preventDefault();
     event.stopPropagation();
+    setNodeContextMenu(null);
     openNodeMenuAtClientPosition(event.clientX, event.clientY);
   }, [openNodeMenuAtClientPosition]);
 
@@ -1639,6 +1707,64 @@ export function Canvas() {
     duplicateNodesRef.current = (sourceNodeIds: string[]) => duplicateNodes(sourceNodeIds)?.firstNodeId ?? null;
   }, [duplicateNodes]);
 
+  const closeNodeContextMenu = useCallback(() => {
+    setNodeContextMenu(null);
+  }, []);
+
+  const handleNodeContextMenu = useCallback(
+    (event: ReactMouseEvent, node: CanvasNode) => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      const containerRect = wrapperRef.current?.getBoundingClientRect();
+      if (!containerRect) {
+        return;
+      }
+
+      const isNodeAlreadySelected = selectedNodeIds.includes(node.id);
+      const targetNodeIds = isNodeAlreadySelected && selectedNodeIds.length > 0
+        ? selectedNodeIds
+        : [node.id];
+      if (!isNodeAlreadySelected) {
+        const selectChanges: NodeChange<CanvasNode>[] = useCanvasStore
+          .getState()
+          .nodes.map((currentNode) => ({
+            id: currentNode.id,
+            type: 'select' as const,
+            selected: currentNode.id === node.id,
+          }));
+        applyNodesChange(selectChanges);
+        setSelectedNode(node.id);
+      }
+
+      setShowNodeMenu(false);
+      setMenuAllowedTypes(undefined);
+      setPendingConnectStart(null);
+      setPreviewConnectionVisual(null);
+      setNodeContextMenu({
+        id: nodeContextMenuSequenceRef.current += 1,
+        nodeIds: targetNodeIds,
+        position: {
+          x: Math.min(
+            Math.max(NODE_CONTEXT_MENU_INSET, event.clientX - containerRect.left),
+            Math.max(
+              NODE_CONTEXT_MENU_INSET,
+              containerRect.width - NODE_CONTEXT_MENU_WIDTH - NODE_CONTEXT_MENU_INSET
+            )
+          ),
+          y: Math.min(
+            Math.max(NODE_CONTEXT_MENU_INSET, event.clientY - containerRect.top),
+            Math.max(
+              NODE_CONTEXT_MENU_INSET,
+              containerRect.height - NODE_CONTEXT_MENU_HEIGHT - NODE_CONTEXT_MENU_INSET
+            )
+          ),
+        },
+      });
+    },
+    [applyNodesChange, selectedNodeIds, setSelectedNode]
+  );
+
   const handleConnectStart = useCallback(
     (event: MouseEvent | TouchEvent, params: OnConnectStartParams) => {
       setShowNodeMenu(false);
@@ -1652,7 +1778,7 @@ export function Canvas() {
 
       if (
         params.handleType === 'source'
-        && !canNodeBeManualConnectionSource(params.nodeId, nodes)
+        && !canNodeBeManualConnectionSource(params.nodeId, useCanvasStore.getState().nodes)
       ) {
         setPendingConnectStart(null);
         return;
@@ -1683,7 +1809,7 @@ export function Canvas() {
         start,
       });
     },
-    [nodes]
+    []
   );
 
   const handleNodeDragStart = useCallback(
@@ -1921,19 +2047,20 @@ export function Canvas() {
       const dropNodeId = dropNodeElement?.dataset?.id ?? null;
 
       // Find the source node type for filtering allowed target types
-      const fixedNodeForFilter = nodes.find(
+      const currentNodes = useCanvasStore.getState().nodes;
+      const fixedNodeForFilter = currentNodes.find(
         (node) => node.id === pendingConnectStart.nodeId
       );
 
       if (dropNodeId && dropNodeId !== pendingConnectStart.nodeId) {
         const sourceNode =
           pendingConnectStart.handleType === 'source'
-            ? nodes.find((node) => node.id === pendingConnectStart.nodeId)
-            : nodes.find((node) => node.id === dropNodeId);
+            ? currentNodes.find((node) => node.id === pendingConnectStart.nodeId)
+            : currentNodes.find((node) => node.id === dropNodeId);
         const targetNode =
           pendingConnectStart.handleType === 'source'
-            ? nodes.find((node) => node.id === dropNodeId)
-            : nodes.find((node) => node.id === pendingConnectStart.nodeId);
+            ? currentNodes.find((node) => node.id === dropNodeId)
+            : currentNodes.find((node) => node.id === pendingConnectStart.nodeId);
 
         if (
           sourceNode &&
@@ -2038,7 +2165,7 @@ export function Canvas() {
       suppressNextPaneClickRef.current = true;
       setShowNodeMenu(true);
     },
-    [connectNodes, nodes, pendingConnectStart, reactFlowInstance, scheduleCanvasPersist]
+    [connectNodes, pendingConnectStart, reactFlowInstance, scheduleCanvasPersist]
   );
 
   const emptyHint = useMemo(
@@ -2058,11 +2185,10 @@ export function Canvas() {
   return (
     <div
       ref={wrapperRef}
-      className={`relative h-full w-full canvas-mode-${interactionMode} ${hasMultiSelectionConnector ? 'canvas-multi-select-active' : ''}`}
+      className={`relative h-full w-full canvas-mode-${interactionMode} ${isSpacePanActive ? 'canvas-space-pan-active' : ''} ${hasMultiSelectionConnector ? 'canvas-multi-select-active' : ''}`}
       onDrop={handleCanvasDrop}
       onDragOver={handleCanvasDragOver}
     >
-      <Profiler id="ReactFlow" onRender={recordDragProfilerSample}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -2078,6 +2204,7 @@ export function Canvas() {
         onNodeDragStart={handleNodeDragStart}
         onNodeDrag={handleNodeDrag}
         onNodeDragStop={handleNodeDragStop}
+        onNodeContextMenu={handleNodeContextMenu}
         onPaneClick={handlePaneClick}
         onPaneContextMenu={handlePaneContextMenu}
         onMove={handleMove}
@@ -2085,23 +2212,18 @@ export function Canvas() {
         onMoveEnd={handleMoveEnd}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
-        defaultEdgeOptions={{ type: 'disconnectableEdge' }}
-        connectionLineStyle={{
-          stroke: 'var(--accent)',
-          strokeWidth: 2.5,
-          strokeDasharray: '10 7',
-          strokeLinecap: 'round',
-        }}
+        defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
+        connectionLineStyle={CONNECTION_LINE_STYLE}
         defaultViewport={DEFAULT_VIEWPORT}
         minZoom={0.1}
         maxZoom={5}
-        snapGrid={snapToGridEnabled ? [snapGridSize, snapGridSize] : undefined}
+        snapGrid={snapGrid}
         snapToGrid={snapToGridEnabled}
         panOnDrag={interactionMode === 'pan'}
         panActivationKeyCode="Space"
         selectionOnDrag={interactionMode === 'select'}
         selectionMode={SelectionMode.Partial}
-        multiSelectionKeyCode={['Shift', 'Control', 'Meta']}
+        multiSelectionKeyCode={MULTI_SELECTION_KEY_CODES}
         selectionKeyCode={null}
         nodesDraggable
         nodesConnectable
@@ -2109,17 +2231,14 @@ export function Canvas() {
         deleteKeyCode={null}
         onlyRenderVisibleElements
         zoomOnDoubleClick={false}
-        proOptions={{ hideAttribution: true }}
+        proOptions={REACT_FLOW_PRO_OPTIONS}
         className="canvas-surface"
       >
         {snapToGridEnabled && <CanvasGridBackground gap={snapGridSize} />}
         <CanvasMinimapControl />
 
-        <Profiler id="SelectedNodeOverlay" onRender={recordDragProfilerSample}>
-          <SelectedNodeOverlay />
-        </Profiler>
+        <SelectedNodeOverlay />
       </ReactFlow>
-      </Profiler>
 
       <MultiSelectionConnector
         enabled={hasMultiSelectionConnector}
@@ -2130,6 +2249,31 @@ export function Canvas() {
         wrapperRef={wrapperRef}
         onConnectEnd={handleMultiConnectEnd}
       />
+
+      {nodeContextMenu && (
+        <NodeContextMenu
+          key={nodeContextMenu.id}
+          position={nodeContextMenu.position}
+          canPaste={hasCopiedNodes}
+          onCopy={() => {
+            copyNodesToClipboard(nodeContextMenu.nodeIds);
+          }}
+          onDuplicate={() => {
+            duplicateNodes(nodeContextMenu.nodeIds);
+          }}
+          onPaste={() => {
+            const copiedSnapshot = copiedSnapshotRef.current;
+            if (!copiedSnapshot || copiedSnapshot.nodes.length === 0) {
+              return;
+            }
+            duplicateNodes(copiedSnapshot.nodes.map((node) => node.id));
+          }}
+          onDelete={() => {
+            deleteNodeIds(nodeContextMenu.nodeIds);
+          }}
+          onClose={closeNodeContextMenu}
+        />
+      )}
 
       <CanvasToolbar
         interactionMode={interactionMode}

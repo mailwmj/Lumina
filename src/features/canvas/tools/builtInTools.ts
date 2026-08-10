@@ -3,12 +3,12 @@ import {
   isExportImageNode,
   isImageEditNode,
   isUploadNode,
-  type CanvasNode,
+  type CanvasWorkflowNode,
 } from '../domain/canvasNodes';
 import { stringifyAnnotationItems } from './annotation';
 import type { CanvasToolPlugin } from './types';
 
-function supportsImageSourceNode(node: CanvasNode): boolean {
+function supportsImageSourceNode(node: CanvasWorkflowNode): boolean {
   return isUploadNode(node) || isImageEditNode(node) || isExportImageNode(node);
 }
 

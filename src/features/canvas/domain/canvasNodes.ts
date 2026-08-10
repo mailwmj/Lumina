@@ -294,6 +294,11 @@ export type CanvasNodeData =
   | SD2VideoGenNodeData;
 
 export type CanvasNode = Node<CanvasNodeData, CanvasNodeType>;
+export interface CanvasWorkflowNode {
+  readonly id: string;
+  readonly type: CanvasNodeType;
+  readonly data: CanvasNodeData;
+}
 export type CanvasDataType = 'text' | 'image' | 'audio' | 'video';
 
 export interface CanvasEdgeData extends Record<string, unknown> {
@@ -330,63 +335,73 @@ export interface ActiveToolDialog {
   toolType: NodeToolType;
 }
 
-export function isUploadNode(
-  node: CanvasNode | null | undefined
-): node is Node<UploadImageNodeData, typeof CANVAS_NODE_TYPES.upload> {
+type CanvasNodeWithData<
+  TNode extends CanvasWorkflowNode,
+  TData extends CanvasNodeData,
+  TType extends CanvasNodeType,
+> = TNode & { data: TData; type: TType };
+
+export function isUploadNode<TNode extends CanvasWorkflowNode>(
+  node: TNode | null | undefined
+): node is CanvasNodeWithData<TNode, UploadImageNodeData, typeof CANVAS_NODE_TYPES.upload> {
   return node?.type === CANVAS_NODE_TYPES.upload;
 }
 
-export function isImageEditNode(
-  node: CanvasNode | null | undefined
-): node is Node<ImageEditNodeData, typeof CANVAS_NODE_TYPES.imageEdit> {
+export function isImageEditNode<TNode extends CanvasWorkflowNode>(
+  node: TNode | null | undefined
+): node is CanvasNodeWithData<TNode, ImageEditNodeData, typeof CANVAS_NODE_TYPES.imageEdit> {
   return node?.type === CANVAS_NODE_TYPES.imageEdit;
 }
 
-export function isExportImageNode(
-  node: CanvasNode | null | undefined
-): node is Node<ExportImageNodeData, typeof CANVAS_NODE_TYPES.exportImage> {
+export function isExportImageNode<TNode extends CanvasWorkflowNode>(
+  node: TNode | null | undefined
+): node is CanvasNodeWithData<TNode, ExportImageNodeData, typeof CANVAS_NODE_TYPES.exportImage> {
   return node?.type === CANVAS_NODE_TYPES.exportImage;
 }
 
-export function isGroupNode(
-  node: CanvasNode | null | undefined
-): node is Node<GroupNodeData, typeof CANVAS_NODE_TYPES.group> {
+export function isGroupNode<TNode extends CanvasWorkflowNode>(
+  node: TNode | null | undefined
+): node is CanvasNodeWithData<TNode, GroupNodeData, typeof CANVAS_NODE_TYPES.group> {
   return node?.type === CANVAS_NODE_TYPES.group;
 }
 
-export function isTextAnnotationNode(
-  node: CanvasNode | null | undefined
-): node is Node<TextAnnotationNodeData, typeof CANVAS_NODE_TYPES.textAnnotation> {
+export function isTextAnnotationNode<TNode extends CanvasWorkflowNode>(
+  node: TNode | null | undefined
+): node is CanvasNodeWithData<TNode, TextAnnotationNodeData, typeof CANVAS_NODE_TYPES.textAnnotation> {
   return node?.type === CANVAS_NODE_TYPES.textAnnotation;
 }
 
-export function isTextGenerationNode(
-  node: CanvasNode | null | undefined
-): node is Node<TextGenerationNodeData, typeof CANVAS_NODE_TYPES.textGeneration> {
+export function isTextGenerationNode<TNode extends CanvasWorkflowNode>(
+  node: TNode | null | undefined
+): node is CanvasNodeWithData<TNode, TextGenerationNodeData, typeof CANVAS_NODE_TYPES.textGeneration> {
   return node?.type === CANVAS_NODE_TYPES.textGeneration;
 }
 
-export function isStoryboardSplitNode(
-  node: CanvasNode | null | undefined
-): node is Node<StoryboardSplitNodeData, typeof CANVAS_NODE_TYPES.storyboardSplit> {
+export function isStoryboardSplitNode<TNode extends CanvasWorkflowNode>(
+  node: TNode | null | undefined
+): node is CanvasNodeWithData<TNode, StoryboardSplitNodeData, typeof CANVAS_NODE_TYPES.storyboardSplit> {
   return node?.type === CANVAS_NODE_TYPES.storyboardSplit;
 }
 
-export function isStoryboardGenNode(
-  node: CanvasNode | null | undefined
-): node is Node<StoryboardGenNodeData, typeof CANVAS_NODE_TYPES.storyboardGen> {
+export function isStoryboardGenNode<TNode extends CanvasWorkflowNode>(
+  node: TNode | null | undefined
+): node is CanvasNodeWithData<TNode, StoryboardGenNodeData, typeof CANVAS_NODE_TYPES.storyboardGen> {
   return node?.type === CANVAS_NODE_TYPES.storyboardGen;
 }
 
-export function isVideoGenNode(
-  node: CanvasNode | null | undefined
-): node is Node<VideoGenNodeData, typeof CANVAS_NODE_TYPES.videoFrame | typeof CANVAS_NODE_TYPES.videoSingle> {
+export function isVideoGenNode<TNode extends CanvasWorkflowNode>(
+  node: TNode | null | undefined
+): node is CanvasNodeWithData<
+  TNode,
+  VideoGenNodeData,
+  typeof CANVAS_NODE_TYPES.videoFrame | typeof CANVAS_NODE_TYPES.videoSingle
+> {
   return node?.type === CANVAS_NODE_TYPES.videoFrame || node?.type === CANVAS_NODE_TYPES.videoSingle;
 }
 
-export function isExportVideoNode(
-  node: CanvasNode | null | undefined
-): node is Node<ExportVideoNodeData, typeof CANVAS_NODE_TYPES.exportVideo> {
+export function isExportVideoNode<TNode extends CanvasWorkflowNode>(
+  node: TNode | null | undefined
+): node is CanvasNodeWithData<TNode, ExportVideoNodeData, typeof CANVAS_NODE_TYPES.exportVideo> {
   return node?.type === CANVAS_NODE_TYPES.exportVideo;
 }
 

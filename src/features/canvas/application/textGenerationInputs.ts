@@ -8,7 +8,7 @@ import {
   isUploadNode,
   type CanvasDataType,
   type CanvasEdge,
-  type CanvasNode,
+  type CanvasWorkflowNode,
 } from '../domain/canvasNodes';
 import { resolveNodeDisplayName } from '../domain/nodeDisplay';
 import { getNodeSourceDataTypes } from '../domain/nodeRegistry';
@@ -61,7 +61,10 @@ export function getTextGenerationEffectiveText(data: TextGenerationDataLike): st
   return nonEmptyText(data.generatedText) ?? nonEmptyText(data.inputText) ?? '';
 }
 
-export function resolveEdgeValueType(edge: CanvasEdge, sourceNode: CanvasNode): CanvasDataType | null {
+export function resolveEdgeValueType(
+  edge: CanvasEdge,
+  sourceNode: CanvasWorkflowNode
+): CanvasDataType | null {
   const storedType = edge.data?.valueType;
   const sourceTypes = getNodeSourceDataTypes(sourceNode.type);
   if (storedType && sourceTypes.includes(storedType)) {
@@ -70,7 +73,7 @@ export function resolveEdgeValueType(edge: CanvasEdge, sourceNode: CanvasNode): 
   return sourceTypes.length === 1 ? sourceTypes[0] : null;
 }
 
-function sortInputEdges(edges: CanvasEdge[]): CanvasEdge[] {
+function sortInputEdges(edges: readonly CanvasEdge[]): CanvasEdge[] {
   return edges
     .map((edge, index) => ({ edge, index }))
     .sort((left, right) => {
@@ -86,9 +89,9 @@ function sortInputEdges(edges: CanvasEdge[]): CanvasEdge[] {
 }
 
 function resolveNodeText(
-  node: CanvasNode,
-  nodesById: Map<string, CanvasNode>,
-  edges: CanvasEdge[],
+  node: CanvasWorkflowNode,
+  nodesById: Map<string, CanvasWorkflowNode>,
+  edges: readonly CanvasEdge[],
   visiting: Set<string>
 ): string {
   if (!isTextGenerationNode(node)) {
@@ -125,7 +128,9 @@ function resolveNodeText(
   return [...upstreamTexts, ...(materializedLocalInput ? [materializedLocalInput] : [])].join('\n\n');
 }
 
-function extractImageSource(node: CanvasNode): Pick<ResolvedImageInput, 'imageUrl' | 'previewImageUrl'> {
+function extractImageSource(
+  node: CanvasWorkflowNode
+): Pick<ResolvedImageInput, 'imageUrl' | 'previewImageUrl'> {
   if (isUploadNode(node) || isImageEditNode(node) || isExportImageNode(node) || isStoryboardGenNode(node)) {
     return {
       imageUrl: nonEmptyTrimmedValue(node.data.imageUrl),
@@ -148,8 +153,8 @@ function extractImageSource(node: CanvasNode): Pick<ResolvedImageInput, 'imageUr
 
 function resolveImageInputs(
   nodeId: string,
-  nodesById: Map<string, CanvasNode>,
-  edges: CanvasEdge[]
+  nodesById: Map<string, CanvasWorkflowNode>,
+  edges: readonly CanvasEdge[]
 ): ResolvedImageInput[] {
   const imageEdges = edges.filter((edge) => {
     if (edge.target !== nodeId) {
@@ -175,8 +180,8 @@ function resolveImageInputs(
 
 export function resolveTextGenerationInputs(
   nodeId: string,
-  nodes: CanvasNode[],
-  edges: CanvasEdge[]
+  nodes: readonly CanvasWorkflowNode[],
+  edges: readonly CanvasEdge[]
 ): ResolvedTextGenerationInputs {
   const nodesById = new Map(nodes.map((node) => [node.id, node]));
   const targetNode = nodesById.get(nodeId);
@@ -233,8 +238,8 @@ export function resolveTextGenerationInputs(
 export function resolveEffectivePromptForNode(
   nodeId: string,
   localInput: string,
-  nodes: CanvasNode[],
-  edges: CanvasEdge[]
+  nodes: readonly CanvasWorkflowNode[],
+  edges: readonly CanvasEdge[]
 ): string {
   const { textInputs } = resolveTextGenerationInputs(nodeId, nodes, edges);
   const normalizedLocalInput = nonEmptyText(localInput);

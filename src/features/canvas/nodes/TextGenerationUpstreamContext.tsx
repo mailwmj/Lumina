@@ -222,7 +222,7 @@ export const TextGenerationUpstreamContext = memo(({
           <div className="relative">
             <div
               ref={referenceImagesRef}
-              className="no-scrollbar nodrag nowheel flex min-w-0 gap-1.5 overflow-x-auto overflow-y-hidden rounded-lg border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)]/70 p-2 pb-3"
+              className="no-scrollbar nowheel flex min-w-0 gap-1.5 overflow-x-auto overflow-y-hidden rounded-lg border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)]/70 p-2 pb-3"
               style={{ height: referenceImagesHeight }}
               onScroll={updateReferenceScroll}
               onWheel={handleReferenceImageWheel}

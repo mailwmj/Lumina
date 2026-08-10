@@ -30,7 +30,6 @@ import { NodeResizeHandle } from '@/features/canvas/ui/NodeResizeHandle';
 import { resolveNodeSurfaceStateClass } from '@/features/canvas/ui/nodeSurfaceStyles';
 import { CanvasNodeImage } from '@/features/canvas/ui/CanvasNodeImage';
 import type {
-  CanvasNode,
   StoryboardExportOptions,
   StoryboardFrameItem,
   StoryboardSplitNodeData,
@@ -60,6 +59,7 @@ import { useCanvasStore } from '@/stores/canvasStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { logger } from '@/lib/logger';
+import { selectWorkflowNodes } from '@/features/canvas/application/canvasNodeSelectors';
 
 type StoryboardNodeProps = NodeProps & {
   id: string;
@@ -414,7 +414,7 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
   const exportSettingsTriggerRef = useRef<HTMLDivElement>(null);
   const exportSettingsPanelRef = useRef<HTMLDivElement>(null);
   const setSelectedNode = useCanvasStore((state) => state.setSelectedNode);
-  const nodes = useCanvasStore((state) => state.nodes);
+  const workflowNodes = useCanvasStore(selectWorkflowNodes);
   const edges = useCanvasStore((state) => state.edges);
   const reorderStoryboardFrame = useCanvasStore((state) => state.reorderStoryboardFrame);
   const addDerivedExportNode = useCanvasStore((state) => state.addDerivedExportNode);
@@ -474,14 +474,14 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
   );
 
   const incomingImageRefs = useMemo(() => {
-    const nodeById = new Map(nodes.map((node) => [node.id, node] as const));
+    const nodeById = new Map(workflowNodes.map((node) => [node.id, node] as const));
     const sourceNodeIds = edges
       .filter((edge) => edge.target === id)
       .map((edge) => edge.source);
 
     const dedupedByImageUrl = new Map<string, { imageUrl: string; previewImageUrl: string | null }>();
     for (const sourceNodeId of sourceNodeIds) {
-      const sourceNode = nodeById.get(sourceNodeId) as CanvasNode | undefined;
+      const sourceNode = nodeById.get(sourceNodeId);
       if (!sourceNode) {
         continue;
       }
@@ -501,7 +501,7 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
     }
 
     return Array.from(dedupedByImageUrl.values());
-  }, [edges, id, nodes]);
+  }, [edges, id, workflowNodes]);
 
   const incomingImageItems = useMemo<IncomingImageItem[]>(
     () =>

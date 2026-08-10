@@ -1,7 +1,7 @@
 import {
   isExportImageNode,
   isUploadNode,
-  type CanvasNode,
+  type CanvasWorkflowNode,
 } from '@/features/canvas/domain/canvasNodes';
 import { saveImageSourceToDirectory } from '@/commands/image';
 
@@ -28,7 +28,7 @@ type SaveImageToDirectory = (
  * node, while uploads and completed export nodes are concrete image assets.
  */
 export function resolveDownloadableCanvasImages(
-  nodes: readonly CanvasNode[]
+  nodes: readonly CanvasWorkflowNode[]
 ): DownloadableCanvasImage[] {
   return nodes.flatMap((node) => {
     if (!isUploadNode(node) && !isExportImageNode(node)) {

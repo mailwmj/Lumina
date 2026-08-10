@@ -35,6 +35,7 @@ import {
 } from '@/features/canvas/application/referenceTokenEditing';
 import { polishText } from '@/features/canvas/infrastructure/textPolishService';
 import { resolveTextModelSelection } from '@/features/canvas/application/textModelSelection';
+import { selectWorkflowNodes } from '@/features/canvas/application/canvasNodeSelectors';
 import {
   NODE_CONTROL_CHIP_CLASS,
   NODE_CONTROL_PARAMS_CHIP_CLASS,
@@ -285,7 +286,7 @@ function renderPromptWithHighlights(
 
 export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGenNodeProps) => {
   const { t } = useTranslation();
-  const nodes = useCanvasStore((state) => state.nodes);
+  const workflowNodes = useCanvasStore(selectWorkflowNodes);
   const edges = useCanvasStore((state) => state.edges);
   const updateNodeData = useCanvasStore((state) => state.updateNodeData);
   const setSelectedNode = useCanvasStore((state) => state.setSelectedNode);
@@ -340,7 +341,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
   }, [promptDraft]);
 
   // Determine if this is a videoFrame node (max 2 images) or videoSingle node (max 1 image)
-  const nodeType = nodes.find((n) => n.id === id)?.type;
+  const nodeType = workflowNodes.find((node) => node.id === id)?.type;
   const isVideoFrame = nodeType === CANVAS_NODE_TYPES.videoFrame;
   const maxImages = isVideoFrame ? 2 : 1;
 
@@ -357,11 +358,11 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
 
   const incomingImages = useMemo(
     () => {
-      const images = graphImageResolver.collectInputImages(id, nodes, edges);
+      const images = graphImageResolver.collectInputImages(id, workflowNodes, edges);
       logger.info('[VideoGenNode] incomingImages count:', images.length);
       return images;
     },
-    [id, nodes, edges]
+    [id, workflowNodes, edges]
   );
 
   const incomingImageItems = useMemo(

@@ -46,6 +46,7 @@ import {
 } from '@/features/canvas/application/textGenerationLayout';
 import { locateReferencedNode } from '@/features/canvas/application/referencedNodeLocation';
 import { resolveTextModelSelection } from '@/features/canvas/application/textModelSelection';
+import { selectWorkflowNodes } from '@/features/canvas/application/canvasNodeSelectors';
 import { showErrorDialog } from '@/features/canvas/application/errorDialog';
 import { polishText } from '@/features/canvas/infrastructure/textPolishService';
 import type { TextGenerationNodeData } from '@/features/canvas/domain/canvasNodes';
@@ -110,7 +111,7 @@ export const TextGenerationNode = memo(({
   const { t } = useTranslation();
   const reactFlow = useReactFlow();
   const updateNodeInternals = useUpdateNodeInternals();
-  const nodes = useCanvasStore((state) => state.nodes);
+  const workflowNodes = useCanvasStore(selectWorkflowNodes);
   const edges = useCanvasStore((state) => state.edges);
   const setSelectedNode = useCanvasStore((state) => state.setSelectedNode);
   const deleteEdge = useCanvasStore((state) => state.deleteEdge);
@@ -138,8 +139,8 @@ export const TextGenerationNode = memo(({
     ? data.generatedText
     : null;
   const inputs = useMemo<ResolvedTextGenerationInputs>(
-    () => resolveTextGenerationInputs(id, nodes, edges),
-    [edges, id, nodes]
+    () => resolveTextGenerationInputs(id, workflowNodes, edges),
+    [edges, id, workflowNodes]
   );
   const selectedModel = useMemo(
     () => resolveTextModelSelection(textApis, data.textApiId, data.textModelId),

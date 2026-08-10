@@ -4,13 +4,17 @@ import {
   isImageEditNode,
   isUploadNode,
   type CanvasEdge,
-  type CanvasNode,
+  type CanvasWorkflowNode,
 } from '../domain/canvasNodes';
 import type { GraphImageResolver } from './ports';
 import { logger } from '@/lib/logger';
 
 export class DefaultGraphImageResolver implements GraphImageResolver {
-  collectInputImages(nodeId: string, nodes: CanvasNode[], edges: CanvasEdge[]): string[] {
+  collectInputImages(
+    nodeId: string,
+    nodes: readonly CanvasWorkflowNode[],
+    edges: readonly CanvasEdge[]
+  ): string[] {
     const nodeById = new Map(nodes.map((node) => [node.id, node]));
     const targetNode = nodes.find((n) => n.id === nodeId);
     const isVideoFrame = targetNode?.type === CANVAS_NODE_TYPES.videoFrame;
@@ -80,7 +84,7 @@ export class DefaultGraphImageResolver implements GraphImageResolver {
   /**
    * 只提取第一张图片（用于视频节点每个 handle 只取一张图）
    */
-  private extractFirstImage(node: CanvasNode | undefined): string | null {
+  private extractFirstImage(node: CanvasWorkflowNode | undefined): string | null {
     if (!node) {
       return null;
     }
@@ -94,7 +98,7 @@ export class DefaultGraphImageResolver implements GraphImageResolver {
     return null;
   }
 
-  private extractImages(node: CanvasNode | undefined): string[] {
+  private extractImages(node: CanvasWorkflowNode | undefined): string[] {
     if (!node) {
       return [];
     }

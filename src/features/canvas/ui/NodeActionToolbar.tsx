@@ -23,7 +23,7 @@ import {
   isStoryboardGenNode,
   isStoryboardSplitNode,
   isUploadNode,
-  type CanvasNode,
+  type CanvasWorkflowNode,
   type NodeToolType,
 } from '@/features/canvas/domain/canvasNodes';
 import { canvasEventBus } from '@/features/canvas/application/canvasServices';
@@ -52,7 +52,7 @@ import {
 } from './nodeToolbarConfig';
 
 interface NodeActionToolbarProps {
-  node: CanvasNode;
+  node: CanvasWorkflowNode;
 }
 
 const toolIconMap: Record<ToolIconKey, typeof Crop> = {

@@ -94,6 +94,15 @@
     "multiConnect": {
       "dragHandle": "拖动以批量连接",
       "invalidTarget": "所选节点无法全部连接到该目标"
+    },
+    "nodeContextMenu": {
+      "label": "节点操作",
+      "duplicate": "生成副本",
+      "duplicateHint": "立即复制",
+      "paste": "粘贴",
+      "copyShortcut": "Ctrl+C",
+      "pasteShortcut": "Ctrl+V",
+      "deleteShortcut": "Del"
     }
   },
   "tool": {

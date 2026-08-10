@@ -88,6 +88,7 @@ import { useSettingsStore } from '@/stores/settingsStore';
 import { polishText } from '@/features/canvas/infrastructure/textPolishService';
 import { resolveImageProviderRuntime } from '@/features/canvas/application/imageProviderRuntime';
 import { resolveTextModelSelection } from '@/features/canvas/application/textModelSelection';
+import { selectWorkflowNodes } from '@/features/canvas/application/canvasNodeSelectors';
 import { locateReferencedNode } from '@/features/canvas/application/referencedNodeLocation';
 import { openSettingsDialog } from '@/features/settings/settingsEvents';
 import { TextGenerationUpstreamContext } from './TextGenerationUpstreamContext';
@@ -127,7 +128,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
   const [promptDraft, setPromptDraft] = useState(() => data.prompt ?? '');
   const promptCompositionStateRef = useRef(createCompositionInputState(data.prompt ?? ''));
 
-  const nodes = useCanvasStore((state) => state.nodes);
+  const workflowNodes = useCanvasStore(selectWorkflowNodes);
   const edges = useCanvasStore((state) => state.edges);
   const setSelectedNode = useCanvasStore((state) => state.setSelectedNode);
   const updateNodeData = useCanvasStore((state) => state.updateNodeData);
@@ -153,8 +154,8 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
   );
 
   const workflowInputs = useMemo(
-    () => resolveTextGenerationInputs(id, nodes, edges),
-    [id, nodes, edges]
+    () => resolveTextGenerationInputs(id, workflowNodes, edges),
+    [id, workflowNodes, edges]
   );
   const incomingImages = workflowInputs.referenceImages;
 
@@ -385,7 +386,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
       promptDraft,
       referenceImageSnapshot
     ).trim();
-    const userPrompt = resolveEffectivePromptForNode(id, localPrompt, nodes, edges);
+    const userPrompt = resolveEffectivePromptForNode(id, localPrompt, workflowNodes, edges);
     if (!userPrompt) {
       const errorMessage = t('node.imageEdit.promptRequired');
       setError(errorMessage);
@@ -582,7 +583,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
     hasConfiguredModel,
     id,
     edges,
-    nodes,
+    workflowNodes,
     outputCount,
     requestResolution.requestModel,
     selectedAspectRatio.value,
