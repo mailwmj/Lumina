@@ -87,7 +87,7 @@ const imageEditNodeDefinition: CanvasNodeDefinition<ImageEditNodeData> = {
   menuIcon: 'sparkles',
   visibleInMenu: true,
   capabilities: {
-    toolbar: true,
+    toolbar: false,
     promptInput: false,
   },
   connectivity: {
@@ -153,7 +153,7 @@ const groupNodeDefinition: CanvasNodeDefinition<GroupNodeData> = {
   menuIcon: 'layout',
   visibleInMenu: false,
   capabilities: {
-    toolbar: false,
+    toolbar: true,
     promptInput: false,
   },
   connectivity: {
@@ -178,7 +178,7 @@ const textAnnotationNodeDefinition: CanvasNodeDefinition<TextAnnotationNodeData>
   menuIcon: 'text',
   visibleInMenu: true,
   capabilities: {
-    toolbar: true,
+    toolbar: false,
     promptInput: false,
   },
   connectivity: {
@@ -203,7 +203,7 @@ const textGenerationNodeDefinition: CanvasNodeDefinition<TextGenerationNodeData>
   menuIcon: 'text',
   visibleInMenu: true,
   capabilities: {
-    toolbar: true,
+    toolbar: false,
     promptInput: false,
   },
   connectivity: {
@@ -233,7 +233,7 @@ const storyboardSplitDefinition: CanvasNodeDefinition<StoryboardSplitNodeData> =
   menuIcon: 'layout',
   visibleInMenu: false,
   capabilities: {
-    toolbar: false,
+    toolbar: true,
     promptInput: false,
   },
   connectivity: {
@@ -313,7 +313,7 @@ const videoFrameNodeDefinition: CanvasNodeDefinition<VideoGenNodeData> = {
   menuIcon: 'video',
   visibleInMenu: true,
   capabilities: {
-    toolbar: true,
+    toolbar: false,
     promptInput: false,
   },
   connectivity: {
@@ -341,6 +341,7 @@ const videoFrameNodeDefinition: CanvasNodeDefinition<VideoGenNodeData> = {
     returnLastFrame: false,
     seed: undefined,
     extraParams: {},
+    isSizeManuallyAdjusted: false,
     isGenerating: false,
     generationStartedAt: null,
     generationDurationMs: 120000,
@@ -353,7 +354,7 @@ const videoSingleNodeDefinition: CanvasNodeDefinition<VideoGenNodeData> = {
   menuIcon: 'video',
   visibleInMenu: true,
   capabilities: {
-    toolbar: true,
+    toolbar: false,
     promptInput: false,
   },
   connectivity: {
@@ -381,6 +382,7 @@ const videoSingleNodeDefinition: CanvasNodeDefinition<VideoGenNodeData> = {
     returnLastFrame: false,
     seed: undefined,
     extraParams: {},
+    isSizeManuallyAdjusted: false,
     isGenerating: false,
     generationStartedAt: null,
     generationDurationMs: 120000,
@@ -393,7 +395,7 @@ const audioUploadNodeDefinition: CanvasNodeDefinition<AudioUploadRefNodeData> = 
   menuIcon: 'upload',
   visibleInMenu: true,
   capabilities: {
-    toolbar: true,
+    toolbar: false,
     promptInput: false,
   },
   connectivity: {
@@ -419,7 +421,7 @@ const videoUploadNodeDefinition: CanvasNodeDefinition<VideoUploadRefNodeData> = 
   menuIcon: 'upload',
   visibleInMenu: true,
   capabilities: {
-    toolbar: true,
+    toolbar: false,
     promptInput: false,
   },
   connectivity: {
@@ -496,7 +498,7 @@ const sd2VideoGenNodeDefinition: CanvasNodeDefinition<SD2VideoGenNodeData> = {
   menuIcon: 'video',
   visibleInMenu: true,
   capabilities: {
-    toolbar: true,
+    toolbar: false,
     promptInput: true,
   },
   connectivity: {
@@ -523,6 +525,7 @@ const sd2VideoGenNodeDefinition: CanvasNodeDefinition<SD2VideoGenNodeData> = {
     referenceImageIds: [],
     referenceAudioIds: [],
     referenceVideoIds: [],
+    isSizeManuallyAdjusted: false,
     isGenerating: false,
     generationJobId: null,
     generationError: null,

@@ -4,10 +4,7 @@ import {
   selectSelectedNodeIds,
   selectWorkflowNodes,
 } from '@/features/canvas/application/canvasNodeSelectors';
-import {
-  isImageEditNode,
-  isTextGenerationNode,
-} from '@/features/canvas/domain/canvasNodes';
+import { getNodeDefinition } from '@/features/canvas/domain/nodeRegistry';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { NodeActionToolbar } from './NodeActionToolbar';
 import { MultiSelectionActionToolbar } from './MultiSelectionActionToolbar';
@@ -41,7 +38,7 @@ export const SelectedNodeOverlay = memo(() => {
     return null;
   }
 
-  if (isTextGenerationNode(selectedNode) || isImageEditNode(selectedNode)) {
+  if (!getNodeDefinition(selectedNode.type).capabilities.toolbar) {
     return null;
   }
 
