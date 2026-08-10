@@ -32,8 +32,8 @@ type VideoResultNodeProps = NodeProps & {
 
 const VIDEO_RESULT_NODE_MIN_WIDTH = 320;
 const VIDEO_RESULT_NODE_MIN_HEIGHT = 240;
-const VIDEO_RESULT_NODE_DEFAULT_WIDTH = 480;
-const VIDEO_RESULT_NODE_DEFAULT_HEIGHT = 360;
+const VIDEO_RESULT_NODE_DEFAULT_WIDTH = 560;
+const VIDEO_RESULT_NODE_DEFAULT_HEIGHT = 400;
 
 function resolveNodeDimension(value: number | undefined, fallback: number): number {
   if (typeof value === 'number' && Number.isFinite(value) && value > 1) {
@@ -116,7 +116,7 @@ export const VideoResultNode = memo(({ id, data, selected, width, height }: Vide
     const apiKey = apiConfig?.apiKey;
     if (!apiKey) {
       log('ERROR: No API key found for final generation');
-      updateNodeData(id, { generationError: '未找到视频API密钥，请在设置中配置' });
+      updateNodeData(id, { generationError: t('node.videoGen.apiKeyRequired') });
       return;
     }
 
@@ -142,7 +142,7 @@ export const VideoResultNode = memo(({ id, data, selected, width, height }: Vide
         generationDurationMs: 120000,
         generationJobId: '', // Will be updated after API call
         generationProviderId: 'volcvideo',
-        displayName: '视频生成',
+        displayName: t('node.videoGen.title'),
         aspectRatio: data.aspectRatio || '16:9',
         model: data.model,
         resolution: '720p', // Final video always 720p, not draft's 480p
@@ -210,7 +210,7 @@ export const VideoResultNode = memo(({ id, data, selected, width, height }: Vide
         generationJobId: null,
       });
     }
-  }, [id, data.draftTaskId, data.model, data.aspectRatio, data.resolution, data.duration, data.hasAudio, addNode, addEdge, updateNodeData]);
+  }, [id, data.draftTaskId, data.model, data.aspectRatio, data.resolution, data.duration, data.hasAudio, addNode, addEdge, updateNodeData, t]);
 
   const generationStartedAt =
     typeof data.generationStartedAt === 'number' ? data.generationStartedAt : null;
@@ -277,7 +277,7 @@ export const VideoResultNode = memo(({ id, data, selected, width, height }: Vide
   return (
     <div
       className={`
-        group relative overflow-visible rounded-[var(--node-radius)] border bg-surface-dark/85 p-0 transition-colors duration-150
+        group relative overflow-visible rounded-[var(--node-radius)] border bg-surface-dark/90 p-0 transition-colors duration-150
         ${hasGenerationError
           ? (selected
             ? 'border-red-400 shadow-[0_0_0_1px_rgba(248,113,113,0.42)]'
@@ -313,7 +313,7 @@ export const VideoResultNode = memo(({ id, data, selected, width, height }: Vide
 
       <div
         className={`group relative w-full overflow-hidden rounded-[var(--node-radius)] ${hasGenerationError ? 'bg-[rgba(127,29,29,0.2)]' : 'bg-bg-dark'}`}
-        style={{ height: `calc(100% - 36px)` }}
+        style={{ height: data.draftTaskId && data.videoUrl && !isGenerating ? 'calc(100% - 36px)' : '100%' }}
       >
         {data.videoUrl ? (
           <video
@@ -380,7 +380,7 @@ export const VideoResultNode = memo(({ id, data, selected, width, height }: Vide
           className="pointer-events-auto absolute right-2 bottom-2 z-30 flex items-center gap-1 rounded bg-accent px-2.5 py-1 text-xs font-medium text-[var(--accent-foreground)] shadow hover:bg-accent/90"
         >
           <Video className="h-3 w-3" />
-          <span>生成正式视频</span>
+          <span>{t('node.videoGen.generateFinalVideo')}</span>
         </button>
       )}
 
@@ -392,7 +392,7 @@ export const VideoResultNode = memo(({ id, data, selected, width, height }: Vide
           onClick={(e) => e.stopPropagation()}
         >
           <div className="mb-2 flex items-center justify-between">
-            <span className="text-xs font-medium text-text-muted/80">生成参数</span>
+            <span className="text-xs font-medium text-text-muted/80">{t('node.videoGen.detailsParams')}</span>
             <UiTooltip content={t('common.close')}>
               <button
                 type="button"
@@ -408,7 +408,7 @@ export const VideoResultNode = memo(({ id, data, selected, width, height }: Vide
             {/* Model info */}
             {data.model && (
               <div className="flex items-center gap-2">
-                <span className="text-text-muted/60">模型:</span>
+                <span className="text-text-muted/60">{t('node.videoGen.detailsModel')}:</span>
                 <span className="font-mono text-text-dark">{data.model}</span>
               </div>
             )}
@@ -427,12 +427,12 @@ export const VideoResultNode = memo(({ id, data, selected, width, height }: Vide
               )}
               {data.seed !== undefined && (
                 <span className="rounded bg-[var(--ui-hover)] px-1.5 py-0.5 font-mono text-text-dark">
-                  Seed: {data.seed === -1 ? '随机' : data.seed}
+                  {t('node.videoGen.seed')}: {data.seed === -1 ? t('node.videoGen.detailsSeedRandom') : data.seed}
                 </span>
               )}
               {data.hasAudio !== undefined && (
                 <span className="rounded bg-[var(--ui-hover)] px-1.5 py-0.5 text-text-dark">
-                  {data.hasAudio ? '有声' : '静音'}
+                  {data.hasAudio ? t('node.videoGen.detailsAudioOn') : t('node.videoGen.detailsAudioOff')}
                 </span>
               )}
             </div>
@@ -441,7 +441,7 @@ export const VideoResultNode = memo(({ id, data, selected, width, height }: Vide
             {data.prompt && (
               <div className="mt-2">
                 <div className="mb-1 flex items-center justify-between">
-                  <span className="text-text-muted/60">提示词:</span>
+                  <span className="text-text-muted/60">{t('node.videoGen.detailsPrompt')}:</span>
                   <UiTooltip content={isCopySuccess ? t('common.copied') : t('common.copy')}>
                     <button
                       type="button"
@@ -467,7 +467,7 @@ export const VideoResultNode = memo(({ id, data, selected, width, height }: Vide
             {data.videoUrl && (
               <div className="mt-2">
                 <div className="mb-1 flex items-center justify-between">
-                  <span className="text-text-muted/60">视频URL:</span>
+                  <span className="text-text-muted/60">{t('node.videoGen.detailsVideoUrl')}:</span>
                   <div className="flex items-center gap-1">
                     <UiTooltip content={isCopySuccess ? t('common.copied') : t('common.copy')}>
                       <button

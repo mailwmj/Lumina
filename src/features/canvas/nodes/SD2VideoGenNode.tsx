@@ -73,10 +73,10 @@ function getResolutionsForModel(modelId: string): string[] {
   return ['480p', '720p', '1080p'];
 }
 
-const DEFAULT_WIDTH = 360;
-const DEFAULT_HEIGHT = 520;
-const MIN_WIDTH = 320;
-const MIN_HEIGHT = 450;
+const DEFAULT_WIDTH = 380;
+const DEFAULT_HEIGHT = 600;
+const MIN_WIDTH = 340;
+const MIN_HEIGHT = 480;
 const MAX_WIDTH = 720;
 const MAX_HEIGHT = 900;
 
@@ -573,12 +573,12 @@ export const SD2VideoGenNode = memo(({ id, data, selected, width, height }: SD2V
     updateNodeData(id, { aspectRatio: e.target.value });
   }, [id, updateNodeData]);
 
-  const handleHasAudioChange = useCallback((e: ChangeEvent<HTMLInputElement>) => {
-    updateNodeData(id, { hasAudio: e.target.checked });
+  const handleHasAudioChange = useCallback((checked: boolean) => {
+    updateNodeData(id, { hasAudio: checked });
   }, [id, updateNodeData]);
 
-  const handleWatermarkChange = useCallback((e: ChangeEvent<HTMLInputElement>) => {
-    updateNodeData(id, { watermark: e.target.checked });
+  const handleWatermarkChange = useCallback((checked: boolean) => {
+    updateNodeData(id, { watermark: checked });
   }, [id, updateNodeData]);
 
   const currentResolution = data.resolution || (availableResolutions.includes('1080p') ? '1080p' : '720p');
@@ -625,10 +625,10 @@ export const SD2VideoGenNode = memo(({ id, data, selected, width, height }: SD2V
         />
       )}
 
-      <div className="flex h-full flex-col gap-2 overflow-y-auto">
+      <div className="flex h-full flex-col gap-2 overflow-hidden">
 
         {/* 模式选择器 */}
-        <div className="flex flex-wrap gap-1">
+        <div className="flex flex-wrap gap-1 shrink-0">
           {GENERATION_MODES.map((mode) => (
             <button
               key={mode.value}
@@ -648,7 +648,7 @@ export const SD2VideoGenNode = memo(({ id, data, selected, width, height }: SD2V
         </div>
 
         {/* 模型选择 */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <span className="text-xs text-text-muted">{t('node.videoGen.model')}:</span>
           <select
             className="flex-1 rounded border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] px-2 py-1 font-mono text-xs text-text-dark"
@@ -662,7 +662,7 @@ export const SD2VideoGenNode = memo(({ id, data, selected, width, height }: SD2V
 
         {/* 参考素材预览区 */}
         {(connectedImageNodes.length > 0 || connectedVideoNodes.length > 0 || connectedAudioNodes.length > 0) && (
-          <div className="flex flex-wrap gap-2 rounded-lg border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] p-2">
+          <div className="flex flex-wrap gap-2 shrink-0 rounded-lg border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] p-2">
             {/* 图片预览 */}
             {connectedImageNodes.map((node, idx) => {
               const nodeData = node!.data as { imageUrl?: string; previewImageUrl?: string };
@@ -672,7 +672,7 @@ export const SD2VideoGenNode = memo(({ id, data, selected, width, height }: SD2V
                   <img
                     src={displayUrl}
                     alt={`图${idx + 1}`}
-                    className="h-14 w-14 object-cover rounded border border-border"
+                    className="h-12 w-12 object-cover rounded border border-border"
                   />
                   <span className="absolute -bottom-1 -right-1 bg-accent text-[var(--accent-foreground)] text-[10px] px-1 rounded">
                     图{idx + 1}
@@ -689,7 +689,7 @@ export const SD2VideoGenNode = memo(({ id, data, selected, width, height }: SD2V
                 <div key={node!.id} className="relative">
                   <video
                     src={displayUrl}
-                    className="h-14 w-14 object-cover rounded border border-border"
+                    className="h-12 w-12 object-cover rounded border border-border"
                   />
                   <span className="absolute -bottom-1 -right-1 rounded bg-accent px-1 text-[10px] text-[var(--accent-foreground)]">
                     视频{idx + 1}
@@ -704,9 +704,9 @@ export const SD2VideoGenNode = memo(({ id, data, selected, width, height }: SD2V
               return (
                 <div
                   key={node!.id}
-                  className="relative flex h-14 w-14 flex-col items-center justify-center gap-0.5 overflow-hidden rounded border border-[rgb(var(--edge-rgb)/0.45)] bg-[rgb(var(--edge-rgb)/0.16)] p-0.5"
+                  className="relative flex h-12 w-12 flex-col items-center justify-center gap-0.5 overflow-hidden rounded border border-[rgb(var(--edge-rgb)/0.45)] bg-[rgb(var(--edge-rgb)/0.16)] p-0.5"
                 >
-                  <Music className="h-5 w-5 shrink-0 text-[var(--edge)]" />
+                  <Music className="h-4 w-4 shrink-0 text-[var(--edge)]" />
                   <span className="w-full truncate text-center text-[9px] leading-tight text-[var(--edge)]">
                     {nodeData.sourceFileName || `音频${idx + 1}`}
                   </span>
@@ -720,7 +720,7 @@ export const SD2VideoGenNode = memo(({ id, data, selected, width, height }: SD2V
         )}
 
         {/* 参考素材计数 */}
-        <div className="flex flex-wrap gap-2 text-xs text-text-muted">
+        <div className="flex flex-wrap gap-2 shrink-0 text-xs text-text-muted">
           {limits.images > 0 && (
             <span className={connectedImageNodes.length >= limits.images ? 'text-accent' : ''}>
               {t('node.sd2VideoGen.imageCount', { current: connectedImageNodes.length, max: limits.images })}
@@ -739,7 +739,7 @@ export const SD2VideoGenNode = memo(({ id, data, selected, width, height }: SD2V
         </div>
 
         {/* 控制选项 */}
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
           {/* 分辨率 */}
           <div className="flex items-center gap-1">
             <span className="text-xs text-text-muted">{t('node.videoGen.resolution')}:</span>
@@ -791,7 +791,7 @@ export const SD2VideoGenNode = memo(({ id, data, selected, width, height }: SD2V
               <input
                 type="checkbox"
                 checked={data.hasAudio ?? true}
-                onChange={handleHasAudioChange}
+                onChange={(e) => handleHasAudioChange(e.target.checked)}
                 className="h-3 w-3 rounded border-border bg-bg-dark text-accent focus:ring-accent"
               />
               <span className="text-xs text-text-muted">{t('node.videoGen.hasAudio')}</span>
@@ -803,7 +803,7 @@ export const SD2VideoGenNode = memo(({ id, data, selected, width, height }: SD2V
             <input
               type="checkbox"
               checked={data.watermark ?? false}
-              onChange={handleWatermarkChange}
+              onChange={(e) => handleWatermarkChange(e.target.checked)}
               className="h-3 w-3 rounded border-border bg-bg-dark text-accent focus:ring-accent"
             />
             <span className="text-xs text-text-muted">{t('node.videoGen.watermark')}</span>
@@ -945,7 +945,7 @@ export const SD2VideoGenNode = memo(({ id, data, selected, width, height }: SD2V
           type="button"
           disabled={!promptDraft.trim() || data.isGenerating}
           className={`
-            w-full rounded py-2 text-xs font-medium transition-colors
+            shrink-0 w-full rounded py-2 text-xs font-medium transition-colors
             ${data.isGenerating
               ? 'bg-accent/50 text-[var(--accent-foreground)] cursor-not-allowed'
               : 'bg-accent text-[var(--accent-foreground)] hover:bg-accent/90'}
