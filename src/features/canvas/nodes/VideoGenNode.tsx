@@ -6,7 +6,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { Handle, Position, type NodeProps } from '@xyflow/react';
+import { Handle, Position, useUpdateNodeInternals, type NodeProps } from '@xyflow/react';
 import { Loader2, Video, Wand2 } from '@/components/ui/icons';
 import { useTranslation } from 'react-i18next';
 
@@ -29,6 +29,11 @@ import { polishText } from '@/features/canvas/infrastructure/textPolishService';
 import { resolveTextModelSelection } from '@/features/canvas/application/textModelSelection';
 import { selectWorkflowNodes } from '@/features/canvas/application/canvasNodeSelectors';
 import {
+  TEXT_GENERATION_MAX_HEIGHT,
+  TEXT_GENERATION_MAX_WIDTH,
+  resolveTextGenerationLayout,
+} from '@/features/canvas/application/textGenerationLayout';
+import {
   NODE_CONTROL_CHIP_CLASS,
   NODE_CONTROL_FOOTER_CLASS,
   NODE_CONTROL_ICON_BUTTON_CLASS,
@@ -42,19 +47,13 @@ import { useSettingsStore } from '@/stores/settingsStore';
 import type { VideoApiConfig } from '@/stores/settingsStore';
 import { logger } from '@/lib/logger';
 import { VideoAdvancedOptionsPopover } from '@/features/canvas/ui/VideoAdvancedOptionsPopover';
+import { usePreserveNodeCenterOnAutoResize } from '@/features/canvas/ui/usePreserveNodeCenterOnAutoResize';
 
 type VideoGenNodeProps = NodeProps & {
   id: string;
   data: VideoGenNodeData;
   selected?: boolean;
 };
-
-const VIDEO_GEN_NODE_MIN_WIDTH = 420;
-const VIDEO_GEN_NODE_MIN_HEIGHT = 360;
-const VIDEO_GEN_NODE_MAX_WIDTH = 800;
-const VIDEO_GEN_NODE_MAX_HEIGHT = 760;
-const VIDEO_GEN_NODE_DEFAULT_WIDTH = 520;
-const VIDEO_GEN_NODE_DEFAULT_HEIGHT = 560;
 
 const RESOLUTION_OPTIONS: { value: VideoResolution; label: string }[] = [
   { value: '480p', label: '480p' },
@@ -119,6 +118,7 @@ function getModelCapabilities(modelId: string) {
 
 export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGenNodeProps) => {
   const { t } = useTranslation();
+  const updateNodeInternals = useUpdateNodeInternals();
   const workflowNodes = useCanvasStore(selectWorkflowNodes);
   const edges = useCanvasStore((state) => state.edges);
   const updateNodeData = useCanvasStore((state) => state.updateNodeData);
@@ -190,8 +190,25 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
     [incomingImages, maxImages]
   );
 
-  const resolvedWidth = Math.max(VIDEO_GEN_NODE_MIN_WIDTH, Math.round(width ?? VIDEO_GEN_NODE_DEFAULT_WIDTH));
-  const resolvedHeight = Math.max(VIDEO_GEN_NODE_MIN_HEIGHT, Math.round(height ?? VIDEO_GEN_NODE_DEFAULT_HEIGHT));
+  const layout = resolveTextGenerationLayout({
+    width,
+    height,
+    hasImageContext: displayImages.length > 0,
+    hasResult: false,
+    isSizeManuallyAdjusted: data.isSizeManuallyAdjusted,
+  });
+  const resolvedWidth = layout.width;
+  const resolvedHeight = layout.height;
+
+  usePreserveNodeCenterOnAutoResize({
+    nodeId: id,
+    height: resolvedHeight,
+    enabled: !data.isSizeManuallyAdjusted,
+  });
+
+  useEffect(() => {
+    updateNodeInternals(id);
+  }, [id, resolvedHeight, resolvedWidth, updateNodeInternals]);
 
   // Update promptDraft when data.prompt changes externally
   useEffect(() => {
@@ -472,11 +489,8 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
   return (
     <div
       ref={rootRef}
-      className={`group relative flex h-full flex-col overflow-visible rounded-[var(--node-radius)] border bg-surface-dark/90 p-2 transition-colors duration-150 ${resolveNodeSurfaceStateClass(selected)}`}
-      style={{
-        width: `${resolvedWidth}px`,
-        height: `${resolvedHeight}px`,
-      }}
+      className={`group relative flex h-full flex-col gap-2 overflow-visible rounded-[var(--node-radius)] border bg-surface-dark/90 p-2 transition-colors duration-150 ${resolveNodeSurfaceStateClass(selected)}`}
+      style={{ width: resolvedWidth, height: resolvedHeight }}
       onClick={() => setSelectedNode(id)}
     >
       {isVideoFrame ? (
@@ -488,79 +502,105 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
         <Handle type="target" id="target" position={Position.Left} />
       )}
 
-      {/* Connected Reference Images (compact, shrink-0) */}
+      {/* Connected Reference Images (labeled section, shrink-0) */}
       {displayImages.length > 0 && (
-        <div className="flex shrink-0 justify-center gap-2 py-0.5">
-          {displayImages.map((imgUrl, idx) => (
-            <div key={idx} className="relative flex flex-col items-center gap-1">
-              <div className="h-20 w-20 flex-shrink-0 overflow-hidden rounded-lg border border-border">
-                <img
-                  src={imgUrl}
-                  alt={isVideoFrame ? (idx === 0 ? t('node.videoGen.firstFrame') : t('node.videoGen.lastFrame')) : `图${idx + 1}`}
-                  className="h-full w-full object-cover"
-                />
-              </div>
-              <span className="text-center text-[10px] text-text-muted">
-                {isVideoFrame ? (idx === 0 ? t('node.videoGen.firstFrame') : t('node.videoGen.lastFrame')) : `图${idx + 1}`}
-              </span>
-            </div>
-          ))}
-        </div>
+        <section className="min-w-0 shrink-0" aria-label={t('node.videoGen.referenceImages')}>
+          <div className="mb-1 text-[10px] font-medium text-text-muted">
+            {t('node.videoGen.referenceImages')}
+          </div>
+          <div
+            className="no-scrollbar nowheel flex min-w-0 gap-1.5 overflow-x-auto overflow-y-hidden rounded-lg border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)]/70 p-2"
+            style={{ height: layout.referenceImagesHeight }}
+          >
+            {displayImages.map((imgUrl, idx) => {
+              const label = isVideoFrame
+                ? (idx === 0 ? t('node.videoGen.firstFrame') : t('node.videoGen.lastFrame'))
+                : t('node.imageReference.label', { index: idx + 1 });
+              return (
+                <div
+                  key={idx}
+                  className="nodrag nowheel relative h-16 w-16 shrink-0 overflow-hidden rounded-md border border-[var(--ui-border-soft)] bg-bg-dark"
+                  title={label}
+                >
+                  <img
+                    src={imgUrl}
+                    alt={label}
+                    className="h-full w-full rounded-[inherit] object-cover"
+                    draggable={false}
+                  />
+                  {isVideoFrame && (
+                    <span className="pointer-events-none absolute bottom-0.5 right-0.5 z-10 flex h-5 min-w-5 items-center justify-center rounded-full border border-white/25 bg-black/70 px-1 text-[10px] font-semibold leading-none text-white shadow-md backdrop-blur-sm">
+                      {label}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </section>
       )}
 
-      {/* Prompt Input (flex-1, only region that scrolls) */}
-      <div className="relative min-h-0 flex-1 rounded-lg border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] p-2">
-        <div className="relative h-full min-h-0">
-          <div
-            ref={promptHighlightRef}
-            aria-hidden="true"
-            className="ui-scrollbar absolute inset-0 overflow-y-auto overflow-x-hidden text-sm leading-6 text-text-dark pointer-events-none"
-            style={{ scrollbarGutter: 'stable' }}
-          >
-            <div className="min-h-full whitespace-pre-wrap break-words px-1 py-0.5">
-              {promptDraft || ' '}
-            </div>
-          </div>
-          <textarea
-            ref={promptRef}
-            value={promptDraft}
-            onChange={(e) => {
-              const nextValue = e.target.value;
-              setPromptDraft(nextValue);
-              commitPromptDraft(nextValue);
-            }}
-            onKeyDown={handlePromptKeyDown}
-            onScroll={syncPromptHighlightScroll}
-            onMouseDown={(e) => e.stopPropagation()}
-            placeholder={t('node.videoGen.promptPlaceholder')}
-            className="ui-scrollbar nodrag nowheel relative z-10 h-full w-full resize-none overflow-y-auto overflow-x-hidden border-none bg-transparent px-1 py-0.5 text-sm leading-6 text-text-dark outline-none placeholder:text-text-muted/80 focus:border-transparent whitespace-pre-wrap break-words"
-            style={{ scrollbarGutter: 'stable' }}
-          />
-          {/* Polish Button */}
-          <UiTooltip content={t('node.imageEdit.polishPrompt')}>
-            <button
-              type="button"
-              aria-label={t('node.imageEdit.polishPrompt')}
-              className="absolute bottom-2 right-2 z-20 rounded p-1 text-text-muted hover:bg-accent/20 hover:text-accent disabled:opacity-50"
-              onClick={(e) => {
-                e.stopPropagation();
-                void handlePolish();
-              }}
-              disabled={isPolishing}
-            >
-              {isPolishing ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Wand2 className="h-4 w-4" />
-              )}
-            </button>
-          </UiTooltip>
+      {/* Prompt Input (labeled section, flex-1, only region that scrolls) */}
+      <section className="min-w-0 flex-1">
+        <div className="mb-1 text-[10px] font-medium text-text-muted">
+          {t('node.videoGen.promptLabel')}
         </div>
-      </div>
+        <div
+          className="nodrag nowheel relative overflow-visible rounded-lg border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)]"
+          style={{ height: layout.promptHeight }}
+        >
+          <div className="relative h-full min-h-0">
+            <div
+              ref={promptHighlightRef}
+              aria-hidden="true"
+              className="ui-scrollbar absolute inset-0 overflow-y-auto overflow-x-hidden text-sm leading-6 text-text-dark pointer-events-none"
+              style={{ scrollbarGutter: 'stable' }}
+            >
+              <div className="min-h-full whitespace-pre-wrap break-words px-1 py-0.5">
+                {promptDraft || ' '}
+              </div>
+            </div>
+            <textarea
+              ref={promptRef}
+              value={promptDraft}
+              onChange={(e) => {
+                const nextValue = e.target.value;
+                setPromptDraft(nextValue);
+                commitPromptDraft(nextValue);
+              }}
+              onKeyDown={handlePromptKeyDown}
+              onScroll={syncPromptHighlightScroll}
+              onMouseDown={(e) => e.stopPropagation()}
+              placeholder={t('node.videoGen.promptPlaceholder')}
+              className="ui-scrollbar nodrag nowheel relative z-10 h-full w-full resize-none overflow-y-auto overflow-x-hidden border-none bg-transparent px-1 py-0.5 text-sm leading-6 text-text-dark outline-none placeholder:text-text-muted/80 focus:border-transparent whitespace-pre-wrap break-words"
+              style={{ scrollbarGutter: 'stable' }}
+            />
+            {/* Polish Button */}
+            <UiTooltip content={t('node.imageEdit.polishPrompt')}>
+              <button
+                type="button"
+                aria-label={t('node.imageEdit.polishPrompt')}
+                className="absolute bottom-2 right-2 z-20 rounded p-1 text-text-muted hover:bg-accent/20 hover:text-accent disabled:opacity-50"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void handlePolish();
+                }}
+                disabled={isPolishing}
+              >
+                {isPolishing ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Wand2 className="h-4 w-4" />
+                )}
+              </button>
+            </UiTooltip>
+          </div>
+        </div>
+      </section>
 
       {/* Error */}
       {error && (
-        <div className="mt-1 shrink-0 rounded bg-destructive/10 px-2 py-1 text-xs text-destructive">
+        <div className="shrink-0 rounded bg-destructive/10 px-2 py-1 text-xs text-destructive">
           {error}
         </div>
       )}
@@ -674,10 +714,10 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
       <Handle type="source" id="source" position={Position.Right} />
 
       <NodeResizeHandle
-        minWidth={VIDEO_GEN_NODE_MIN_WIDTH}
-        minHeight={VIDEO_GEN_NODE_MIN_HEIGHT}
-        maxWidth={VIDEO_GEN_NODE_MAX_WIDTH}
-        maxHeight={VIDEO_GEN_NODE_MAX_HEIGHT}
+        minWidth={layout.minWidth}
+        minHeight={layout.minHeight}
+        maxWidth={TEXT_GENERATION_MAX_WIDTH}
+        maxHeight={TEXT_GENERATION_MAX_HEIGHT}
       />
     </div>
   );

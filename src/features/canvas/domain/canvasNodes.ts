@@ -194,6 +194,8 @@ export interface VideoGenNodeData extends NodeDisplayData {
   seed?: number;
   camerafixed?: boolean;  // 相机固定
   watermark?: boolean;    // 水印
+  /** Locks context-driven default dimensions after the user resizes this node. */
+  isSizeManuallyAdjusted?: boolean;
   // 视频元信息（用于润色提示词）
   shotType?: string;       // 镜头类型
   shotSize?: string;       // 景别
@@ -273,6 +275,8 @@ export interface SD2VideoGenNodeData extends NodeDisplayData {
   referenceImageIds?: string[];
   referenceAudioIds?: string[];
   referenceVideoIds?: string[];
+  /** Locks context-driven default dimensions after the user resizes this node. */
+  isSizeManuallyAdjusted?: boolean;
   isGenerating?: boolean;
   generationJobId?: string | null;
   generationError?: string | null;

@@ -271,6 +271,7 @@
     "videoGen": {
       "title": "Video Node",
       "prompt": "Prompt",
+      "promptLabel": "Prompt",
       "model": "Model",
       "resolution": "Resolution",
       "size": "Size",

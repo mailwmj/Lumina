@@ -29,11 +29,18 @@ import { NodeResizeHandle } from '@/features/canvas/ui/NodeResizeHandle';
 import { resolveNodeSurfaceStateClass } from '@/features/canvas/ui/nodeSurfaceStyles';
 import { resolveImageDisplayUrl, resolveVideoDisplayUrl, resolveAudioDisplayUrl } from '@/features/canvas/application/imageData';
 import {
+  TEXT_GENERATION_MAX_HEIGHT,
+  TEXT_GENERATION_MAX_WIDTH,
+  TEXT_GENERATION_MIN_HEIGHT,
+  TEXT_GENERATION_MIN_WIDTH,
+} from '@/features/canvas/application/textGenerationLayout';
+import {
   findReferenceTokens,
   resolveReferenceAwareDeleteRange,
   removeTextRange,
   insertReferenceToken,
 } from '@/features/canvas/application/referenceTokenEditing';
+import { usePreserveNodeCenterOnAutoResize } from '@/features/canvas/ui/usePreserveNodeCenterOnAutoResize';
 
 type SD2VideoGenNodeProps = NodeProps & {
   id: string;
@@ -73,12 +80,12 @@ function getResolutionsForModel(modelId: string): string[] {
   return ['480p', '720p', '1080p'];
 }
 
-const DEFAULT_WIDTH = 380;
-const DEFAULT_HEIGHT = 600;
-const MIN_WIDTH = 340;
-const MIN_HEIGHT = 480;
-const MAX_WIDTH = 720;
-const MAX_HEIGHT = 900;
+const DEFAULT_WIDTH = 520;
+const DEFAULT_HEIGHT = 360;
+const MIN_WIDTH = TEXT_GENERATION_MIN_WIDTH;
+const MIN_HEIGHT = TEXT_GENERATION_MIN_HEIGHT;
+const MAX_WIDTH = TEXT_GENERATION_MAX_WIDTH;
+const MAX_HEIGHT = TEXT_GENERATION_MAX_HEIGHT;
 
 interface PickerAnchor {
   left: number;
@@ -220,6 +227,12 @@ export const SD2VideoGenNode = memo(({ id, data, selected, width, height }: SD2V
 
   const resolvedWidth = Math.max(MIN_WIDTH, Math.round(width ?? DEFAULT_WIDTH));
   const resolvedHeight = Math.max(MIN_HEIGHT, Math.round(height ?? DEFAULT_HEIGHT));
+
+  usePreserveNodeCenterOnAutoResize({
+    nodeId: id,
+    height: resolvedHeight,
+    enabled: !data.isSizeManuallyAdjusted,
+  });
 
   const generationMode = data.generationMode || 'multimodal';
   const limits = MODE_LIMITS[generationMode];

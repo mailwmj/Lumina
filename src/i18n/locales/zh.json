@@ -271,6 +271,7 @@
     "videoGen": {
       "title": "视频节点",
       "prompt": "提示词",
+      "promptLabel": "提示词",
       "model": "模型",
       "resolution": "分辨率",
       "size": "尺寸",
