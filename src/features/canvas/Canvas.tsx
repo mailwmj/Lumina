@@ -1,4 +1,5 @@
 import {
+  Profiler,
   useState,
   useCallback,
   useEffect,
@@ -6,6 +7,7 @@ import {
   useRef,
   type MouseEvent as ReactMouseEvent,
   type DragEvent as ReactDragEvent,
+  type ProfilerOnRenderCallback,
 } from 'react';
 import {
   ReactFlow,
@@ -74,6 +76,23 @@ import { resolveCanvasConnectionRadius } from './application/connectionSnap';
 import { logger } from '@/lib/logger';
 
 const DEFAULT_VIEWPORT: Viewport = { x: 0, y: 0, zoom: 1 };
+
+const recordDragProfilerSample: ProfilerOnRenderCallback = (
+  id,
+  phase,
+  actualDuration,
+  baseDuration
+) => {
+  const target = window as Window & {
+    __luminaDragProfiler?: Array<{
+      id: string;
+      phase: string;
+      actualDuration: number;
+      baseDuration: number;
+    }>;
+  };
+  target.__luminaDragProfiler?.push({ id, phase, actualDuration, baseDuration });
+};
 
 interface PendingConnectStart {
   nodeId: string;
@@ -2043,6 +2062,7 @@ export function Canvas() {
       onDrop={handleCanvasDrop}
       onDragOver={handleCanvasDragOver}
     >
+      <Profiler id="ReactFlow" onRender={recordDragProfilerSample}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -2095,8 +2115,11 @@ export function Canvas() {
         {snapToGridEnabled && <CanvasGridBackground gap={snapGridSize} />}
         <CanvasMinimapControl />
 
-        <SelectedNodeOverlay />
+        <Profiler id="SelectedNodeOverlay" onRender={recordDragProfilerSample}>
+          <SelectedNodeOverlay />
+        </Profiler>
       </ReactFlow>
+      </Profiler>
 
       <MultiSelectionConnector
         enabled={hasMultiSelectionConnector}
