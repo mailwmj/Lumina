@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 
 import { discoverTextModels } from '@/commands/ai';
 import { UiCheckbox, UiTooltip } from '@/components/ui';
-import { Eye, EyeOff, Loader2, Plus, Trash2 } from '@/components/ui/icons';
+import { Eye, EyeOff, Loader2, Plus } from '@/components/ui/icons';
 import { testTextApi } from '@/features/canvas/infrastructure/textPolishService';
 import { ProviderListShell } from '@/features/settings/providers/ProviderListShell';
 import {
