@@ -33,6 +33,14 @@ describe('custom image provider protocols', () => {
     )).toBe('https://gateway.example/api/gemini');
   });
 
+  it('uses the FHL default endpoint when switching an empty configuration to FHL', () => {
+    expect(migrateCustomImageBaseUrlForProtocolChange(
+      '',
+      'openai-images',
+      'fhl-images'
+    )).toBe('https://www.fhl.mom');
+  });
+
   it('exposes FHL as a dedicated custom-provider backend protocol', () => {
     expect(CUSTOM_IMAGE_PROTOCOLS).toContain('fhl-images');
     expect(getCustomImageProtocolDefinition('fhl-images').backendProviderId).toBe('fhl');

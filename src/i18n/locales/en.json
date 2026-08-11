@@ -48,6 +48,7 @@
     "details": "Details",
     "hideDetails": "Hide details",
     "close": "Close",
+    "back": "Back",
     "loading": "Loading...",
     "error": "Error",
     "success": "Success"
@@ -498,6 +499,9 @@
     "imageModelsFetching": "Fetching",
     "imageModelsEmpty": "No models have been fetched",
     "imageModelsFetchFailed": "Failed to fetch models",
+    "providerBuiltIn": "Built-in",
+    "providerModelsCount": "{{count}} models",
+    "noCustomImageApisConfigured": "No custom providers yet. Add one from the top right.",
     "customImageApis": "Custom Providers",
     "customImageApisDesc": "Add third-party image providers and choose their API protocol.",
     "addCustomImageApi": "Add Provider",

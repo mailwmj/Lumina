@@ -1,5 +1,5 @@
 import { useCallback, useState, type ReactNode } from 'react';
-import { Eye, EyeOff, Loader2, Plus, Trash2 } from '@/components/ui/icons';
+import { Eye, EyeOff, Loader2, Plus } from '@/components/ui/icons';
 import { useTranslation } from 'react-i18next';
 
 import { discoverImageModels } from '@/commands/ai';
@@ -11,6 +11,7 @@ import {
   migrateCustomImageBaseUrlForProtocolChange,
   type CustomImageProtocol,
 } from '@/features/canvas/models/imageProviderProtocols';
+import { ProviderListShell } from '@/features/settings/providers/ProviderListShell';
 import {
   createCustomImageApiConfig,
   isCustomImageProviderId,
@@ -41,13 +42,15 @@ interface PendingProtocolChange {
   protocol: CustomImageProtocol;
 }
 
-interface ImageModelSelectionPanelProps {
-  catalog: ImageModelCatalog | null;
-  selectedModelIds: string[];
-  state: DiscoveryState;
-  onRefresh: () => void;
-  onSelectionChange: (modelId: string, selected: boolean) => void;
-}
+type ImageProviderEntry =
+  | { kind: 'openai'; config: OpenAiImageApiConfig }
+  | { kind: 'chaomo'; config: ChaomoImageApiConfig }
+  | { kind: 'custom'; config: CustomImageApiConfig };
+
+const BUILTIN_ENTRY_ID = {
+  openai: 'ai-media',
+  chaomo: 'chaomo',
+} as const;
 
 function ImageModelSelectionPanel({
   catalog,
@@ -55,7 +58,13 @@ function ImageModelSelectionPanel({
   state,
   onRefresh,
   onSelectionChange,
-}: ImageModelSelectionPanelProps) {
+}: {
+  catalog: ImageModelCatalog | null;
+  selectedModelIds: string[];
+  state: DiscoveryState;
+  onRefresh: () => void;
+  onSelectionChange: (modelId: string, selected: boolean) => void;
+}) {
   const { t } = useTranslation();
   const selectedModelIdSet = new Set(selectedModelIds);
 
@@ -105,38 +114,31 @@ function ImageModelSelectionPanel({
   );
 }
 
-interface ProviderSectionProps<TConfig extends ImageProviderApiConfig> {
-  providerId: ImageProviderId;
-  title: string;
-  description: string;
+interface ImageDetailFormProps<TConfig extends ImageProviderApiConfig> {
   config: TConfig;
   discoveryState: DiscoveryState;
   isApiKeyRevealed: boolean;
   onApiKeyRevealToggle: () => void;
   onChange: (config: TConfig) => void;
   onDiscover: () => void;
-  headerAction?: ReactNode;
   nameField?: ReactNode;
   protocolField?: ReactNode;
   manualModelField?: ReactNode;
   baseUrlPlaceholder?: string;
 }
 
-function ProviderSection<TConfig extends ImageProviderApiConfig>({
-  title,
-  description,
+function ImageDetailForm<TConfig extends ImageProviderApiConfig>({
   config,
   discoveryState,
   isApiKeyRevealed,
   onApiKeyRevealToggle,
   onChange,
   onDiscover,
-  headerAction,
   nameField,
   protocolField,
   manualModelField,
   baseUrlPlaceholder = 'https://api.example.com/v1',
-}: ProviderSectionProps<TConfig>) {
+}: ImageDetailFormProps<TConfig>) {
   const { t } = useTranslation();
   const updateConnection = (patch: Partial<Pick<TConfig, 'apiKey' | 'baseUrl'>>) => {
     onChange({
@@ -148,77 +150,67 @@ function ProviderSection<TConfig extends ImageProviderApiConfig>({
   };
 
   return (
-    <section className="border-b border-[var(--ui-border-soft)] py-4">
-      <div className="mb-4 flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h3 className="text-sm font-medium text-text-dark">{title}</h3>
-          <p className="mt-1 text-xs text-text-muted">{description}</p>
-        </div>
-        {headerAction}
-      </div>
-
-      <div className="space-y-3">
-        {nameField}
-        {protocolField}
-        <label className="block">
-          <span className="mb-1 block text-xs font-medium text-text-dark">
-            {t('settings.openAiImageBaseUrl')}
-          </span>
-          <input
-            type="url"
-            value={config.baseUrl}
-            onChange={(event) => updateConnection({ baseUrl: event.target.value })}
-            placeholder={baseUrlPlaceholder}
-            className="w-full rounded border border-border-dark bg-surface-dark px-3 py-2 text-sm text-text-dark placeholder:text-text-muted"
-          />
-        </label>
-
-        <label className="block">
-          <span className="mb-1 block text-xs font-medium text-text-dark">
-            {t('settings.openAiImageApiKey')}
-          </span>
-          <div className="relative">
-            <input
-              type={isApiKeyRevealed ? 'text' : 'password'}
-              value={config.apiKey}
-              onChange={(event) => updateConnection({ apiKey: event.target.value })}
-              placeholder={t('settings.enterApiKey')}
-              className="w-full rounded border border-border-dark bg-surface-dark px-3 py-2 pr-10 text-sm text-text-dark placeholder:text-text-muted"
-            />
-            <UiTooltip content={isApiKeyRevealed ? t('settings.hideApiKey') : t('settings.showApiKey')}>
-              <button
-                type="button"
-                aria-label={isApiKeyRevealed ? t('settings.hideApiKey') : t('settings.showApiKey')}
-                onClick={onApiKeyRevealToggle}
-                className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 hover:bg-[var(--ui-hover)]"
-              >
-                {isApiKeyRevealed ? (
-                  <EyeOff className="h-4 w-4 text-text-muted" />
-                ) : (
-                  <Eye className="h-4 w-4 text-text-muted" />
-                )}
-              </button>
-            </UiTooltip>
-          </div>
-        </label>
-
-        {manualModelField}
-        <ImageModelSelectionPanel
-          catalog={config.modelCatalog}
-          selectedModelIds={config.selectedModelIds}
-          state={discoveryState}
-          onRefresh={onDiscover}
-          onSelectionChange={(modelId, selected) =>
-            onChange({
-              ...config,
-              selectedModelIds: selected
-                ? Array.from(new Set([...config.selectedModelIds, modelId]))
-                : config.selectedModelIds.filter((id) => id !== modelId),
-            })
-          }
+    <div className="space-y-3">
+      {nameField}
+      {protocolField}
+      <label className="block">
+        <span className="mb-1 block text-xs font-medium text-text-dark">
+          {t('settings.openAiImageBaseUrl')}
+        </span>
+        <input
+          type="url"
+          value={config.baseUrl}
+          onChange={(event) => updateConnection({ baseUrl: event.target.value })}
+          placeholder={baseUrlPlaceholder}
+          className="w-full rounded border border-border-dark bg-surface-dark px-3 py-2 text-sm text-text-dark placeholder:text-text-muted"
         />
-      </div>
-    </section>
+      </label>
+
+      <label className="block">
+        <span className="mb-1 block text-xs font-medium text-text-dark">
+          {t('settings.openAiImageApiKey')}
+        </span>
+        <div className="relative">
+          <input
+            type={isApiKeyRevealed ? 'text' : 'password'}
+            value={config.apiKey}
+            onChange={(event) => updateConnection({ apiKey: event.target.value })}
+            placeholder={t('settings.enterApiKey')}
+            className="w-full rounded border border-border-dark bg-surface-dark px-3 py-2 pr-10 text-sm text-text-dark placeholder:text-text-muted"
+          />
+          <UiTooltip content={isApiKeyRevealed ? t('settings.hideApiKey') : t('settings.showApiKey')}>
+            <button
+              type="button"
+              aria-label={isApiKeyRevealed ? t('settings.hideApiKey') : t('settings.showApiKey')}
+              onClick={onApiKeyRevealToggle}
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 hover:bg-[var(--ui-hover)]"
+            >
+              {isApiKeyRevealed ? (
+                <EyeOff className="h-4 w-4 text-text-muted" />
+              ) : (
+                <Eye className="h-4 w-4 text-text-muted" />
+              )}
+            </button>
+          </UiTooltip>
+        </div>
+      </label>
+
+      {manualModelField}
+      <ImageModelSelectionPanel
+        catalog={config.modelCatalog}
+        selectedModelIds={config.selectedModelIds}
+        state={discoveryState}
+        onRefresh={onDiscover}
+        onSelectionChange={(modelId, selected) =>
+          onChange({
+            ...config,
+            selectedModelIds: selected
+              ? Array.from(new Set([...config.selectedModelIds, modelId]))
+              : config.selectedModelIds.filter((id) => id !== modelId),
+          })
+        }
+      />
+    </div>
   );
 }
 
@@ -235,6 +227,7 @@ export function ImageApisSettings({
   const [revealedProviderIds, setRevealedProviderIds] = useState<Set<string>>(() => new Set());
   const [manualModelIds, setManualModelIds] = useState<Record<string, string>>({});
   const [pendingProtocolChange, setPendingProtocolChange] = useState<PendingProtocolChange | null>(null);
+
   const discoveryState = (providerId: string): DiscoveryState =>
     discoveryByProvider[providerId] ?? { isLoading: false, error: null };
 
@@ -365,52 +358,65 @@ export function ImageApisSettings({
     setPendingProtocolChange(null);
   };
 
-  return (
-    <>
-      <ProviderSection
-        providerId="ai-media"
-        title={t('settings.openAiImageApi')}
-        description={t('settings.openAiImageApiDesc')}
-        config={openAiImageApi}
-        discoveryState={discoveryState('ai-media')}
-        isApiKeyRevealed={revealedProviderIds.has('ai-media')}
-        onApiKeyRevealToggle={() => toggleApiKey('ai-media')}
-        onChange={onOpenAiImageApiChange}
-        onDiscover={() => void handleDiscover('ai-media', openAiImageApi, onOpenAiImageApiChange)}
-      />
-      <ProviderSection
-        providerId="chaomo"
-        title={t('settings.chaomoImageApi')}
-        description={t('settings.chaomoImageApiDesc')}
-        config={chaomoImageApi}
-        discoveryState={discoveryState('chaomo')}
-        isApiKeyRevealed={revealedProviderIds.has('chaomo')}
-        onApiKeyRevealToggle={() => toggleApiKey('chaomo')}
-        onChange={onChaomoImageApiChange}
-        onDiscover={() => void handleDiscover('chaomo', chaomoImageApi, onChaomoImageApiChange)}
-      />
+  const entries: ImageProviderEntry[] = [
+    { kind: 'openai', config: openAiImageApi },
+    { kind: 'chaomo', config: chaomoImageApi },
+    ...customImageApis.map((config) => ({ kind: 'custom' as const, config })),
+  ];
 
-      <div className="flex items-center justify-between gap-3 border-b border-[var(--ui-border-soft)] py-4">
-        <div>
-          <h3 className="text-sm font-medium text-text-dark">{t('settings.customImageApis')}</h3>
-          <p className="mt-1 text-xs text-text-muted">{t('settings.customImageApisDesc')}</p>
-        </div>
-        <button
-          type="button"
-          onClick={() => onCustomImageApisChange([...customImageApis, createCustomImageApiConfig()])}
-          className="inline-flex h-8 shrink-0 items-center rounded-md border border-border-dark bg-surface-dark px-3 text-xs text-text-dark transition-colors hover:bg-[var(--ui-hover)]"
-        >
-          <Plus className="mr-1.5 h-3.5 w-3.5" />
-          {t('settings.addCustomImageApi')}
-        </button>
-      </div>
+  const getEntryId = (entry: ImageProviderEntry) =>
+    entry.kind === 'custom' ? entry.config.id : BUILTIN_ENTRY_ID[entry.kind];
 
-      {customImageApis.map((config) => (
-        <ProviderSection
-          key={config.id}
-          providerId={config.id}
-          title={config.name || t('settings.customImageApiUntitled')}
-          description={t('settings.customImageApiDesc')}
+  const getEntryTitle = (entry: ImageProviderEntry) => {
+    if (entry.kind === 'openai') return t('settings.openAiImageApi');
+    if (entry.kind === 'chaomo') return t('settings.chaomoImageApi');
+    return entry.config.name || t('settings.customImageApiUntitled');
+  };
+
+  const getEntrySubtitle = (entry: ImageProviderEntry) =>
+    entry.config.baseUrl || '—';
+
+  const getEntryMeta = (entry: ImageProviderEntry) => {
+    const count = entry.config.selectedModelIds.length;
+    return count > 0 ? t('settings.providerModelsCount', { count }) : undefined;
+  };
+
+  const isEntryBuiltIn = (entry: ImageProviderEntry) => entry.kind !== 'custom';
+
+  const renderDetail = (entry: ImageProviderEntry) => {
+    if (entry.kind === 'openai') {
+      const providerId: ImageProviderId = 'ai-media';
+      return (
+        <ImageDetailForm
+          config={entry.config}
+          discoveryState={discoveryState(providerId)}
+          isApiKeyRevealed={revealedProviderIds.has(providerId)}
+          onApiKeyRevealToggle={() => toggleApiKey(providerId)}
+          onChange={onOpenAiImageApiChange}
+          onDiscover={() => void handleDiscover(providerId, entry.config, onOpenAiImageApiChange)}
+        />
+      );
+    }
+
+    if (entry.kind === 'chaomo') {
+      const providerId: ImageProviderId = 'chaomo';
+      return (
+        <ImageDetailForm
+          config={entry.config}
+          discoveryState={discoveryState(providerId)}
+          isApiKeyRevealed={revealedProviderIds.has(providerId)}
+          onApiKeyRevealToggle={() => toggleApiKey(providerId)}
+          onChange={onChaomoImageApiChange}
+          onDiscover={() => void handleDiscover(providerId, entry.config, onChaomoImageApiChange)}
+        />
+      );
+    }
+
+    const { config } = entry;
+    const protocolDefinition = getCustomImageProtocolDefinition(config.protocol);
+    return (
+      <>
+        <ImageDetailForm
           config={config}
           discoveryState={discoveryState(config.id)}
           isApiKeyRevealed={revealedProviderIds.has(config.id)}
@@ -421,20 +427,6 @@ export function ImageApisSettings({
             config,
             (next) => updateCustomProvider(config.id, next),
             config.protocol
-          )}
-          headerAction={(
-            <UiTooltip content={t('settings.removeCustomImageApi')}>
-              <button
-                type="button"
-                aria-label={t('settings.removeCustomImageApi')}
-                onClick={() => onCustomImageApisChange(
-                  customImageApis.filter((candidate) => candidate.id !== config.id)
-                )}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-red-500/10 hover:text-red-400"
-              >
-                <Trash2 className="h-4 w-4" />
-              </button>
-            </UiTooltip>
           )}
           nameField={(
             <label className="block">
@@ -472,11 +464,11 @@ export function ImageApisSettings({
                 ))}
               </UiSelect>
               <p className="mt-1.5 text-xs leading-5 text-text-muted">
-                {t(getCustomImageProtocolDefinition(config.protocol).summaryKey)}
+                {t(protocolDefinition.summaryKey)}
               </p>
             </label>
           )}
-          baseUrlPlaceholder={getCustomImageProtocolDefinition(config.protocol).baseUrlPlaceholder}
+          baseUrlPlaceholder={protocolDefinition.baseUrlPlaceholder}
           manualModelField={(
             <label className="block">
               <span className="mb-1 block text-xs font-medium text-text-dark">
@@ -495,7 +487,7 @@ export function ImageApisSettings({
                       addManualModel(config);
                     }
                   }}
-                  placeholder={getCustomImageProtocolDefinition(config.protocol).modelIdPlaceholder}
+                  placeholder={protocolDefinition.modelIdPlaceholder}
                   className="min-w-0 flex-1 rounded border border-border-dark bg-surface-dark px-3 py-2 text-sm text-text-dark placeholder:text-text-muted"
                 />
                 <UiTooltip content={t('settings.addCustomImageModel')}>
@@ -512,33 +504,55 @@ export function ImageApisSettings({
             </label>
           )}
         />
-      ))}
+        <UiModal
+          isOpen={Boolean(pendingProtocolChange)}
+          title={t('settings.customImageProtocolChangeTitle')}
+          closeLabel={t('common.close')}
+          onClose={() => setPendingProtocolChange(null)}
+          widthClassName="w-[420px] max-w-[calc(100vw-24px)]"
+          containerClassName="z-[60]"
+          footer={(
+            <>
+              <UiButton size="sm" onClick={() => setPendingProtocolChange(null)}>
+                {t('common.cancel')}
+              </UiButton>
+              <UiButton variant="danger" size="sm" onClick={confirmProtocolChange}>
+                {t('settings.customImageProtocolChangeConfirm')}
+              </UiButton>
+            </>
+          )}
+        >
+          <p className="text-sm leading-6 text-text-muted">
+            {t('settings.customImageProtocolChangeMessage', {
+              protocol: pendingProtocolDefinition ? t(pendingProtocolDefinition.labelKey) : '',
+              count: pendingProtocolProvider?.selectedModelIds.length ?? 0,
+            })}
+          </p>
+        </UiModal>
+      </>
+    );
+  };
 
-      <UiModal
-        isOpen={Boolean(pendingProtocolChange)}
-        title={t('settings.customImageProtocolChangeTitle')}
-        closeLabel={t('common.close')}
-        onClose={() => setPendingProtocolChange(null)}
-        widthClassName="w-[420px] max-w-[calc(100vw-24px)]"
-        containerClassName="z-[60]"
-        footer={(
-          <>
-            <UiButton size="sm" onClick={() => setPendingProtocolChange(null)}>
-              {t('common.cancel')}
-            </UiButton>
-            <UiButton variant="danger" size="sm" onClick={confirmProtocolChange}>
-              {t('settings.customImageProtocolChangeConfirm')}
-            </UiButton>
-          </>
-        )}
-      >
-        <p className="text-sm leading-6 text-text-muted">
-          {t('settings.customImageProtocolChangeMessage', {
-            protocol: pendingProtocolDefinition ? t(pendingProtocolDefinition.labelKey) : '',
-            count: pendingProtocolProvider?.selectedModelIds.length ?? 0,
-          })}
-        </p>
-      </UiModal>
-    </>
+  return (
+    <ProviderListShell<ImageProviderEntry>
+      items={entries}
+      getItemId={getEntryId}
+      getItemTitle={getEntryTitle}
+      getItemSubtitle={getEntrySubtitle}
+      getItemMeta={getEntryMeta}
+      isBuiltIn={isEntryBuiltIn}
+      onAdd={() => {
+        const config = createCustomImageApiConfig();
+        onCustomImageApisChange([...customImageApis, config]);
+        return config.id;
+      }}
+      onRemove={(id) => onCustomImageApisChange(
+        customImageApis.filter((config) => config.id !== id)
+      )}
+      renderDetail={renderDetail}
+      addLabel={t('settings.addCustomImageApi')}
+      removeLabel={t('settings.removeCustomImageApi')}
+      emptyLabel={t('settings.noCustomImageApisConfigured')}
+    />
   );
 }

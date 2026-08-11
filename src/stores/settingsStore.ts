@@ -20,6 +20,8 @@ import {
 } from '@/features/canvas/domain/canvasNodes';
 import {
   DEFAULT_CUSTOM_IMAGE_PROTOCOL,
+  FHL_IMAGE_DEFAULT_BASE_URL,
+  isFhlImageBaseUrl,
   normalizeCustomImageProtocol,
   type CustomImageProtocol,
 } from '@/features/canvas/models/imageProviderProtocols';
@@ -601,18 +603,32 @@ function normalizeCustomImageApiConfigs(input: unknown): CustomImageApiConfig[] 
     seenIds.add(id);
 
     const name = typeof record.name === 'string' ? record.name.trim() : '';
-    const baseUrl = typeof record.baseUrl === 'string' ? record.baseUrl.trim() : '';
+    const protocol = normalizeCustomImageProtocol(record.protocol);
+    const configuredBaseUrl = typeof record.baseUrl === 'string' ? record.baseUrl.trim() : '';
+    const baseUrl = protocol === 'fhl-images' && !configuredBaseUrl
+      ? FHL_IMAGE_DEFAULT_BASE_URL
+      : configuredBaseUrl;
     const modelCatalog = normalizeImageModelCatalog(record.modelCatalog);
     return [{
       id,
       name,
-      protocol: normalizeCustomImageProtocol(record.protocol),
+      protocol,
       apiKey: normalizeApiKey(typeof record.apiKey === 'string' ? record.apiKey : ''),
       baseUrl,
       modelCatalog,
       selectedModelIds: normalizeSelectedModelIds(record.selectedModelIds, modelCatalog),
     }];
   });
+}
+
+function migrateLegacyFhlImageApiConfigs(
+  configs: CustomImageApiConfig[]
+): CustomImageApiConfig[] {
+  return configs.map((config) => (
+    config.protocol === 'openai-images' && isFhlImageBaseUrl(config.baseUrl)
+      ? { ...config, protocol: 'fhl-images' }
+      : config
+  ));
 }
 
 function normalizeImageModelSelection(input: unknown): ImageModelSelection | null {
@@ -815,6 +831,10 @@ export function migrateSettingsState(persistedState: unknown, persistedVersion: 
   } = state;
 
   const textApis = normalizeTextApiConfigs(state.textApis);
+  const normalizedCustomImageApis = normalizeCustomImageApiConfigs(state.customImageApis);
+  const customImageApis = persistedVersion < 28
+    ? migrateLegacyFhlImageApiConfigs(normalizedCustomImageApis)
+    : normalizedCustomImageApis;
   const legacyImagePolishConfig = createLegacyImagePolishConfig(
     textApis,
     legacyTextPolishReasoningEffort,
@@ -830,7 +850,7 @@ export function migrateSettingsState(persistedState: unknown, persistedVersion: 
     isHydrated: true,
     openAiImageApi: normalizeOpenAiImageApiConfig(state.openAiImageApi),
     chaomoImageApi: normalizeChaomoImageApiConfig(state.chaomoImageApi),
-    customImageApis: normalizeCustomImageApiConfigs(state.customImageApis),
+    customImageApis,
     canvasEdgeRoutingMode: normalizeCanvasEdgeRoutingMode(state.canvasEdgeRoutingMode),
     accentColor: migrateAccentColor(state.accentColor),
     ...(persistedVersion < 22 && (state.snapGridSize === 20 || state.snapGridSize === 36)
@@ -975,7 +995,7 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: 'settings-storage',
-      version: 27,
+      version: 28,
       onRehydrateStorage: () => {
         return (_state, error) => {
           if (error) {

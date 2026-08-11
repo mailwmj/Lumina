@@ -1,6 +1,7 @@
 import { OPENAI_IMAGE_PROVIDER_ID } from './providers/openai';
 
 export const FHL_IMAGE_PROVIDER_ID = 'fhl';
+export const FHL_IMAGE_DEFAULT_BASE_URL = 'https://www.fhl.mom';
 export const CUSTOM_IMAGE_PROTOCOLS = ['openai-images', 'fhl-images', 'gemini-native'] as const;
 export type CustomImageProtocol = (typeof CUSTOM_IMAGE_PROTOCOLS)[number];
 
@@ -33,7 +34,7 @@ const CUSTOM_IMAGE_PROTOCOL_DEFINITIONS: Record<
     backendProviderId: FHL_IMAGE_PROVIDER_ID,
     labelKey: 'settings.customImageProtocolFhlImages',
     summaryKey: 'settings.customImageProtocolFhlImagesSummary',
-    baseUrlPlaceholder: 'https://www.fhl.mom',
+    baseUrlPlaceholder: FHL_IMAGE_DEFAULT_BASE_URL,
     modelIdPlaceholder: 'gpt-image-2',
   },
   'gemini-native': {
@@ -63,13 +64,25 @@ export function getCustomImageProtocolDefinition(
   return CUSTOM_IMAGE_PROTOCOL_DEFINITIONS[protocol];
 }
 
+export function isFhlImageBaseUrl(baseUrl: string): boolean {
+  try {
+    const hostname = new URL(baseUrl.trim()).hostname.toLowerCase();
+    return hostname === 'www.fhl.mom' || hostname === 'fhl.mom';
+  } catch {
+    return false;
+  }
+}
+
 export function migrateCustomImageBaseUrlForProtocolChange(
   baseUrl: string,
   fromProtocol: CustomImageProtocol,
   toProtocol: CustomImageProtocol
 ): string {
   const trimmed = baseUrl.trim();
-  if (!trimmed || fromProtocol === toProtocol) {
+  if (!trimmed) {
+    return toProtocol === 'fhl-images' ? FHL_IMAGE_DEFAULT_BASE_URL : trimmed;
+  }
+  if (fromProtocol === toProtocol) {
     return trimmed;
   }
 

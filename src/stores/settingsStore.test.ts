@@ -93,6 +93,63 @@ describe('prompt polishing settings', () => {
     expect(migrated.customImageApis[0]?.protocol).toBe('openai-images');
   });
 
+  it('upgrades legacy FHL providers without changing their configured identity or models', () => {
+    const providerId = 'custom-openai:fhl';
+    const modelId = `${providerId}/gpt-image-2`;
+    const migrated = migrateSettingsState({
+      customImageApis: [{
+        id: providerId,
+        name: 'fhl',
+        protocol: 'openai-images',
+        apiKey: 'key',
+        baseUrl: 'https://www.fhl.mom/v1',
+        modelCatalog: {
+          models: [{ id: modelId }],
+          refreshedAt: 1,
+        },
+        selectedModelIds: [modelId],
+      }],
+      lastImageModelSelection: { providerId, modelId },
+    }, 27) as {
+      customImageApis: Array<{
+        id: string;
+        protocol: string;
+        apiKey: string;
+        baseUrl: string;
+        selectedModelIds: string[];
+      }>;
+      lastImageModelSelection: { providerId: string; modelId: string } | null;
+    };
+
+    expect(migrated.customImageApis).toHaveLength(1);
+    expect(migrated.customImageApis[0]).toMatchObject({
+      id: providerId,
+      protocol: 'fhl-images',
+      apiKey: 'key',
+      baseUrl: 'https://www.fhl.mom/v1',
+      selectedModelIds: [modelId],
+    });
+    expect(migrated.lastImageModelSelection).toEqual({ providerId, modelId });
+  });
+
+  it('fills the default endpoint for persisted FHL configurations', () => {
+    const migrated = migrateSettingsState({
+      customImageApis: [{
+        id: 'custom-openai:fhl',
+        name: 'FHL',
+        protocol: 'fhl-images',
+        apiKey: 'key',
+        baseUrl: '',
+        modelCatalog: null,
+        selectedModelIds: [],
+      }],
+    }, 27) as {
+      customImageApis: Array<{ baseUrl: string }>;
+    };
+
+    expect(migrated.customImageApis[0]?.baseUrl).toBe('https://www.fhl.mom');
+  });
+
   it('keeps only valid persisted image-generation defaults', () => {
     const migrated = migrateSettingsState({
       lastImageGenerationOptions: {

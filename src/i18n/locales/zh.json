@@ -48,6 +48,7 @@
     "details": "详情",
     "hideDetails": "收起详情",
     "close": "关闭",
+    "back": "返回",
     "loading": "加载中...",
     "error": "错误",
     "success": "成功"
@@ -498,6 +499,9 @@
     "imageModelsFetching": "获取中",
     "imageModelsEmpty": "尚未获取到模型",
     "imageModelsFetchFailed": "获取模型失败",
+    "providerBuiltIn": "内置",
+    "providerModelsCount": "{{count}} 个模型",
+    "noCustomImageApisConfigured": "暂无自定义 Provider，点击右上角添加",
     "customImageApis": "自定义 Provider",
     "customImageApisDesc": "添加第三方图片 Provider，并选择其 API 协议。",
     "addCustomImageApi": "添加 Provider",
