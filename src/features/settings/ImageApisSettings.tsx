@@ -3,8 +3,13 @@ import { Eye, EyeOff, Loader2, Plus, Trash2 } from '@/components/ui/icons';
 import { useTranslation } from 'react-i18next';
 
 import { discoverImageModels } from '@/commands/ai';
-import { UiCheckbox, UiTooltip } from '@/components/ui';
+import { UiButton, UiCheckbox, UiModal, UiSelect, UiTooltip } from '@/components/ui';
 import { toConfiguredImageModelId } from '@/features/canvas/models';
+import {
+  CUSTOM_IMAGE_PROTOCOLS,
+  getCustomImageProtocolDefinition,
+  type CustomImageProtocol,
+} from '@/features/canvas/models/imageProviderProtocols';
 import {
   createCustomImageApiConfig,
   isCustomImageProviderId,
@@ -28,6 +33,11 @@ interface ImageApisSettingsProps {
 interface DiscoveryState {
   isLoading: boolean;
   error: string | null;
+}
+
+interface PendingProtocolChange {
+  providerId: string;
+  protocol: CustomImageProtocol;
 }
 
 interface ImageModelSelectionPanelProps {
@@ -106,7 +116,9 @@ interface ProviderSectionProps<TConfig extends ImageProviderApiConfig> {
   onDiscover: () => void;
   headerAction?: ReactNode;
   nameField?: ReactNode;
+  protocolField?: ReactNode;
   manualModelField?: ReactNode;
+  baseUrlPlaceholder?: string;
 }
 
 function ProviderSection<TConfig extends ImageProviderApiConfig>({
@@ -120,7 +132,9 @@ function ProviderSection<TConfig extends ImageProviderApiConfig>({
   onDiscover,
   headerAction,
   nameField,
+  protocolField,
   manualModelField,
+  baseUrlPlaceholder = 'https://api.example.com/v1',
 }: ProviderSectionProps<TConfig>) {
   const { t } = useTranslation();
   const updateConnection = (patch: Partial<Pick<TConfig, 'apiKey' | 'baseUrl'>>) => {
@@ -144,6 +158,7 @@ function ProviderSection<TConfig extends ImageProviderApiConfig>({
 
       <div className="space-y-3">
         {nameField}
+        {protocolField}
         <label className="block">
           <span className="mb-1 block text-xs font-medium text-text-dark">
             {t('settings.openAiImageBaseUrl')}
@@ -152,7 +167,7 @@ function ProviderSection<TConfig extends ImageProviderApiConfig>({
             type="url"
             value={config.baseUrl}
             onChange={(event) => updateConnection({ baseUrl: event.target.value })}
-            placeholder="https://api.example.com/v1"
+            placeholder={baseUrlPlaceholder}
             className="w-full rounded border border-border-dark bg-surface-dark px-3 py-2 text-sm text-text-dark placeholder:text-text-muted"
           />
         </label>
@@ -218,6 +233,7 @@ export function ImageApisSettings({
   const [discoveryByProvider, setDiscoveryByProvider] = useState<Record<string, DiscoveryState>>({});
   const [revealedProviderIds, setRevealedProviderIds] = useState<Set<string>>(() => new Set());
   const [manualModelIds, setManualModelIds] = useState<Record<string, string>>({});
+  const [pendingProtocolChange, setPendingProtocolChange] = useState<PendingProtocolChange | null>(null);
   const discoveryState = (providerId: string): DiscoveryState =>
     discoveryByProvider[providerId] ?? { isLoading: false, error: null };
 
@@ -233,7 +249,8 @@ export function ImageApisSettings({
   const handleDiscover = useCallback(async <TConfig extends ImageProviderApiConfig>(
     providerId: ImageProviderId,
     config: TConfig,
-    onChange: (next: TConfig) => void
+    onChange: (next: TConfig) => void,
+    protocol?: CustomImageProtocol
   ) => {
     setDiscoveryByProvider((current) => ({
       ...current,
@@ -244,10 +261,11 @@ export function ImageApisSettings({
         provider_id: providerId,
         base_url: config.baseUrl,
         api_key: config.apiKey,
+        ...(protocol ? { protocol } : {}),
       });
       const modelCatalog: ImageModelCatalog = {
         models: models.map((model) => ({
-          id: toConfiguredImageModelId(providerId, model.id),
+          id: toConfiguredImageModelId(providerId, model.id, protocol),
           ...(model.label || isCustomImageProviderId(providerId)
             ? { label: model.label || model.id }
             : {}),
@@ -283,10 +301,35 @@ export function ImageApisSettings({
     ));
   };
 
+  const applyCustomProtocol = (config: CustomImageApiConfig, protocol: CustomImageProtocol) => {
+    updateCustomProvider(config.id, {
+      ...config,
+      protocol,
+      modelCatalog: null,
+      selectedModelIds: [],
+    });
+  };
+
+  const requestCustomProtocolChange = (
+    config: CustomImageApiConfig,
+    protocol: CustomImageProtocol
+  ) => {
+    if (protocol === config.protocol) {
+      return;
+    }
+
+    if (config.selectedModelIds.length > 0) {
+      setPendingProtocolChange({ providerId: config.id, protocol });
+      return;
+    }
+
+    applyCustomProtocol(config, protocol);
+  };
+
   const addManualModel = (config: CustomImageApiConfig) => {
     const rawModelId = manualModelIds[config.id]?.trim();
     if (!rawModelId) return;
-    const modelId = toConfiguredImageModelId(config.id, rawModelId);
+    const modelId = toConfiguredImageModelId(config.id, rawModelId, config.protocol);
     const existingModels = config.modelCatalog?.models ?? [];
     const modelCatalog: ImageModelCatalog = {
       models: existingModels.some((model) => model.id === modelId)
@@ -300,6 +343,20 @@ export function ImageApisSettings({
       selectedModelIds: Array.from(new Set([...config.selectedModelIds, modelId])),
     });
     setManualModelIds((current) => ({ ...current, [config.id]: '' }));
+  };
+
+  const pendingProtocolProvider = pendingProtocolChange
+    ? customImageApis.find((config) => config.id === pendingProtocolChange.providerId)
+    : undefined;
+  const pendingProtocolDefinition = pendingProtocolChange
+    ? getCustomImageProtocolDefinition(pendingProtocolChange.protocol)
+    : undefined;
+
+  const confirmProtocolChange = () => {
+    if (pendingProtocolChange && pendingProtocolProvider) {
+      applyCustomProtocol(pendingProtocolProvider, pendingProtocolChange.protocol);
+    }
+    setPendingProtocolChange(null);
   };
 
   return (
@@ -356,7 +413,8 @@ export function ImageApisSettings({
           onDiscover={() => void handleDiscover(
             config.id,
             config,
-            (next) => updateCustomProvider(config.id, next)
+            (next) => updateCustomProvider(config.id, next),
+            config.protocol
           )}
           headerAction={(
             <UiTooltip content={t('settings.removeCustomImageApi')}>
@@ -388,6 +446,31 @@ export function ImageApisSettings({
               />
             </label>
           )}
+          protocolField={(
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-text-dark">
+                {t('settings.customImageProtocol')}
+              </span>
+              <UiSelect
+                value={config.protocol}
+                onChange={(event) => requestCustomProtocolChange(
+                  config,
+                  event.target.value as CustomImageProtocol
+                )}
+                className="h-9 w-full text-sm"
+              >
+                {CUSTOM_IMAGE_PROTOCOLS.map((protocol) => (
+                  <option key={protocol} value={protocol}>
+                    {t(getCustomImageProtocolDefinition(protocol).labelKey)}
+                  </option>
+                ))}
+              </UiSelect>
+              <p className="mt-1.5 text-xs leading-5 text-text-muted">
+                {t(getCustomImageProtocolDefinition(config.protocol).summaryKey)}
+              </p>
+            </label>
+          )}
+          baseUrlPlaceholder={getCustomImageProtocolDefinition(config.protocol).baseUrlPlaceholder}
           manualModelField={(
             <label className="block">
               <span className="mb-1 block text-xs font-medium text-text-dark">
@@ -406,7 +489,7 @@ export function ImageApisSettings({
                       addManualModel(config);
                     }
                   }}
-                  placeholder="gpt-image-1"
+                  placeholder={getCustomImageProtocolDefinition(config.protocol).modelIdPlaceholder}
                   className="min-w-0 flex-1 rounded border border-border-dark bg-surface-dark px-3 py-2 text-sm text-text-dark placeholder:text-text-muted"
                 />
                 <UiTooltip content={t('settings.addCustomImageModel')}>
@@ -424,6 +507,32 @@ export function ImageApisSettings({
           )}
         />
       ))}
+
+      <UiModal
+        isOpen={Boolean(pendingProtocolChange)}
+        title={t('settings.customImageProtocolChangeTitle')}
+        closeLabel={t('common.close')}
+        onClose={() => setPendingProtocolChange(null)}
+        widthClassName="w-[420px] max-w-[calc(100vw-24px)]"
+        containerClassName="z-[60]"
+        footer={(
+          <>
+            <UiButton size="sm" onClick={() => setPendingProtocolChange(null)}>
+              {t('common.cancel')}
+            </UiButton>
+            <UiButton variant="danger" size="sm" onClick={confirmProtocolChange}>
+              {t('settings.customImageProtocolChangeConfirm')}
+            </UiButton>
+          </>
+        )}
+      >
+        <p className="text-sm leading-6 text-text-muted">
+          {t('settings.customImageProtocolChangeMessage', {
+            protocol: pendingProtocolDefinition ? t(pendingProtocolDefinition.labelKey) : '',
+            count: pendingProtocolProvider?.selectedModelIds.length ?? 0,
+          })}
+        </p>
+      </UiModal>
     </>
   );
 }

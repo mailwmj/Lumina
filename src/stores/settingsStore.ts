@@ -11,6 +11,18 @@ import {
   TEXT_REASONING_EFFORTS,
   type TextReasoningEffort,
 } from '@/features/canvas/models/types';
+import {
+  IMAGE_OUTPUT_COUNTS,
+  IMAGE_SIZES,
+  type ImageOutputCount,
+  type ImageSize,
+  type StoryboardRatioControlMode,
+} from '@/features/canvas/domain/canvasNodes';
+import {
+  DEFAULT_CUSTOM_IMAGE_PROTOCOL,
+  normalizeCustomImageProtocol,
+  type CustomImageProtocol,
+} from '@/features/canvas/models/imageProviderProtocols';
 
 export type CanvasEdgeRoutingMode = 'spline' | 'orthogonal' | 'smartOrthogonal';
 export type BuiltInImageProviderId = 'ai-media' | 'chaomo';
@@ -35,6 +47,30 @@ export interface ImageModelSelection {
   providerId: string;
   modelId: string;
 }
+
+export type ImageGenerationExtraParamValue = boolean | number | string;
+
+/**
+ * User-level defaults applied only when a new image or storyboard generation
+ * node is created. Prompt, references, frames, and generated assets remain
+ * node-local creative content.
+ */
+export interface LastImageGenerationOptions {
+  size?: ImageSize;
+  requestAspectRatio?: string;
+  outputCount?: ImageOutputCount;
+  extraParams?: Record<string, ImageGenerationExtraParamValue>;
+  storyboardGridRows?: number;
+  storyboardGridCols?: number;
+  storyboardRatioControlMode?: StoryboardRatioControlMode;
+}
+
+export type LastImageGenerationOptionsPatch = Omit<
+  Partial<LastImageGenerationOptions>,
+  'extraParams'
+> & {
+  extraParams?: Record<string, unknown>;
+};
 
 export interface TextGenerationModelSelection {
   apiId: string;
@@ -66,6 +102,7 @@ export type ChaomoImageApiConfig = ImageProviderApiConfig;
 export interface CustomImageApiConfig extends ImageProviderApiConfig {
   id: CustomImageProviderId;
   name: string;
+  protocol: CustomImageProtocol;
 }
 
 export function isCustomImageProviderId(providerId: string): providerId is CustomImageProviderId {
@@ -79,6 +116,7 @@ export function createCustomImageApiConfig(
   return {
     id,
     name: '',
+    protocol: DEFAULT_CUSTOM_IMAGE_PROTOCOL,
     apiKey: '',
     baseUrl: '',
     modelCatalog: null,
@@ -390,11 +428,13 @@ interface SettingsState {
   videoApis: VideoApiConfig[];
   activeVideoApiId: string | null;
   lastImageModelSelection: ImageModelSelection | null;
+  lastImageGenerationOptions: LastImageGenerationOptions;
   lastTextGenerationModelSelection: TextGenerationModelSelection | null;
   setOpenAiImageApi: (config: OpenAiImageApiConfig) => void;
   setChaomoImageApi: (config: ChaomoImageApiConfig) => void;
   setCustomImageApis: (configs: CustomImageApiConfig[]) => void;
   setLastImageModelSelection: (selection: ImageModelSelection | null) => void;
+  updateLastImageGenerationOptions: (options: LastImageGenerationOptionsPatch) => void;
   setLastTextGenerationModelSelection: (
     selection: TextGenerationModelSelection | null
   ) => void;
@@ -566,6 +606,7 @@ function normalizeCustomImageApiConfigs(input: unknown): CustomImageApiConfig[] 
     return [{
       id,
       name,
+      protocol: normalizeCustomImageProtocol(record.protocol),
       apiKey: normalizeApiKey(typeof record.apiKey === 'string' ? record.apiKey : ''),
       baseUrl,
       modelCatalog,
@@ -590,6 +631,76 @@ function normalizeImageModelSelection(input: unknown): ImageModelSelection | nul
     return null;
   }
   return { providerId, modelId };
+}
+
+function normalizeImageGenerationExtraParams(
+  input: unknown
+): Record<string, ImageGenerationExtraParamValue> | undefined {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    return undefined;
+  }
+
+  const normalized: Record<string, ImageGenerationExtraParamValue> = {};
+  Object.entries(input as Record<string, unknown>).forEach(([key, value]) => {
+    const normalizedKey = key.trim();
+    if (!normalizedKey) {
+      return;
+    }
+    if (
+      typeof value === 'boolean'
+      || (typeof value === 'number' && Number.isFinite(value))
+      || typeof value === 'string'
+    ) {
+      normalized[normalizedKey] = value;
+    }
+  });
+  return normalized;
+}
+
+export function normalizeLastImageGenerationOptions(input: unknown): LastImageGenerationOptions {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    return {};
+  }
+
+  const record = input as Record<string, unknown>;
+  const size = typeof record.size === 'string' && (IMAGE_SIZES as readonly string[]).includes(record.size)
+    ? record.size as ImageSize
+    : undefined;
+  const requestAspectRatio = typeof record.requestAspectRatio === 'string'
+    && record.requestAspectRatio.trim()
+    ? record.requestAspectRatio.trim()
+    : undefined;
+  const outputCount = typeof record.outputCount === 'number'
+    && (IMAGE_OUTPUT_COUNTS as readonly number[]).includes(record.outputCount)
+    ? record.outputCount as ImageOutputCount
+    : undefined;
+  const storyboardGridRows = typeof record.storyboardGridRows === 'number'
+    && Number.isInteger(record.storyboardGridRows)
+    && record.storyboardGridRows >= 1
+    && record.storyboardGridRows <= 9
+    ? record.storyboardGridRows
+    : undefined;
+  const storyboardGridCols = typeof record.storyboardGridCols === 'number'
+    && Number.isInteger(record.storyboardGridCols)
+    && record.storyboardGridCols >= 1
+    && record.storyboardGridCols <= 9
+    ? record.storyboardGridCols
+    : undefined;
+  const storyboardRatioControlMode = record.storyboardRatioControlMode === 'overall'
+    || record.storyboardRatioControlMode === 'cell'
+    ? record.storyboardRatioControlMode
+    : undefined;
+  const extraParams = normalizeImageGenerationExtraParams(record.extraParams);
+
+  return {
+    ...(size ? { size } : {}),
+    ...(requestAspectRatio ? { requestAspectRatio } : {}),
+    ...(outputCount !== undefined ? { outputCount } : {}),
+    ...(extraParams ? { extraParams } : {}),
+    ...(storyboardGridRows !== undefined ? { storyboardGridRows } : {}),
+    ...(storyboardGridCols !== undefined ? { storyboardGridCols } : {}),
+    ...(storyboardRatioControlMode ? { storyboardRatioControlMode } : {}),
+  };
 }
 
 function normalizeTextGenerationModelSelection(
@@ -684,6 +795,7 @@ export function migrateSettingsState(persistedState: unknown, persistedVersion: 
     videoApis?: VideoApiConfig[];
     activeVideoApiId?: string | null;
     lastImageModelSelection?: ImageModelSelection | null;
+    lastImageGenerationOptions?: LastImageGenerationOptions;
     lastTextGenerationModelSelection?: TextGenerationModelSelection | null;
     accentColor?: unknown;
   };
@@ -739,6 +851,9 @@ export function migrateSettingsState(persistedState: unknown, persistedVersion: 
     videoApis: mergeVideoApis(state.videoApis),
     activeVideoApiId: state.activeVideoApiId ?? null,
     lastImageModelSelection: normalizeImageModelSelection(state.lastImageModelSelection),
+    lastImageGenerationOptions: normalizeLastImageGenerationOptions(
+      state.lastImageGenerationOptions
+    ),
     lastTextGenerationModelSelection: normalizeTextGenerationModelSelection(
       state.lastTextGenerationModelSelection
     ),
@@ -840,6 +955,14 @@ export const useSettingsStore = create<SettingsState>()(
       lastImageModelSelection: null,
       setLastImageModelSelection: (selection) =>
         set({ lastImageModelSelection: normalizeImageModelSelection(selection) }),
+      lastImageGenerationOptions: {},
+      updateLastImageGenerationOptions: (options) =>
+        set((state) => ({
+          lastImageGenerationOptions: {
+            ...state.lastImageGenerationOptions,
+            ...normalizeLastImageGenerationOptions(options),
+          },
+        })),
       lastTextGenerationModelSelection: null,
       setLastTextGenerationModelSelection: (selection) => set({
         lastTextGenerationModelSelection: normalizeTextGenerationModelSelection(selection),
@@ -852,7 +975,7 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: 'settings-storage',
-      version: 25,
+      version: 27,
       onRehydrateStorage: () => {
         return (_state, error) => {
           if (error) {

@@ -142,6 +142,9 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
   const customImageApis = useSettingsStore((state) => state.customImageApis);
   const lastImageModelSelection = useSettingsStore((state) => state.lastImageModelSelection);
   const setLastImageModelSelection = useSettingsStore((state) => state.setLastImageModelSelection);
+  const updateLastImageGenerationOptions = useSettingsStore(
+    (state) => state.updateLastImageGenerationOptions
+  );
   const textApis = useSettingsStore((state) => state.textApis);
   const imagePolishConfig = useSettingsStore((state) => state.imagePolishConfig);
   const selectedPolishModel = useMemo(
@@ -672,26 +675,34 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
               setLastImageModelSelection({ providerId: model.providerId, modelId });
             }}
             onResolutionChange={(resolution) => {
-              updateNodeData(id, { size: resolution as ImageSize });
+              const size = resolution as ImageSize;
+              updateNodeData(id, { size });
+              updateLastImageGenerationOptions({ size });
             }
             }
             onAspectRatioChange={(aspectRatio) => {
               updateNodeData(id, { requestAspectRatio: aspectRatio });
+              updateLastImageGenerationOptions({ requestAspectRatio: aspectRatio });
             }
             }
             outputCount={outputCount}
             onOutputCountChange={(nextOutputCount) => {
               updateNodeData(id, { outputCount: nextOutputCount });
+              updateLastImageGenerationOptions({ outputCount: nextOutputCount });
             }}
             extraParams={data.extraParams}
-            onExtraParamChange={(key, value) =>
+            onExtraParamChange={(key, value) => {
+              const extraParams = {
+                ...(data.extraParams ?? {}),
+                [key]: value,
+              };
               updateNodeData(id, {
                 extraParams: {
-                  ...(data.extraParams ?? {}),
-                  [key]: value,
+                  ...extraParams,
                 },
-              })
-            }
+              });
+              updateLastImageGenerationOptions({ extraParams });
+            }}
             triggerSize="sm"
             chipClassName={NODE_CONTROL_CHIP_CLASS}
             modelChipClassName={NODE_CONTROL_MODEL_CHIP_CLASS}

@@ -8,6 +8,7 @@ import {
   CHAOMO_IMAGE_PROVIDER_ID,
   OPENAI_IMAGE_PROVIDER_ID,
 } from '@/features/canvas/models/providers/openai';
+import { getCustomImageProtocolDefinition } from '@/features/canvas/models/imageProviderProtocols';
 
 interface ImageProviderSettings {
   openAiImageApi: OpenAiImageApiConfig;
@@ -49,7 +50,7 @@ export function resolveImageProviderRuntime(
   if (customProvider) {
     return {
       apiKey: customProvider.apiKey,
-      backendProviderId: OPENAI_IMAGE_PROVIDER_ID,
+      backendProviderId: getCustomImageProtocolDefinition(customProvider.protocol).backendProviderId,
       providerConfig: {
         base_url: customProvider.baseUrl,
         api_key: customProvider.apiKey,

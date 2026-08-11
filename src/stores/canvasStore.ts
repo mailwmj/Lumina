@@ -110,8 +110,41 @@ function applyNodeModelDefaults(
   }
 
   const settings = useSettingsStore.getState();
+  const rememberedOptions = settings.lastImageGenerationOptions;
   const selectedModel = resolveConfiguredImageModel(settings, undefined);
-  return selectedModel ? { ...data, model: selectedModel.id } : data;
+  const commonData = {
+    ...(rememberedOptions.size ? { size: rememberedOptions.size } : {}),
+    ...(rememberedOptions.requestAspectRatio
+      ? { requestAspectRatio: rememberedOptions.requestAspectRatio }
+      : {}),
+    ...(rememberedOptions.extraParams
+      ? { extraParams: { ...rememberedOptions.extraParams } }
+      : {}),
+  };
+  const typeSpecificData = type === CANVAS_NODE_TYPES.imageEdit
+    ? {
+      ...(rememberedOptions.outputCount !== undefined
+        ? { outputCount: rememberedOptions.outputCount }
+        : {}),
+    }
+    : {
+      ...(rememberedOptions.storyboardGridRows !== undefined
+        ? { gridRows: rememberedOptions.storyboardGridRows }
+        : {}),
+      ...(rememberedOptions.storyboardGridCols !== undefined
+        ? { gridCols: rememberedOptions.storyboardGridCols }
+        : {}),
+      ...(rememberedOptions.storyboardRatioControlMode
+        ? { ratioControlMode: rememberedOptions.storyboardRatioControlMode }
+        : {}),
+    };
+
+  return {
+    ...commonData,
+    ...typeSpecificData,
+    ...data,
+    ...(selectedModel ? { model: selectedModel.id } : {}),
+  } as Partial<CanvasNodeData>;
 }
 
 interface CanvasState {

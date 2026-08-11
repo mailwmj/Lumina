@@ -27,8 +27,12 @@ async function normalizeReferenceImages(payload: GenerateImagePayload): Promise<
   const isFalModel = payload.model.startsWith('fal/');
   const isRunninghubModel = payload.model.startsWith('runninghub/');
   const isOpenAiModel = payload.model.startsWith('openai/');
+  const isGeminiNativeImageModel = payload.model.startsWith('gemini/');
   const isOpenAiCompatibleImageModel =
-    isOpenAiModel || payload.model.startsWith('ai-media/') || payload.model.startsWith('chaomo/');
+    isOpenAiModel
+    || isGeminiNativeImageModel
+    || payload.model.startsWith('ai-media/')
+    || payload.model.startsWith('chaomo/');
   // Video models need HTTP public URLs - if local path, upload to VOD
   // Check both volcvideo/ prefix and doubao-seedance model name (for compatibility with stored model values without prefix)
   const isVideoModel = payload.model.startsWith('volcvideo/') || payload.model.includes('doubao-seedance');

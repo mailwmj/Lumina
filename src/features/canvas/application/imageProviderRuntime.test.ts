@@ -18,6 +18,7 @@ const settings = {
   customImageApis: [{
     id: 'custom-openai:internal' as const,
     name: 'Internal Gateway',
+    protocol: 'openai-images' as const,
     apiKey: 'custom-key',
     baseUrl: 'https://gateway.example/v1',
     modelCatalog: null,
@@ -45,6 +46,26 @@ describe('image provider runtime', () => {
       backendProviderId: 'openai',
       providerConfig: {
         base_url: 'https://gateway.example/v1',
+        api_key: 'custom-key',
+      },
+    });
+  });
+
+  it('routes Gemini Native custom providers through the Gemini backend', () => {
+    const geminiSettings = {
+      ...settings,
+      customImageApis: [{
+        ...settings.customImageApis[0],
+        protocol: 'gemini-native' as const,
+        baseUrl: 'https://gateway.example/v1beta',
+      }],
+    };
+
+    expect(resolveImageProviderRuntime('custom-openai:internal', geminiSettings)).toEqual({
+      apiKey: 'custom-key',
+      backendProviderId: 'gemini',
+      providerConfig: {
+        base_url: 'https://gateway.example/v1beta',
         api_key: 'custom-key',
       },
     });

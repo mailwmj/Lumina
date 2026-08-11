@@ -5,10 +5,19 @@ import type {
   ImageModelSelection,
   OpenAiImageApiConfig,
 } from '@/stores/settingsStore';
+import {
+  DEFAULT_CUSTOM_IMAGE_PROTOCOL,
+  normalizeCustomImageRemoteModelId,
+  toCustomImageRequestModel,
+  type CustomImageProtocol,
+} from './imageProviderProtocols';
 
 import type { ImageModelDefinition } from './types';
 import { findImageModel, listImageModels, resolveImageModelIdAlias } from './registry';
-import { OPENAI_IMAGE_PROVIDER_ID } from './providers/openai';
+import {
+  CUSTOM_IMAGE_PROVIDER_ID_PREFIX,
+  isCustomImageProviderId,
+} from '@/stores/settingsStore';
 
 const GENERIC_ASPECT_RATIOS = ['1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3'] as const;
 const GENERIC_RESOLUTIONS = ['1K', '2K', '4K'] as const;
@@ -55,7 +64,8 @@ function createGenericImageModel(
   providerId: string,
   providerName: string | undefined,
   modelId: string,
-  requestModel = modelId
+  requestModel = modelId,
+  description = 'OpenAI-compatible image model'
 ): ImageModelDefinition {
   return {
     id: modelId,
@@ -63,7 +73,7 @@ function createGenericImageModel(
     displayName: modelId.replace(`${providerId}/`, ''),
     providerId,
     ...(providerName ? { providerName } : {}),
-    description: 'OpenAI-compatible image model',
+    description,
     eta: '1min',
     expectedDurationMs: 60000,
     defaultAspectRatio: '1:1',
@@ -80,7 +90,8 @@ function createGenericImageModel(
 function resolveConfiguredModel(
   providerId: ImageProviderId,
   modelId: string,
-  providerName?: string
+  providerName?: string,
+  protocol: CustomImageProtocol = DEFAULT_CUSTOM_IMAGE_PROTOCOL
 ): ImageModelDefinition {
   const resolvedId = resolveImageModelIdAlias(modelId);
   const registeredModel = findImageModel(resolvedId);
@@ -92,19 +103,29 @@ function resolveConfiguredModel(
     return createGenericImageModel(providerId, providerName, resolvedId);
   }
 
-  const remoteModelId = resolvedId.startsWith(`${providerId}/`)
+  const configuredModelId = resolvedId.startsWith(`${providerId}/`)
     ? resolvedId.slice(providerId.length + 1)
     : resolvedId;
+  const remoteModelId = normalizeCustomImageRemoteModelId(protocol, configuredModelId);
   return createGenericImageModel(
     providerId,
     providerName,
     resolvedId,
-    `${OPENAI_IMAGE_PROVIDER_ID}/${remoteModelId}`
+    toCustomImageRequestModel(protocol, remoteModelId),
+    protocol === 'gemini-native'
+      ? 'Gemini native image model'
+      : 'OpenAI-compatible image model'
   );
 }
 
-export function toConfiguredImageModelId(providerId: ImageProviderId, modelId: string): string {
-  const trimmed = modelId.trim();
+export function toConfiguredImageModelId(
+  providerId: ImageProviderId,
+  modelId: string,
+  protocol: CustomImageProtocol = DEFAULT_CUSTOM_IMAGE_PROTOCOL
+): string {
+  const trimmed = isCustomImageProviderId(providerId)
+    ? normalizeCustomImageRemoteModelId(protocol, modelId)
+    : modelId.trim();
   return trimmed.startsWith(`${providerId}/`) ? trimmed : `${providerId}/${trimmed}`;
 }
 
@@ -156,7 +177,12 @@ export function listConfiguredImageModels(settings: ImageModelSettings): ImageMo
         return;
       }
       seenModelIds.add(model.id);
-      const configuredModel = resolveConfiguredModel(config.id, model.id, config.name || undefined);
+      const configuredModel = resolveConfiguredModel(
+        config.id,
+        model.id,
+        config.name || undefined,
+        config.protocol
+      );
       models.push(
         model.label && model.label !== configuredModel.displayName
           ? { ...configuredModel, displayName: model.label }
@@ -185,6 +211,10 @@ export function resolveConfiguredImageModel(
     : undefined;
   if (selectedByNode) {
     return selectedByNode;
+  }
+
+  if (normalizedRequestedId?.startsWith(CUSTOM_IMAGE_PROVIDER_ID_PREFIX)) {
+    return null;
   }
 
   const lastSelection = settings.lastImageModelSelection;

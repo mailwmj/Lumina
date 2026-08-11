@@ -322,6 +322,22 @@ pub struct DiscoverImageModelsRequest {
     pub provider_id: String,
     pub base_url: String,
     pub api_key: String,
+    #[serde(default)]
+    pub protocol: CustomImageProtocol,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub enum CustomImageProtocol {
+    #[serde(rename = "openai-images")]
+    OpenAiImages,
+    GeminiNative,
+}
+
+impl Default for CustomImageProtocol {
+    fn default() -> Self {
+        Self::OpenAiImages
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -362,6 +378,60 @@ fn resolve_models_endpoint(base_url: &str) -> Result<String, String> {
     Ok(url.to_string())
 }
 
+fn resolve_gemini_models_endpoint(base_url: &str) -> Result<String, String> {
+    let normalized = base_url.trim();
+    if normalized.is_empty() {
+        return Err("请填写 Base URL".to_string());
+    }
+
+    let mut url = reqwest::Url::parse(normalized)
+        .map_err(|error| format!("Base URL 无效: {error}"))?;
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err("Base URL 仅支持 HTTP(S)".to_string());
+    }
+
+    let base_path = url.path().trim_end_matches('/');
+    let endpoint_path = if base_path.ends_with("/models") {
+        base_path.to_string()
+    } else if base_path.is_empty() {
+        "/v1beta/models".to_string()
+    } else {
+        format!("{base_path}/models")
+    };
+
+    url.set_path(&endpoint_path);
+    Ok(url.to_string())
+}
+
+fn resolve_gemini_compatible_models_endpoint(base_url: &str) -> Result<String, String> {
+    let normalized = base_url.trim();
+    if normalized.is_empty() {
+        return Err("请填写 Base URL".to_string());
+    }
+
+    let mut url = reqwest::Url::parse(normalized)
+        .map_err(|error| format!("Base URL 无效: {error}"))?;
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err("Base URL 仅支持 HTTP(S)".to_string());
+    }
+
+    let base_path = url.path().trim_end_matches('/');
+    let native_api_path = base_path.strip_suffix("/models").unwrap_or(base_path);
+    let gateway_root = native_api_path
+        .strip_suffix("/v1beta")
+        .unwrap_or(native_api_path);
+    let endpoint_path = if gateway_root.is_empty() {
+        "/v1/models".to_string()
+    } else {
+        format!("{gateway_root}/v1/models")
+    };
+
+    url.set_path(&endpoint_path);
+    url.set_query(None);
+    url.set_fragment(None);
+    Ok(url.to_string())
+}
+
 fn resolve_chat_completions_endpoint(base_url: &str) -> Result<String, String> {
     let normalized = base_url.trim();
     if normalized.is_empty() {
@@ -391,13 +461,13 @@ fn resolve_chat_completions_endpoint(base_url: &str) -> Result<String, String> {
 
 #[cfg(test)]
 mod text_api_endpoint_tests {
-    use serde_json::Value;
+    use serde_json::{json, Value};
 
     use super::{
         build_generate_text_chat_request, build_generate_text_responses_request,
-        extract_generated_text, resolve_chat_completions_endpoint, resolve_models_endpoint,
-        ChatContent, ChatMessage, ChatRequest, GenerateTextRequest, ResponsesReasoning,
-        ResponsesRequest,
+        extract_generated_text, resolve_chat_completions_endpoint, resolve_gemini_models_endpoint,
+        resolve_models_endpoint, ChatContent, ChatMessage, ChatRequest, CustomImageProtocol,
+        DiscoverImageModelsRequest, GenerateTextRequest, ResponsesReasoning, ResponsesRequest,
     };
 
     #[test]
@@ -430,6 +500,43 @@ mod text_api_endpoint_tests {
             resolve_models_endpoint("file:///tmp/models").unwrap_err(),
             "Base URL 仅支持 HTTP(S)"
         );
+    }
+
+    #[test]
+    fn resolves_models_from_gemini_native_base_url() {
+        assert_eq!(
+            resolve_gemini_models_endpoint("https://gateway.example/v1beta/").unwrap(),
+            "https://gateway.example/v1beta/models"
+        );
+    }
+
+    #[test]
+    fn adds_gemini_v1beta_models_path_to_origin_only_url() {
+        assert_eq!(
+            resolve_gemini_models_endpoint("https://gateway.example").unwrap(),
+            "https://gateway.example/v1beta/models"
+        );
+    }
+
+    #[test]
+    fn accepts_frontend_custom_image_protocol_values() {
+        let openai_request: DiscoverImageModelsRequest = serde_json::from_value(json!({
+            "provider_id": "custom-openai:gateway",
+            "base_url": "https://gateway.example/v1",
+            "api_key": "test-key",
+            "protocol": "openai-images"
+        }))
+        .unwrap();
+        let gemini_request: DiscoverImageModelsRequest = serde_json::from_value(json!({
+            "provider_id": "custom-openai:gateway",
+            "base_url": "https://gateway.example/v1beta",
+            "api_key": "test-key",
+            "protocol": "gemini-native"
+        }))
+        .unwrap();
+
+        assert_eq!(openai_request.protocol, CustomImageProtocol::OpenAiImages);
+        assert_eq!(gemini_request.protocol, CustomImageProtocol::GeminiNative);
     }
 
     #[test]
@@ -730,6 +837,71 @@ fn model_list_from_response(payload: &Value) -> Vec<DiscoveredImageModelDto> {
         .collect()
 }
 
+fn normalize_gemini_model_resource_id(value: &str) -> Option<String> {
+    let normalized = value
+        .trim()
+        .strip_prefix("models/")
+        .unwrap_or(value.trim())
+        .trim();
+    (!normalized.is_empty()).then(|| normalized.to_string())
+}
+
+fn gemini_model_list_from_response(payload: &Value) -> Vec<DiscoveredImageModelDto> {
+    let Some(models) = payload.get("models").and_then(Value::as_array) else {
+        return Vec::new();
+    };
+
+    let mut unique_models = HashSet::new();
+    models
+        .iter()
+        .filter_map(|entry| {
+            let record = entry.as_object()?;
+            let supports_generate_content = record
+                .get("supportedGenerationMethods")
+                .or_else(|| record.get("supported_generation_methods"))
+                .and_then(Value::as_array)
+                .map(|methods| {
+                    methods
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .any(|method| method.trim() == "generateContent")
+                })
+                .unwrap_or(true);
+            if !supports_generate_content {
+                return None;
+            }
+
+            let id = ["name", "id", "model"]
+                .iter()
+                .find_map(|key| record.get(*key).and_then(Value::as_str))
+                .and_then(normalize_gemini_model_resource_id)?;
+            if !unique_models.insert(id.clone()) {
+                return None;
+            }
+
+            let label = ["displayName", "display_name", "label", "name"]
+                .iter()
+                .find_map(|key| record.get(*key).and_then(Value::as_str))
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
+                .filter(|value| {
+                    normalize_gemini_model_resource_id(value).as_deref() != Some(id.as_str())
+                });
+
+            Some(DiscoveredImageModelDto { id, label })
+        })
+        .collect()
+}
+
+fn gemini_discovery_model_list_from_response(payload: &Value) -> Vec<DiscoveredImageModelDto> {
+    if payload.get("models").and_then(Value::as_array).is_some() {
+        gemini_model_list_from_response(payload)
+    } else {
+        model_list_from_response(payload)
+    }
+}
+
 fn model_list_error_message(payload: &Value, status: reqwest::StatusCode) -> String {
     payload
         .get("error")
@@ -774,6 +946,225 @@ async fn fetch_openai_compatible_models(
     Ok(model_list_from_response(&payload))
 }
 
+async fn fetch_gemini_native_models(
+    base_url: &str,
+    api_key: &str,
+) -> Result<Vec<DiscoveredImageModelDto>, String> {
+    if api_key.trim().is_empty() {
+        return Err("请填写 API Key".to_string());
+    }
+
+    let client = Client::new();
+    let endpoint = resolve_gemini_models_endpoint(base_url)?;
+    let response = client
+        .get(&endpoint)
+        .header("x-goog-api-key", api_key.trim())
+        .timeout(Duration::from_secs(15))
+        .send()
+        .await
+        .map_err(|error| format!("获取模型列表失败：{error}"))?;
+    let status = response.status();
+    let payload = response
+        .json::<Value>()
+        .await
+        .map_err(|error| format!("模型列表返回的数据无法解析：{error}"))?;
+
+    if status.is_success() {
+        return Ok(gemini_discovery_model_list_from_response(&payload));
+    }
+
+    if status != reqwest::StatusCode::NOT_FOUND {
+        return Err(format!(
+            "获取模型列表失败：{}",
+            model_list_error_message(&payload, status)
+        ));
+    }
+
+    let fallback_endpoint = resolve_gemini_compatible_models_endpoint(base_url)?;
+    let fallback_response = client
+        .get(&fallback_endpoint)
+        .header("x-goog-api-key", api_key.trim())
+        .timeout(Duration::from_secs(15))
+        .send()
+        .await
+        .map_err(|error| format!("获取模型列表失败：{error}"))?;
+    let fallback_status = fallback_response.status();
+    let fallback_payload = fallback_response
+        .json::<Value>()
+        .await
+        .map_err(|error| format!("模型列表返回的数据无法解析：{error}"))?;
+
+    if !fallback_status.is_success() {
+        return Err(format!(
+            "获取模型列表失败：{}",
+            model_list_error_message(&fallback_payload, fallback_status)
+        ));
+    }
+
+    Ok(gemini_discovery_model_list_from_response(&fallback_payload))
+}
+
+#[cfg(test)]
+mod image_model_discovery_tests {
+    use super::{fetch_gemini_native_models, gemini_model_list_from_response};
+    use serde_json::json;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::{TcpListener, TcpStream};
+
+    async fn read_http_request(socket: &mut TcpStream) -> Vec<u8> {
+        let mut request_bytes = Vec::new();
+        let mut buffer = [0_u8; 4096];
+        loop {
+            let bytes_read = socket.read(&mut buffer).await.unwrap();
+            assert!(bytes_read > 0, "connection closed before request headers");
+            request_bytes.extend_from_slice(&buffer[..bytes_read]);
+            if request_bytes.windows(4).any(|window| window == b"\r\n\r\n") {
+                return request_bytes;
+            }
+        }
+    }
+
+    async fn write_json_response(socket: &mut TcpStream, status: &str, body: &str) {
+        socket
+            .write_all(
+                format!(
+                    "HTTP/1.1 {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    status,
+                    body.len(),
+                    body
+                )
+                .as_bytes(),
+            )
+            .await
+            .unwrap();
+    }
+
+    #[test]
+    fn gemini_model_list_normalizes_resources_and_filters_unsupported_models() {
+        let models = gemini_model_list_from_response(&json!({
+            "models": [
+                {
+                    "name": "models/gemini-3-pro-image-preview",
+                    "displayName": "Gemini 3 Pro Image Preview",
+                    "supportedGenerationMethods": ["generateContent"]
+                },
+                {
+                    "name": "models/text-embedding-004",
+                    "supportedGenerationMethods": ["embedContent"]
+                },
+                {
+                    "name": "models/gemini-3-pro-image-preview",
+                    "supportedGenerationMethods": ["generateContent"]
+                }
+            ]
+        }));
+
+        let models = models
+            .into_iter()
+            .map(|model| (model.id, model.label))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            models,
+            vec![(
+                "gemini-3-pro-image-preview".to_string(),
+                Some("Gemini 3 Pro Image Preview".to_string())
+            )]
+        );
+    }
+
+    #[tokio::test]
+    async fn gemini_model_discovery_uses_native_endpoint_and_header() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut request_bytes = Vec::new();
+            let mut buffer = [0_u8; 4096];
+            loop {
+                let bytes_read = socket.read(&mut buffer).await.unwrap();
+                assert!(bytes_read > 0, "connection closed before request headers");
+                request_bytes.extend_from_slice(&buffer[..bytes_read]);
+                if request_bytes.windows(4).any(|window| window == b"\r\n\r\n") {
+                    break;
+                }
+            }
+
+            let response = r#"{"models":[{"name":"models/gemini-3-pro-image-preview","supportedGenerationMethods":["generateContent"]}]}"#;
+            socket
+                .write_all(
+                    format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        response.len(),
+                        response
+                    )
+                    .as_bytes(),
+                )
+                .await
+                .unwrap();
+            request_bytes
+        });
+
+        let base_url = format!("http://{address}/v1beta");
+        let models = fetch_gemini_native_models(&base_url, "test-key")
+            .await
+            .unwrap();
+
+        assert_eq!(models[0].id, "gemini-3-pro-image-preview");
+        let request = String::from_utf8_lossy(&server.await.unwrap());
+        let normalized_headers = request.to_ascii_lowercase();
+        assert!(request.starts_with("GET /v1beta/models HTTP/1.1"));
+        assert!(normalized_headers.contains("x-goog-api-key: test-key"));
+        assert!(!normalized_headers.contains("authorization:"));
+    }
+
+    #[tokio::test]
+    async fn gemini_model_discovery_falls_back_to_compatible_catalog_after_native_404() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut native_socket, _) = listener.accept().await.unwrap();
+            let native_request = read_http_request(&mut native_socket).await;
+            write_json_response(
+                &mut native_socket,
+                "404 Not Found",
+                r#"{"error":{"message":"native catalog unavailable"}}"#,
+            )
+            .await;
+            drop(native_socket);
+
+            let (mut compatible_socket, _) = listener.accept().await.unwrap();
+            let compatible_request = read_http_request(&mut compatible_socket).await;
+            write_json_response(
+                &mut compatible_socket,
+                "200 OK",
+                r#"{"data":[{"id":"gemini-3-pro-image-preview"}]}"#,
+            )
+            .await;
+
+            (native_request, compatible_request)
+        });
+
+        let base_url = format!("http://{address}/v1beta");
+        let models = fetch_gemini_native_models(&base_url, "test-key")
+            .await
+            .unwrap();
+
+        assert_eq!(models.len(), 1);
+        assert_eq!(models[0].id, "gemini-3-pro-image-preview");
+        let (native_request, compatible_request) = server.await.unwrap();
+        let native_request = String::from_utf8_lossy(&native_request);
+        let compatible_request = String::from_utf8_lossy(&compatible_request);
+        let native_headers = native_request.to_ascii_lowercase();
+        let compatible_headers = compatible_request.to_ascii_lowercase();
+        assert!(native_request.starts_with("GET /v1beta/models HTTP/1.1"));
+        assert!(compatible_request.starts_with("GET /v1/models HTTP/1.1"));
+        assert!(native_headers.contains("x-goog-api-key: test-key"));
+        assert!(compatible_headers.contains("x-goog-api-key: test-key"));
+        assert!(!native_headers.contains("authorization:"));
+        assert!(!compatible_headers.contains("authorization:"));
+    }
+}
+
 #[tauri::command]
 pub async fn discover_image_models(
     request: DiscoverImageModelsRequest,
@@ -788,12 +1179,27 @@ pub async fn discover_image_models(
     {
         return Err("不支持该生图 Provider 的模型发现".to_string());
     }
-    let endpoint = resolve_models_endpoint(&request.base_url)?;
+
+    if !is_custom_openai_provider && request.protocol == CustomImageProtocol::GeminiNative {
+        return Err("Gemini Native 协议仅支持自定义图片 Provider".to_string());
+    }
+
+    let use_gemini_native = is_custom_openai_provider
+        && request.protocol == CustomImageProtocol::GeminiNative;
+    let endpoint = if use_gemini_native {
+        resolve_gemini_models_endpoint(&request.base_url)?
+    } else {
+        resolve_models_endpoint(&request.base_url)?
+    };
     info!(
-        "Discovering image models for provider {} at {}",
-        request.provider_id, endpoint
+        "Discovering image models for provider {} with protocol {:?} at {}",
+        request.provider_id, request.protocol, endpoint
     );
-    fetch_openai_compatible_models(&request.base_url, &request.api_key).await
+    if use_gemini_native {
+        fetch_gemini_native_models(&request.base_url, &request.api_key).await
+    } else {
+        fetch_openai_compatible_models(&request.base_url, &request.api_key).await
+    }
 }
 
 #[tauri::command]

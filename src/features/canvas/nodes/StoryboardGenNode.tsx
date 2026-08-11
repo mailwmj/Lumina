@@ -591,6 +591,9 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
   const customImageApis = useSettingsStore((state) => state.customImageApis);
   const lastImageModelSelection = useSettingsStore((state) => state.lastImageModelSelection);
   const setLastImageModelSelection = useSettingsStore((state) => state.setLastImageModelSelection);
+  const updateLastImageGenerationOptions = useSettingsStore(
+    (state) => state.updateLastImageGenerationOptions
+  );
   const storyboardGenKeepStyleConsistent = useSettingsStore(
     (state) => state.storyboardGenKeepStyleConsistent
   );
@@ -1340,8 +1343,9 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
       }
       const newRows = Math.max(1, Math.min(9, nodeData.gridRows + delta));
       updateNodeData(id, { gridRows: newRows });
+      updateLastImageGenerationOptions({ storyboardGridRows: newRows });
     },
-    [nodeData, updateNodeData]
+    [nodeData, updateLastImageGenerationOptions, updateNodeData]
   );
 
   const handleColChange = useCallback(
@@ -1351,8 +1355,9 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
       }
       const newCols = Math.max(1, Math.min(9, nodeData.gridCols + delta));
       updateNodeData(id, { gridCols: newCols });
+      updateLastImageGenerationOptions({ storyboardGridCols: newCols });
     },
-    [nodeData, updateNodeData]
+    [nodeData, updateLastImageGenerationOptions, updateNodeData]
   );
 
   const handleFrameDescriptionChange = useCallback(
@@ -1672,6 +1677,7 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
                 onClick={(event) => {
                   event.stopPropagation();
                   updateNodeData(id, { ratioControlMode: 'overall' });
+                  updateLastImageGenerationOptions({ storyboardRatioControlMode: 'overall' });
                 }}
               >
                 {t('node.storyboardGen.ratioModeOverall')}
@@ -1685,6 +1691,7 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
                 onClick={(event) => {
                   event.stopPropagation();
                   updateNodeData(id, { ratioControlMode: 'cell' });
+                  updateLastImageGenerationOptions({ storyboardRatioControlMode: 'cell' });
                 }}
               >
                 {t('node.storyboardGen.ratioModeCell')}
@@ -1955,21 +1962,28 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
               updateNodeData(id, { model: modelId });
               setLastImageModelSelection({ providerId: model.providerId, modelId });
             }}
-            onResolutionChange={(resolution) =>
-              updateNodeData(id, { size: resolution as ImageSize })
-            }
-            onAspectRatioChange={(aspectRatio) =>
-              updateNodeData(id, { requestAspectRatio: aspectRatio })
-            }
+            onResolutionChange={(resolution) => {
+              const size = resolution as ImageSize;
+              updateNodeData(id, { size });
+              updateLastImageGenerationOptions({ size });
+            }}
+            onAspectRatioChange={(aspectRatio) => {
+              updateNodeData(id, { requestAspectRatio: aspectRatio });
+              updateLastImageGenerationOptions({ requestAspectRatio: aspectRatio });
+            }}
             extraParams={nodeData.extraParams}
-            onExtraParamChange={(key, value) =>
+            onExtraParamChange={(key, value) => {
+              const extraParams = {
+                ...(nodeData.extraParams ?? {}),
+                [key]: value,
+              };
               updateNodeData(id, {
                 extraParams: {
-                  ...(nodeData.extraParams ?? {}),
-                  [key]: value,
+                  ...extraParams,
                 },
-              })
-            }
+              });
+              updateLastImageGenerationOptions({ extraParams });
+            }}
             triggerSize="sm"
             chipClassName={NODE_CONTROL_CHIP_CLASS}
             modelChipClassName={NODE_CONTROL_MODEL_CHIP_CLASS}

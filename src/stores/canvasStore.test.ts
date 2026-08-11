@@ -9,7 +9,11 @@ import {
 } from '@/features/canvas/domain/canvasNodes';
 
 import { useCanvasStore } from './canvasStore';
-import { useSettingsStore } from './settingsStore';
+import {
+  createDefaultChaomoImageApiConfig,
+  createDefaultOpenAiImageApiConfig,
+  useSettingsStore,
+} from './settingsStore';
 
 function createNode(type: CanvasNode['type'], id: string): CanvasNode {
   return {
@@ -435,6 +439,118 @@ describe('new text generation node defaults', () => {
     expect(data).toMatchObject({
       textApiId: 'removed-provider',
       textModelId: 'removed-model',
+    });
+  });
+});
+
+describe('new image generation node defaults', () => {
+  afterEach(() => {
+    useCanvasStore.getState().setCanvasData([], []);
+    useSettingsStore.setState({
+      openAiImageApi: createDefaultOpenAiImageApiConfig(),
+      chaomoImageApi: createDefaultChaomoImageApiConfig(),
+      customImageApis: [],
+      lastImageModelSelection: null,
+      lastImageGenerationOptions: {},
+    });
+  });
+
+  it('shares the last applicable generation parameters without copying creative content', () => {
+    useSettingsStore.setState({
+      openAiImageApi: {
+        apiKey: 'secret',
+        baseUrl: 'https://gateway.example/v1',
+        modelCatalog: {
+          models: [{ id: 'ai-media/gpt-image-2' }],
+          refreshedAt: 1,
+        },
+        selectedModelIds: ['ai-media/gpt-image-2'],
+      },
+    });
+    const settings = useSettingsStore.getState();
+    settings.setLastImageModelSelection({
+      providerId: 'ai-media',
+      modelId: 'ai-media/gpt-image-2',
+    });
+    settings.updateLastImageGenerationOptions({
+      size: '4K',
+      requestAspectRatio: '3:4',
+    });
+    settings.updateLastImageGenerationOptions({
+      outputCount: 2,
+      extraParams: { thinking_level: 'high', enable_search: true },
+    });
+    settings.updateLastImageGenerationOptions({
+      storyboardGridRows: 3,
+      storyboardGridCols: 4,
+      storyboardRatioControlMode: 'overall',
+    });
+
+    const imageNodeId = useCanvasStore.getState().addNode(
+      CANVAS_NODE_TYPES.imageEdit,
+      { x: 0, y: 0 }
+    );
+    const storyboardNodeId = useCanvasStore.getState().addNode(
+      CANVAS_NODE_TYPES.storyboardGen,
+      { x: 320, y: 0 }
+    );
+    const imageNode = useCanvasStore.getState().nodes.find((node) => node.id === imageNodeId);
+    const storyboardNode = useCanvasStore.getState().nodes.find((node) => node.id === storyboardNodeId);
+
+    expect(imageNode?.data).toMatchObject({
+      model: 'ai-media/gpt-image-2',
+      size: '4K',
+      requestAspectRatio: '3:4',
+      outputCount: 2,
+      extraParams: { thinking_level: 'high', enable_search: true },
+      prompt: '',
+      imageUrl: null,
+    });
+    expect(storyboardNode?.data).toMatchObject({
+      model: 'ai-media/gpt-image-2',
+      size: '4K',
+      requestAspectRatio: '3:4',
+      extraParams: { thinking_level: 'high', enable_search: true },
+      gridRows: 3,
+      gridCols: 4,
+      ratioControlMode: 'overall',
+      globalPrompt: '',
+      frames: [],
+      imageUrl: null,
+    });
+    expect((imageNode?.data as { extraParams?: unknown }).extraParams)
+      .not.toBe((storyboardNode?.data as { extraParams?: unknown }).extraParams);
+  });
+
+  it('does not override explicit image-generation data such as a copied node', () => {
+    useSettingsStore.getState().updateLastImageGenerationOptions({
+      size: '4K',
+      requestAspectRatio: '3:4',
+      outputCount: 2,
+      extraParams: { thinking_level: 'high' },
+    });
+
+    const copiedNodeId = useCanvasStore.getState().addNode(
+      CANVAS_NODE_TYPES.imageEdit,
+      { x: 0, y: 0 },
+      {
+        model: 'copied-model',
+        size: '1K',
+        requestAspectRatio: '16:9',
+        outputCount: 4,
+        extraParams: { thinking_level: 'low' },
+        prompt: 'Keep this prompt local.',
+      }
+    );
+    const copiedNode = useCanvasStore.getState().nodes.find((node) => node.id === copiedNodeId);
+
+    expect(copiedNode?.data).toMatchObject({
+      model: 'copied-model',
+      size: '1K',
+      requestAspectRatio: '16:9',
+      outputCount: 4,
+      extraParams: { thinking_level: 'low' },
+      prompt: 'Keep this prompt local.',
     });
   });
 });

@@ -75,4 +75,54 @@ describe('prompt polishing settings', () => {
       prompt: DEFAULT_TEXT_POLISH_PROMPT,
     });
   });
+
+  it('defaults existing custom image providers to the OpenAI Images protocol', () => {
+    const migrated = migrateSettingsState({
+      customImageApis: [{
+        id: 'custom-openai:legacy',
+        name: 'Legacy Gateway',
+        apiKey: 'key',
+        baseUrl: 'https://legacy.example/v1',
+        modelCatalog: null,
+        selectedModelIds: [],
+      }],
+    }, 25) as {
+      customImageApis: Array<{ protocol: string }>;
+    };
+
+    expect(migrated.customImageApis[0]?.protocol).toBe('openai-images');
+  });
+
+  it('keeps only valid persisted image-generation defaults', () => {
+    const migrated = migrateSettingsState({
+      lastImageGenerationOptions: {
+        size: '4K',
+        requestAspectRatio: '3:4',
+        outputCount: 2,
+        extraParams: {
+          thinking_level: 'high',
+          enable_search: true,
+          invalid: { nested: true },
+        },
+        storyboardGridRows: 3,
+        storyboardGridCols: 4,
+        storyboardRatioControlMode: 'overall',
+      },
+    }, 26) as {
+      lastImageGenerationOptions: unknown;
+    };
+
+    expect(migrated.lastImageGenerationOptions).toEqual({
+      size: '4K',
+      requestAspectRatio: '3:4',
+      outputCount: 2,
+      extraParams: {
+        thinking_level: 'high',
+        enable_search: true,
+      },
+      storyboardGridRows: 3,
+      storyboardGridCols: 4,
+      storyboardRatioControlMode: 'overall',
+    });
+  });
 });

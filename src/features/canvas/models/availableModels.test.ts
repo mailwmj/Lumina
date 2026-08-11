@@ -100,6 +100,7 @@ describe('available image models', () => {
     settings.customImageApis = [{
       id: 'custom-openai:internal',
       name: 'Internal Gateway',
+      protocol: 'openai-images',
       apiKey: 'custom-key',
       baseUrl: 'https://gateway.example/v1',
       modelCatalog: {
@@ -116,5 +117,50 @@ describe('available image models', () => {
     expect(model.resolveRequest({ referenceImageCount: 0 }).requestModel).toBe(
       'openai/vendor/image-model'
     );
+  });
+
+  it('routes Gemini Native models through the Gemini adapter and normalizes model resource names', () => {
+    const settings = createSettings();
+    settings.openAiImageApi.apiKey = '';
+    settings.chaomoImageApi.apiKey = '';
+    settings.customImageApis = [{
+      id: 'custom-openai:gemini',
+      name: 'Gemini Gateway',
+      protocol: 'gemini-native',
+      apiKey: 'custom-key',
+      baseUrl: 'https://gateway.example/v1beta',
+      modelCatalog: {
+        models: [{ id: 'custom-openai:gemini/gemini-3-pro-image-preview' }],
+        refreshedAt: 1,
+      },
+      selectedModelIds: ['custom-openai:gemini/gemini-3-pro-image-preview'],
+    }];
+
+    const [model] = listConfiguredImageModels(settings);
+
+    expect(model.resolveRequest({ referenceImageCount: 1 }).requestModel).toBe(
+      'gemini/gemini-3-pro-image-preview'
+    );
+  });
+
+  it('does not silently fall back when a configured custom model is unavailable', () => {
+    const settings = createSettings();
+    settings.customImageApis = [{
+      id: 'custom-openai:gemini',
+      name: 'Gemini Gateway',
+      protocol: 'gemini-native',
+      apiKey: 'custom-key',
+      baseUrl: 'https://gateway.example/v1beta',
+      modelCatalog: {
+        models: [{ id: 'custom-openai:gemini/gemini-3-pro-image-preview' }],
+        refreshedAt: 1,
+      },
+      selectedModelIds: ['custom-openai:gemini/gemini-3-pro-image-preview'],
+    }];
+
+    expect(resolveConfiguredImageModel(
+      settings,
+      'custom-openai:gemini/previous-openai-model'
+    )).toBeNull();
   });
 });
