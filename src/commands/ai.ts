@@ -35,7 +35,7 @@ export interface DiscoverImageModelsRequest {
   provider_id: string;
   base_url: string;
   api_key: string;
-  protocol?: 'openai-images' | 'gemini-native';
+  protocol?: 'openai-images' | 'fhl-images' | 'gemini-native';
 }
 
 export interface DiscoverTextModelsRequest {

@@ -331,6 +331,8 @@ pub struct DiscoverImageModelsRequest {
 pub enum CustomImageProtocol {
     #[serde(rename = "openai-images")]
     OpenAiImages,
+    #[serde(rename = "fhl-images", alias = "fhl")]
+    FhlImages,
     GeminiNative,
 }
 
@@ -534,9 +536,17 @@ mod text_api_endpoint_tests {
             "protocol": "gemini-native"
         }))
         .unwrap();
+        let fhl_request: DiscoverImageModelsRequest = serde_json::from_value(json!({
+            "provider_id": "custom-openai:fhl",
+            "base_url": "https://www.fhl.mom",
+            "api_key": "test-key",
+            "protocol": "fhl-images"
+        }))
+        .unwrap();
 
         assert_eq!(openai_request.protocol, CustomImageProtocol::OpenAiImages);
         assert_eq!(gemini_request.protocol, CustomImageProtocol::GeminiNative);
+        assert_eq!(fhl_request.protocol, CustomImageProtocol::FhlImages);
     }
 
     #[test]
@@ -1182,6 +1192,9 @@ pub async fn discover_image_models(
 
     if !is_custom_openai_provider && request.protocol == CustomImageProtocol::GeminiNative {
         return Err("Gemini Native 协议仅支持自定义图片 Provider".to_string());
+    }
+    if !is_custom_openai_provider && request.protocol == CustomImageProtocol::FhlImages {
+        return Err("FHL Images 协议仅支持自定义图片 Provider".to_string());
     }
 
     let use_gemini_native = is_custom_openai_provider
