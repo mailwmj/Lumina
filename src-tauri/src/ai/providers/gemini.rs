@@ -226,15 +226,99 @@ impl GeminiNativeImageProvider {
         format!("{}/{}", base_url.trim_end_matches('/'), endpoint)
     }
 
-    async fn submit_request(&self, request: &GenerateRequest) -> Result<(StatusCode, Value), AIError> {
-        let api_key = self.api_key_for_request(request).await?;
-        let base_url = Self::normalize_base_url(Self::config_value(request, "base_url"))?;
-        let model = Self::resolve_model(request)?;
-        let endpoint = format!(
+    fn generate_content_endpoint(base_url: &str, model: &str) -> String {
+        format!(
             "{}/models/{}:generateContent",
             base_url,
-            urlencoding::encode(model.as_str())
-        );
+            urlencoding::encode(model)
+        )
+    }
+
+    fn fallback_v1beta_base_url(base_url: &str) -> Option<String> {
+        let mut url = reqwest::Url::parse(base_url).ok()?;
+        let path = url.path().trim_end_matches('/');
+        let path_prefix = path.strip_suffix("/v1")?;
+        url.set_path(format!("{path_prefix}/v1beta").as_str());
+        Some(url.to_string().trim_end_matches('/').to_string())
+    }
+
+    fn is_html_not_found(status: StatusCode, body: &str) -> bool {
+        if status != StatusCode::NOT_FOUND {
+            return false;
+        }
+
+        let body = body.trim_start().to_ascii_lowercase();
+        body.starts_with("<!doctype html") || body.starts_with("<html")
+    }
+
+    fn response_body_excerpt(raw: &str) -> String {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return "empty response body".to_string();
+        }
+
+        const MAX_CHARS: usize = 500;
+        let excerpt: String = trimmed.chars().take(MAX_CHARS).collect();
+        if trimmed.chars().nth(MAX_CHARS).is_some() {
+            format!("{excerpt}...")
+        } else {
+            excerpt
+        }
+    }
+
+    fn parse_submit_response(
+        endpoint: &str,
+        status: StatusCode,
+        raw: &str,
+    ) -> Result<Value, AIError> {
+        if !status.is_success() {
+            let message = serde_json::from_str::<Value>(raw)
+                .map(|body| Self::response_error_message(&body))
+                .unwrap_or_else(|_| {
+                    format!("non-JSON response: {}", Self::response_body_excerpt(raw))
+                });
+            return Err(AIError::Provider(format!(
+                "Gemini Native image API returned {} at {}: {}",
+                status, endpoint, message
+            )));
+        }
+
+        serde_json::from_str::<Value>(raw).map_err(|error| {
+            AIError::Provider(format!(
+                "Gemini Native image API returned invalid JSON ({}): {}; body={}",
+                status,
+                error,
+                Self::response_body_excerpt(raw)
+            ))
+        })
+    }
+
+    async fn post_json_request(
+        &self,
+        endpoint: &str,
+        api_key: &str,
+        body: &Value,
+    ) -> Result<(StatusCode, String), AIError> {
+        let response = self
+            .client
+            .post(endpoint)
+            .header("x-goog-api-key", api_key)
+            .json(body)
+            .send()
+            .await?;
+        let status = response.status();
+        let raw = response.text().await.unwrap_or_default();
+        Ok((status, raw))
+    }
+
+    async fn submit_request(
+        &self,
+        request: &GenerateRequest,
+    ) -> Result<(String, StatusCode, Value), AIError> {
+        let api_key = self.api_key_for_request(request).await?;
+        let mut base_url = Self::normalize_base_url(Self::config_value(request, "base_url"))?;
+        let model = Self::resolve_model(request)?;
+        let mut endpoint = Self::generate_content_endpoint(base_url.as_str(), model.as_str());
         let body = self.build_request_body(request).await?;
 
         info!(
@@ -246,30 +330,32 @@ impl GeminiNativeImageProvider {
             request.aspect_ratio
         );
 
-        let response = self
-            .client
-            .post(&endpoint)
-            .header("x-goog-api-key", api_key)
-            .json(&body)
-            .send()
+        let (mut status, mut raw) = self
+            .post_json_request(endpoint.as_str(), api_key.as_str(), &body)
             .await?;
-        let status = response.status();
-        let raw = response.text().await.unwrap_or_default();
-        let body = serde_json::from_str::<Value>(&raw).map_err(|error| {
-            AIError::Provider(format!(
-                "Gemini Native image API returned invalid JSON ({}): {}; body={}",
-                status, error, raw
-            ))
-        })?;
-        if !status.is_success() {
-            return Err(AIError::Provider(format!(
-                "Gemini Native image API returned {}: {}",
-                status,
-                Self::response_error_message(&body)
-            )));
+
+        // An OpenAI-compatible /v1 URL can remain after switching a custom provider
+        // to Gemini Native. Retry only the gateway's missing HTML route at /v1beta.
+        if Self::is_html_not_found(status, raw.as_str()) {
+            if let Some(fallback_base_url) = Self::fallback_v1beta_base_url(base_url.as_str()) {
+                let fallback_endpoint =
+                    Self::generate_content_endpoint(fallback_base_url.as_str(), model.as_str());
+                info!(
+                    "[Gemini Native Image] retrying missing /v1 route at {}",
+                    fallback_endpoint
+                );
+                let (fallback_status, fallback_raw) = self
+                    .post_json_request(fallback_endpoint.as_str(), api_key.as_str(), &body)
+                    .await?;
+                base_url = fallback_base_url;
+                endpoint = fallback_endpoint;
+                status = fallback_status;
+                raw = fallback_raw;
+            }
         }
 
-        Ok((status, body))
+        let body = Self::parse_submit_response(endpoint.as_str(), status, raw.as_str())?;
+        Ok((base_url, status, body))
     }
 
     async fn poll_task_with_api_key(
@@ -363,8 +449,7 @@ impl AIProvider for GeminiNativeImageProvider {
         &self,
         request: GenerateRequest,
     ) -> Result<ProviderTaskSubmission, AIError> {
-        let base_url = Self::normalize_base_url(Self::config_value(&request, "base_url"))?;
-        let (status, body) = self.submit_request(&request).await?;
+        let (base_url, status, body) = self.submit_request(&request).await?;
 
         if let Some(image_source) = Self::response_image_source(&body) {
             return Ok(ProviderTaskSubmission::Succeeded(image_source));
@@ -496,6 +581,21 @@ mod tests {
             .unwrap();
     }
 
+    async fn write_html_response(socket: &mut TcpStream, status: &str, body: &str) {
+        socket
+            .write_all(
+                format!(
+                    "HTTP/1.1 {}\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    status,
+                    body.len(),
+                    body
+                )
+                .as_bytes(),
+            )
+            .await
+            .unwrap();
+    }
+
     #[tokio::test]
     async fn builds_native_request_with_inline_reference_images() {
         let provider = GeminiNativeImageProvider::new();
@@ -600,6 +700,63 @@ mod tests {
         assert!(normalized_headers.contains("x-goog-api-key: test-key"));
         assert!(!normalized_headers.contains("authorization:"));
         assert!(request.contains("\"responseModalities\":[\"TEXT\",\"IMAGE\"]"));
+    }
+
+    #[tokio::test]
+    async fn retries_a_missing_html_v1_route_at_v1beta() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut first_socket, _) = listener.accept().await.unwrap();
+            let first_request = read_http_request(&mut first_socket).await;
+            write_html_response(
+                &mut first_socket,
+                "404 Not Found",
+                "<html><body>not found</body></html>",
+            )
+            .await;
+            drop(first_socket);
+
+            let (mut second_socket, _) = listener.accept().await.unwrap();
+            let second_request = read_http_request(&mut second_socket).await;
+            let receipt = r#"{"object":"media_task","id":"imgtask-456","task_id":"imgtask-456","status":"queued","execution_mode":"async","status_url":"/v1/images/tasks/imgtask-456?view=summary"}"#;
+            write_json_response(&mut second_socket, "202 Accepted", receipt).await;
+
+            (first_request, second_request)
+        });
+
+        let provider = GeminiNativeImageProvider::new();
+        let submission = provider
+            .submit_task(generate_request(
+                format!("http://{address}/v1").as_str(),
+                None,
+            ))
+            .await
+            .unwrap();
+
+        let handle = match submission {
+            ProviderTaskSubmission::Queued(handle) => handle,
+            ProviderTaskSubmission::Succeeded(_) => panic!("expected queued task receipt"),
+        };
+        let expected_base_url = format!("http://{address}/v1beta");
+        assert_eq!(
+            handle
+                .metadata
+                .as_ref()
+                .and_then(|metadata| metadata.get("base_url"))
+                .and_then(Value::as_str),
+            Some(expected_base_url.as_str())
+        );
+
+        let (first_request, second_request) = server.await.unwrap();
+        let first_request = String::from_utf8_lossy(&first_request);
+        let second_request = String::from_utf8_lossy(&second_request);
+        assert!(first_request.starts_with(
+            "POST /v1/models/gemini-3-pro-image-preview:generateContent HTTP/1.1"
+        ));
+        assert!(second_request.starts_with(
+            "POST /v1beta/models/gemini-3-pro-image-preview:generateContent HTTP/1.1"
+        ));
     }
 
     #[tokio::test]
