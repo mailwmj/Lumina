@@ -52,6 +52,7 @@ import {
   buildBatchConnectionPlan,
   canNodeBeManualConnectionSource,
   canNodeTypeBeManualConnectionSource,
+  getBatchConnectMenuNodeTypes,
   isCanvasConnectionValid,
 } from '@/features/canvas/application/canvasConnection';
 import { sortCanvasEdgesForDuplication } from '@/features/canvas/application/canvasDuplication';
@@ -303,6 +304,9 @@ export function Canvas() {
   const [pendingConnectStart, setPendingConnectStart] = useState<PendingConnectStart | null>(
     null
   );
+  const [pendingMultiConnectSourceNodeIds, setPendingMultiConnectSourceNodeIds] = useState<
+    string[] | null
+  >(null);
   const [previewConnectionVisual, setPreviewConnectionVisual] =
     useState<PreviewConnectionVisual | null>(null);
   const [interactionMode, setInteractionMode] = useState<CanvasInteractionMode>('pan');
@@ -1081,35 +1085,56 @@ export function Canvas() {
       clientPosition: { x: number; y: number },
       explicitTargetHandle?: string
     ) => {
+      setPendingMultiConnectSourceNodeIds(null);
+
       const targetNodeElement = document
         .elementFromPoint(clientPosition.x, clientPosition.y)
         ?.closest<HTMLElement>('.react-flow__node[data-id]');
       const targetNodeId = targetNodeElement?.dataset.id;
-      if (!targetNodeId) {
-        return;
-      }
+      const state = useCanvasStore.getState();
 
-      const plan = buildBatchConnectionPlan(
-        sourceNodeIds,
-        targetNodeId,
-        nodes,
-        edges,
-        explicitTargetHandle
-      );
-      if (plan.invalidSourceIds.length > 0) {
-        void showErrorDialog(
-          t('canvas.multiConnect.invalidTarget'),
-          t('common.error')
+      if (targetNodeId) {
+        const plan = buildBatchConnectionPlan(
+          sourceNodeIds,
+          targetNodeId,
+          state.nodes,
+          state.edges,
+          explicitTargetHandle
         );
+        if (plan.invalidSourceIds.length > 0) {
+          void showErrorDialog(
+            t('canvas.multiConnect.invalidTarget'),
+            t('common.error')
+          );
+          return;
+        }
+
+        if (connectNodesBatch(plan.connections) > 0) {
+          scheduleCanvasPersist(0);
+        }
         return;
       }
 
-      const addedCount = connectNodesBatch(plan.connections);
-      if (addedCount > 0) {
-        scheduleCanvasPersist(0);
+      const allowedTypes = getBatchConnectMenuNodeTypes(sourceNodeIds, state.nodes);
+      const containerRect = wrapperRef.current?.getBoundingClientRect();
+      if (allowedTypes.length === 0 || !containerRect) {
+        return;
       }
+
+      setFlowPosition(reactFlowInstance.screenToFlowPosition(clientPosition));
+      setMenuPosition({
+        x: clientPosition.x - containerRect.left,
+        y: clientPosition.y - containerRect.top,
+      });
+      setMenuAllowedTypes(allowedTypes);
+      setPendingConnectStart(null);
+      setPendingMultiConnectSourceNodeIds([...sourceNodeIds]);
+      setPreviewConnectionVisual(null);
+      setNodeContextMenu(null);
+      suppressNextPaneClickRef.current = true;
+      setShowNodeMenu(true);
     },
-    [connectNodesBatch, edges, nodes, scheduleCanvasPersist, t]
+    [connectNodesBatch, reactFlowInstance, scheduleCanvasPersist, t]
   );
 
   const selectedUploadNodeId = useMemo(() => {
@@ -1357,6 +1382,7 @@ export function Canvas() {
     });
     setMenuAllowedTypes(undefined);
     setPendingConnectStart(null);
+    setPendingMultiConnectSourceNodeIds(null);
     setPreviewConnectionVisual(null);
     setNodeContextMenu(null);
     setShowNodeMenu(true);
@@ -1497,6 +1523,7 @@ export function Canvas() {
     setShowNodeMenu(false);
     setMenuAllowedTypes(undefined);
     setPendingConnectStart(null);
+    setPendingMultiConnectSourceNodeIds(null);
     setPreviewConnectionVisual(null);
     setNodeContextMenu(null);
   }, [openNodeMenuAtClientPosition, setSelectedNode]);
@@ -1510,8 +1537,41 @@ export function Canvas() {
 
   const handleNodeSelect = useCallback(
     (type: CanvasNodeType) => {
+      const batchSourceNodeIds = pendingMultiConnectSourceNodeIds;
+      if (batchSourceNodeIds && batchSourceNodeIds.length > 0) {
+        const currentNodes = useCanvasStore.getState().nodes;
+        if (!getBatchConnectMenuNodeTypes(batchSourceNodeIds, currentNodes).includes(type)) {
+          void showErrorDialog(
+            t('canvas.multiConnect.invalidTarget'),
+            t('common.error')
+          );
+          setShowNodeMenu(false);
+          setMenuAllowedTypes(undefined);
+          setPendingConnectStart(null);
+          setPendingMultiConnectSourceNodeIds(null);
+          setPreviewConnectionVisual(null);
+          return;
+        }
+      }
+
       const newNodeId = addNode(type, flowPosition);
-      if (pendingConnectStart) {
+      if (batchSourceNodeIds && batchSourceNodeIds.length > 0) {
+        const state = useCanvasStore.getState();
+        const plan = buildBatchConnectionPlan(
+          batchSourceNodeIds,
+          newNodeId,
+          state.nodes,
+          state.edges
+        );
+        if (plan.invalidSourceIds.length > 0) {
+          void showErrorDialog(
+            t('canvas.multiConnect.invalidTarget'),
+            t('common.error')
+          );
+        } else {
+          connectNodesBatch(plan.connections);
+        }
+      } else if (pendingConnectStart) {
         // Determine the correct target handle based on source node type and target node type
         let targetHandleId = 'target';
         if (type === CANVAS_NODE_TYPES.sd2VideoGen) {
@@ -1549,15 +1609,19 @@ export function Canvas() {
       setShowNodeMenu(false);
       setMenuAllowedTypes(undefined);
       setPendingConnectStart(null);
+      setPendingMultiConnectSourceNodeIds(null);
       setPreviewConnectionVisual(null);
     },
     [
       addNode,
       connectNodes,
+      connectNodesBatch,
       flowPosition,
       pendingConnectStart,
+      pendingMultiConnectSourceNodeIds,
       scheduleCanvasPersist,
       setPreviewConnectionVisual,
+      t,
     ]
   );
 
@@ -1740,6 +1804,7 @@ export function Canvas() {
       setShowNodeMenu(false);
       setMenuAllowedTypes(undefined);
       setPendingConnectStart(null);
+      setPendingMultiConnectSourceNodeIds(null);
       setPreviewConnectionVisual(null);
       setNodeContextMenu({
         id: nodeContextMenuSequenceRef.current += 1,
@@ -1769,6 +1834,7 @@ export function Canvas() {
     (event: MouseEvent | TouchEvent, params: OnConnectStartParams) => {
       setShowNodeMenu(false);
       setMenuAllowedTypes(undefined);
+      setPendingMultiConnectSourceNodeIds(null);
       setPreviewConnectionVisual(null);
 
       if (!params.nodeId || !params.handleType) {
@@ -2027,6 +2093,7 @@ export function Canvas() {
     (event: MouseEvent | TouchEvent, connectionState: FinalConnectionState) => {
       if (connectionState.isValid || !pendingConnectStart) {
         setPendingConnectStart(null);
+        setPendingMultiConnectSourceNodeIds(null);
         setPreviewConnectionVisual(null);
         return;
       }
@@ -2035,6 +2102,7 @@ export function Canvas() {
       const containerRect = wrapperRef.current?.getBoundingClientRect();
       if (!clientPosition || !containerRect) {
         setPendingConnectStart(null);
+        setPendingMultiConnectSourceNodeIds(null);
         setPreviewConnectionVisual(null);
         return;
       }
@@ -2103,6 +2171,7 @@ export function Canvas() {
       );
       if (allowedTypes.length === 0) {
         setPendingConnectStart(null);
+        setPendingMultiConnectSourceNodeIds(null);
         setPreviewConnectionVisual(null);
         return;
       }
@@ -2162,6 +2231,7 @@ export function Canvas() {
         y: clientPosition.y - containerRect.top,
       });
       setMenuAllowedTypes(allowedTypes);
+      setPendingMultiConnectSourceNodeIds(null);
       suppressNextPaneClickRef.current = true;
       setShowNodeMenu(true);
     },
@@ -2313,6 +2383,7 @@ export function Canvas() {
             setShowNodeMenu(false);
             setMenuAllowedTypes(undefined);
             setPendingConnectStart(null);
+            setPendingMultiConnectSourceNodeIds(null);
             setPreviewConnectionVisual(null);
           }}
         />

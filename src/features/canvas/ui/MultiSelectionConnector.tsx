@@ -218,14 +218,6 @@ export const MultiSelectionConnector = memo(({
               strokeLinecap="round"
             />
           ))}
-          <circle
-            cx={preview.end.x}
-            cy={preview.end.y}
-            r={8}
-            fill="var(--canvas-handle-fill)"
-            stroke="var(--canvas-handle-border)"
-            strokeWidth={3}
-          />
         </svg>
       )}
 

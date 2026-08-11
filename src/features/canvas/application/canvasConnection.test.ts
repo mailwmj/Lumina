@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import { canvasNodeFactory } from './canvasServices';
-import { buildBatchConnectionPlan, isCanvasConnectionValid } from './canvasConnection';
+import {
+  buildBatchConnectionPlan,
+  getBatchConnectMenuNodeTypes,
+  isCanvasConnectionValid,
+} from './canvasConnection';
 import { CANVAS_NODE_TYPES, type CanvasEdge, type CanvasNode } from '../domain/canvasNodes';
 
 function createNode(type: CanvasNode['type'], id: string): CanvasNode {
@@ -86,6 +90,33 @@ describe('batch canvas connections', () => {
 
     expect(plan.connections).toHaveLength(9);
     expect(plan.invalidSourceIds).toEqual(['source-9']);
+  });
+
+  it('offers only new targets that can accept every selected source', () => {
+    const sourceA = createNode(CANVAS_NODE_TYPES.upload, 'source-a');
+    const sourceB = createNode(CANVAS_NODE_TYPES.upload, 'source-b');
+
+    const targetTypes = getBatchConnectMenuNodeTypes(
+      [sourceA.id, sourceB.id],
+      [sourceA, sourceB]
+    );
+
+    expect(targetTypes).toContain(CANVAS_NODE_TYPES.imageEdit);
+    expect(targetTypes).not.toContain(CANVAS_NODE_TYPES.videoFrame);
+  });
+
+  it('omits a new SD2 target when the whole selection exceeds its input capacity', () => {
+    const sources = Array.from({ length: 10 }, (_, index) =>
+      createNode(CANVAS_NODE_TYPES.upload, `source-${index}`)
+    );
+
+    const targetTypes = getBatchConnectMenuNodeTypes(
+      sources.map((source) => source.id),
+      sources
+    );
+
+    expect(targetTypes).toContain(CANVAS_NODE_TYPES.imageEdit);
+    expect(targetTypes).not.toContain(CANVAS_NODE_TYPES.sd2VideoGen);
   });
 });
 

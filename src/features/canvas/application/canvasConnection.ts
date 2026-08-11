@@ -8,6 +8,8 @@ import {
   type CanvasNodeType,
 } from '../domain/canvasNodes';
 import {
+  getConnectMenuNodeTypes,
+  getNodeDefinition,
   getNodeSourceDataTypes,
   getNodeTargetDataTypes,
   nodeHasSourceHandle,
@@ -80,6 +82,71 @@ export function canNodeBeManualConnectionSource(
   }
   const node = nodes.find((item) => item.id === nodeId);
   return node ? canNodeTypeBeManualConnectionSource(node.type) : false;
+}
+
+function getConnectMenuTargetTypesForSource(sourceType: CanvasNodeType): CanvasNodeType[] {
+  if (
+    sourceType === CANVAS_NODE_TYPES.audioUpload ||
+    sourceType === CANVAS_NODE_TYPES.audioUploadRef ||
+    sourceType === CANVAS_NODE_TYPES.videoUpload ||
+    sourceType === CANVAS_NODE_TYPES.videoUploadRef
+  ) {
+    return [CANVAS_NODE_TYPES.sd2VideoGen];
+  }
+
+  const candidateTypes = getConnectMenuNodeTypes('source');
+  const candidatesWithVideoGeneration = sourceType === CANVAS_NODE_TYPES.upload
+    ? [...new Set([...candidateTypes, CANVAS_NODE_TYPES.sd2VideoGen])]
+    : candidateTypes;
+  const sourceDataTypes = getNodeSourceDataTypes(sourceType);
+
+  return candidatesWithVideoGeneration.filter((candidateType) =>
+    sourceDataTypes.some((valueType) =>
+      getNodeTargetDataTypes(candidateType).includes(valueType)
+    )
+  );
+}
+
+/** Returns menu targets that can accept every selected source in one batch. */
+export function getBatchConnectMenuNodeTypes(
+  sourceNodeIds: string[],
+  nodes: CanvasNode[]
+): CanvasNodeType[] {
+  const uniqueSourceIds = [...new Set(sourceNodeIds)];
+  const sourceNodes = uniqueSourceIds
+    .map((sourceId) => nodes.find((node) => node.id === sourceId))
+    .filter((node): node is CanvasNode => Boolean(node));
+
+  if (sourceNodes.length !== uniqueSourceIds.length || sourceNodes.length === 0) {
+    return [];
+  }
+
+  const candidateTypes = sourceNodes
+    .map((sourceNode) => getConnectMenuTargetTypesForSource(sourceNode.type))
+    .reduce<CanvasNodeType[]>(
+      (sharedTypes, nextTypes) => sharedTypes.filter((type) => nextTypes.includes(type)),
+      getConnectMenuTargetTypesForSource(sourceNodes[0].type)
+    );
+
+  return candidateTypes.filter((targetType) => {
+    const targetNode: CanvasNode = {
+      id: `batch-connect-menu-target-${targetType}`,
+      type: targetType,
+      position: { x: 0, y: 0 },
+      data: getNodeDefinition(targetType).createDefaultData(),
+    };
+    const plan = buildBatchConnectionPlan(
+      uniqueSourceIds,
+      targetNode.id,
+      [...nodes, targetNode],
+      []
+    );
+
+    return (
+      plan.invalidSourceIds.length === 0 &&
+      plan.connections.length === uniqueSourceIds.length
+    );
+  });
 }
 
 function isAudioSource(node: CanvasNode): boolean {
