@@ -77,6 +77,10 @@ export type ExportImageNodeResultKind =
 
 export interface ExportImageNodeData extends NodeImageData {
   resultKind?: ExportImageNodeResultKind;
+  /** Stable identity shared by all result nodes from one image generation run. */
+  generationBatchId?: string;
+  generationBatchIndex?: number;
+  generationBatchSize?: ImageOutputCount;
 }
 
 export interface GroupNodeData extends NodeDisplayData {

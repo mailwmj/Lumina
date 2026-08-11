@@ -19,7 +19,6 @@ import { useTranslation } from 'react-i18next';
 
 import {
   AUTO_REQUEST_ASPECT_RATIO,
-  DEFAULT_ASPECT_RATIO,
   DEFAULT_IMAGE_OUTPUT_COUNT,
   type ImageEditNodeData,
   type ImageSize,
@@ -135,7 +134,6 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
   const deleteEdge = useCanvasStore((state) => state.deleteEdge);
   const reorderNodeInput = useCanvasStore((state) => state.reorderNodeInput);
   const addNodeBatch = useCanvasStore((state) => state.addNodeBatch);
-  const findNodePosition = useCanvasStore((state) => state.findNodePosition);
   const addEdge = useCanvasStore((state) => state.addEdge);
   const openAiImageApi = useSettingsStore((state) => state.openAiImageApi);
   const chaomoImageApi = useSettingsStore((state) => state.chaomoImageApi);
@@ -416,11 +414,25 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
       const generationStartedAt = Date.now();
       const resultNodeTitle = buildAiResultNodeTitle(userPrompt, t('node.imageEdit.resultTitle'));
       let resolvedRequestAspectRatio = selectedAspectRatio.value;
-      const outputAspectRatio = resolvedRequestAspectRatio === AUTO_REQUEST_ASPECT_RATIO
-        ? DEFAULT_ASPECT_RATIO
-        : resolvedRequestAspectRatio;
+      if (resolvedRequestAspectRatio === AUTO_REQUEST_ASPECT_RATIO) {
+        if (referenceImages.length > 0) {
+          try {
+            const sourceAspectRatio = await detectAspectRatio(referenceImages[0]);
+            const sourceAspectRatioValue = parseAspectRatio(sourceAspectRatio);
+            resolvedRequestAspectRatio = pickClosestImageGenerationAspectRatio(
+              sourceAspectRatioValue
+            );
+          } catch {
+            resolvedRequestAspectRatio = pickClosestImageGenerationAspectRatio(1);
+          }
+        } else {
+          resolvedRequestAspectRatio = pickClosestImageGenerationAspectRatio(1);
+        }
+      }
+      const outputAspectRatio = resolvedRequestAspectRatio;
       const runtimeDiagnostics = await getRuntimeDiagnostics();
       setError(null);
+      const canvasSnapshot = useCanvasStore.getState();
 
       const resultNodes = createImageOutputBatchNodes({
         sourceNodeId: id,
@@ -429,23 +441,11 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
         resultNodeTitle,
         generationStartedAt,
         generationDurationMs,
+        existingNodes: canvasSnapshot.nodes,
+        existingEdges: canvasSnapshot.edges,
         addNodeBatch,
         addEdge,
-        findNodePosition,
       });
-
-      if (outputCount > 1) {
-        window.requestAnimationFrame(() => {
-          window.requestAnimationFrame(() => {
-            void reactFlow.fitView({
-              nodes: [{ id }, ...resultNodes.map(({ nodeId }) => ({ id: nodeId }))],
-              padding: 0.16,
-              duration: 320,
-              maxZoom: 1,
-            });
-          });
-        });
-      }
 
       const buildDebugContext = (outputIndex: number): GenerationDebugContext => ({
         sourceType: 'imageEdit',
@@ -480,22 +480,6 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
         });
 
       try {
-        if (resolvedRequestAspectRatio === AUTO_REQUEST_ASPECT_RATIO) {
-          if (referenceImages.length > 0) {
-            try {
-              const sourceAspectRatio = await detectAspectRatio(referenceImages[0]);
-              const sourceAspectRatioValue = parseAspectRatio(sourceAspectRatio);
-              resolvedRequestAspectRatio = pickClosestImageGenerationAspectRatio(
-                sourceAspectRatioValue
-              );
-            } catch {
-              resolvedRequestAspectRatio = pickClosestImageGenerationAspectRatio(1);
-            }
-          } else {
-            resolvedRequestAspectRatio = pickClosestImageGenerationAspectRatio(1);
-          }
-        }
-
         await canvasAiGateway.setApiKey(providerRuntime.backendProviderId, providerApiKey);
 
         const projectId = useProjectStore.getState().getCurrentProject()?.id;
@@ -579,8 +563,6 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
     addEdge,
     providerApiKey,
     providerRuntime.providerConfig,
-    findNodePosition,
-    reactFlow,
     promptDraft,
     effectiveExtraParams,
     hasConfiguredModel,

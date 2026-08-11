@@ -5,11 +5,17 @@ import {
   EXPORT_RESULT_NODE_LAYOUT_HEIGHT,
   EXPORT_RESULT_NODE_MIN_HEIGHT,
   EXPORT_RESULT_NODE_MIN_WIDTH,
+  type CanvasEdge,
+  type CanvasNode,
   type CanvasNodeData,
   type CanvasNodeType,
   type ImageOutputCount,
 } from '@/features/canvas/domain/canvasNodes';
 import { resolveFittedImageNodeSize } from '@/features/canvas/application/imageNodeSizing';
+import {
+  IMAGE_RESULT_LANE_GAP,
+  resolveImageResultBatchPosition,
+} from '@/features/canvas/application/imageResultPlacement';
 import {
   resolveErrorContent,
   type ResolvedErrorContent,
@@ -22,7 +28,7 @@ export interface ImageOutputBatchLayout {
   offsets: Array<{ x: number; y: number }>;
 }
 
-const IMAGE_OUTPUT_BATCH_GAP = 28;
+const IMAGE_OUTPUT_BATCH_GAP = IMAGE_RESULT_LANE_GAP;
 
 export interface ImageOutputBatchNode {
   nodeId: string;
@@ -36,6 +42,8 @@ interface CreateImageOutputBatchInput {
   resultNodeTitle: string;
   generationStartedAt: number;
   generationDurationMs: number;
+  existingNodes: readonly CanvasNode[];
+  existingEdges: readonly CanvasEdge[];
   addNodeBatch: (
     nodes: Array<{
       type: CanvasNodeType;
@@ -46,11 +54,6 @@ interface CreateImageOutputBatchInput {
     }>
   ) => string[];
   addEdge: (source: string, target: string) => string | null;
-  findNodePosition: (
-    sourceNodeId: string,
-    newNodeWidth: number,
-    newNodeHeight: number
-  ) => { x: number; y: number };
 }
 
 interface MarkImageOutputNodeFailedInput {
@@ -79,7 +82,7 @@ export function resolveImageOutputBatchLayout(
     };
   }
 
-  const columnCount = 2;
+  const columnCount = outputCount === 2 ? 1 : 2;
   const rowCount = Math.ceil(outputCount / columnCount);
   return {
     width: columnCount * nodeWidth + (columnCount - 1) * IMAGE_OUTPUT_BATCH_GAP,
@@ -98,9 +101,10 @@ export function createImageOutputBatchNodes({
   generationStartedAt,
   generationDurationMs,
   aspectRatio = DEFAULT_ASPECT_RATIO,
+  existingNodes,
+  existingEdges,
   addNodeBatch,
   addEdge,
-  findNodePosition,
 }: CreateImageOutputBatchInput): ImageOutputBatchNode[] {
   const outputSize = resolveFittedImageNodeSize(
     aspectRatio,
@@ -114,7 +118,13 @@ export function createImageOutputBatchNodes({
     }
   );
   const layout = resolveImageOutputBatchLayout(outputCount, outputSize.width, outputSize.height);
-  const batchPosition = findNodePosition(sourceNodeId, layout.width, layout.height);
+  const batchPosition = resolveImageResultBatchPosition({
+    sourceNodeId,
+    nodes: existingNodes,
+    edges: existingEdges,
+    batchSize: { width: layout.width, height: layout.height },
+  });
+  const generationBatchId = `${sourceNodeId}:generation:${generationStartedAt}`;
 
   const nodeIds = addNodeBatch(
     layout.offsets.map((offset, outputIndex) => ({
@@ -136,6 +146,7 @@ export function createImageOutputBatchNodes({
           : `${resultNodeTitle} · ${outputIndex + 1}/${outputCount}`,
         generationBatchIndex: outputIndex,
         generationBatchSize: outputCount,
+        generationBatchId,
       },
     }))
   );
