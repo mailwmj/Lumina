@@ -1120,7 +1120,8 @@ mod image_model_discovery_tests {
             .unwrap();
 
         assert_eq!(models[0].id, "gemini-3-pro-image-preview");
-        let request = String::from_utf8_lossy(&server.await.unwrap());
+        let request_bytes = server.await.unwrap();
+        let request = String::from_utf8_lossy(&request_bytes);
         let normalized_headers = request.to_ascii_lowercase();
         assert!(request.starts_with("GET /v1beta/models HTTP/1.1"));
         assert!(normalized_headers.contains("x-goog-api-key: test-key"));

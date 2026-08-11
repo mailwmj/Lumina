@@ -1,7 +1,6 @@
 import {
   CANVAS_NODE_TYPES,
   DEFAULT_NODE_WIDTH,
-  type CanvasEdge,
   type CanvasNode,
 } from '@/features/canvas/domain/canvasNodes';
 
@@ -13,7 +12,6 @@ export interface ImageResultBatchSize {
 export interface ImageResultBatchPlacementInput {
   sourceNodeId: string;
   nodes: readonly CanvasNode[];
-  edges: readonly CanvasEdge[];
   batchSize: ImageResultBatchSize;
 }
 
@@ -82,23 +80,6 @@ function rectsCollide(left: CanvasRect, right: CanvasRect): boolean {
   );
 }
 
-function getDirectImageResults(
-  sourceNodeId: string,
-  nodesById: ReadonlyMap<string, CanvasNode>,
-  edges: readonly CanvasEdge[]
-): CanvasNode[] {
-  const targetIds = new Set(
-    edges
-      .filter((edge) => edge.source === sourceNodeId)
-      .map((edge) => edge.target)
-  );
-
-  return Array.from(targetIds)
-    .map((nodeId) => nodesById.get(nodeId))
-    .filter((node): node is CanvasNode => Boolean(node))
-    .filter((node) => node.type === CANVAS_NODE_TYPES.exportImage);
-}
-
 function verticalLaneOffsets(): number[] {
   const offsets = [0];
   for (let step = 1; step <= MAX_VERTICAL_LANE_STEPS; step += 1) {
@@ -108,14 +89,13 @@ function verticalLaneOffsets(): number[] {
 }
 
 /**
- * Finds a stable, rightward result lane for a batch created by an image node.
+ * Finds the nearest available position in the result lane to the right of an image node.
  * Existing nodes are never moved and viewport visibility never changes the
  * direction of the result branch.
  */
 export function resolveImageResultBatchPosition({
   sourceNodeId,
   nodes,
-  edges,
   batchSize,
 }: ImageResultBatchPlacementInput): { x: number; y: number } {
   const sourceNode = nodes.find((node) => node.id === sourceNodeId);
@@ -125,12 +105,7 @@ export function resolveImageResultBatchPosition({
 
   const nodesById = new Map(nodes.map((node) => [node.id, node] as const));
   const sourceRect = resolveNodeRect(sourceNode, nodesById);
-  const directResults = getDirectImageResults(sourceNodeId, nodesById, edges);
-  const directResultRightEdge = directResults.reduce((rightEdge, node) => {
-    const rect = resolveNodeRect(node, nodesById);
-    return Math.max(rightEdge, rect.x + rect.width);
-  }, sourceRect.x + sourceRect.width);
-  const baseX = directResultRightEdge + IMAGE_RESULT_LANE_GAP;
+  const baseX = sourceRect.x + sourceRect.width + IMAGE_RESULT_LANE_GAP;
   const baseY = sourceRect.y + sourceRect.height / 2 - batchSize.height / 2;
   const verticalStep = batchSize.height + IMAGE_RESULT_LANE_GAP;
   const horizontalStep = batchSize.width + IMAGE_RESULT_LANE_GAP;

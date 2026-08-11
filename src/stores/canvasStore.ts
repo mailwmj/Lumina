@@ -216,6 +216,7 @@ interface CanvasState {
   ) => string | null;
 
   updateNodeData: (nodeId: string, data: Partial<CanvasNodeData>) => void;
+  updateNodeDataWithoutHistory: (nodeId: string, data: Partial<CanvasNodeData>) => void;
   updateNodeDataCoalesced: (
     nodeId: string,
     data: Partial<CanvasNodeData>,
@@ -1690,6 +1691,36 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         },
         dragHistorySnapshot: null,
       };
+    });
+  },
+
+  updateNodeDataWithoutHistory: (nodeId, data) => {
+    set((state) => {
+      let changed = false;
+      const nextNodes = state.nodes.map((node) => {
+        if (node.id !== nodeId) {
+          return node;
+        }
+
+        const hasDataChange = Object.entries(data).some(([key, nextValue]) => {
+          const previousValue = (node.data as Record<string, unknown>)[key];
+          return !Object.is(previousValue, nextValue);
+        });
+        if (!hasDataChange) {
+          return node;
+        }
+
+        changed = true;
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            ...data,
+          } as CanvasNodeData,
+        };
+      });
+
+      return changed ? { nodes: nextNodes } : {};
     });
   },
 

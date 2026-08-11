@@ -2,6 +2,7 @@ import { convertFileSrc, isTauri } from '@tauri-apps/api/core';
 import { logger } from '@/lib/logger';
 
 import {
+  createImagePreview,
   loadImage,
   prepareNodeImageBinary,
   persistImageSource,
@@ -44,6 +45,11 @@ const LOCAL_PATH_PREFIX_PATTERN = /^(?:[A-Za-z]:[\\/]|\\\\|\/)/;
 
 export interface PreparedNodeImage {
   imageUrl: string;
+  previewImageUrl: string;
+  aspectRatio: string;
+}
+
+export interface PreparedNodeImagePreview {
   previewImageUrl: string;
   aspectRatio: string;
 }
@@ -458,6 +464,45 @@ export async function createPreviewDataUrl(
   const image = await loadImageElement(normalizedDataUrl);
   const safeMaxDimension = Math.max(64, Math.floor(maxDimension));
   return renderPreviewDataUrl(image, normalizedDataUrl, safeMaxDimension);
+}
+
+export async function createNodeImagePreview(
+  imageUrl: string,
+  maxPreviewDimension = DEFAULT_PREVIEW_MAX_DIMENSION,
+  projectId?: string
+): Promise<PreparedNodeImagePreview> {
+  const trimmedImageUrl = imageUrl.trim();
+  if (!trimmedImageUrl) {
+    throw createImagePipelineError('未获取到可用图片结果', 'imageUrl is empty');
+  }
+
+  const safeMaxDimension = Math.max(64, Math.floor(maxPreviewDimension));
+  if (isTauri()) {
+    try {
+      const prepared = await createImagePreview(trimmedImageUrl, safeMaxDimension, projectId);
+      return {
+        previewImageUrl: prepared.previewImagePath,
+        aspectRatio: prepared.aspectRatio,
+      };
+    } catch (error) {
+      logger.warn('[imageData] createNodeImagePreview tauri-source failed, fallback to browser path', {
+        source: trimmedImageUrl,
+        error,
+      });
+    }
+  }
+
+  const normalizedDataUrl = await imageUrlToDataUrl(trimmedImageUrl);
+  const image = await loadImageElement(normalizedDataUrl);
+  const previewDataUrl = renderPreviewDataUrl(image, normalizedDataUrl, safeMaxDimension);
+  const previewImageUrl = previewDataUrl === normalizedDataUrl
+    ? trimmedImageUrl
+    : await persistImageLocally(previewDataUrl, projectId);
+
+  return {
+    previewImageUrl,
+    aspectRatio: reduceAspectRatio(image.naturalWidth, image.naturalHeight),
+  };
 }
 
 export async function prepareNodeImage(

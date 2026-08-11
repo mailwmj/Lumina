@@ -35,7 +35,10 @@ import {
   type CanvasNodeType,
   DEFAULT_NODE_WIDTH,
 } from '@/features/canvas/domain/canvasNodes';
-import { prepareNodeImageFromFile } from '@/features/canvas/application/imageData';
+import {
+  createNodeImagePreview,
+  prepareNodeImageFromFile,
+} from '@/features/canvas/application/imageData';
 import {
   buildGenerationErrorReport,
   CURRENT_RUNTIME_SESSION_ID,
@@ -48,6 +51,11 @@ import {
   selectWorkflowNodes,
 } from '@/features/canvas/application/canvasNodeSelectors';
 import { resolveImageProviderRuntime } from '@/features/canvas/application/imageProviderRuntime';
+import {
+  CANVAS_IMAGE_QUALITY_SETTLE_DELAY_MS,
+  findCanvasImageFocusCandidate,
+} from '@/features/canvas/application/canvasImageRenderPolicy';
+import { useCanvasImageQualityStore } from '@/features/canvas/application/canvasImageQualityStore';
 import {
   buildBatchConnectionPlan,
   canNodeBeManualConnectionSource,
@@ -78,6 +86,7 @@ import { NodeToolDialog } from './ui/NodeToolDialog';
 import { ImageViewerModal } from './ui/ImageViewerModal';
 import { NodeContextMenu } from './ui/NodeContextMenu';
 import { resolveCanvasConnectionRadius } from './application/connectionSnap';
+import { useCanvasImagePreviewBackfill } from './hooks/useCanvasImagePreviewBackfill';
 import { logger } from '@/lib/logger';
 
 const DEFAULT_VIEWPORT: Viewport = { x: 0, y: 0, zoom: 1 };
@@ -320,6 +329,7 @@ export function Canvas() {
   const pasteIterationRef = useRef(0);
   const pasteImageHandledRef = useRef(false);
   const nodeContextMenuSequenceRef = useRef(0);
+  const imageQualitySettleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeGenerationPollNodeIdsRef = useRef(new Set<string>());
   const duplicateNodesRef = useRef<((sourceNodeIds: string[]) => string | null) | null>(null);
   const altDragCopyRef = useRef<{
@@ -351,6 +361,9 @@ export function Canvas() {
   const connectNodesBatch = useCanvasStore((state) => state.onConnectBatch);
   const setCanvasData = useCanvasStore((state) => state.setCanvasData);
   const updateNodeData = useCanvasStore((state) => state.updateNodeData);
+  const updateNodeDataWithoutHistory = useCanvasStore(
+    (state) => state.updateNodeDataWithoutHistory
+  );
   const addNode = useCanvasStore((state) => state.addNode);
   const setSelectedNode = useCanvasStore((state) => state.setSelectedNode);
   const selectedNodeId = useCanvasStore((state) => state.selectedNodeId);
@@ -381,11 +394,28 @@ export function Canvas() {
   );
 
   const getCurrentProject = useProjectStore((state) => state.getCurrentProject);
+  const currentProjectId = useProjectStore((state) => state.currentProjectId);
   const saveCurrentProject = useProjectStore((state) => state.saveCurrentProject);
   const saveCurrentProjectViewport = useProjectStore((state) => state.saveCurrentProjectViewport);
   const cancelPendingViewportPersist = useProjectStore(
     (state) => state.cancelPendingViewportPersist
   );
+  const isCanvasImageInteractionActive = useCanvasImageQualityStore(
+    (state) => state.isInteractionActive
+  );
+  const setCanvasImageInteractionActive = useCanvasImageQualityStore(
+    (state) => state.setInteractionActive
+  );
+  const setCanvasImageFocusedNodeId = useCanvasImageQualityStore(
+    (state) => state.setFocusedNodeId
+  );
+
+  useCanvasImagePreviewBackfill({
+    projectId: currentProjectId,
+    workflowNodes,
+    isInteractionActive: isCanvasImageInteractionActive,
+    updateNodeDataWithoutHistory,
+  });
 
   const persistCanvasSnapshot = useCallback(() => {
     if (isRestoringCanvasRef.current) {
@@ -421,6 +451,56 @@ export function Canvas() {
     },
     [persistCanvasSnapshot]
   );
+
+  const scheduleCanvasImageFocus = useCallback((viewport?: Viewport) => {
+    if (imageQualitySettleTimerRef.current) {
+      window.clearTimeout(imageQualitySettleTimerRef.current);
+    }
+
+    imageQualitySettleTimerRef.current = window.setTimeout(() => {
+      imageQualitySettleTimerRef.current = null;
+      if (useCanvasImageQualityStore.getState().isInteractionActive) {
+        return;
+      }
+
+      const container = wrapperRef.current;
+      if (!container) {
+        setCanvasImageFocusedNodeId(null);
+        return;
+      }
+
+      const containerRect = container.getBoundingClientRect();
+      const focusedNodeId = findCanvasImageFocusCandidate({
+        nodes: useCanvasStore.getState().nodes,
+        viewport: viewport ?? reactFlowInstance.getViewport(),
+        viewportSize: {
+          width: containerRect.width,
+          height: containerRect.height,
+        },
+        selectedNodeId: useCanvasStore.getState().selectedNodeId,
+      });
+      setCanvasImageFocusedNodeId(focusedNodeId);
+    }, CANVAS_IMAGE_QUALITY_SETTLE_DELAY_MS);
+  }, [reactFlowInstance, setCanvasImageFocusedNodeId]);
+
+  useEffect(() => {
+    if (imageQualitySettleTimerRef.current) {
+      window.clearTimeout(imageQualitySettleTimerRef.current);
+      imageQualitySettleTimerRef.current = null;
+    }
+    setCanvasImageFocusedNodeId(null);
+    setCanvasImageInteractionActive(false);
+  }, [currentProjectId, setCanvasImageFocusedNodeId, setCanvasImageInteractionActive]);
+
+  useEffect(() => {
+    return () => {
+      if (imageQualitySettleTimerRef.current) {
+        window.clearTimeout(imageQualitySettleTimerRef.current);
+      }
+      setCanvasImageFocusedNodeId(null);
+      setCanvasImageInteractionActive(false);
+    };
+  }, [setCanvasImageFocusedNodeId, setCanvasImageInteractionActive]);
 
   useEffect(() => {
     const unsubscribeOpen = canvasEventBus.subscribe('tool-dialog/open', (payload) => {
@@ -479,6 +559,17 @@ export function Canvas() {
   }, [nodes, edges, history, dragHistorySnapshot, scheduleCanvasPersist]);
 
   useEffect(() => {
+    scheduleCanvasImageFocus();
+
+    return () => {
+      if (imageQualitySettleTimerRef.current) {
+        window.clearTimeout(imageQualitySettleTimerRef.current);
+        imageQualitySettleTimerRef.current = null;
+      }
+    };
+  }, [scheduleCanvasImageFocus, selectedNodeId, workflowNodes]);
+
+  useEffect(() => {
     const sleep = (delayMs: number) =>
       new Promise<void>((resolve) => {
         window.setTimeout(resolve, delayMs);
@@ -517,6 +608,9 @@ export function Canvas() {
             const generationProviderId = typeof currentData.generationProviderId === 'string'
               ? currentData.generationProviderId
               : '';
+            const generationProviderName = typeof currentData.generationProviderName === 'string'
+              ? currentData.generationProviderName
+              : generationProviderId;
             const providerRuntime = resolveImageProviderRuntime(generationProviderId, {
               openAiImageApi,
               chaomoImageApi,
@@ -550,7 +644,11 @@ export function Canvas() {
               let localImagePath = status.result;
               if (projectId) {
                 try {
-                  localImagePath = await autoSaveImageToProject(status.result, projectId);
+                  localImagePath = await autoSaveImageToProject(
+                    status.result,
+                    projectId,
+                    generationProviderName
+                  );
                   logger.info('[GenerationJob] Generated image auto-saved to project directory:', localImagePath);
                 } catch (e) {
                   logger.warn('[GenerationJob] Failed to auto-save image to project directory, using URL:', e);
@@ -578,9 +676,18 @@ export function Canvas() {
                 });
               }
 
+              const preview = await createNodeImagePreview(imageWithMetadata, 512, projectId)
+                .catch((error) => {
+                  logger.warn('[GenerationJob] Failed to create image preview, using original image', {
+                    nodeId: pendingNode.id,
+                    error,
+                  });
+                  return null;
+                });
+
               updateNodeData(pendingNode.id, {
                 imageUrl: imageWithMetadata,
-                previewImageUrl: imageWithMetadata,
+                previewImageUrl: preview?.previewImageUrl ?? imageWithMetadata,
                 aspectRatio: typeof currentData.aspectRatio === 'string'
                   && currentData.aspectRatio.trim().length > 0
                   ? currentData.aspectRatio
@@ -589,6 +696,7 @@ export function Canvas() {
                 generationStartedAt: null,
                 generationJobId: null,
                 generationProviderId: null,
+                generationProviderName: null,
                 generationClientSessionId: null,
                 generationStoryboardMetadata: undefined,
                 generationError: null,
@@ -616,6 +724,7 @@ export function Canvas() {
               generationStartedAt: null,
               generationJobId: null,
               generationProviderId: null,
+              generationProviderName: null,
               generationClientSessionId: null,
               generationStoryboardMetadata: undefined,
               generationError: errorMessage,
@@ -857,17 +966,25 @@ export function Canvas() {
       const hasInteractionEnd = hasDragEnd || hasResizeEnd;
 
       if (hasInteractionMove) {
+        setCanvasImageInteractionActive(true);
         return;
       }
 
       if (hasInteractionEnd) {
+        setCanvasImageInteractionActive(false);
+        scheduleCanvasImageFocus();
         scheduleCanvasPersist(0);
         return;
       }
 
       scheduleCanvasPersist();
     },
-    [applyNodesChange, scheduleCanvasPersist]
+    [
+      applyNodesChange,
+      scheduleCanvasImageFocus,
+      scheduleCanvasPersist,
+      setCanvasImageInteractionActive,
+    ]
   );
 
   const handleEdgesChange = useCallback(
@@ -918,13 +1035,21 @@ export function Canvas() {
   const handleMoveEnd = useCallback(
     (_event: unknown, viewport: Viewport) => {
       setViewportState(viewport);
+      setCanvasImageInteractionActive(false);
+      scheduleCanvasImageFocus(viewport);
       const project = getCurrentProject();
       if (!project || isRestoringCanvasRef.current) {
         return;
       }
       saveCurrentProjectViewport(viewport);
     },
-    [getCurrentProject, saveCurrentProjectViewport, setViewportState]
+    [
+      getCurrentProject,
+      saveCurrentProjectViewport,
+      scheduleCanvasImageFocus,
+      setCanvasImageInteractionActive,
+      setViewportState,
+    ]
   );
 
   const handleMove = useCallback(
@@ -935,8 +1060,11 @@ export function Canvas() {
   );
 
   const handleMoveStart = useCallback(() => {
+    if (!isRestoringCanvasRef.current) {
+      setCanvasImageInteractionActive(true);
+    }
     cancelPendingViewportPersist();
-  }, [cancelPendingViewportPersist]);
+  }, [cancelPendingViewportPersist, setCanvasImageInteractionActive]);
 
   useEffect(() => {
     const wrapperElement = wrapperRef.current;
@@ -1699,6 +1827,9 @@ export function Canvas() {
         if ('generationProviderId' in (data as Record<string, unknown>)) {
           (data as { generationProviderId?: string | null }).generationProviderId = null;
         }
+        if ('generationProviderName' in (data as Record<string, unknown>)) {
+          (data as { generationProviderName?: string | null }).generationProviderName = null;
+        }
         if ('generationClientSessionId' in (data as Record<string, unknown>)) {
           (data as { generationClientSessionId?: string | null }).generationClientSessionId = null;
         }
@@ -1880,6 +2011,7 @@ export function Canvas() {
 
   const handleNodeDragStart = useCallback(
     (event: ReactMouseEvent, node: CanvasNode) => {
+      setCanvasImageInteractionActive(true);
       if (!event.altKey) {
         altDragCopyRef.current = null;
         return;
@@ -1951,7 +2083,7 @@ export function Canvas() {
         sourceToCopyIdMap: duplicateResult.idMap,
       };
     },
-    [duplicateNodes, nodes, selectedNodeIds]
+    [duplicateNodes, nodes, selectedNodeIds, setCanvasImageInteractionActive]
   );
 
   const handleNodeDrag = useCallback(
@@ -2020,6 +2152,8 @@ export function Canvas() {
 
   const handleNodeDragStop = useCallback(
     (_event: ReactMouseEvent, node: CanvasNode) => {
+      setCanvasImageInteractionActive(false);
+      scheduleCanvasImageFocus();
       const altCopyState = altDragCopyRef.current;
       if (!altCopyState) {
         return;
@@ -2086,7 +2220,13 @@ export function Canvas() {
       }
       scheduleCanvasPersist(0);
     },
-    [applyNodesChange, scheduleCanvasPersist, setSelectedNode]
+    [
+      applyNodesChange,
+      scheduleCanvasImageFocus,
+      scheduleCanvasPersist,
+      setCanvasImageInteractionActive,
+      setSelectedNode,
+    ]
   );
 
   const handleConnectEnd = useCallback(

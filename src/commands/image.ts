@@ -62,6 +62,11 @@ export interface PrepareNodeImageSourceResult {
   aspectRatio: string;
 }
 
+export interface CreateImagePreviewResult {
+  previewImagePath: string;
+  aspectRatio: string;
+}
+
 export interface CropImageSourcePayload {
   source: string;
   aspectRatio?: string;
@@ -126,6 +131,18 @@ export async function prepareNodeImageBinary(
   return await invoke('prepare_node_image_binary', {
     bytes: Array.from(bytes),
     extension,
+    maxPreviewDimension,
+    projectId,
+  });
+}
+
+export async function createImagePreview(
+  source: string,
+  maxPreviewDimension = 512,
+  projectId?: string
+): Promise<CreateImagePreviewResult> {
+  return await invoke('create_image_preview', {
+    source,
     maxPreviewDimension,
     projectId,
   });
@@ -231,11 +248,13 @@ export async function autoSaveVideoToProject(
 
 export async function autoSaveImageToProject(
   imageUrl: string,
-  projectId: string
+  projectId: string,
+  providerName?: string
 ): Promise<string> {
   return await invoke('auto_save_image_to_project', {
     imageUrl,
     projectId,
+    providerName,
   });
 }
 

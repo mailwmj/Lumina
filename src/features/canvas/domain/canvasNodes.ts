@@ -81,6 +81,8 @@ export interface ExportImageNodeData extends NodeImageData {
   generationBatchId?: string;
   generationBatchIndex?: number;
   generationBatchSize?: ImageOutputCount;
+  /** Provider display name snapshot used while persisting a generated image. */
+  generationProviderName?: string | null;
 }
 
 export interface GroupNodeData extends NodeDisplayData {

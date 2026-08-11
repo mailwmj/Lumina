@@ -60,6 +60,7 @@ import {
 import {
   IMAGE_GENERATION_ASPECT_RATIO_OPTIONS,
   IMAGE_GENERATION_RESOLUTION_OPTIONS,
+  getModelProvider,
   listConfiguredImageModels,
   pickClosestImageGenerationAspectRatio,
   resolveImageGenerationResolution,
@@ -442,7 +443,6 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
         generationStartedAt,
         generationDurationMs,
         existingNodes: canvasSnapshot.nodes,
-        existingEdges: canvasSnapshot.edges,
         addNodeBatch,
         addEdge,
       });
@@ -507,6 +507,10 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
                 generationJobId: submission.jobId,
                 generationSourceType: 'imageEdit',
                 generationProviderId: selectedModel.providerId,
+                generationProviderName: getModelProvider(
+                  selectedModel.providerId,
+                  selectedModel.providerName
+                ).name,
                 generationClientSessionId: CURRENT_RUNTIME_SESSION_ID,
                 generationDebugContext: buildDebugContext(outputIndex),
               });
@@ -575,6 +579,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
     selectedModel.id,
     selectedModel.expectedDurationMs,
     selectedModel.providerId,
+    selectedModel.providerName,
     selectedResolution.value,
     t,
     updateNodeData,

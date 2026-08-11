@@ -11,7 +11,6 @@ import {
   Handle,
   Position,
   useUpdateNodeInternals,
-  useViewport,
   type NodeProps,
 } from '@xyflow/react';
 import { Download, FolderOpen, ImagePlus, SlidersHorizontal, SquareArrowOutUpRight } from '@/components/ui/icons';
@@ -47,7 +46,6 @@ import {
   persistImageLocally,
   reduceAspectRatio,
   resolveImageDisplayUrl,
-  shouldUseOriginalImageByZoom,
 } from '@/features/canvas/application/imageData';
 import { UiButton, UiCheckbox, UiChipButton, UiInput, UiPanel, UiSelect, UiTooltip } from '@/components/ui';
 import {
@@ -294,15 +292,11 @@ const FrameCard = memo(
   }: FrameCardProps) => {
     const { t } = useTranslation();
     const updateStoryboardFrame = useCanvasStore((state) => state.updateStoryboardFrame);
-    const { zoom } = useViewport();
 
     const imageSource = useMemo(() => {
-      const preferOriginal = shouldUseOriginalImageByZoom(zoom);
-      const picked = preferOriginal
-        ? frame.imageUrl || frame.previewImageUrl
-        : frame.previewImageUrl || frame.imageUrl;
+      const picked = frame.previewImageUrl || frame.imageUrl;
       return picked ? resolveImageDisplayUrl(picked) : null;
-    }, [frame.imageUrl, frame.previewImageUrl, zoom]);
+    }, [frame.imageUrl, frame.previewImageUrl]);
     const viewerSource = useMemo(() => {
       const picked = frame.imageUrl || frame.previewImageUrl;
       return picked ? resolveImageDisplayUrl(picked) : null;
@@ -341,7 +335,7 @@ const FrameCard = memo(
             onSortStart(frame.id);
           }}
         >
-          {frame.imageUrl ? (
+          {frame.imageUrl || frame.previewImageUrl ? (
             <CanvasNodeImage
               src={imageSource ?? ''}
               alt={`Frame ${index + 1}`}

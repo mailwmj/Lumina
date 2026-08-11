@@ -10,7 +10,7 @@ import {
   useRef,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { Handle, Position, useUpdateNodeInternals, useViewport } from '@xyflow/react';
+import { Handle, Position, useStore, useUpdateNodeInternals } from '@xyflow/react';
 import { Loader2, Minus, Plus, Sparkles, Wand2 } from '@/components/ui/icons';
 import { useTranslation } from 'react-i18next';
 
@@ -60,6 +60,7 @@ import {
 import {
   IMAGE_GENERATION_ASPECT_RATIO_OPTIONS,
   IMAGE_GENERATION_RESOLUTION_OPTIONS,
+  getModelProvider,
   listConfiguredImageModels,
   pickClosestImageGenerationAspectRatio,
   resolveImageGenerationResolution,
@@ -577,7 +578,7 @@ function generateGridImageDataUrl(
 
 export const StoryboardGenNode = memo(({ id, data, selected, width, height }: StoryboardGenNodeProps) => {
   const { t } = useTranslation();
-  const { zoom } = useViewport();
+  const zoom = useStore((state) => state.transform[2]);
   const updateNodeInternals = useUpdateNodeInternals();
   const setSelectedNode = useCanvasStore((state) => state.setSelectedNode);
   const workflowNodes = useCanvasStore(selectWorkflowNodes);
@@ -1265,6 +1266,10 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
         generationJobId: jobId,
         generationSourceType: 'storyboardGen',
         generationProviderId: selectedModel.providerId,
+        generationProviderName: getModelProvider(
+          selectedModel.providerId,
+          selectedModel.providerName
+        ).name,
         generationClientSessionId: CURRENT_RUNTIME_SESSION_ID,
         generationDebugContext,
         generationStoryboardMetadata: {
@@ -1304,6 +1309,7 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
         generationStartedAt: null,
         generationJobId: null,
         generationProviderId: null,
+        generationProviderName: null,
         generationClientSessionId: null,
         generationStoryboardMetadata: undefined,
         generationError: resolvedError.message,
@@ -1322,6 +1328,7 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
     selectedModel.expectedDurationMs,
     selectedModel.id,
     selectedModel.providerId,
+    selectedModel.providerName,
     setSelectedNode,
     selectedAspectRatio.value,
     selectedResolution.value,

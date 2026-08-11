@@ -69,7 +69,6 @@ describe('image output batch layout', () => {
           data: {} as never,
         },
       ],
-      existingEdges: [],
       addNodeBatch,
       addEdge,
     });

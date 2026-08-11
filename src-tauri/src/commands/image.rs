@@ -1,6 +1,7 @@
 use base64::{engine::general_purpose::STANDARD, Engine};
 use ab_glyph::{FontArc, PxScale};
 use arboard::{Clipboard, ImageData};
+use chrono::Local;
 use directories::UserDirs;
 use fast_image_resize as fir;
 use fast_image_resize::images::Image as FirImage;
@@ -15,10 +16,47 @@ use std::sync::OnceLock;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager};
 use tracing::info;
+use uuid::Uuid;
 
 const STORYBOARD_METADATA_PNG_TEXT_KEY: &str = "StoryboardCopilotMetadata";
 const FAST_PREVIEW_BYPASS_MAX_BYTES: usize = 2_000_000;
 const FAST_PREVIEW_BYPASS_MAX_DIMENSION: u32 = 2048;
+const GENERATED_IMAGE_RANDOM_SUFFIX_LENGTH: usize = 8;
+
+fn build_generated_image_filename(
+    provider_name: &str,
+    timestamp: &str,
+    random_suffix: &str,
+) -> String {
+    let mut normalized_provider_name = String::new();
+    let mut previous_character_was_separator = false;
+
+    for character in provider_name.trim().chars() {
+        if character.is_alphanumeric() || matches!(character, '-' | '_') {
+            normalized_provider_name.push(character);
+            previous_character_was_separator = false;
+        } else if !normalized_provider_name.is_empty() && !previous_character_was_separator {
+            normalized_provider_name.push('_');
+            previous_character_was_separator = true;
+        }
+    }
+
+    let normalized_provider_name = normalized_provider_name.trim_matches('_');
+    let provider_segment = if normalized_provider_name.is_empty() {
+        "generated"
+    } else {
+        normalized_provider_name
+    };
+
+    format!("{}_{}_{}.jpg", provider_segment, timestamp, random_suffix)
+}
+
+fn generate_image_filename(provider_name: Option<&str>) -> String {
+    let timestamp = Local::now().format("%Y%m%d_%H%M%S").to_string();
+    let random_id = Uuid::new_v4().simple().to_string();
+    let random_suffix = &random_id[..GENERATED_IMAGE_RANDOM_SUFFIX_LENGTH];
+    build_generated_image_filename(provider_name.unwrap_or_default(), &timestamp, random_suffix)
+}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -242,6 +280,13 @@ pub struct MergeStoryboardImagesResult {
 #[serde(rename_all = "camelCase")]
 pub struct PrepareNodeImageResult {
     pub image_path: String,
+    pub preview_image_path: String,
+    pub aspect_ratio: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateImagePreviewResult {
     pub preview_image_path: String,
     pub aspect_ratio: String,
 }
@@ -740,6 +785,66 @@ pub async fn prepare_node_image_binary(
         started.elapsed().as_millis()
     );
     Ok(result)
+}
+
+#[tauri::command]
+pub async fn create_image_preview(
+    app: AppHandle,
+    source: String,
+    max_preview_dimension: Option<u32>,
+    project_id: Option<String>,
+) -> Result<CreateImagePreviewResult, String> {
+    let trimmed = source.trim();
+    if trimmed.is_empty() {
+        return Err("Image source is empty".to_string());
+    }
+
+    let safe_max_dimension = max_preview_dimension.unwrap_or(512).clamp(64, 4096);
+    let (bytes, _extension) = resolve_source_bytes(trimmed).await?;
+    let (raw_width, raw_height) = ImageReader::new(Cursor::new(&bytes))
+        .with_guessed_format()
+        .map_err(|e| format!("Failed to guess image format: {}", e))?
+        .into_dimensions()
+        .map_err(|e| format!("Failed to parse image dimensions: {}", e))?;
+    let width = raw_width.max(1);
+    let height = raw_height.max(1);
+    let aspect_ratio = reduce_aspect_ratio(width, height);
+
+    if width.max(height) <= safe_max_dimension {
+        return Ok(CreateImagePreviewResult {
+            preview_image_path: trimmed.to_string(),
+            aspect_ratio,
+        });
+    }
+
+    let image = image::load_from_memory(&bytes)
+        .map_err(|e| format!("Failed to decode image: {}", e))?;
+    let scale = safe_max_dimension as f64 / width.max(height) as f64;
+    let target_width = ((width as f64) * scale).round().max(1.0) as u32;
+    let target_height = ((height as f64) * scale).round().max(1.0) as u32;
+    let resized_rgba = resize_image_fast(&image, target_width, target_height)
+        .unwrap_or_else(|_| {
+            image
+                .resize(target_width, target_height, image::imageops::FilterType::Triangle)
+                .to_rgba8()
+        });
+    let resized = DynamicImage::ImageRgba8(resized_rgba);
+    let mut preview_buffer = Cursor::new(Vec::new());
+    let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut preview_buffer, 90);
+    resized
+        .write_with_encoder(encoder)
+        .map_err(|e| format!("Failed to encode preview image: {}", e))?;
+    let preview_image_path = persist_image_bytes(
+        &app,
+        preview_buffer.get_ref(),
+        "jpg",
+        project_id.as_deref(),
+    )?;
+
+    Ok(CreateImagePreviewResult {
+        preview_image_path,
+        aspect_ratio,
+    })
 }
 
 #[tauri::command]
@@ -1842,6 +1947,7 @@ pub async fn auto_save_image_to_project(
     app: AppHandle,
     image_url: String,
     project_id: String,
+    provider_name: Option<String>,
 ) -> Result<String, String> {
     info!("[auto_save_image_to_project] START project_id={}, url={}", project_id, &image_url[..image_url.len().min(100)]);
     let bytes = if image_url.starts_with("data:") {
@@ -1885,14 +1991,7 @@ pub async fn auto_save_image_to_project(
         .map_err(|e| format!("Failed to encode JPEG: {}", e))?;
 
     let outputs_dir = resolve_project_dir(&app, &project_id, "outputs/images")?;
-    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos() as u64;
-    let process_id = std::process::id() as u64;
-    let counter = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let filename = format!("gen_{}_{}_{}.jpg", timestamp, process_id, counter);
+    let filename = generate_image_filename(provider_name.as_deref());
     let output_path = outputs_dir.join(&filename);
 
     std::fs::write(&output_path, jpeg_buffer.get_ref())
@@ -2187,4 +2286,25 @@ pub async fn delete_project_upload_file(
 
     info!("Deleted project upload file: {}/{}", project_id, filename);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::build_generated_image_filename;
+
+    #[test]
+    fn generated_image_filename_uses_provider_seconds_and_random_suffix() {
+        assert_eq!(
+            build_generated_image_filename("OpenAI", "20260812_143015", "a1b2c3d4"),
+            "OpenAI_20260812_143015_a1b2c3d4.jpg"
+        );
+    }
+
+    #[test]
+    fn generated_image_filename_normalizes_provider_name() {
+        assert_eq!(
+            build_generated_image_filename("My / Provider", "20260812_143015", "a1b2c3d4"),
+            "My_Provider_20260812_143015_a1b2c3d4.jpg"
+        );
+    }
 }

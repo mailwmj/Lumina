@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import {
   CANVAS_NODE_TYPES,
-  type CanvasEdge,
   type CanvasNode,
   type CanvasNodeType,
 } from '@/features/canvas/domain/canvasNodes';
@@ -31,14 +30,6 @@ function node(
   } as CanvasNode;
 }
 
-function edge(source: string, target: string): CanvasEdge {
-  return {
-    id: `e-${source}-${target}`,
-    source,
-    target,
-  } as CanvasEdge;
-}
-
 describe('image result placement', () => {
   const batchSize = { width: 288, height: 288 };
 
@@ -48,12 +39,30 @@ describe('image result placement', () => {
     expect(resolveImageResultBatchPosition({
       sourceNodeId: source.id,
       nodes: [source],
-      edges: [],
       batchSize,
     })).toEqual({ x: 448, y: 176 });
   });
 
-  it('continues repeated generations to the right of the existing direct results', () => {
+  it('uses the nearest free right-lane slot when an older direct result is farther away', () => {
+    const source = node('source', CANVAS_NODE_TYPES.imageEdit, 100, 200, 320, 240);
+    const distantResult = node(
+      'distant-result',
+      CANVAS_NODE_TYPES.exportImage,
+      764,
+      176,
+      288,
+      288,
+      { resultKind: 'generic' }
+    );
+
+    expect(resolveImageResultBatchPosition({
+      sourceNodeId: source.id,
+      nodes: [source, distantResult],
+      batchSize,
+    })).toEqual({ x: 448, y: 176 });
+  });
+
+  it('uses a lower right-lane slot before moving to another column when a result occupies the direct slot', () => {
     const source = node('source', CANVAS_NODE_TYPES.imageEdit, 100, 200, 320, 240);
     const result = node(
       'result',
@@ -68,9 +77,8 @@ describe('image result placement', () => {
     expect(resolveImageResultBatchPosition({
       sourceNodeId: source.id,
       nodes: [source, result],
-      edges: [edge(source.id, result.id)],
       batchSize,
-    })).toEqual({ x: 764, y: 176 });
+    })).toEqual({ x: 448, y: 492 });
   });
 
   it('uses a lower right-lane slot before moving to another column when the direct slot is occupied', () => {
@@ -80,7 +88,6 @@ describe('image result placement', () => {
     expect(resolveImageResultBatchPosition({
       sourceNodeId: source.id,
       nodes: [source, blocker],
-      edges: [],
       batchSize,
     })).toEqual({ x: 448, y: 492 });
   });
@@ -92,7 +99,6 @@ describe('image result placement', () => {
     expect(resolveImageResultBatchPosition({
       sourceNodeId: source.id,
       nodes: [source, blocker],
-      edges: [],
       batchSize,
     })).toEqual({ x: 764, y: 176 });
   });
@@ -112,7 +118,6 @@ describe('image result placement', () => {
     expect(resolveImageResultBatchPosition({
       sourceNodeId: source.id,
       nodes: [group, source],
-      edges: [],
       batchSize,
     })).toEqual({ x: 1_448, y: 826 });
   });

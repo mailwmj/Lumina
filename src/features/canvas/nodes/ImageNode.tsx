@@ -3,7 +3,6 @@ import {
   Handle,
   Position,
   useUpdateNodeInternals,
-  useViewport,
   type NodeProps,
 } from '@xyflow/react';
 import { AlertTriangle, Image as ImageIcon, Sparkles } from '@/components/ui/icons';
@@ -24,8 +23,8 @@ import {
 } from '@/features/canvas/application/imageNodeSizing';
 import {
   resolveImageDisplayUrl,
-  shouldUseOriginalImageByZoom,
 } from '@/features/canvas/application/imageData';
+import { useCanvasNodeImageSource } from '@/features/canvas/hooks/useCanvasNodeImageSource';
 import { resolveImageFileName } from '@/features/canvas/application/imageMetadata';
 import { resolveNodeDisplayName } from '@/features/canvas/domain/nodeDisplay';
 import { NodeResizeHandle } from '@/features/canvas/ui/NodeResizeHandle';
@@ -51,7 +50,6 @@ export const ImageNode = memo(({ id, data, selected, type, width, height }: Imag
   const { t } = useTranslation();
   const updateNodeInternals = useUpdateNodeInternals();
   const setSelectedNode = useCanvasStore((state) => state.setSelectedNode);
-  const { zoom } = useViewport();
   const [now, setNow] = useState(() => Date.now());
   const isExportResultNode = type === CANVAS_NODE_TYPES.exportImage;
   const isGenerating = typeof data.isGenerating === 'boolean' ? data.isGenerating : false;
@@ -138,13 +136,11 @@ export const ImageNode = memo(({ id, data, selected, type, width, height }: Imag
     return t('node.imageNode.waitingResultDelayed', { minutes: waitedMinutes });
   }, [isExportResultNode, isGenerating, t, waitedMinutes]);
 
-  const imageSource = useMemo(() => {
-    const preferOriginal = shouldUseOriginalImageByZoom(zoom);
-    const picked = preferOriginal
-      ? data.imageUrl || data.previewImageUrl
-      : data.previewImageUrl || data.imageUrl;
-    return picked ? resolveImageDisplayUrl(picked) : null;
-  }, [data.imageUrl, data.previewImageUrl, zoom]);
+  const imageSource = useCanvasNodeImageSource({
+    nodeId: id,
+    imageUrl: data.imageUrl,
+    previewImageUrl: data.previewImageUrl,
+  });
 
   // 获取原图 URL 用于查看器
   const originalImageUrl = useMemo(() => {

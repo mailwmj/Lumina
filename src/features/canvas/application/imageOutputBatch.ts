@@ -5,7 +5,6 @@ import {
   EXPORT_RESULT_NODE_LAYOUT_HEIGHT,
   EXPORT_RESULT_NODE_MIN_HEIGHT,
   EXPORT_RESULT_NODE_MIN_WIDTH,
-  type CanvasEdge,
   type CanvasNode,
   type CanvasNodeData,
   type CanvasNodeType,
@@ -43,7 +42,6 @@ interface CreateImageOutputBatchInput {
   generationStartedAt: number;
   generationDurationMs: number;
   existingNodes: readonly CanvasNode[];
-  existingEdges: readonly CanvasEdge[];
   addNodeBatch: (
     nodes: Array<{
       type: CanvasNodeType;
@@ -102,7 +100,6 @@ export function createImageOutputBatchNodes({
   generationDurationMs,
   aspectRatio = DEFAULT_ASPECT_RATIO,
   existingNodes,
-  existingEdges,
   addNodeBatch,
   addEdge,
 }: CreateImageOutputBatchInput): ImageOutputBatchNode[] {
@@ -121,7 +118,6 @@ export function createImageOutputBatchNodes({
   const batchPosition = resolveImageResultBatchPosition({
     sourceNodeId,
     nodes: existingNodes,
-    edges: existingEdges,
     batchSize: { width: layout.width, height: layout.height },
   });
   const generationBatchId = `${sourceNodeId}:generation:${generationStartedAt}`;
@@ -170,6 +166,7 @@ export function markImageOutputNodeFailed({
     generationStartedAt: null,
     generationJobId: null,
     generationProviderId: null,
+    generationProviderName: null,
     generationClientSessionId: null,
     generationError: resolvedError.message,
     generationErrorDetails: resolvedError.details ?? null,

@@ -13,7 +13,6 @@ import {
   Handle,
   Position,
   useUpdateNodeInternals,
-  useViewport,
   type NodeProps,
 } from '@xyflow/react';
 import { Upload } from '@/components/ui/icons';
@@ -38,8 +37,8 @@ import { resolveNodeSurfaceStateClass } from '@/features/canvas/ui/nodeSurfaceSt
 import {
   prepareNodeImageFromFile,
   resolveImageDisplayUrl,
-  shouldUseOriginalImageByZoom,
 } from '@/features/canvas/application/imageData';
+import { useCanvasNodeImageSource } from '@/features/canvas/hooks/useCanvasNodeImageSource';
 import { resolveImageFileName } from '@/features/canvas/application/imageMetadata';
 import { CanvasNodeImage } from '@/features/canvas/ui/CanvasNodeImage';
 import { SelectedImageMetadata } from '@/features/canvas/ui/SelectedImageMetadata';
@@ -80,7 +79,6 @@ export const UploadNode = memo(({ id, data, selected, width, height }: UploadNod
   const updateNodeData = useCanvasStore((state) => state.updateNodeData);
   const useUploadFilenameAsNodeTitle = useSettingsStore((state) => state.useUploadFilenameAsNodeTitle);
   const getCurrentProject = useProjectStore((state) => state.getCurrentProject);
-  const { zoom } = useViewport();
   const inputRef = useRef<HTMLInputElement>(null);
   const uploadSequenceRef = useRef(0);
   const uploadPerfRef = useRef<{
@@ -288,16 +286,12 @@ export const UploadNode = memo(({ id, data, selected, width, height }: UploadNod
     clearTransientPreview();
   }, [clearTransientPreview]);
 
-  const imageSource = useMemo(() => {
-    if (transientPreviewUrl) {
-      return transientPreviewUrl;
-    }
-    const preferOriginal = shouldUseOriginalImageByZoom(zoom);
-    const picked = preferOriginal
-      ? data.imageUrl || data.previewImageUrl
-      : data.previewImageUrl || data.imageUrl;
-    return picked ? resolveImageDisplayUrl(picked) : null;
-  }, [data.imageUrl, data.previewImageUrl, transientPreviewUrl, zoom]);
+  const stableImageSource = useCanvasNodeImageSource({
+    nodeId: id,
+    imageUrl: data.imageUrl,
+    previewImageUrl: data.previewImageUrl,
+  });
+  const imageSource = transientPreviewUrl ?? stableImageSource;
 
   useEffect(() => {
     updateNodeInternals(id);
