@@ -27,6 +27,7 @@ fn build_generated_image_filename(
     provider_name: &str,
     timestamp: &str,
     random_suffix: &str,
+    extension: &str,
 ) -> String {
     let mut normalized_provider_name = String::new();
     let mut previous_character_was_separator = false;
@@ -48,14 +49,43 @@ fn build_generated_image_filename(
         normalized_provider_name
     };
 
-    format!("{}_{}_{}.jpg", provider_segment, timestamp, random_suffix)
+    format!(
+        "{}_{}_{}.{}",
+        provider_segment,
+        timestamp,
+        random_suffix,
+        normalize_extension(extension)
+    )
 }
 
-fn generate_image_filename(provider_name: Option<&str>) -> String {
+fn generate_image_filename(provider_name: Option<&str>, extension: &str) -> String {
     let timestamp = Local::now().format("%Y%m%d_%H%M%S").to_string();
     let random_id = Uuid::new_v4().simple().to_string();
     let random_suffix = &random_id[..GENERATED_IMAGE_RANDOM_SUFFIX_LENGTH];
-    build_generated_image_filename(provider_name.unwrap_or_default(), &timestamp, random_suffix)
+    build_generated_image_filename(
+        provider_name.unwrap_or_default(),
+        &timestamp,
+        random_suffix,
+        extension,
+    )
+}
+
+fn save_generated_image_bytes(
+    outputs_dir: &Path,
+    bytes: &[u8],
+    provider_name: Option<&str>,
+) -> Result<PathBuf, String> {
+    let image_format = image::guess_format(bytes)
+        .map_err(|e| format!("Failed to identify generated image format: {}", e))?;
+    let extension = image_format
+        .extensions_str()
+        .first()
+        .ok_or_else(|| "Generated image format has no file extension".to_string())?;
+    let filename = generate_image_filename(provider_name, extension);
+    let output_path = outputs_dir.join(filename);
+    std::fs::write(&output_path, bytes).map_err(|e| format!("Failed to save image: {}", e))?;
+
+    Ok(output_path)
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -1981,21 +2011,8 @@ pub async fn auto_save_image_to_project(
             .map_err(|e| format!("Read local file {}: {}", image_url, e))?
     };
 
-    // Decode and re-encode as JPEG
-    let image = image::load_from_memory(&bytes)
-        .map_err(|e| format!("Failed to decode image: {}", e))?;
-    let mut jpeg_buffer = Cursor::new(Vec::new());
-    let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg_buffer, 90);
-    image
-        .write_with_encoder(encoder)
-        .map_err(|e| format!("Failed to encode JPEG: {}", e))?;
-
     let outputs_dir = resolve_project_dir(&app, &project_id, "outputs/images")?;
-    let filename = generate_image_filename(provider_name.as_deref());
-    let output_path = outputs_dir.join(&filename);
-
-    std::fs::write(&output_path, jpeg_buffer.get_ref())
-        .map_err(|e| format!("Failed to save image: {}", e))?;
+    let output_path = save_generated_image_bytes(&outputs_dir, &bytes, provider_name.as_deref())?;
 
     info!("Generated image auto-saved to project {}: {}", project_id, output_path.display());
     Ok(output_path.to_string_lossy().to_string())
@@ -2290,12 +2307,16 @@ pub async fn delete_project_upload_file(
 
 #[cfg(test)]
 mod tests {
-    use super::build_generated_image_filename;
+    use super::{build_generated_image_filename, save_generated_image_bytes};
+    use image::{DynamicImage, Rgba, RgbaImage};
+    use std::fs;
+    use std::io::Cursor;
+    use uuid::Uuid;
 
     #[test]
     fn generated_image_filename_uses_provider_seconds_and_random_suffix() {
         assert_eq!(
-            build_generated_image_filename("OpenAI", "20260812_143015", "a1b2c3d4"),
+            build_generated_image_filename("OpenAI", "20260812_143015", "a1b2c3d4", "jpg"),
             "OpenAI_20260812_143015_a1b2c3d4.jpg"
         );
     }
@@ -2303,8 +2324,37 @@ mod tests {
     #[test]
     fn generated_image_filename_normalizes_provider_name() {
         assert_eq!(
-            build_generated_image_filename("My / Provider", "20260812_143015", "a1b2c3d4"),
+            build_generated_image_filename("My / Provider", "20260812_143015", "a1b2c3d4", "jpg"),
             "My_Provider_20260812_143015_a1b2c3d4.jpg"
         );
+    }
+
+    #[test]
+    fn generated_image_save_preserves_png_bytes_and_extension() {
+        let temp_dir = std::env::temp_dir().join(format!(
+            "lumina-generated-image-save-test-{}",
+            Uuid::new_v4()
+        ));
+        fs::create_dir_all(&temp_dir).unwrap();
+
+        let source_image =
+            DynamicImage::ImageRgba8(RgbaImage::from_pixel(2, 2, Rgba([23, 57, 91, 255])));
+        let mut source = Cursor::new(Vec::new());
+        source_image
+            .write_to(&mut source, image::ImageFormat::Png)
+            .unwrap();
+        let source_bytes = source.into_inner();
+
+        let output_path =
+            save_generated_image_bytes(&temp_dir, &source_bytes, Some("AI Media")).unwrap();
+        let saved_bytes = fs::read(&output_path).unwrap();
+        let extension = output_path
+            .extension()
+            .and_then(|value| value.to_str())
+            .map(str::to_owned);
+        fs::remove_dir_all(&temp_dir).unwrap();
+
+        assert_eq!(extension.as_deref(), Some("png"));
+        assert_eq!(saved_bytes, source_bytes);
     }
 }
