@@ -70,4 +70,24 @@ describe('image provider runtime', () => {
       },
     });
   });
+
+  it('routes FHL custom providers through the dedicated FHL backend', () => {
+    const fhlSettings = {
+      ...settings,
+      customImageApis: [{
+        ...settings.customImageApis[0],
+        protocol: 'fhl-images' as const,
+        baseUrl: 'https://www.fhl.mom',
+      }],
+    };
+
+    expect(resolveImageProviderRuntime('custom-openai:internal', fhlSettings)).toEqual({
+      apiKey: 'custom-key',
+      backendProviderId: 'fhl',
+      providerConfig: {
+        base_url: 'https://www.fhl.mom',
+        api_key: 'custom-key',
+      },
+    });
+  });
 });

@@ -30,6 +30,7 @@ pub fn build_default_providers() -> Vec<Arc<dyn AIProvider>> {
         Arc::new(OpenAiProvider::legacy()),
         Arc::new(OpenAiProvider::ai_media()),
         Arc::new(OpenAiProvider::chaomo()),
+        Arc::new(OpenAiProvider::fhl()),
         Arc::new(GeminiNativeImageProvider::new()),
         Arc::new(CodingPlanProvider::new()),
         Arc::new(VolcVideoProvider::new()),

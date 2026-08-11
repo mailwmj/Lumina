@@ -37,6 +37,10 @@ const LEGACY_PROVIDER_ID: &str = "openai";
 const LEGACY_MODEL_ID: &str = "openai/custom";
 const OPENAI_DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
 const OPENAI_DEFAULT_MODEL: &str = "gpt-image-1";
+const FHL_PROVIDER_ID: &str = "fhl";
+const FHL_MODEL_ID: &str = "fhl/gpt-image-2";
+const FHL_DEFAULT_BASE_URL: &str = "https://www.fhl.mom/v1";
+const FHL_DEFAULT_MODEL: &str = "gpt-image-2";
 const POLL_INTERVAL_MS: u64 = 2_000;
 const MAX_SYNC_POLL_ATTEMPTS: usize = 180;
 
@@ -45,6 +49,7 @@ enum OpenAiImageProtocol {
     Standard,
     AiMedia,
     Chaomo,
+    Fhl,
 }
 
 pub struct OpenAiProvider {
@@ -101,6 +106,16 @@ impl OpenAiProvider {
         }
     }
 
+    pub fn fhl() -> Self {
+        Self {
+            client: Client::new(),
+            api_key: Arc::new(RwLock::new(None)),
+            provider_id: FHL_PROVIDER_ID,
+            protocol: OpenAiImageProtocol::Fhl,
+            supported_models: &[FHL_MODEL_ID],
+        }
+    }
+
     fn config_value(request: &GenerateRequest, key: &str) -> Option<String> {
         request
             .provider_config
@@ -113,14 +128,21 @@ impl OpenAiProvider {
     }
 
     fn normalize_base_url(&self, input: Option<String>) -> String {
-        input
+        let base_url = input
             .unwrap_or_else(|| match self.protocol {
                 OpenAiImageProtocol::Standard => OPENAI_DEFAULT_BASE_URL.to_string(),
                 OpenAiImageProtocol::AiMedia => AI_MEDIA_DEFAULT_BASE_URL.to_string(),
                 OpenAiImageProtocol::Chaomo => CHAOMO_DEFAULT_BASE_URL.to_string(),
+                OpenAiImageProtocol::Fhl => FHL_DEFAULT_BASE_URL.to_string(),
             })
             .trim_end_matches('/')
-            .to_string()
+            .to_string();
+
+        if self.protocol == OpenAiImageProtocol::Fhl && !base_url.ends_with("/v1") {
+            return format!("{}/v1", base_url);
+        }
+
+        base_url
     }
 
     fn resolve_model(&self, request: &GenerateRequest) -> String {
@@ -156,6 +178,12 @@ impl OpenAiProvider {
                 }
                 model => model.strip_prefix("chaomo/").unwrap_or(model).to_string(),
             },
+            OpenAiImageProtocol::Fhl => request
+                .model
+                .strip_prefix("fhl/")
+                .filter(|model| !model.trim().is_empty())
+                .unwrap_or(FHL_DEFAULT_MODEL)
+                .to_string(),
         }
     }
 
@@ -196,6 +224,7 @@ impl OpenAiProvider {
                 Some("medium".to_string())
             }
             OpenAiImageProtocol::Chaomo => None,
+            OpenAiImageProtocol::Fhl => Some("auto".to_string()),
         }
     }
 
@@ -243,6 +272,66 @@ impl OpenAiProvider {
         }
     }
 
+    fn resolve_fhl_image_size(resolution: &str, aspect_ratio: &str) -> String {
+        let normalized_resolution = resolution.trim().to_ascii_uppercase();
+        if normalized_resolution.contains('X') {
+            return Self::resolve_image_size(resolution, aspect_ratio);
+        }
+
+        let ratio = aspect_ratio.trim().to_ascii_lowercase();
+        let size = match (normalized_resolution.as_str(), ratio.as_str()) {
+            ("1K", "1:1") => Some("1024x1024"),
+            ("1K", "3:2") => Some("1536x1024"),
+            ("1K", "2:3") => Some("1024x1536"),
+            ("1K", "4:3") => Some("1536x1152"),
+            ("1K", "3:4") => Some("1152x1536"),
+            ("1K", "5:4") => Some("1520x1216"),
+            ("1K", "4:5") => Some("1216x1520"),
+            ("1K", "16:9") => Some("1536x864"),
+            ("1K", "9:16") => Some("864x1536"),
+            ("1K", "2:1") => Some("1536x768"),
+            ("1K", "1:2") => Some("768x1536"),
+            ("1K", "3:1") => Some("1536x512"),
+            ("1K", "1:3") => Some("512x1536"),
+            ("1K", "7:4") => Some("1664x944"),
+            ("1K", "4:7") => Some("944x1664"),
+            ("2K", "1:1") => Some("2048x2048"),
+            ("2K", "3:2") => Some("2048x1360"),
+            ("2K", "2:3") => Some("1360x2048"),
+            ("2K", "4:3") => Some("2048x1536"),
+            ("2K", "3:4") => Some("1536x2048"),
+            ("2K", "5:4") => Some("2048x1632"),
+            ("2K", "4:5") => Some("1632x2048"),
+            ("2K", "16:9") => Some("2048x1152"),
+            ("2K", "9:16") => Some("1152x2048"),
+            ("2K", "2:1") => Some("2048x1024"),
+            ("2K", "1:2") => Some("1024x2048"),
+            ("2K", "3:1") => Some("2048x688"),
+            ("2K", "1:3") => Some("688x2048"),
+            ("2K", "7:4") => Some("2208x1264"),
+            ("2K", "4:7") => Some("1264x2208"),
+            ("4K", "1:1") => Some("2880x2880"),
+            ("4K", "3:2") => Some("3520x2352"),
+            ("4K", "2:3") => Some("2352x3520"),
+            ("4K", "4:3") => Some("3840x2880"),
+            ("4K", "3:4") => Some("2880x3840"),
+            ("4K", "5:4") => Some("3840x3072"),
+            ("4K", "4:5") => Some("3072x3840"),
+            ("4K", "16:9") => Some("3840x2160"),
+            ("4K", "9:16") => Some("2160x3840"),
+            ("4K", "2:1") => Some("3840x1920"),
+            ("4K", "1:2") => Some("1920x3840"),
+            ("4K", "3:1") => Some("3840x1280"),
+            ("4K", "1:3") => Some("1280x3840"),
+            ("4K", "7:4") => Some("3808x2176"),
+            ("4K", "4:7") => Some("2176x3808"),
+            _ => None,
+        };
+
+        size.map(str::to_string)
+            .unwrap_or_else(|| Self::resolve_image_size(resolution, aspect_ratio))
+    }
+
     fn resolve_image_quality(resolution: &str) -> Option<&'static str> {
         match resolution.trim().to_ascii_lowercase().as_str() {
             // The canvas labels these as output resolutions, while the OpenAI Images API expects
@@ -266,12 +355,21 @@ impl OpenAiProvider {
     }
 
     fn response_image_source(body: &Value) -> Option<String> {
-        let mime_type = body
-            .pointer("/data/0/mime_type")
-            .and_then(Value::as_str)
-            .unwrap_or("image/png");
-        if let Some(base64_data) = body.pointer("/data/0/b64_json").and_then(Value::as_str) {
-            return Some(format!("data:{};base64,{}", mime_type, base64_data));
+        let mime_type = [
+            "/data/0/media_type",
+            "/data/0/mime_type",
+            "/data/0/mimeType",
+            "/data/0/image/media_type",
+            "/data/0/image/mime_type",
+        ]
+        .into_iter()
+        .filter_map(|pointer| body.pointer(pointer).and_then(Value::as_str))
+        .find(|value| value.starts_with("image/"))
+        .unwrap_or("image/png");
+        for pointer in ["/data/0/b64_json", "/data/0/image/b64_json", "/data/0/base64"] {
+            if let Some(base64_data) = body.pointer(pointer).and_then(Value::as_str) {
+                return Some(format!("data:{};base64,{}", mime_type, base64_data));
+            }
         }
 
         let url_pointers = [
@@ -306,10 +404,15 @@ impl OpenAiProvider {
         model: &str,
         async_mode: bool,
     ) -> Result<Form, AIError> {
-        let mut form = Form::new()
-            .text("model", model.to_string())
-            .text("prompt", request.prompt.clone())
-            .text("n", "1");
+        let is_fhl = self.protocol == OpenAiImageProtocol::Fhl;
+        let mut form = if is_fhl {
+            Form::new()
+        } else {
+            Form::new()
+                .text("model", model.to_string())
+                .text("prompt", request.prompt.clone())
+                .text("n", "1")
+        };
 
         form = match self.protocol {
             OpenAiImageProtocol::Standard => {
@@ -347,23 +450,44 @@ impl OpenAiProvider {
                 }
                 form
             }
+            OpenAiImageProtocol::Fhl => form,
         };
 
         let reference_images = request.reference_images.as_deref().unwrap_or(&[]);
-        let image_field = if (self.protocol == OpenAiImageProtocol::Standard
-            || self.protocol == OpenAiImageProtocol::Chaomo)
-            && reference_images.len() > 1
-        {
-            "image[]"
-        } else {
-            "image"
-        };
         for (index, source) in reference_images.iter().enumerate() {
             let image = load_reference_image(&self.client, source).await?;
             let part = Part::bytes(image.bytes)
                 .file_name(format!("reference-{}.{}", index + 1, image.extension))
                 .mime_str(&image.mime_type)?;
+            let image_field = if self.protocol == OpenAiImageProtocol::Fhl {
+                if index == 0 {
+                    "image"
+                } else {
+                    "image[]"
+                }
+            } else if (self.protocol == OpenAiImageProtocol::Standard
+                || self.protocol == OpenAiImageProtocol::Chaomo)
+                && reference_images.len() > 1
+            {
+                "image[]"
+            } else {
+                "image"
+            };
             form = form.part(image_field, part);
+        }
+
+        if is_fhl {
+            form = form
+                .text("prompt", request.prompt.clone())
+                .text("model", model.to_string())
+                .text("n", "1")
+                .text(
+                    "size",
+                    Self::resolve_fhl_image_size(&request.size, &request.aspect_ratio),
+                )
+                .text("quality", "auto")
+                .text("output_format", "png")
+                .text("response_format", "b64_json");
         }
 
         Ok(form)
@@ -418,6 +542,15 @@ impl OpenAiProvider {
                 }
                 body
             }
+            OpenAiImageProtocol::Fhl => json!({
+                "model": model,
+                "prompt": request.prompt,
+                "n": 1,
+                "size": Self::resolve_fhl_image_size(&request.size, &request.aspect_ratio),
+                "quality": "auto",
+                "output_format": "png",
+                "response_format": "b64_json",
+            }),
         }
     }
 
@@ -651,6 +784,10 @@ impl AIProvider for OpenAiProvider {
                     model,
                     CHAOMO_LEGACY_DIRECT_MODEL_ID | CHAOMO_LEGACY_NATIVE_4K_MODEL_ID
                 ))
+            || (self.protocol == OpenAiImageProtocol::Fhl
+                && model
+                    .strip_prefix("fhl/")
+                    .is_some_and(|value| !value.trim().is_empty()))
     }
 
     fn list_models(&self) -> Vec<String> {
@@ -668,7 +805,10 @@ impl AIProvider for OpenAiProvider {
     }
 
     fn supports_task_resume(&self) -> bool {
-        self.protocol != OpenAiImageProtocol::Standard
+        !matches!(
+            self.protocol,
+            OpenAiImageProtocol::Standard | OpenAiImageProtocol::Fhl
+        )
     }
 
     async fn submit_task(
@@ -676,7 +816,10 @@ impl AIProvider for OpenAiProvider {
         request: GenerateRequest,
     ) -> Result<ProviderTaskSubmission, AIError> {
         let base_url = self.normalize_base_url(Self::config_value(&request, "base_url"));
-        let async_mode = self.protocol != OpenAiImageProtocol::Standard;
+        let async_mode = !matches!(
+            self.protocol,
+            OpenAiImageProtocol::Standard | OpenAiImageProtocol::Fhl
+        );
         let (status, body) = self.submit_request(&request, async_mode).await?;
 
         if status == StatusCode::ACCEPTED {
@@ -697,7 +840,10 @@ impl AIProvider for OpenAiProvider {
             return Ok(ProviderTaskSubmission::Succeeded(image_source));
         }
 
-        if self.protocol == OpenAiImageProtocol::Standard {
+        if matches!(
+            self.protocol,
+            OpenAiImageProtocol::Standard | OpenAiImageProtocol::Fhl
+        ) {
             return Err(AIError::Provider(
                 "OpenAI-compatible image API response did not include data[0].b64_json or data[0].url"
                     .to_string(),
@@ -729,7 +875,7 @@ impl AIProvider for OpenAiProvider {
         })?;
         let base_url = self.normalize_base_url(Some(self.metadata_base_url(&handle)));
         let endpoint = match self.protocol {
-            OpenAiImageProtocol::Standard => {
+            OpenAiImageProtocol::Standard | OpenAiImageProtocol::Fhl => {
                 return Err(AIError::Provider(
                     "Standard OpenAI image requests do not support task polling".to_string(),
                 ));
@@ -824,9 +970,11 @@ mod tests {
     use super::OpenAiProvider;
     use crate::ai::providers::image_input::reference_image;
     use crate::ai::{AIProvider, GenerateRequest};
+    use serde_json::{json, Value};
+    use std::collections::HashMap;
     use std::path::Path;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    use tokio::net::TcpListener;
+    use tokio::net::{TcpListener, TcpStream};
 
     fn generate_request(model: &str, size: &str, aspect_ratio: &str) -> GenerateRequest {
         GenerateRequest {
@@ -839,6 +987,54 @@ mod tests {
             provider_config: None,
             draft_task_id: None,
         }
+    }
+
+    async fn read_http_request(socket: &mut TcpStream) -> Vec<u8> {
+        let mut request_bytes = Vec::new();
+        let mut buffer = [0_u8; 4096];
+        let (header_end, content_length) = loop {
+            let bytes_read = socket.read(&mut buffer).await.unwrap();
+            assert!(bytes_read > 0, "connection closed before request headers");
+            request_bytes.extend_from_slice(&buffer[..bytes_read]);
+
+            if let Some(header_start) = request_bytes
+                .windows(4)
+                .position(|window| window == b"\r\n\r\n")
+            {
+                let headers = String::from_utf8_lossy(&request_bytes[..header_start]);
+                let content_length = headers
+                    .lines()
+                    .find_map(|line| {
+                        let (name, value) = line.split_once(':')?;
+                        name.eq_ignore_ascii_case("content-length")
+                            .then(|| value.trim().parse::<usize>().ok())
+                            .flatten()
+                    })
+                    .unwrap_or(0);
+                break (header_start + 4, content_length);
+            }
+        };
+
+        while request_bytes.len() < header_end + content_length {
+            let bytes_read = socket.read(&mut buffer).await.unwrap();
+            assert!(bytes_read > 0, "connection closed before request body");
+            request_bytes.extend_from_slice(&buffer[..bytes_read]);
+        }
+
+        request_bytes
+    }
+
+    async fn write_json_response(socket: &mut TcpStream, status: &str, body: &str) {
+        socket
+            .write_all(
+                format!(
+                    "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                )
+                .as_bytes(),
+            )
+            .await
+            .unwrap();
     }
 
     #[test]
@@ -914,6 +1110,149 @@ mod tests {
         assert!(body.get("async").is_none());
         assert!(body.get("response_format").is_none());
         assert!(!provider.supports_task_resume());
+    }
+
+    #[test]
+    fn fhl_maps_canvas_resolution_to_its_tested_pixel_matrix() {
+        assert_eq!(
+            OpenAiProvider::resolve_fhl_image_size("4K", "1:1"),
+            "2880x2880"
+        );
+        assert_eq!(
+            OpenAiProvider::resolve_fhl_image_size("4K", "16:9"),
+            "3840x2160"
+        );
+        assert_eq!(
+            OpenAiProvider::resolve_fhl_image_size("2K", "4:3"),
+            "2048x1536"
+        );
+        assert_eq!(
+            OpenAiProvider::resolve_fhl_image_size("1152x2048", "9:16"),
+            "1152x2048"
+        );
+    }
+
+    #[test]
+    fn fhl_generation_uses_images_api_fields_and_synchronous_mode() {
+        let provider = OpenAiProvider::fhl();
+        let request = generate_request("fhl/gpt-image-2", "4K", "16:9");
+        let body = provider.build_generation_body(&request, "gpt-image-2", false);
+
+        assert_eq!(body["model"], "gpt-image-2");
+        assert_eq!(body["size"], "3840x2160");
+        assert_eq!(body["quality"], "auto");
+        assert_eq!(body["output_format"], "png");
+        assert_eq!(body["response_format"], "b64_json");
+        assert!(body.get("aspect_ratio").is_none());
+        assert!(body.get("async").is_none());
+        assert!(!provider.supports_task_resume());
+        assert_eq!(provider.list_models(), vec!["fhl/gpt-image-2".to_string()]);
+        assert_eq!(
+            provider.normalize_base_url(Some("https://www.fhl.mom".to_string())),
+            "https://www.fhl.mom/v1"
+        );
+    }
+
+    #[tokio::test]
+    async fn fhl_generation_posts_the_expected_images_api_body() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let request = read_http_request(&mut socket).await;
+            write_json_response(
+                &mut socket,
+                "200 OK",
+                r#"{"data":[{"b64_json":"AQID"}]}"#,
+            )
+            .await;
+            request
+        });
+
+        let provider = OpenAiProvider::fhl();
+        let mut request = generate_request("fhl/gpt-image-2", "4K", "16:9");
+        request.provider_config = Some(HashMap::from([
+            (
+                "base_url".to_string(),
+                json!(format!("http://{address}")),
+            ),
+            ("api_key".to_string(), json!("test-key")),
+        ]));
+
+        let submission = provider.submit_task(request).await.unwrap();
+        assert!(matches!(
+            submission,
+            crate::ai::ProviderTaskSubmission::Succeeded(source)
+                if source == "data:image/png;base64,AQID"
+        ));
+
+        let request = server.await.unwrap();
+        let request_text = String::from_utf8_lossy(&request);
+        assert!(request_text.starts_with("POST /v1/images/generations HTTP/1.1"));
+        let body_start = request
+            .windows(4)
+            .position(|window| window == b"\r\n\r\n")
+            .expect("JSON request should have a body separator")
+            + 4;
+        let body: Value = serde_json::from_slice(&request[body_start..]).unwrap();
+        assert_eq!(body["model"], "gpt-image-2");
+        assert_eq!(body["size"], "3840x2160");
+        assert_eq!(body["quality"], "auto");
+        assert_eq!(body["output_format"], "png");
+        assert_eq!(body["response_format"], "b64_json");
+        assert!(body.get("aspect_ratio").is_none());
+        assert!(body.get("async").is_none());
+    }
+
+    #[tokio::test]
+    async fn fhl_edit_uses_mixed_reference_field_names() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let request = read_http_request(&mut socket).await;
+            write_json_response(
+                &mut socket,
+                "200 OK",
+                r#"{"data":[{"b64_json":"AQID"}]}"#,
+            )
+            .await;
+            request
+        });
+
+        let provider = OpenAiProvider::fhl();
+        let mut request = generate_request("fhl/gpt-image-2", "4K", "1:1");
+        request.provider_config = Some(HashMap::from([
+            (
+                "base_url".to_string(),
+                json!(format!("http://{address}")),
+            ),
+            ("api_key".to_string(), json!("test-key")),
+        ]));
+        request.reference_images = Some(vec![
+            "data:image/png;base64,AQID".to_string(),
+            "data:image/jpeg;base64,BAUG".to_string(),
+        ]);
+
+        let submission = provider.submit_task(request).await.unwrap();
+        assert!(matches!(
+            submission,
+            crate::ai::ProviderTaskSubmission::Succeeded(_)
+        ));
+
+        let request = server.await.unwrap();
+        let request_text = String::from_utf8_lossy(&request);
+        assert!(request_text.starts_with("POST /v1/images/edits HTTP/1.1"));
+        assert!(request_text.contains("name=\"image\""));
+        assert!(request_text.contains("name=\"image[]\""));
+        assert!(request_text.contains("name=\"size\""));
+        assert!(request_text.contains("2880x2880"));
+        assert!(request_text.contains("name=\"quality\""));
+        assert!(request_text.contains("\r\n\r\nauto\r\n"));
+        assert!(request_text.contains("name=\"output_format\""));
+        assert!(request_text.contains("\r\n\r\npng\r\n"));
+        assert!(request_text.contains("name=\"response_format\""));
+        assert!(request_text.contains("\r\n\r\nb64_json\r\n"));
     }
 
     #[test]

@@ -8,6 +8,7 @@ import { toConfiguredImageModelId } from '@/features/canvas/models';
 import {
   CUSTOM_IMAGE_PROTOCOLS,
   getCustomImageProtocolDefinition,
+  migrateCustomImageBaseUrlForProtocolChange,
   type CustomImageProtocol,
 } from '@/features/canvas/models/imageProviderProtocols';
 import {
@@ -305,6 +306,11 @@ export function ImageApisSettings({
     updateCustomProvider(config.id, {
       ...config,
       protocol,
+      baseUrl: migrateCustomImageBaseUrlForProtocolChange(
+        config.baseUrl,
+        config.protocol,
+        protocol
+      ),
       modelCatalog: null,
       selectedModelIds: [],
     });

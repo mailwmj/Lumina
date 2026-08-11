@@ -143,6 +143,30 @@ describe('available image models', () => {
     );
   });
 
+  it('routes FHL Images models through the dedicated FHL adapter', () => {
+    const settings = createSettings();
+    settings.openAiImageApi.apiKey = '';
+    settings.chaomoImageApi.apiKey = '';
+    settings.customImageApis = [{
+      id: 'custom-openai:fhl',
+      name: 'FHL',
+      protocol: 'fhl-images',
+      apiKey: 'custom-key',
+      baseUrl: 'https://www.fhl.mom',
+      modelCatalog: {
+        models: [{ id: 'custom-openai:fhl/gpt-image-2' }],
+        refreshedAt: 1,
+      },
+      selectedModelIds: ['custom-openai:fhl/gpt-image-2'],
+    }];
+
+    const [model] = listConfiguredImageModels(settings);
+
+    expect(model.resolveRequest({ referenceImageCount: 0 }).requestModel).toBe(
+      'fhl/gpt-image-2'
+    );
+  });
+
   it('does not silently fall back when a configured custom model is unavailable', () => {
     const settings = createSettings();
     settings.customImageApis = [{
