@@ -394,23 +394,24 @@ impl GeminiNativeImageProvider {
             )));
         }
 
-        if let Some(image_source) = Self::response_image_source(&body) {
-            return Ok(ProviderTaskPollResult::Succeeded(image_source));
-        }
-
-        match body
+        let task_status = body
             .get("status")
             .and_then(Value::as_str)
             .unwrap_or_default()
-            .to_ascii_lowercase()
-            .as_str()
-        {
+            .to_ascii_lowercase();
+
+        match task_status.as_str() {
             "failed" | "cancelled" | "canceled" => Ok(ProviderTaskPollResult::Failed(
                 Self::response_error_message(&body),
             )),
-            "succeeded" | "success" | "completed" | "finished" => Err(AIError::Provider(
-                "Completed Gemini Native image task did not include an image asset".to_string(),
-            )),
+            "succeeded" | "success" | "completed" | "finished" => {
+                Self::response_image_source(&body)
+                    .map(ProviderTaskPollResult::Succeeded)
+                    .ok_or_else(|| AIError::Provider(
+                        "Completed Gemini Native image task did not include an image asset"
+                            .to_string(),
+                    ))
+            }
             _ => Ok(ProviderTaskPollResult::Running),
         }
     }
@@ -770,12 +771,18 @@ mod tests {
             write_json_response(&mut submit_socket, "202 Accepted", receipt).await;
             drop(submit_socket);
 
-            let (mut poll_socket, _) = listener.accept().await.unwrap();
-            let poll_request = read_http_request(&mut poll_socket).await;
-            let completed = r#"{"id":"imgtask-123","status":"succeeded","assets":[{"signed_url":"https://assets.example/generated.png"}]}"#;
-            write_json_response(&mut poll_socket, "200 OK", completed).await;
+            let (mut pending_poll_socket, _) = listener.accept().await.unwrap();
+            let pending_poll_request = read_http_request(&mut pending_poll_socket).await;
+            let pending = r#"{"id":"imgtask-123","status":"running","assets":[{"url":"/v1/images/tasks/imgtask-123/assets/partial.png"}]}"#;
+            write_json_response(&mut pending_poll_socket, "200 OK", pending).await;
+            drop(pending_poll_socket);
 
-            (submit_request, poll_request)
+            let (mut completed_poll_socket, _) = listener.accept().await.unwrap();
+            let completed_poll_request = read_http_request(&mut completed_poll_socket).await;
+            let completed = r#"{"id":"imgtask-123","status":"succeeded","assets":[{"signed_url":"https://assets.example/generated.png"}]}"#;
+            write_json_response(&mut completed_poll_socket, "200 OK", completed).await;
+
+            (submit_request, pending_poll_request, completed_poll_request)
         });
 
         let provider = GeminiNativeImageProvider::new();
@@ -805,6 +812,11 @@ mod tests {
         );
         assert!(metadata.get("api_key").is_none());
 
+        assert!(matches!(
+            provider.poll_task(handle.clone()).await.unwrap(),
+            ProviderTaskPollResult::Running
+        ));
+
         let result = provider.poll_task(handle).await.unwrap();
         match result {
             ProviderTaskPollResult::Succeeded(source) => {
@@ -813,20 +825,27 @@ mod tests {
             _ => panic!("expected signed image URL from completed task"),
         }
 
-        let (submit_request, poll_request) = server.await.unwrap();
+        let (submit_request, pending_poll_request, completed_poll_request) = server.await.unwrap();
         let submit_request = String::from_utf8_lossy(&submit_request);
-        let poll_request = String::from_utf8_lossy(&poll_request);
+        let pending_poll_request = String::from_utf8_lossy(&pending_poll_request);
+        let completed_poll_request = String::from_utf8_lossy(&completed_poll_request);
         let submit_headers = submit_request.to_ascii_lowercase();
-        let poll_headers = poll_request.to_ascii_lowercase();
+        let pending_poll_headers = pending_poll_request.to_ascii_lowercase();
+        let completed_poll_headers = completed_poll_request.to_ascii_lowercase();
         assert!(submit_request.starts_with(
             "POST /v1beta/models/gemini-3-pro-image-preview:generateContent HTTP/1.1"
         ));
-        assert!(poll_request.starts_with(
+        assert!(pending_poll_request.starts_with(
+            "GET /v1/images/tasks/imgtask-123?view=summary HTTP/1.1"
+        ));
+        assert!(completed_poll_request.starts_with(
             "GET /v1/images/tasks/imgtask-123?view=summary HTTP/1.1"
         ));
         assert!(submit_headers.contains("x-goog-api-key: test-key"));
-        assert!(poll_headers.contains("x-goog-api-key: test-key"));
+        assert!(pending_poll_headers.contains("x-goog-api-key: test-key"));
+        assert!(completed_poll_headers.contains("x-goog-api-key: test-key"));
         assert!(!submit_headers.contains("authorization:"));
-        assert!(!poll_headers.contains("authorization:"));
+        assert!(!pending_poll_headers.contains("authorization:"));
+        assert!(!completed_poll_headers.contains("authorization:"));
     }
 }
