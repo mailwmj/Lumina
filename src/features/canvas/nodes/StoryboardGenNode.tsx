@@ -1270,6 +1270,7 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
           selectedModel.providerId,
           selectedModel.providerName
         ).name,
+        generationModelName: selectedModel.displayName,
         generationClientSessionId: CURRENT_RUNTIME_SESSION_ID,
         generationDebugContext,
         generationStoryboardMetadata: {
@@ -1310,6 +1311,7 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
         generationJobId: null,
         generationProviderId: null,
         generationProviderName: null,
+        generationModelName: null,
         generationClientSessionId: null,
         generationStoryboardMetadata: undefined,
         generationError: resolvedError.message,

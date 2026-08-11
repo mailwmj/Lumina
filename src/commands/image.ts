@@ -249,12 +249,14 @@ export async function autoSaveVideoToProject(
 export async function autoSaveImageToProject(
   imageUrl: string,
   projectId: string,
-  providerName?: string
+  providerName?: string,
+  modelName?: string
 ): Promise<string> {
   return await invoke('auto_save_image_to_project', {
     imageUrl,
     projectId,
     providerName,
+    modelName,
   });
 }
 

@@ -511,6 +511,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
                   selectedModel.providerId,
                   selectedModel.providerName
                 ).name,
+                generationModelName: selectedModel.displayName,
                 generationClientSessionId: CURRENT_RUNTIME_SESSION_ID,
                 generationDebugContext: buildDebugContext(outputIndex),
               });

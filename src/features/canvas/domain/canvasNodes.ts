@@ -83,6 +83,8 @@ export interface ExportImageNodeData extends NodeImageData {
   generationBatchSize?: ImageOutputCount;
   /** Provider display name snapshot used while persisting a generated image. */
   generationProviderName?: string | null;
+  /** Model display name snapshot used while persisting a generated image. */
+  generationModelName?: string | null;
 }
 
 export interface GroupNodeData extends NodeDisplayData {

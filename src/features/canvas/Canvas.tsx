@@ -611,6 +611,11 @@ export function Canvas() {
             const generationProviderName = typeof currentData.generationProviderName === 'string'
               ? currentData.generationProviderName
               : generationProviderId;
+            const generationModelName = typeof currentData.generationModelName === 'string'
+              ? currentData.generationModelName
+              : typeof currentData.model === 'string'
+                ? currentData.model
+                : '';
             const providerRuntime = resolveImageProviderRuntime(generationProviderId, {
               openAiImageApi,
               chaomoImageApi,
@@ -647,7 +652,8 @@ export function Canvas() {
                   localImagePath = await autoSaveImageToProject(
                     status.result,
                     projectId,
-                    generationProviderName
+                    generationProviderName,
+                    generationModelName
                   );
                   logger.info('[GenerationJob] Generated image auto-saved to project directory:', localImagePath);
                 } catch (e) {
@@ -697,6 +703,7 @@ export function Canvas() {
                 generationJobId: null,
                 generationProviderId: null,
                 generationProviderName: null,
+                generationModelName: null,
                 generationClientSessionId: null,
                 generationStoryboardMetadata: undefined,
                 generationError: null,
@@ -725,6 +732,7 @@ export function Canvas() {
               generationJobId: null,
               generationProviderId: null,
               generationProviderName: null,
+              generationModelName: null,
               generationClientSessionId: null,
               generationStoryboardMetadata: undefined,
               generationError: errorMessage,
@@ -1829,6 +1837,9 @@ export function Canvas() {
         }
         if ('generationProviderName' in (data as Record<string, unknown>)) {
           (data as { generationProviderName?: string | null }).generationProviderName = null;
+        }
+        if ('generationModelName' in (data as Record<string, unknown>)) {
+          (data as { generationModelName?: string | null }).generationModelName = null;
         }
         if ('generationClientSessionId' in (data as Record<string, unknown>)) {
           (data as { generationClientSessionId?: string | null }).generationClientSessionId = null;

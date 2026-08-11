@@ -23,47 +23,59 @@ const FAST_PREVIEW_BYPASS_MAX_BYTES: usize = 2_000_000;
 const FAST_PREVIEW_BYPASS_MAX_DIMENSION: u32 = 2048;
 const GENERATED_IMAGE_RANDOM_SUFFIX_LENGTH: usize = 8;
 
-fn build_generated_image_filename(
-    provider_name: &str,
-    timestamp: &str,
-    random_suffix: &str,
-    extension: &str,
-) -> String {
-    let mut normalized_provider_name = String::new();
+fn normalize_generated_image_filename_segment(value: &str, fallback: &str) -> String {
+    let mut normalized = String::new();
     let mut previous_character_was_separator = false;
 
-    for character in provider_name.trim().chars() {
+    for character in value.trim().chars() {
         if character.is_alphanumeric() || matches!(character, '-' | '_') {
-            normalized_provider_name.push(character);
+            normalized.push(character);
             previous_character_was_separator = false;
-        } else if !normalized_provider_name.is_empty() && !previous_character_was_separator {
-            normalized_provider_name.push('_');
+        } else if !normalized.is_empty() && !previous_character_was_separator {
+            normalized.push('_');
             previous_character_was_separator = true;
         }
     }
 
-    let normalized_provider_name = normalized_provider_name.trim_matches('_');
-    let provider_segment = if normalized_provider_name.is_empty() {
-        "generated"
+    let normalized = normalized.trim_matches('_');
+    if normalized.is_empty() {
+        fallback.to_string()
     } else {
-        normalized_provider_name
-    };
+        normalized.to_string()
+    }
+}
+
+fn build_generated_image_filename(
+    provider_name: &str,
+    model_name: &str,
+    timestamp: &str,
+    random_suffix: &str,
+    extension: &str,
+) -> String {
+    let provider_segment = normalize_generated_image_filename_segment(provider_name, "generated");
+    let model_segment = normalize_generated_image_filename_segment(model_name, "model");
 
     format!(
-        "{}_{}_{}.{}",
+        "{}_{}_{}_{}.{}",
         provider_segment,
+        model_segment,
         timestamp,
         random_suffix,
         normalize_extension(extension)
     )
 }
 
-fn generate_image_filename(provider_name: Option<&str>, extension: &str) -> String {
+fn generate_image_filename(
+    provider_name: Option<&str>,
+    model_name: Option<&str>,
+    extension: &str,
+) -> String {
     let timestamp = Local::now().format("%Y%m%d_%H%M%S").to_string();
     let random_id = Uuid::new_v4().simple().to_string();
     let random_suffix = &random_id[..GENERATED_IMAGE_RANDOM_SUFFIX_LENGTH];
     build_generated_image_filename(
         provider_name.unwrap_or_default(),
+        model_name.unwrap_or_default(),
         &timestamp,
         random_suffix,
         extension,
@@ -74,6 +86,7 @@ fn save_generated_image_bytes(
     outputs_dir: &Path,
     bytes: &[u8],
     provider_name: Option<&str>,
+    model_name: Option<&str>,
 ) -> Result<PathBuf, String> {
     let image_format = image::guess_format(bytes)
         .map_err(|e| format!("Failed to identify generated image format: {}", e))?;
@@ -81,7 +94,7 @@ fn save_generated_image_bytes(
         .extensions_str()
         .first()
         .ok_or_else(|| "Generated image format has no file extension".to_string())?;
-    let filename = generate_image_filename(provider_name, extension);
+    let filename = generate_image_filename(provider_name, model_name, extension);
     let output_path = outputs_dir.join(filename);
     std::fs::write(&output_path, bytes).map_err(|e| format!("Failed to save image: {}", e))?;
 
@@ -1978,6 +1991,7 @@ pub async fn auto_save_image_to_project(
     image_url: String,
     project_id: String,
     provider_name: Option<String>,
+    model_name: Option<String>,
 ) -> Result<String, String> {
     info!("[auto_save_image_to_project] START project_id={}, url={}", project_id, &image_url[..image_url.len().min(100)]);
     let bytes = if image_url.starts_with("data:") {
@@ -2012,7 +2026,12 @@ pub async fn auto_save_image_to_project(
     };
 
     let outputs_dir = resolve_project_dir(&app, &project_id, "outputs/images")?;
-    let output_path = save_generated_image_bytes(&outputs_dir, &bytes, provider_name.as_deref())?;
+    let output_path = save_generated_image_bytes(
+        &outputs_dir,
+        &bytes,
+        provider_name.as_deref(),
+        model_name.as_deref(),
+    )?;
 
     info!("Generated image auto-saved to project {}: {}", project_id, output_path.display());
     Ok(output_path.to_string_lossy().to_string())
@@ -2314,18 +2333,30 @@ mod tests {
     use uuid::Uuid;
 
     #[test]
-    fn generated_image_filename_uses_provider_seconds_and_random_suffix() {
+    fn generated_image_filename_uses_provider_model_seconds_and_random_suffix() {
         assert_eq!(
-            build_generated_image_filename("OpenAI", "20260812_143015", "a1b2c3d4", "jpg"),
-            "OpenAI_20260812_143015_a1b2c3d4.jpg"
+            build_generated_image_filename(
+                "OpenAI",
+                "GPT Image 1",
+                "20260812_143015",
+                "a1b2c3d4",
+                "png",
+            ),
+            "OpenAI_GPT_Image_1_20260812_143015_a1b2c3d4.png"
         );
     }
 
     #[test]
     fn generated_image_filename_normalizes_provider_name() {
         assert_eq!(
-            build_generated_image_filename("My / Provider", "20260812_143015", "a1b2c3d4", "jpg"),
-            "My_Provider_20260812_143015_a1b2c3d4.jpg"
+            build_generated_image_filename(
+                "My / Provider",
+                "Model / Preview",
+                "20260812_143015",
+                "a1b2c3d4",
+                "webp",
+            ),
+            "My_Provider_Model_Preview_20260812_143015_a1b2c3d4.webp"
         );
     }
 
@@ -2345,8 +2376,13 @@ mod tests {
             .unwrap();
         let source_bytes = source.into_inner();
 
-        let output_path =
-            save_generated_image_bytes(&temp_dir, &source_bytes, Some("AI Media")).unwrap();
+        let output_path = save_generated_image_bytes(
+            &temp_dir,
+            &source_bytes,
+            Some("AI Media"),
+            Some("Image Model"),
+        )
+        .unwrap();
         let saved_bytes = fs::read(&output_path).unwrap();
         let extension = output_path
             .extension()
@@ -2355,6 +2391,10 @@ mod tests {
         fs::remove_dir_all(&temp_dir).unwrap();
 
         assert_eq!(extension.as_deref(), Some("png"));
+        assert!(output_path
+            .file_name()
+            .and_then(|value| value.to_str())
+            .is_some_and(|value| value.starts_with("AI_Media_Image_Model_")));
         assert_eq!(saved_bytes, source_bytes);
     }
 }

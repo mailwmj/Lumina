@@ -167,6 +167,7 @@ export function markImageOutputNodeFailed({
     generationJobId: null,
     generationProviderId: null,
     generationProviderName: null,
+    generationModelName: null,
     generationClientSessionId: null,
     generationError: resolvedError.message,
     generationErrorDetails: resolvedError.details ?? null,
