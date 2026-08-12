@@ -63,7 +63,10 @@ import { useCanvasStore } from '@/stores/canvasStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { TextGenerationUpstreamContext } from './TextGenerationUpstreamContext';
 import { usePreserveNodeCenterOnAutoResize } from '@/features/canvas/ui/usePreserveNodeCenterOnAutoResize';
-import { ImageReferencePromptInput } from '@/features/canvas/ui/ImageReferencePromptInput';
+import {
+  ImageReferencePromptInput,
+  type ImageReferencePromptInputHandle,
+} from '@/features/canvas/ui/ImageReferencePromptInput';
 
 type TextGenerationNodeProps = NodeProps & {
   id: string;
@@ -125,6 +128,7 @@ export const TextGenerationNode = memo(({
   );
   const controllerRef = useRef(new TextGenerationRunController<RunSnapshot>());
   const resultTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const inputReferencePromptRef = useRef<ImageReferencePromptInputHandle | null>(null);
   const inputCompositionStateRef = useRef(createCompositionInputState(data.inputText ?? ''));
   const resultCompositionStateRef = useRef(createCompositionInputState(data.generatedText ?? ''));
   const [inputDraft, setInputDraft] = useState(inputCompositionStateRef.current.draft);
@@ -434,6 +438,7 @@ export const TextGenerationNode = memo(({
         referenceImagesHeight={layout.referenceImagesHeight}
         onLocate={locateNode}
         onDisconnect={deleteEdge}
+        onInsertReference={(edgeId) => inputReferencePromptRef.current?.insertReference(edgeId)}
         onReorder={(kind, draggedSourceId, targetSourceId) => {
           reorderNodeInput(id, kind, draggedSourceId, targetSourceId);
         }}
@@ -448,6 +453,7 @@ export const TextGenerationNode = memo(({
           style={{ height: layout.promptHeight }}
         >
           <ImageReferencePromptInput
+            ref={inputReferencePromptRef}
             value={inputDraft}
             placeholder={t('node.textGeneration.inputPlaceholder')}
             ariaLabel={t('node.textGeneration.localInput')}

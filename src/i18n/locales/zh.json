@@ -211,6 +211,7 @@
       "apiKeyRequired": "请在设置中填写 API Key",
       "modelRequired": "请先在设置中获取并选择生图模型",
       "resultTitle": "结果图片",
+      "submitting": "提交中",
       "promptLabel": "提示词",
       "promptPlaceholder": "描述任何你想要生成或编辑的内容",
       "polishPrompt": "润色提示词"
@@ -252,6 +253,8 @@
       "upstreamText": "引用文字",
       "upstreamImages": "引用图片",
       "disconnectInput": "断开输入",
+      "removeReference": "解除引用",
+      "insertReference": "插入图片引用",
       "localInput": "提示词",
       "inputPlaceholder": "输入需要模型处理的文本",
       "polishPrompt": "润色提示词",

@@ -93,7 +93,10 @@ import { locateReferencedNode } from '@/features/canvas/application/referencedNo
 import { openSettingsDialog } from '@/features/settings/settingsEvents';
 import { TextGenerationUpstreamContext } from './TextGenerationUpstreamContext';
 import { usePreserveNodeCenterOnAutoResize } from '@/features/canvas/ui/usePreserveNodeCenterOnAutoResize';
-import { ImageReferencePromptInput } from '@/features/canvas/ui/ImageReferencePromptInput';
+import {
+  ImageReferencePromptInput,
+  type ImageReferencePromptInputHandle,
+} from '@/features/canvas/ui/ImageReferencePromptInput';
 
 type ImageEditNodeProps = NodeProps & {
   id: string;
@@ -121,10 +124,11 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
   const updateNodeInternals = useUpdateNodeInternals();
   const [error, setError] = useState<string | null>(null);
   const [isPolishing, setIsPolishing] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isGenerationSubmitting, setIsGenerationSubmitting] = useState(false);
 
   const rootRef = useRef<HTMLDivElement>(null);
-  const generationSubmissionLockRef = useRef(false);
+  const generationSubmissionInFlightRef = useRef(false);
+  const promptReferenceInputRef = useRef<ImageReferencePromptInputHandle | null>(null);
   const [promptDraft, setPromptDraft] = useState(() => data.prompt ?? '');
   const promptCompositionStateRef = useRef(createCompositionInputState(data.prompt ?? ''));
 
@@ -404,11 +408,11 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
       return;
     }
 
-    if (generationSubmissionLockRef.current) {
+    if (generationSubmissionInFlightRef.current) {
       return;
     }
-    generationSubmissionLockRef.current = true;
-    setIsSubmitting(true);
+    generationSubmissionInFlightRef.current = true;
+    setIsGenerationSubmitting(true);
 
     try {
       const generationDurationMs = selectedModel.expectedDurationMs ?? 60000;
@@ -560,8 +564,8 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
         );
       }
     } finally {
-      generationSubmissionLockRef.current = false;
-      setIsSubmitting(false);
+      generationSubmissionInFlightRef.current = false;
+      setIsGenerationSubmitting(false);
     }
   }, [
     addNodeBatch,
@@ -619,6 +623,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
           });
         }}
         onDisconnect={deleteEdge}
+        onInsertReference={(edgeId) => promptReferenceInputRef.current?.insertReference(edgeId)}
         onReorder={(kind, draggedSourceId, targetSourceId) => {
           reorderNodeInput(id, kind, draggedSourceId, targetSourceId);
         }}
@@ -632,6 +637,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
           style={{ height: layout.promptHeight }}
         >
           <ImageReferencePromptInput
+            ref={promptReferenceInputRef}
             value={promptDraft}
             imageInputs={workflowInputs.imageInputs}
             placeholder={t('node.imageEdit.promptPlaceholder')}
@@ -732,23 +738,28 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
 
         <div className="ml-auto" />
 
-        <UiButton
-          onClick={(event) => {
-            event.stopPropagation();
-            void handleGenerate();
-          }}
-          variant="primary"
-          className={`nodrag nowheel shrink-0 ${NODE_CONTROL_PRIMARY_BUTTON_CLASS}`}
-          disabled={!hasConfiguredModel || isSubmitting}
-          aria-busy={isSubmitting}
+        <UiTooltip content={isGenerationSubmitting
+          ? t('node.imageEdit.submitting')
+          : t('canvas.generate')}
         >
-          {isSubmitting ? (
-            <Loader2 className={`${NODE_CONTROL_ICON_CLASS} animate-spin`} strokeWidth={2.8} />
-          ) : (
-            <Sparkles className={NODE_CONTROL_ICON_CLASS} strokeWidth={2.8} />
-          )}
-          {t('canvas.generate')}
-        </UiButton>
+          <UiButton
+            onClick={(event) => {
+              event.stopPropagation();
+              void handleGenerate();
+            }}
+            variant="primary"
+            className={`nodrag nowheel min-w-[88px] shrink-0 ${NODE_CONTROL_PRIMARY_BUTTON_CLASS}`}
+            disabled={!hasConfiguredModel || isGenerationSubmitting}
+            aria-busy={isGenerationSubmitting}
+          >
+            {isGenerationSubmitting ? (
+              <Loader2 className={`${NODE_CONTROL_ICON_CLASS} animate-spin`} strokeWidth={2.8} />
+            ) : (
+              <Sparkles className={NODE_CONTROL_ICON_CLASS} strokeWidth={2.8} />
+            )}
+            {isGenerationSubmitting ? t('node.imageEdit.submitting') : t('canvas.generate')}
+          </UiButton>
+        </UiTooltip>
       </div>
 
       {error && <div className="mt-1 shrink-0 text-xs text-red-400">{error}</div>}

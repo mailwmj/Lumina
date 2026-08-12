@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { submitGenerationJobBatch } from './generationJobBatch';
 
 describe('generation job batch submission', () => {
-  it('reports each job as soon as it settles without waiting for the full batch', async () => {
+  it('reports each task receipt before the full batch submission has completed', async () => {
     let resolveFirst: ((jobId: string) => void) | undefined;
     const firstSubmission = new Promise<string>((resolve) => {
       resolveFirst = resolve;
@@ -25,9 +25,14 @@ describe('generation job batch submission', () => {
         }
       },
     });
+    let batchSettled = false;
+    void batch.then(() => {
+      batchSettled = true;
+    });
 
     await secondSettled;
     expect(settledIndexes).toEqual([1]);
+    expect(batchSettled).toBe(false);
 
     resolveFirst?.('job-1');
     await expect(batch).resolves.toEqual([

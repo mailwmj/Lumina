@@ -7,9 +7,10 @@ import {
   type DragEvent,
   type WheelEvent,
 } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 
-import { AlertTriangle, Unlink2 } from '@/components/ui/icons';
+import { AlertTriangle, AtSign, Unlink2, X } from '@/components/ui/icons';
 import type {
   ResolvedImageInput,
   ResolvedTextInput,
@@ -30,6 +31,7 @@ interface TextGenerationUpstreamContextProps {
   referenceImagesHeight: number;
   onLocate: (nodeId: string) => void;
   onDisconnect: (edgeId: string) => void;
+  onInsertReference: (edgeId: string) => void;
   onReorder: (
     kind: InputKind,
     draggedSourceId: string,
@@ -44,6 +46,7 @@ export const TextGenerationUpstreamContext = memo(({
   referenceImagesHeight,
   onLocate,
   onDisconnect,
+  onInsertReference,
   onReorder,
 }: TextGenerationUpstreamContextProps) => {
   const { t } = useTranslation();
@@ -227,55 +230,21 @@ export const TextGenerationUpstreamContext = memo(({
               onScroll={updateReferenceScroll}
               onWheel={handleReferenceImageWheel}
             >
-              {imageInputs.map((input, index) => {
-                const preview = input.previewImageUrl || input.imageUrl;
-                const referenceLabel = t('node.imageReference.label', { index: index + 1 });
-                return (
-                  <article
-                    key={input.edgeId}
-                    draggable
-                    title={referenceLabel}
-                    onDragStart={(event) => startDrag(event, 'image', input.nodeId)}
-                    onDragOver={(event) => event.preventDefault()}
-                    onDrop={(event) => dropOn(event, 'image', input.nodeId)}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onLocate(input.nodeId);
-                    }}
-                    className="nodrag nowheel group/input relative h-16 w-16 shrink-0 cursor-grab rounded-md border border-[var(--ui-border-soft)] bg-bg-dark active:cursor-grabbing hover:border-[var(--ui-border-strong)]"
-                  >
-                    {preview ? (
-                      <img
-                        src={resolveImageDisplayUrl(preview)}
-                        alt={referenceLabel}
-                        className="h-full w-full rounded-[inherit] object-cover"
-                        draggable={false}
-                      />
-                    ) : (
-                      <div className="flex h-full w-full items-center justify-center rounded-[inherit] text-red-300">
-                        <AlertTriangle className="h-4 w-4" />
-                      </div>
-                    )}
-                    <span
-                      aria-hidden="true"
-                      className="pointer-events-none absolute bottom-0.5 right-0.5 z-10 flex h-5 min-w-5 items-center justify-center rounded-full border border-white/25 bg-black/70 px-1 text-[10px] font-semibold leading-none text-white shadow-md backdrop-blur-sm"
-                    >
-                      {index + 1}
-                    </span>
-                    <button
-                      type="button"
-                      aria-label={t('node.textGeneration.disconnectInput')}
-                      className="nodrag nowheel absolute right-0.5 top-0.5 rounded bg-black/55 p-0.5 text-white opacity-0 group-hover/input:opacity-100 focus-visible:opacity-100"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onDisconnect(input.edgeId);
-                      }}
-                    >
-                      <Unlink2 className="h-3 w-3" />
-                    </button>
-                  </article>
-                );
-              })}
+              {imageInputs.map((input, index) => (
+                <ReferenceImageCard
+                  key={input.edgeId}
+                  input={input}
+                  index={index}
+                  referenceLabel={t('node.imageReference.label', { index: index + 1 })}
+                  disconnectLabel={t('node.textGeneration.removeReference')}
+                  insertLabel={t('node.textGeneration.insertReference')}
+                  onDragStart={startDrag}
+                  onDrop={dropOn}
+                  onDisconnect={onDisconnect}
+                  onInsertReference={onInsertReference}
+                  onLocate={onLocate}
+                />
+              ))}
             </div>
             {referenceScroll.hasOverflow && (
               <div
@@ -299,5 +268,147 @@ export const TextGenerationUpstreamContext = memo(({
     </>
   );
 });
+
+interface ReferenceImageCardProps {
+  input: ResolvedImageInput;
+  index: number;
+  referenceLabel: string;
+  disconnectLabel: string;
+  insertLabel: string;
+  onDragStart: (event: DragEvent<HTMLElement>, kind: InputKind, sourceId: string) => void;
+  onDrop: (event: DragEvent<HTMLElement>, kind: InputKind, targetSourceId: string) => void;
+  onDisconnect: (edgeId: string) => void;
+  onInsertReference: (edgeId: string) => void;
+  onLocate: (nodeId: string) => void;
+}
+
+const ReferenceImageCard = memo(({
+  input,
+  index,
+  referenceLabel,
+  disconnectLabel,
+  insertLabel,
+  onDragStart,
+  onDrop,
+  onDisconnect,
+  onInsertReference,
+  onLocate,
+}: ReferenceImageCardProps) => {
+  const [isHovered, setIsHovered] = useState(false);
+  const [previewPosition, setPreviewPosition] = useState({ left: 0, top: 0 });
+  const cardRef = useRef<HTMLElement | null>(null);
+  const preview = input.previewImageUrl || input.imageUrl;
+
+  const updatePreviewPosition = useCallback(() => {
+    const card = cardRef.current;
+    if (!card) {
+      return;
+    }
+    const rect = card.getBoundingClientRect();
+    const width = 160;
+    const height = 120;
+    setPreviewPosition({
+      left: Math.max(8, Math.min(window.innerWidth - width - 8, rect.left + rect.width / 2 - width / 2)),
+      top: rect.top >= height + 16 ? rect.top - height - 8 : rect.bottom + 8,
+    });
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!isHovered) {
+      return;
+    }
+    updatePreviewPosition();
+    window.addEventListener('resize', updatePreviewPosition);
+    window.addEventListener('scroll', updatePreviewPosition, true);
+    return () => {
+      window.removeEventListener('resize', updatePreviewPosition);
+      window.removeEventListener('scroll', updatePreviewPosition, true);
+    };
+  }, [isHovered, updatePreviewPosition]);
+
+  return (
+    <article
+      ref={cardRef}
+      draggable
+      title={referenceLabel}
+      onMouseEnter={() => {
+        updatePreviewPosition();
+        setIsHovered(true);
+      }}
+      onMouseLeave={() => setIsHovered(false)}
+      onClick={(event) => event.stopPropagation()}
+      onDragStart={(event) => onDragStart(event, 'image', input.nodeId)}
+      onDragOver={(event) => event.preventDefault()}
+      onDrop={(event) => onDrop(event, 'image', input.nodeId)}
+      onDoubleClick={(event) => {
+        event.stopPropagation();
+        onLocate(input.nodeId);
+      }}
+      className="nodrag nowheel group/input relative h-16 w-16 shrink-0 cursor-grab rounded-md border border-[var(--ui-border-soft)] bg-bg-dark active:cursor-grabbing hover:border-[var(--ui-border-strong)]"
+    >
+      {preview ? (
+        <img
+          src={resolveImageDisplayUrl(preview)}
+          alt={referenceLabel}
+          className="h-full w-full rounded-[inherit] object-cover"
+          draggable={false}
+        />
+      ) : (
+        <div className="flex h-full w-full items-center justify-center rounded-[inherit] text-red-300">
+          <AlertTriangle className="h-4 w-4" />
+        </div>
+      )}
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute bottom-0.5 right-0.5 z-10 flex h-5 min-w-5 items-center justify-center rounded-full border border-white/25 bg-black/70 px-1 text-[10px] font-semibold leading-none text-white shadow-md backdrop-blur-sm transition-opacity group-hover/input:opacity-0"
+      >
+        {index + 1}
+      </span>
+      <button
+        type="button"
+        aria-label={disconnectLabel}
+        title={disconnectLabel}
+        className="nodrag nowheel absolute right-0.5 top-0.5 z-20 rounded bg-black/60 p-0.5 text-white opacity-0 transition-opacity hover:bg-black/80 group-hover/input:opacity-100 focus-visible:opacity-100"
+        onClick={(event) => {
+          event.stopPropagation();
+          onDisconnect(input.edgeId);
+        }}
+        onDoubleClick={(event) => event.stopPropagation()}
+      >
+        <X className="h-3.5 w-3.5" />
+      </button>
+      <button
+        type="button"
+        aria-label={insertLabel}
+        title={insertLabel}
+        className="nodrag nowheel absolute left-1/2 top-1/2 z-20 flex h-7 w-7 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white/60 bg-black/65 text-white opacity-0 shadow-md transition-opacity hover:bg-accent hover:text-accent-foreground group-hover/input:opacity-100 focus-visible:opacity-100"
+        onClick={(event) => {
+          event.stopPropagation();
+          onInsertReference(input.edgeId);
+        }}
+        onDoubleClick={(event) => event.stopPropagation()}
+      >
+        <AtSign className="h-4 w-4" />
+      </button>
+      {isHovered && preview && createPortal(
+        <div
+          aria-hidden="true"
+          className="pointer-events-none fixed z-[100] flex h-[120px] w-[160px] items-center justify-center overflow-hidden rounded-lg border border-[var(--ui-border-strong)] bg-[var(--ui-surface-elevated)] p-1 shadow-[var(--ui-shadow-panel)]"
+          style={{ left: previewPosition.left, top: previewPosition.top }}
+        >
+          <img
+            src={resolveImageDisplayUrl(preview)}
+            alt=""
+            className="max-h-full max-w-full rounded-md object-contain"
+            draggable={false}
+          />
+        </div>,
+        document.body
+      )}
+    </article>
+  );
+});
+
+ReferenceImageCard.displayName = 'ReferenceImageCard';
 
 TextGenerationUpstreamContext.displayName = 'TextGenerationUpstreamContext';

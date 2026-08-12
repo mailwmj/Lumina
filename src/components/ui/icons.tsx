@@ -2,6 +2,7 @@ import { forwardRef } from 'react';
 import type { IconSvgElement } from '@hugeicons/react';
 import {
   Alert02Icon,
+  AtSignIcon,
   ArrowLeft01Icon,
   ArrowRight01Icon,
   BrushIcon,
@@ -74,6 +75,7 @@ function createNamedIcon(icon: IconSvgElement, displayName: string) {
 }
 
 export const AlertTriangle = createNamedIcon(Alert02Icon, 'AlertTriangle');
+export const AtSign = createNamedIcon(AtSignIcon, 'AtSign');
 export const ArrowLeft = createNamedIcon(ArrowLeft01Icon, 'ArrowLeft');
 export const ArrowRight = createNamedIcon(ArrowRight01Icon, 'ArrowRight');
 export const Brush = createNamedIcon(BrushIcon, 'Brush');

@@ -5,6 +5,8 @@ import {
   useMemo,
   useRef,
   useState,
+  useImperativeHandle,
+  forwardRef,
   type ClipboardEvent,
   type CompositionEvent,
   type FocusEvent,
@@ -20,7 +22,7 @@ import {
   insertImageReferencePromptToken,
   moveImageReferencePickerIndex,
   removeImageReferencePromptToken,
-  type ImageReferencePromptInput,
+  type ImageReferencePromptInput as ImageReferencePromptValue,
 } from '@/features/canvas/application/imageReferencePrompt';
 import { resolveImageDisplayUrl } from '@/features/canvas/application/imageData';
 import {
@@ -29,7 +31,7 @@ import {
   type ImageReferencePickerAnchor,
 } from '@/features/canvas/application/imageReferencePicker';
 
-export interface ImageReferencePromptItem extends ImageReferencePromptInput {
+export interface ImageReferencePromptItem extends ImageReferencePromptValue {
   previewImageUrl?: string | null;
 }
 
@@ -45,6 +47,10 @@ export interface ImageReferencePromptInputProps {
   onCompositionEnd?: (value: string) => void;
   onBlur?: (value: string) => void;
   onKeyDown?: (event: KeyboardEvent<HTMLDivElement>) => void;
+}
+
+export interface ImageReferencePromptInputHandle {
+  insertReference: (edgeId: string) => void;
 }
 
 const CARET_ANCHOR_CHARACTER = '\u200B';
@@ -261,7 +267,7 @@ export function resolveImageReferenceCursorMove(
     : null;
 }
 
-export function ImageReferencePromptInput({
+export const ImageReferencePromptInput = forwardRef<ImageReferencePromptInputHandle, ImageReferencePromptInputProps>(function ImageReferencePromptInput({
   value,
   imageInputs,
   placeholder,
@@ -273,7 +279,7 @@ export function ImageReferencePromptInput({
   onCompositionEnd,
   onBlur,
   onKeyDown,
-}: ImageReferencePromptInputProps) {
+}: ImageReferencePromptInputProps, ref) {
   const { t } = useTranslation();
   const rootRef = useRef<HTMLDivElement | null>(null);
   const pickerRef = useRef<HTMLDivElement | null>(null);
@@ -437,7 +443,9 @@ export function ImageReferencePromptInput({
     if (!root || !item || isComposingRef.current) {
       return;
     }
-    const selection = pickerSelection ?? getSelectionOffsets(root) ?? {
+    const selection = pickerSelection ?? (
+      document.activeElement === root ? getSelectionOffsets(root) : null
+    ) ?? {
       start: value.length,
       end: value.length,
     };
@@ -452,6 +460,15 @@ export function ImageReferencePromptInput({
       setSelectionOffset(root, result.nextOffset, 'after');
     });
   }, [closePicker, emitValue, imageInputs, pickerSelection, value]);
+
+  useImperativeHandle(ref, () => ({
+    insertReference: (edgeId: string) => {
+      const index = imageInputs.findIndex((item) => item.edgeId === edgeId);
+      if (index >= 0) {
+        insertReference(index);
+      }
+    },
+  }), [imageInputs, insertReference]);
 
   const openPicker = useCallback((requestedOffset?: number) => {
     const root = rootRef.current;
@@ -732,4 +749,6 @@ export function ImageReferencePromptInput({
       )}
     </div>
   );
-}
+});
+
+ImageReferencePromptInput.displayName = 'ImageReferencePromptInput';

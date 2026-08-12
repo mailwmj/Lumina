@@ -211,6 +211,7 @@
       "apiKeyRequired": "Please set API key in Settings",
       "modelRequired": "Fetch and select an image model in Settings first",
       "resultTitle": "Result Image",
+      "submitting": "Submitting",
       "promptLabel": "Prompt",
       "promptPlaceholder": "Describe anything you want to generate or edit",
       "polishPrompt": "Polish prompt"
@@ -252,6 +253,8 @@
       "upstreamText": "Referenced text",
       "upstreamImages": "Referenced images",
       "disconnectInput": "Disconnect input",
+      "removeReference": "Remove reference",
+      "insertReference": "Insert image reference",
       "localInput": "Prompt",
       "inputPlaceholder": "Enter text for the model to process",
       "polishPrompt": "Polish prompt",
