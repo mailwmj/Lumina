@@ -335,7 +335,7 @@ export const ImageReferencePromptInput = forwardRef<ImageReferencePromptInputHan
         const chip = document.createElement('span');
         chip.contentEditable = 'false';
         chip.dataset.imageReferenceEdgeId = token.edgeId;
-        chip.className = 'mx-0.5 inline-flex h-6 max-w-full select-none items-center gap-1 rounded-md border border-[var(--ui-border-strong)] bg-[var(--ui-surface-elevated)] py-0.5 pl-0.5 pr-1.5 align-text-bottom text-sm font-medium leading-none text-text-dark shadow-sm';
+        chip.className = 'mx-0.5 inline-flex h-5 max-w-full select-none items-center gap-1 rounded border border-[var(--ui-border-strong)] bg-[var(--ui-surface-elevated)] pl-0.5 pr-1.5 align-middle text-sm font-medium leading-none text-text-dark shadow-sm';
 
         const previewSource = reference.item.previewImageUrl || reference.item.imageUrl;
         if (previewSource) {
@@ -343,11 +343,11 @@ export const ImageReferencePromptInput = forwardRef<ImageReferencePromptInputHan
           image.src = resolveImageDisplayUrl(previewSource);
           image.alt = label;
           image.draggable = false;
-          image.className = 'h-5 w-5 shrink-0 rounded-[4px] object-cover';
+          image.className = 'h-4 w-4 shrink-0 rounded-[3px] object-cover';
           chip.append(image);
         } else {
           const fallback = document.createElement('span');
-          fallback.className = 'flex h-5 w-5 shrink-0 items-center justify-center rounded-[4px] bg-red-500/20 text-[10px] text-red-300';
+          fallback.className = 'flex h-4 w-4 shrink-0 items-center justify-center rounded-[3px] bg-red-500/20 text-[9px] text-red-300';
           fallback.textContent = '!';
           chip.append(fallback);
         }
@@ -725,9 +725,9 @@ export const ImageReferencePromptInput = forwardRef<ImageReferencePromptInputHan
                   onClick={() => insertReference(index)}
                   onMouseEnter={() => setActivePickerIndex(index)}
                   data-active={pickerActiveIndex === index || undefined}
-                  className={`flex w-full items-center gap-2 border px-2 py-2 text-left text-sm text-text-dark transition-colors ${pickerActiveIndex === index
-                    ? 'border-accent bg-accent/20 ring-1 ring-inset ring-accent/60'
-                    : 'border-transparent hover:bg-[var(--ui-hover)]'
+                  className={`relative flex w-full items-center gap-2 border-0 border-b border-[var(--ui-border-soft)] px-2 py-2 text-left text-sm text-text-dark transition-colors last:border-b-0 before:absolute before:bottom-2 before:left-0 before:top-2 before:w-0.5 before:rounded-full before:bg-accent before:opacity-0 before:transition-opacity ${pickerActiveIndex === index
+                    ? 'bg-[var(--ui-hover)] before:opacity-100'
+                    : 'bg-transparent hover:bg-[var(--ui-hover)]'
                   }`}
                 >
                   {previewSource ? (

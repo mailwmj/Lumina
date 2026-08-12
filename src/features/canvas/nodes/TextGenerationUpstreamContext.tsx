@@ -295,7 +295,12 @@ const ReferenceImageCard = memo(({
   onLocate,
 }: ReferenceImageCardProps) => {
   const [isHovered, setIsHovered] = useState(false);
-  const [previewPosition, setPreviewPosition] = useState({ left: 0, top: 0 });
+  const [previewLayout, setPreviewLayout] = useState({
+    left: 0,
+    top: 0,
+    width: 320,
+    height: 240,
+  });
   const cardRef = useRef<HTMLElement | null>(null);
   const preview = input.previewImageUrl || input.imageUrl;
 
@@ -305,11 +310,14 @@ const ReferenceImageCard = memo(({
       return;
     }
     const rect = card.getBoundingClientRect();
-    const width = 160;
-    const height = 120;
-    setPreviewPosition({
+    const width = Math.min(320, window.innerWidth - 16);
+    const height = Math.min(240, window.innerHeight - 16);
+    const preferredTop = rect.top >= height + 16 ? rect.top - height - 8 : rect.bottom + 8;
+    setPreviewLayout({
       left: Math.max(8, Math.min(window.innerWidth - width - 8, rect.left + rect.width / 2 - width / 2)),
-      top: rect.top >= height + 16 ? rect.top - height - 8 : rect.bottom + 8,
+      top: Math.max(8, Math.min(window.innerHeight - height - 8, preferredTop)),
+      width,
+      height,
     });
   }, []);
 
@@ -393,8 +401,13 @@ const ReferenceImageCard = memo(({
       {isHovered && preview && createPortal(
         <div
           aria-hidden="true"
-          className="pointer-events-none fixed z-[100] flex h-[120px] w-[160px] items-center justify-center overflow-hidden rounded-lg border border-[var(--ui-border-strong)] bg-[var(--ui-surface-elevated)] p-1 shadow-[var(--ui-shadow-panel)]"
-          style={{ left: previewPosition.left, top: previewPosition.top }}
+          className="pointer-events-none fixed z-[100] flex items-center justify-center overflow-hidden rounded-lg border border-[var(--ui-border-strong)] bg-[var(--ui-surface-elevated)] p-1 shadow-[var(--ui-shadow-panel)]"
+          style={{
+            left: previewLayout.left,
+            top: previewLayout.top,
+            width: previewLayout.width,
+            height: previewLayout.height,
+          }}
         >
           <img
             src={resolveImageDisplayUrl(preview)}
