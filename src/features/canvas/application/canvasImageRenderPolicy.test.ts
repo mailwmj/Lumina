@@ -14,7 +14,8 @@ function createImageNode(
   id: string,
   position: { x: number; y: number },
   size: { width: number; height: number },
-  previewImageUrl = `file:///preview-${id}.jpg`
+  previewImageUrl = `file:///preview-${id}.jpg`,
+  aspectRatio = '1:1'
 ): CanvasNode {
   return {
     id,
@@ -25,7 +26,7 @@ function createImageNode(
     data: {
       imageUrl: `file:///original-${id}.jpg`,
       previewImageUrl,
-      aspectRatio: '1:1',
+      aspectRatio,
     },
   };
 }
@@ -70,19 +71,48 @@ describe('canvas image render policy', () => {
     })).toBe('file:///original.jpg');
   });
 
-  it('prefers a selected, sufficiently large visible image over the center candidate', () => {
+  it('prefers the image under the zoom point over the center candidate', () => {
     const centered = createImageNode('centered', { x: 250, y: 150 }, { width: 500, height: 500 });
-    const selected = createImageNode('selected', { x: 20, y: 80 }, { width: 500, height: 500 });
+    const pointed = createImageNode('pointed', { x: 20, y: 80 }, { width: 500, height: 500 });
 
     expect(findCanvasImageFocusCandidate({
-      nodes: [centered, selected],
+      nodes: [centered, pointed],
       viewport: { x: 0, y: 0, zoom: 1 },
       viewportSize: { width: 1000, height: 800 },
-      selectedNodeId: selected.id,
-    })).toBe(selected.id);
+      focusPoint: { x: 120, y: 180 },
+    })).toBe(pointed.id);
   });
 
-  it('uses the closest sufficiently large visible image when no image is selected', () => {
+  it('renders the just-resized image only after its displayed content reaches the threshold', () => {
+    const belowThreshold = createImageNode(
+      'below-threshold',
+      { x: 300, y: 250 },
+      { width: 179, height: 179 }
+    );
+    const resized = createImageNode(
+      'resized',
+      { x: 300, y: 250 },
+      { width: 180, height: 180 }
+    );
+
+    expect(findCanvasImageFocusCandidate({
+      nodes: [belowThreshold],
+      viewport: { x: 0, y: 0, zoom: 1 },
+      viewportSize: { width: 1000, height: 800 },
+      preferredNodeId: belowThreshold.id,
+      devicePixelRatio: 2,
+    })).toBeNull();
+
+    expect(findCanvasImageFocusCandidate({
+      nodes: [resized],
+      viewport: { x: 0, y: 0, zoom: 1 },
+      viewportSize: { width: 1000, height: 800 },
+      preferredNodeId: resized.id,
+      devicePixelRatio: 2,
+    })).toBe(resized.id);
+  });
+
+  it('uses the closest sufficiently large visible image to the canvas center by default', () => {
     const centered = createImageNode('centered', { x: 250, y: 150 }, { width: 500, height: 500 });
     const distant = createImageNode('distant', { x: -320, y: 80 }, { width: 500, height: 500 });
 
@@ -90,18 +120,41 @@ describe('canvas image render policy', () => {
       nodes: [distant, centered],
       viewport: { x: 0, y: 0, zoom: 1 },
       viewportSize: { width: 1000, height: 800 },
-      selectedNodeId: null,
     })).toBe(centered.id);
   });
 
-  it('does not select an image that is too small on screen for inspection', () => {
-    const small = createImageNode('small', { x: 300, y: 250 }, { width: 300, height: 300 });
+  it('uses actual physical pixels so high-density displays do not need oversized nodes', () => {
+    const image = createImageNode('image', { x: 300, y: 250 }, { width: 180, height: 180 });
 
     expect(findCanvasImageFocusCandidate({
-      nodes: [small],
+      nodes: [image],
       viewport: { x: 0, y: 0, zoom: 1 },
       viewportSize: { width: 1000, height: 800 },
-      selectedNodeId: small.id,
+      devicePixelRatio: 2,
+    })).toBe(image.id);
+
+    expect(findCanvasImageFocusCandidate({
+      nodes: [image],
+      viewport: { x: 0, y: 0, zoom: 1 },
+      viewportSize: { width: 1000, height: 800 },
+      devicePixelRatio: 1,
+    })).toBeNull();
+  });
+
+  it('measures the contained image instead of blank space in a stretched node', () => {
+    const letterboxed = createImageNode(
+      'letterboxed',
+      { x: 300, y: 250 },
+      { width: 600, height: 200 },
+      undefined,
+      '1:1'
+    );
+
+    expect(findCanvasImageFocusCandidate({
+      nodes: [letterboxed],
+      viewport: { x: 0, y: 0, zoom: 1 },
+      viewportSize: { width: 1000, height: 800 },
+      devicePixelRatio: 1,
     })).toBeNull();
   });
 
@@ -123,7 +176,7 @@ describe('canvas image render policy', () => {
       nodes: [group, child],
       viewport: { x: 0, y: 0, zoom: 1 },
       viewportSize: { width: 1000, height: 800 },
-      selectedNodeId: child.id,
+      preferredNodeId: child.id,
     })).toBe(child.id);
   });
 });

@@ -7,6 +7,7 @@ import {
   type CSSProperties,
   type MouseEvent as ReactMouseEvent,
   type DragEvent as ReactDragEvent,
+  type WheelEvent as ReactWheelEvent,
 } from 'react';
 import {
   ReactFlow,
@@ -99,6 +100,7 @@ const CONNECTION_LINE_STYLE: CSSProperties = {
 };
 const MULTI_SELECTION_KEY_CODES = ['Shift', 'Control', 'Meta'];
 const REACT_FLOW_PRO_OPTIONS = { hideAttribution: true };
+const ZOOM_FOCUS_INTENT_MAX_AGE_MS = 500;
 
 interface PendingConnectStart {
   nodeId: string;
@@ -119,6 +121,11 @@ interface PreviewConnectionVisual {
   top: number;
   width: number;
   height: number;
+}
+
+interface CanvasImageFocusIntent {
+  preferredNodeId?: string | null;
+  focusPoint?: { x: number; y: number } | null;
 }
 
 interface ClipboardSnapshot {
@@ -330,6 +337,10 @@ export function Canvas() {
   const pasteImageHandledRef = useRef(false);
   const nodeContextMenuSequenceRef = useRef(0);
   const imageQualitySettleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latestZoomFocusPointRef = useRef<{
+    point: { x: number; y: number };
+    timestamp: number;
+  } | null>(null);
   const activeGenerationPollNodeIdsRef = useRef(new Set<string>());
   const duplicateNodesRef = useRef<((sourceNodeIds: string[]) => string | null) | null>(null);
   const altDragCopyRef = useRef<{
@@ -452,7 +463,10 @@ export function Canvas() {
     [persistCanvasSnapshot]
   );
 
-  const scheduleCanvasImageFocus = useCallback((viewport?: Viewport) => {
+  const scheduleCanvasImageFocus = useCallback((
+    viewport?: Viewport,
+    intent: CanvasImageFocusIntent = {}
+  ) => {
     if (imageQualitySettleTimerRef.current) {
       window.clearTimeout(imageQualitySettleTimerRef.current);
     }
@@ -477,7 +491,9 @@ export function Canvas() {
           width: containerRect.width,
           height: containerRect.height,
         },
-        selectedNodeId: useCanvasStore.getState().selectedNodeId,
+        preferredNodeId: intent.preferredNodeId,
+        focusPoint: intent.focusPoint,
+        devicePixelRatio: window.devicePixelRatio,
       });
       setCanvasImageFocusedNodeId(focusedNodeId);
     }, CANVAS_IMAGE_QUALITY_SETTLE_DELAY_MS);
@@ -567,7 +583,7 @@ export function Canvas() {
         imageQualitySettleTimerRef.current = null;
       }
     };
-  }, [scheduleCanvasImageFocus, selectedNodeId, workflowNodes]);
+  }, [scheduleCanvasImageFocus, workflowNodes]);
 
   useEffect(() => {
     const sleep = (delayMs: number) =>
@@ -970,6 +986,14 @@ export function Canvas() {
           'resizing' in change &&
           change.resizing === false
       );
+      const resizedNodeChange = changes.find(
+        (change): change is Extract<NodeChange<CanvasNode>, { type: 'dimensions' }> => (
+          change.type === 'dimensions'
+          && 'resizing' in change
+          && change.resizing === false
+        )
+      );
+      const resizedNodeId = resizedNodeChange?.id;
       const hasInteractionMove = hasDragMove || hasResizeMove;
       const hasInteractionEnd = hasDragEnd || hasResizeEnd;
 
@@ -980,7 +1004,10 @@ export function Canvas() {
 
       if (hasInteractionEnd) {
         setCanvasImageInteractionActive(false);
-        scheduleCanvasImageFocus();
+        scheduleCanvasImageFocus(
+          undefined,
+          resizedNodeId ? { preferredNodeId: resizedNodeId } : undefined
+        );
         scheduleCanvasPersist(0);
         return;
       }
@@ -1044,7 +1071,13 @@ export function Canvas() {
     (_event: unknown, viewport: Viewport) => {
       setViewportState(viewport);
       setCanvasImageInteractionActive(false);
-      scheduleCanvasImageFocus(viewport);
+      const latestZoomFocus = latestZoomFocusPointRef.current;
+      latestZoomFocusPointRef.current = null;
+      const focusPoint = latestZoomFocus
+        && performance.now() - latestZoomFocus.timestamp <= ZOOM_FOCUS_INTENT_MAX_AGE_MS
+        ? latestZoomFocus.point
+        : null;
+      scheduleCanvasImageFocus(viewport, focusPoint ? { focusPoint } : undefined);
       const project = getCurrentProject();
       if (!project || isRestoringCanvasRef.current) {
         return;
@@ -1073,6 +1106,25 @@ export function Canvas() {
     }
     cancelPendingViewportPersist();
   }, [cancelPendingViewportPersist, setCanvasImageInteractionActive]);
+
+  const handleCanvasPointerDownCapture = useCallback(() => {
+    latestZoomFocusPointRef.current = null;
+  }, []);
+
+  const handleCanvasWheelCapture = useCallback((event: ReactWheelEvent<HTMLDivElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) {
+      return;
+    }
+
+    latestZoomFocusPointRef.current = {
+      point: {
+        x: event.clientX - rect.left,
+        y: event.clientY - rect.top,
+      },
+      timestamp: performance.now(),
+    };
+  }, []);
 
   useEffect(() => {
     const wrapperElement = wrapperRef.current;
@@ -2407,6 +2459,8 @@ export function Canvas() {
     <div
       ref={wrapperRef}
       className={`relative h-full w-full canvas-mode-${interactionMode} ${isSpacePanActive ? 'canvas-space-pan-active' : ''} ${hasMultiSelectionConnector ? 'canvas-multi-select-active' : ''}`}
+      onPointerDownCapture={handleCanvasPointerDownCapture}
+      onWheelCapture={handleCanvasWheelCapture}
       onDrop={handleCanvasDrop}
       onDragOver={handleCanvasDragOver}
     >

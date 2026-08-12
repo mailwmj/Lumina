@@ -7,7 +7,10 @@ import {
 } from '@/features/canvas/domain/canvasNodes';
 
 export const CANVAS_IMAGE_QUALITY_SETTLE_DELAY_MS = 150;
-const MIN_ORIGINAL_IMAGE_LONG_SIDE_PX = 480;
+// Previews are currently capped at 512px. Start the original-image decode before
+// the preview reaches a one-to-one physical-pixel display, so the transition is
+// not perceived as a blurry intermediate state on high-density screens.
+export const MIN_ORIGINAL_IMAGE_SCREEN_LONG_SIDE_PX = 360;
 
 export interface CanvasImageRenderSourceInput {
   nodeId: string;
@@ -21,7 +24,15 @@ export interface CanvasImageFocusInput {
   nodes: readonly CanvasNode[];
   viewport: Viewport;
   viewportSize: { width: number; height: number };
-  selectedNodeId: string | null;
+  /**
+   * A node directly resized by the user takes precedence after it settles,
+   * provided its displayed image has reached the original-image threshold.
+   */
+  preferredNodeId?: string | null;
+  /** Canvas-relative point where the user zoomed. */
+  focusPoint?: { x: number; y: number } | null;
+  /** Kept explicit so the policy is deterministic and testable. */
+  devicePixelRatio?: number;
 }
 
 function nonEmptyString(value: unknown): string | null {
@@ -30,6 +41,10 @@ function nonEmptyString(value: unknown): string | null {
 
 function getNodeImageUrl(node: CanvasNode): string | null {
   return nonEmptyString((node.data as { imageUrl?: unknown }).imageUrl);
+}
+
+function getNodePreviewImageUrl(node: CanvasNode): string | null {
+  return nonEmptyString((node.data as { previewImageUrl?: unknown }).previewImageUrl);
 }
 
 function isCanvasImageRenderNode(node: CanvasNode): boolean {
@@ -47,6 +62,37 @@ function getNodeSize(node: CanvasNode): { width: number; height: number } {
   return {
     width: node.measured?.width ?? declaredWidth ?? styleWidth ?? DEFAULT_NODE_WIDTH,
     height: node.measured?.height ?? declaredHeight ?? styleHeight ?? 200,
+  };
+}
+
+function getNodeImageAspectRatio(node: CanvasNode): number {
+  const value = (node.data as { aspectRatio?: unknown }).aspectRatio;
+  if (typeof value !== 'string') {
+    return 1;
+  }
+
+  const [width, height] = value.split(':').map((part) => Number(part));
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+    return 1;
+  }
+  return width / height;
+}
+
+function getContainedImageSize(node: CanvasNode): { width: number; height: number } {
+  const nodeSize = getNodeSize(node);
+  const imageAspectRatio = getNodeImageAspectRatio(node);
+  const nodeAspectRatio = nodeSize.width / Math.max(1, nodeSize.height);
+
+  if (imageAspectRatio >= nodeAspectRatio) {
+    return {
+      width: nodeSize.width,
+      height: nodeSize.width / imageAspectRatio,
+    };
+  }
+
+  return {
+    width: nodeSize.height * imageAspectRatio,
+    height: nodeSize.height,
   };
 }
 
@@ -95,9 +141,84 @@ function isVisibleInViewport(
   );
 }
 
-function hasInspectionScale(node: CanvasNode, viewport: Viewport): boolean {
+function hasInspectionScale(
+  node: CanvasNode,
+  viewport: Viewport,
+  devicePixelRatio: number
+): boolean {
+  const containedImageSize = getContainedImageSize(node);
+  const screenLongSide = Math.max(containedImageSize.width, containedImageSize.height)
+    * Math.max(0.01, viewport.zoom)
+    * devicePixelRatio;
+  return screenLongSide >= MIN_ORIGINAL_IMAGE_SCREEN_LONG_SIDE_PX;
+}
+
+function getNodeCenter(
+  node: CanvasNode,
+  nodesById: ReadonlyMap<string, CanvasNode>
+): { x: number; y: number } {
   const size = getNodeSize(node);
-  return Math.max(size.width, size.height) * viewport.zoom >= MIN_ORIGINAL_IMAGE_LONG_SIDE_PX;
+  const position = getNodeAbsolutePosition(node, nodesById);
+  return {
+    x: position.x + size.width / 2,
+    y: position.y + size.height / 2,
+  };
+}
+
+function isPointWithinNode(
+  node: CanvasNode,
+  point: { x: number; y: number },
+  nodesById: ReadonlyMap<string, CanvasNode>
+): boolean {
+  const size = getNodeSize(node);
+  const position = getNodeAbsolutePosition(node, nodesById);
+  return point.x >= position.x
+    && point.x <= position.x + size.width
+    && point.y >= position.y
+    && point.y <= position.y + size.height;
+}
+
+function getNodeZIndex(node: CanvasNode): number {
+  if (typeof node.zIndex === 'number') {
+    return node.zIndex;
+  }
+  return typeof node.style?.zIndex === 'number' ? node.style.zIndex : 0;
+}
+
+function findPointFocusCandidate(
+  candidates: readonly CanvasNode[],
+  focusPoint: { x: number; y: number },
+  viewport: Viewport,
+  nodesById: ReadonlyMap<string, CanvasNode>
+): CanvasNode | null {
+  const zoom = Math.max(0.01, viewport.zoom);
+  const flowPoint = {
+    x: (focusPoint.x - viewport.x) / zoom,
+    y: (focusPoint.y - viewport.y) / zoom,
+  };
+  const pointCandidates = candidates.filter((node) => (
+    isPointWithinNode(node, flowPoint, nodesById)
+  ));
+  if (pointCandidates.length === 0) {
+    return null;
+  }
+
+  return pointCandidates.reduce((topmost, node) => {
+    const topmostZIndex = getNodeZIndex(topmost);
+    const nodeZIndex = getNodeZIndex(node);
+    if (nodeZIndex !== topmostZIndex) {
+      return nodeZIndex > topmostZIndex ? node : topmost;
+    }
+
+    const topmostCenter = getNodeCenter(topmost, nodesById);
+    const nodeCenter = getNodeCenter(node, nodesById);
+    const topmostDistance = Math.hypot(
+      topmostCenter.x - flowPoint.x,
+      topmostCenter.y - flowPoint.y
+    );
+    const nodeDistance = Math.hypot(nodeCenter.x - flowPoint.x, nodeCenter.y - flowPoint.y);
+    return nodeDistance < topmostDistance ? node : topmost;
+  });
 }
 
 export function hasDistinctCanvasImagePreview(
@@ -132,32 +253,49 @@ export function findCanvasImageFocusCandidate({
   nodes,
   viewport,
   viewportSize,
-  selectedNodeId,
+  preferredNodeId = null,
+  focusPoint = null,
+  devicePixelRatio = 1,
 }: CanvasImageFocusInput): string | null {
   if (viewportSize.width <= 0 || viewportSize.height <= 0) {
     return null;
   }
 
   const nodesById = new Map(nodes.map((node) => [node.id, node] as const));
+  const normalizedDevicePixelRatio = Number.isFinite(devicePixelRatio)
+    ? Math.max(1, devicePixelRatio)
+    : 1;
   const candidates = nodes.filter((node) => (
     isCanvasImageRenderNode(node)
     && getNodeImageUrl(node)
     && hasDistinctCanvasImagePreview(
       getNodeImageUrl(node),
-      (node.data as { previewImageUrl?: unknown }).previewImageUrl as string | null | undefined
+      getNodePreviewImageUrl(node)
     )
     && isVisibleInViewport(node, viewport, viewportSize, nodesById)
-    && hasInspectionScale(node, viewport)
+    && hasInspectionScale(node, viewport, normalizedDevicePixelRatio)
   ));
   if (candidates.length === 0) {
     return null;
   }
 
-  const selectedCandidate = selectedNodeId
-    ? candidates.find((node) => node.id === selectedNodeId)
+  const preferredCandidate = preferredNodeId
+    ? candidates.find((node) => node.id === preferredNodeId)
     : undefined;
-  if (selectedCandidate) {
-    return selectedCandidate.id;
+  if (preferredCandidate) {
+    return preferredCandidate.id;
+  }
+
+  if (focusPoint) {
+    const pointCandidate = findPointFocusCandidate(
+      candidates,
+      focusPoint,
+      viewport,
+      nodesById
+    );
+    if (pointCandidate) {
+      return pointCandidate.id;
+    }
   }
 
   const zoom = Math.max(0.01, viewport.zoom);
@@ -165,17 +303,15 @@ export function findCanvasImageFocusCandidate({
   const viewportCenterY = (-viewport.y + viewportSize.height / 2) / zoom;
 
   return candidates.reduce((closest, node) => {
-    const closestSize = getNodeSize(closest);
-    const nodeSize = getNodeSize(node);
-    const closestPosition = getNodeAbsolutePosition(closest, nodesById);
-    const nodePosition = getNodeAbsolutePosition(node, nodesById);
+    const closestCenter = getNodeCenter(closest, nodesById);
+    const nodeCenter = getNodeCenter(node, nodesById);
     const closestDistance = Math.hypot(
-      closestPosition.x + closestSize.width / 2 - viewportCenterX,
-      closestPosition.y + closestSize.height / 2 - viewportCenterY
+      closestCenter.x - viewportCenterX,
+      closestCenter.y - viewportCenterY
     );
     const nodeDistance = Math.hypot(
-      nodePosition.x + nodeSize.width / 2 - viewportCenterX,
-      nodePosition.y + nodeSize.height / 2 - viewportCenterY
+      nodeCenter.x - viewportCenterX,
+      nodeCenter.y - viewportCenterY
     );
     return nodeDistance < closestDistance ? node : closest;
   }).id;
