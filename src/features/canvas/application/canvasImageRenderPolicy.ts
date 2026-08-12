@@ -18,6 +18,7 @@ export interface CanvasImageRenderSourceInput {
   previewImageUrl: string | null | undefined;
   focusedNodeId: string | null;
   isInteractionActive: boolean;
+  hasLoadedOriginal: boolean;
 }
 
 export interface CanvasImageFocusInput {
@@ -236,6 +237,7 @@ export function resolveCanvasImageRenderSource({
   previewImageUrl,
   focusedNodeId,
   isInteractionActive,
+  hasLoadedOriginal,
 }: CanvasImageRenderSourceInput): string | null {
   const original = nonEmptyString(imageUrl);
   const preview = nonEmptyString(previewImageUrl);
@@ -246,7 +248,18 @@ export function resolveCanvasImageRenderSource({
     return original;
   }
 
-  return focusedNodeId === nodeId && !isInteractionActive ? original : preview;
+  if (focusedNodeId !== nodeId) {
+    return preview;
+  }
+
+  // Interactions pause focus changes and background work. Keep an already
+  // decoded original visible, but do not promote a thumbnail to a new original
+  // while the canvas is moving.
+  if (isInteractionActive && !hasLoadedOriginal) {
+    return preview;
+  }
+
+  return original;
 }
 
 export function findCanvasImageFocusCandidate({

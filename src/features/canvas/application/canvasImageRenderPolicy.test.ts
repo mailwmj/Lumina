@@ -32,23 +32,25 @@ function createImageNode(
 }
 
 describe('canvas image render policy', () => {
-  it('uses the thumbnail while the image is not the idle focus', () => {
+  it('uses the thumbnail while the image is not focused', () => {
     expect(resolveCanvasImageRenderSource({
       nodeId: 'image-1',
       imageUrl: 'file:///original.jpg',
       previewImageUrl: 'file:///preview.jpg',
       focusedNodeId: null,
       isInteractionActive: false,
+      hasLoadedOriginal: false,
     })).toBe('file:///preview.jpg');
   });
 
-  it('uses the original only for the idle focused image', () => {
+  it('keeps a decoded original during panning without promoting a new original', () => {
     expect(resolveCanvasImageRenderSource({
       nodeId: 'image-1',
       imageUrl: 'file:///original.jpg',
       previewImageUrl: 'file:///preview.jpg',
       focusedNodeId: 'image-1',
       isInteractionActive: false,
+      hasLoadedOriginal: false,
     })).toBe('file:///original.jpg');
 
     expect(resolveCanvasImageRenderSource({
@@ -57,6 +59,16 @@ describe('canvas image render policy', () => {
       previewImageUrl: 'file:///preview.jpg',
       focusedNodeId: 'image-1',
       isInteractionActive: true,
+      hasLoadedOriginal: true,
+    })).toBe('file:///original.jpg');
+
+    expect(resolveCanvasImageRenderSource({
+      nodeId: 'image-1',
+      imageUrl: 'file:///original.jpg',
+      previewImageUrl: 'file:///preview.jpg',
+      focusedNodeId: 'image-1',
+      isInteractionActive: true,
+      hasLoadedOriginal: false,
     })).toBe('file:///preview.jpg');
   });
 
@@ -68,6 +80,7 @@ describe('canvas image render policy', () => {
       previewImageUrl: 'file:///original.jpg',
       focusedNodeId: null,
       isInteractionActive: false,
+      hasLoadedOriginal: false,
     })).toBe('file:///original.jpg');
   });
 

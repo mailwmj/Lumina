@@ -31,19 +31,11 @@ export function useCanvasNodeImageSource({
   imageUrl,
   previewImageUrl,
 }: CanvasNodeImageSourceInput): string | null {
-  const shouldUseOriginal = useCanvasImageQualityStore(
-    (state) => state.focusedNodeId === nodeId && !state.isInteractionActive
+  const isFocused = useCanvasImageQualityStore(
+    (state) => state.focusedNodeId === nodeId
   );
-  const preferredSource = useMemo(() => resolveCanvasImageRenderSource({
-    nodeId,
-    imageUrl,
-    previewImageUrl,
-    focusedNodeId: shouldUseOriginal ? nodeId : null,
-    isInteractionActive: !shouldUseOriginal,
-  }), [imageUrl, nodeId, previewImageUrl, shouldUseOriginal]);
-  const preferredDisplaySource = useMemo(
-    () => preferredSource ? resolveImageDisplayUrl(preferredSource) : null,
-    [preferredSource]
+  const isFocusedInteractionActive = useCanvasImageQualityStore(
+    (state) => state.isInteractionActive && state.focusedNodeId === nodeId
   );
   const originalDisplaySource = useMemo(
     () => imageUrl ? resolveImageDisplayUrl(imageUrl) : null,
@@ -53,7 +45,33 @@ export function useCanvasNodeImageSource({
     () => previewImageUrl ? resolveImageDisplayUrl(previewImageUrl) : null,
     [previewImageUrl]
   );
-  const [displaySource, setDisplaySource] = useState<string | null>(preferredDisplaySource);
+  // Nodes enter the canvas with their preview. A focused original is decoded
+  // before the source changes, rather than starting a large decode in render.
+  const [displaySource, setDisplaySource] = useState<string | null>(
+    () => previewDisplaySource ?? originalDisplaySource
+  );
+  const hasLoadedOriginal = Boolean(
+    originalDisplaySource && displaySource === originalDisplaySource
+  );
+  const preferredSource = useMemo(() => resolveCanvasImageRenderSource({
+    nodeId,
+    imageUrl,
+    previewImageUrl,
+    focusedNodeId: isFocused ? nodeId : null,
+    isInteractionActive: isFocusedInteractionActive,
+    hasLoadedOriginal,
+  }), [
+    hasLoadedOriginal,
+    imageUrl,
+    isFocused,
+    isFocusedInteractionActive,
+    nodeId,
+    previewImageUrl,
+  ]);
+  const preferredDisplaySource = useMemo(
+    () => preferredSource ? resolveImageDisplayUrl(preferredSource) : null,
+    [preferredSource]
+  );
 
   useEffect(() => {
     if (!preferredDisplaySource) {
@@ -62,7 +80,9 @@ export function useCanvasNodeImageSource({
     }
 
     const shouldPreloadOriginal = (
-      shouldUseOriginal
+      isFocused
+      && !isFocusedInteractionActive
+      && !hasLoadedOriginal
       && originalDisplaySource === preferredDisplaySource
       && previewDisplaySource
       && previewDisplaySource !== originalDisplaySource
@@ -88,7 +108,14 @@ export function useCanvasNodeImageSource({
     return () => {
       cancelled = true;
     };
-  }, [originalDisplaySource, preferredDisplaySource, previewDisplaySource, shouldUseOriginal]);
+  }, [
+    hasLoadedOriginal,
+    isFocused,
+    isFocusedInteractionActive,
+    originalDisplaySource,
+    preferredDisplaySource,
+    previewDisplaySource,
+  ]);
 
   return displaySource;
 }
