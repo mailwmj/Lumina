@@ -197,6 +197,7 @@ pub fn run() {
             ai_commands::discover_text_models,
             ai_commands::submit_generate_image_job,
             ai_commands::get_generate_image_job,
+            ai_commands::retry_generate_image_job,
             ai_commands::cancel_video_generation_task,
             ai_commands::generate_image,
             ai_commands::list_models,

@@ -75,6 +75,11 @@ export type ExportImageNodeResultKind =
   | 'storyboardSplitExport'
   | 'storyboardFrameEdit';
 
+export type GenerationRecoveryState =
+  | 'retrying'
+  | 'attention_required'
+  | 'retry_requested';
+
 export interface ExportImageNodeData extends NodeImageData {
   resultKind?: ExportImageNodeResultKind;
   /** Stable identity shared by all result nodes from one image generation run. */
@@ -85,6 +90,11 @@ export interface ExportImageNodeData extends NodeImageData {
   generationProviderName?: string | null;
   /** Model display name snapshot used while persisting a generated image. */
   generationModelName?: string | null;
+  /** Runtime state for a resumable task whose result query hit a transient network failure. */
+  generationRecoveryState?: GenerationRecoveryState | null;
+  generationRetryCount?: number;
+  generationNextRetryAt?: number | null;
+  generationRetryError?: string | null;
 }
 
 export interface GroupNodeData extends NodeDisplayData {
@@ -250,6 +260,10 @@ export interface ExportVideoNodeData extends NodeDisplayData {
   generationJobId?: string | null;
   generationProviderId?: string | null;
   generationError?: string | null;
+  generationRecoveryState?: GenerationRecoveryState | null;
+  generationRetryCount?: number;
+  generationNextRetryAt?: number | null;
+  generationRetryError?: string | null;
   [key: string]: unknown;
 }
 

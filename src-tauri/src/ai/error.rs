@@ -8,6 +8,9 @@ pub enum AIError {
     #[error("Network error: {0}")]
     Network(#[from] reqwest::Error),
 
+    #[error("Transient error: {0}")]
+    Transient(String),
+
     #[error("Image processing error: {0}")]
     Image(#[from] image::ImageError),
 

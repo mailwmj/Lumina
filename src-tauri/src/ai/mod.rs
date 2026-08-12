@@ -1,4 +1,5 @@
 pub mod error;
+pub mod generation_recovery;
 pub mod providers;
 
 use std::collections::{HashMap, HashSet};

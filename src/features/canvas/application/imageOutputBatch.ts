@@ -172,6 +172,10 @@ export function markImageOutputNodeFailed({
     generationError: resolvedError.message,
     generationErrorDetails: resolvedError.details ?? null,
     generationDebugContext,
+    generationRecoveryState: null,
+    generationRetryCount: 0,
+    generationNextRetryAt: null,
+    generationRetryError: null,
   });
   return { resolvedError, generationDebugContext };
 }

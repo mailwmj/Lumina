@@ -1,6 +1,7 @@
 import {
   generateImage,
   getGenerateImageJob,
+  retryGenerateImageJob,
   setApiKey,
   submitGenerateImageJob,
 } from '@/commands/ai';
@@ -111,4 +112,5 @@ export const tauriAiGateway: AiGateway = {
     });
   },
   getGenerateImageJob,
+  retryGenerateImageJob,
 };

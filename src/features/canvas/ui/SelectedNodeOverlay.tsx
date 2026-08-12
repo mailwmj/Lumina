@@ -4,10 +4,10 @@ import {
   selectSelectedNodeIds,
   selectWorkflowNodes,
 } from '@/features/canvas/application/canvasNodeSelectors';
-import { getNodeDefinition } from '@/features/canvas/domain/nodeRegistry';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { NodeActionToolbar } from './NodeActionToolbar';
 import { MultiSelectionActionToolbar } from './MultiSelectionActionToolbar';
+import { canShowNodeActionToolbar } from './nodeToolbarVisibility';
 
 export const SelectedNodeOverlay = memo(() => {
   const workflowNodes = useCanvasStore(selectWorkflowNodes);
@@ -38,7 +38,7 @@ export const SelectedNodeOverlay = memo(() => {
     return null;
   }
 
-  if (!getNodeDefinition(selectedNode.type).capabilities.toolbar) {
+  if (!canShowNodeActionToolbar(selectedNode)) {
     return null;
   }
 

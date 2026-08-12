@@ -7,6 +7,7 @@ use tokio::time::{sleep, Duration};
 use tracing::info;
 
 use crate::ai::error::AIError;
+use crate::ai::generation_recovery::is_retryable_poll_status;
 use crate::ai::{
     AIProvider, GenerateRequest, ProviderTaskHandle, ProviderTaskPollResult, ProviderTaskSubmission,
 };
@@ -16,6 +17,11 @@ const SUBMIT_PATH: &str = "/api/v3/contents/generations/tasks";
 const QUERY_PATH: &str = "/api/v3/contents/generations/tasks";
 const POLL_INTERVAL_MS: u64 = 5000;
 const MAX_DURATION_SECONDS: u64 = 300; // 5 minutes max
+
+fn map_poll_network_error(error: reqwest::Error) -> AIError {
+    info!("[VolcVideo Poll] HTTP request failed: {}", error);
+    AIError::Network(error)
+}
 
 #[derive(Debug, Serialize)]
 struct VideoSubmitContent {
@@ -451,14 +457,18 @@ impl VolcVideoProvider {
             .header("Content-Type", "application/json")
             .send()
             .await
-            .map_err(|e| {
-                info!("[VolcVideo Poll] HTTP request failed: {}", e);
-                AIError::Provider(format!("VolcVideo query failed: {}", e))
-            })?;
+            .map_err(map_poll_network_error)?;
 
         let status = response.status();
-        let raw_response = response.text().await.unwrap_or_default();
+        let raw_response = response.text().await?;
         info!("[VolcVideo Poll] response status: {}, body: {}", status, raw_response);
+
+        if is_retryable_poll_status(status) {
+            return Err(AIError::Transient(format!(
+                "VolcVideo task query temporarily unavailable [{}]",
+                status
+            )));
+        }
 
         if !status.is_success() {
             return Err(AIError::Provider(format!(
@@ -688,5 +698,34 @@ pub async fn cancel_volcvideo_task(
             "VolcVideo cancel failed [{}]: {}",
             status, raw_response
         )))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::map_poll_network_error;
+    use crate::ai::error::AIError;
+    use reqwest::Client;
+    use tokio::net::TcpListener;
+
+    #[tokio::test]
+    async fn preserves_transport_failures_as_network_errors_for_task_recovery() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            drop(socket);
+        });
+
+        let error = Client::builder()
+            .no_proxy()
+            .build()
+            .unwrap()
+            .get(endpoint)
+            .send()
+            .await
+            .expect_err("a dropped TCP connection must fail the HTTP request");
+
+        assert!(matches!(map_poll_network_error(error), AIError::Network(_)));
     }
 }

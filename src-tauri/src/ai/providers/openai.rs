@@ -11,6 +11,7 @@ use uuid::Uuid;
 
 use super::image_input::{load_reference_image, ReferenceImage};
 use crate::ai::error::AIError;
+use crate::ai::generation_recovery::is_retryable_poll_status;
 use crate::ai::{
     AIProvider, GenerateRequest, ProviderTaskHandle, ProviderTaskPollResult, ProviderTaskSubmission,
 };
@@ -902,7 +903,13 @@ impl AIProvider for OpenAiProvider {
             .send()
             .await?;
         let status = response.status();
-        let raw = response.text().await.unwrap_or_default();
+        let raw = response.text().await?;
+        if is_retryable_poll_status(status) {
+            return Err(AIError::Transient(format!(
+                "OpenAI-compatible image task poll temporarily unavailable ({})",
+                status
+            )));
+        }
         let body = serde_json::from_str::<Value>(&raw).map_err(|error| {
             AIError::Provider(format!(
                 "OpenAI-compatible image task poll returned invalid JSON ({}): {}; body={}",

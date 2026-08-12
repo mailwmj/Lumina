@@ -204,7 +204,11 @@
       "waitingResult": "Waiting for output image",
       "waitingResultDelayed": "Already waited {{minutes}} minutes with no result yet. Still waiting...",
       "selectToEdit": "Select this node and enter a prompt below to generate or edit image",
-      "generationFailed": "Generation failed"
+      "generationFailed": "Generation failed",
+      "recoveringResult": "Network issue. Re-querying the original task",
+      "requeryRequired": "Unable to query the result automatically",
+      "requeryTask": "Re-query task",
+      "requeryTaskHint": "This only queries the existing task; it does not generate again or charge twice."
     },
     "imageEdit": {
       "promptRequired": "Please enter a prompt",
@@ -290,6 +294,10 @@
       "noVideo": "No Video",
       "generating": "Generating...",
       "generationFailed": "Generation failed",
+      "recoveringResult": "Network issue. Re-querying the original task",
+      "requeryRequired": "Unable to query the result automatically",
+      "requeryTask": "Re-query task",
+      "requeryTaskHint": "This only queries the existing task; it does not generate again or charge twice.",
       "promptPlaceholder": "Describe the video you want to generate",
       "advancedOptions": "Advanced",
       "shotType": "Shot",

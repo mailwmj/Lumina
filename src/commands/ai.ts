@@ -17,13 +17,23 @@ export interface GenerateRequest {
 
 export type GenerationJobState = 'queued' | 'running' | 'succeeded' | 'failed' | 'not_found' | 'cancelled';
 
+export interface GenerationJobRecovery {
+  retry_count: number;
+  next_retry_at?: number | null;
+  requires_manual_requery: boolean;
+  last_error?: string | null;
+}
+
 export interface GenerationJobStatus {
   job_id: string;
   status: GenerationJobState;
   result?: string | null;
   error?: string | null;
+  seed?: number | null;
   /** External task ID from provider (e.g., volcvideo task ID like "cgt-xxx") */
   external_task_id?: string | null;
+  /** A recoverable task-query failure; the task itself remains active. */
+  recovery?: GenerationJobRecovery | null;
 }
 
 export interface DiscoveredImageModel {
@@ -273,6 +283,18 @@ export async function getGenerateImageJob(jobId: string): Promise<GenerationJobS
   const result = await invoke<GenerationJobStatus>('get_generate_image_job', { jobId });
   if (!result || typeof result !== 'object' || typeof result.status !== 'string') {
     throw new Error('get_generate_image_job returned invalid payload');
+  }
+  return result;
+}
+
+export async function retryGenerateImageJob(jobId: string): Promise<GenerationJobStatus> {
+  if (!isTauri()) {
+    throw new Error('当前不是 Tauri 容器环境，请使用 `npm run tauri dev` 启动');
+  }
+
+  const result = await invoke<GenerationJobStatus>('retry_generate_image_job', { jobId });
+  if (!result || typeof result !== 'object' || typeof result.status !== 'string') {
+    throw new Error('retry_generate_image_job returned invalid payload');
   }
   return result;
 }

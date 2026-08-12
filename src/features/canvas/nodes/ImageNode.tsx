@@ -5,8 +5,9 @@ import {
   useUpdateNodeInternals,
   type NodeProps,
 } from '@xyflow/react';
-import { AlertTriangle, Image as ImageIcon, Sparkles } from '@/components/ui/icons';
+import { AlertTriangle, Image as ImageIcon, RefreshCw, Sparkles } from '@/components/ui/icons';
 import { useTranslation } from 'react-i18next';
+import { UiButton } from '@/components/ui';
 
 import {
   CANVAS_NODE_TYPES,
@@ -50,6 +51,9 @@ export const ImageNode = memo(({ id, data, selected, type, width, height }: Imag
   const { t } = useTranslation();
   const updateNodeInternals = useUpdateNodeInternals();
   const setSelectedNode = useCanvasStore((state) => state.setSelectedNode);
+  const updateNodeDataWithoutHistory = useCanvasStore(
+    (state) => state.updateNodeDataWithoutHistory
+  );
   const [now, setNow] = useState(() => Date.now());
   const isExportResultNode = type === CANVAS_NODE_TYPES.exportImage;
   const isGenerating = typeof data.isGenerating === 'boolean' ? data.isGenerating : false;
@@ -59,6 +63,16 @@ export const ImageNode = memo(({ id, data, selected, type, width, height }: Imag
       : '';
   const hasGenerationError =
     isExportResultNode && !isGenerating && !data.imageUrl && generationError.length > 0;
+  const generationRecoveryState =
+    data.generationRecoveryState === 'retrying'
+    || data.generationRecoveryState === 'attention_required'
+    || data.generationRecoveryState === 'retry_requested'
+      ? data.generationRecoveryState
+      : null;
+  const generationRetryError =
+    typeof data.generationRetryError === 'string' ? data.generationRetryError.trim() : '';
+  const requiresManualRequery =
+    isExportResultNode && isGenerating && generationRecoveryState === 'attention_required';
   const generationStartedAt =
     typeof data.generationStartedAt === 'number' ? data.generationStartedAt : null;
   const generationDurationMs =
@@ -129,12 +143,16 @@ export const ImageNode = memo(({ id, data, selected, type, width, height }: Imag
       return t('node.imageNode.selectToEdit');
     }
 
+    if (generationRecoveryState === 'retrying' || generationRecoveryState === 'retry_requested') {
+      return t('node.imageNode.recoveringResult');
+    }
+
     if (!isGenerating || waitedMinutes < 2) {
       return t('node.imageNode.waitingResult');
     }
 
     return t('node.imageNode.waitingResultDelayed', { minutes: waitedMinutes });
-  }, [isExportResultNode, isGenerating, t, waitedMinutes]);
+  }, [generationRecoveryState, isExportResultNode, isGenerating, t, waitedMinutes]);
 
   const imageSource = useCanvasNodeImageSource({
     nodeId: id,
@@ -156,6 +174,10 @@ export const ImageNode = memo(({ id, data, selected, type, width, height }: Imag
           ? (selected
             ? 'border-red-400 shadow-[0_0_0_1px_rgba(248,113,113,0.42)]'
             : 'border-red-500/70 bg-[rgba(127,29,29,0.12)] hover:border-red-400/80 dark:border-red-500/70 dark:hover:border-red-400/80')
+          : requiresManualRequery
+            ? (selected
+              ? 'border-amber-400 shadow-[0_0_0_1px_rgba(251,191,36,0.34)]'
+              : 'border-amber-500/65 bg-[rgba(120,83,13,0.12)] hover:border-amber-400/80')
           : resolveNodeSurfaceStateClass(selected)}
       `}
       style={{ width: resolvedWidth, height: resolvedHeight }}
@@ -182,6 +204,38 @@ export const ImageNode = memo(({ id, data, selected, type, width, height }: Imag
               {generationError}
             </span>
           </div>
+        ) : requiresManualRequery ? (
+          <div className="flex h-full w-full flex-col items-center justify-center gap-2 px-4 text-amber-200">
+            <AlertTriangle className="h-7 w-7 opacity-90" />
+            <span className="text-center text-[12px] font-medium leading-5">
+              {t('node.imageNode.requeryRequired')}
+            </span>
+            {generationRetryError && (
+              <span className="max-h-[44px] overflow-y-auto break-words text-center text-[11px] leading-4 text-amber-100/80">
+                {generationRetryError}
+              </span>
+            )}
+            <UiButton
+              type="button"
+              size="sm"
+              variant="muted"
+              className="nodrag nowheel z-10 gap-1.5 border-amber-300/30 bg-amber-200/10 text-amber-100 hover:bg-amber-200/20"
+              onClick={(event) => {
+                event.stopPropagation();
+                updateNodeDataWithoutHistory(id, {
+                  generationRecoveryState: 'retry_requested',
+                  generationNextRetryAt: null,
+                  generationRetryError: null,
+                });
+              }}
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              {t('node.imageNode.requeryTask')}
+            </UiButton>
+            <span className="text-center text-[10px] leading-4 text-amber-100/65">
+              {t('node.imageNode.requeryTaskHint')}
+            </span>
+          </div>
         ) : (
           <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-text-muted/85">
             {isExportResultNode ? (
@@ -195,7 +249,7 @@ export const ImageNode = memo(({ id, data, selected, type, width, height }: Imag
           </div>
         )}
 
-        {isGenerating && (
+        {isGenerating && !requiresManualRequery && (
           <div className="pointer-events-none absolute inset-0 overflow-hidden">
             <div className="absolute inset-0 bg-bg-dark/55" />
             <div

@@ -13,6 +13,9 @@ use tracing::info;
 use uuid::Uuid;
 
 use crate::ai::error::AIError;
+use crate::ai::generation_recovery::{
+    clear_poll_recovery, schedule_transient_poll_retry, PollRecovery,
+};
 use crate::ai::providers::build_default_providers;
 use crate::ai::{
     GenerateRequest, ProviderRegistry, ProviderTaskHandle, ProviderTaskPollResult,
@@ -62,6 +65,15 @@ pub struct GenerationJobStatusDto {
     /// External task ID from the provider (e.g., volcvideo task ID like "cgt-xxx")
     /// Used for draft video final generation
     pub external_task_id: Option<String>,
+    pub recovery: Option<GenerationJobRecoveryDto>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct GenerationJobRecoveryDto {
+    pub retry_count: u32,
+    pub next_retry_at: Option<i64>,
+    pub requires_manual_requery: bool,
+    pub last_error: Option<String>,
 }
 
 #[derive(Debug)]
@@ -74,6 +86,10 @@ struct GenerationJobRecord {
     external_task_meta_json: Option<String>,
     result: Option<String>,
     error: Option<String>,
+    poll_retry_count: u32,
+    next_poll_at: Option<i64>,
+    recovery_requires_manual_requery: bool,
+    recovery_error: Option<String>,
 }
 
 fn now_ms() -> i64 {
@@ -107,6 +123,10 @@ fn ensure_generation_jobs_table(conn: &Connection) -> Result<(), String> {
           external_task_meta_json TEXT,
           result TEXT,
           error TEXT,
+          poll_retry_count INTEGER NOT NULL DEFAULT 0,
+          next_poll_at INTEGER,
+          recovery_requires_manual_requery INTEGER NOT NULL DEFAULT 0,
+          recovery_error TEXT,
           created_at INTEGER NOT NULL,
           updated_at INTEGER NOT NULL
         );
@@ -116,7 +136,76 @@ fn ensure_generation_jobs_table(conn: &Connection) -> Result<(), String> {
     )
     .map_err(|e| format!("Failed to initialize ai_generation_jobs table: {}", e))?;
 
+    let mut stmt = conn
+        .prepare("PRAGMA table_info(ai_generation_jobs)")
+        .map_err(|e| format!("Failed to inspect ai_generation_jobs schema: {}", e))?;
+    let columns = stmt
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|e| format!("Failed to read ai_generation_jobs schema: {}", e))?
+        .collect::<Result<HashSet<_>, _>>()
+        .map_err(|e| format!("Failed to collect ai_generation_jobs schema: {}", e))?;
+
+    for (name, definition) in [
+        ("poll_retry_count", "INTEGER NOT NULL DEFAULT 0"),
+        ("next_poll_at", "INTEGER"),
+        (
+            "recovery_requires_manual_requery",
+            "INTEGER NOT NULL DEFAULT 0",
+        ),
+        ("recovery_error", "TEXT"),
+    ] {
+        if !columns.contains(name) {
+            conn.execute_batch(&format!(
+                "ALTER TABLE ai_generation_jobs ADD COLUMN {name} {definition}"
+            ))
+            .map_err(|e| format!("Failed to migrate ai_generation_jobs.{name}: {}", e))?;
+        }
+    }
+
     Ok(())
+}
+
+#[cfg(test)]
+mod generation_job_recovery_storage_tests {
+    use rusqlite::Connection;
+
+    use super::ensure_generation_jobs_table;
+
+    #[test]
+    fn upgrades_existing_job_table_with_poll_recovery_columns() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            r#"
+            CREATE TABLE ai_generation_jobs (
+              job_id TEXT PRIMARY KEY,
+              provider_id TEXT NOT NULL,
+              status TEXT NOT NULL,
+              resumable INTEGER NOT NULL DEFAULT 0,
+              external_task_id TEXT,
+              external_task_meta_json TEXT,
+              result TEXT,
+              error TEXT,
+              created_at INTEGER NOT NULL,
+              updated_at INTEGER NOT NULL
+            );
+            "#,
+        )
+        .unwrap();
+
+        ensure_generation_jobs_table(&conn).unwrap();
+
+        let mut stmt = conn.prepare("PRAGMA table_info(ai_generation_jobs)").unwrap();
+        let column_names = stmt
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+
+        assert!(column_names.contains(&"poll_retry_count".to_string()));
+        assert!(column_names.contains(&"next_poll_at".to_string()));
+        assert!(column_names.contains(&"recovery_requires_manual_requery".to_string()));
+        assert!(column_names.contains(&"recovery_error".to_string()));
+    }
 }
 
 fn open_db(app: &AppHandle) -> Result<Connection, String> {
@@ -197,6 +286,10 @@ fn update_generation_job(
           status = ?1,
           result = ?2,
           error = ?3,
+          poll_retry_count = 0,
+          next_poll_at = NULL,
+          recovery_requires_manual_requery = 0,
+          recovery_error = NULL,
           updated_at = ?4
         WHERE job_id = ?5
         "#,
@@ -225,6 +318,10 @@ fn update_generation_job_with_seed(
           status = ?1,
           result = ?2,
           external_task_meta_json = ?3,
+          poll_retry_count = 0,
+          next_poll_at = NULL,
+          recovery_requires_manual_requery = 0,
+          recovery_error = NULL,
           updated_at = ?4
         WHERE job_id = ?5
         "#,
@@ -232,6 +329,68 @@ fn update_generation_job_with_seed(
     )
     .map_err(|e| format!("Failed to update generation job with seed: {}", e))?;
     Ok(())
+}
+
+fn update_generation_job_poll_recovery(
+    app: &AppHandle,
+    job_id: &str,
+    recovery: &PollRecovery,
+) -> Result<(), String> {
+    let conn = open_db(app)?;
+    conn.execute(
+        r#"
+        UPDATE ai_generation_jobs
+        SET
+          poll_retry_count = ?1,
+          next_poll_at = ?2,
+          recovery_requires_manual_requery = ?3,
+          recovery_error = ?4,
+          updated_at = ?5
+        WHERE job_id = ?6
+        "#,
+        params![
+            i64::from(recovery.retry_count),
+            recovery.next_poll_at,
+            if recovery.requires_manual_requery {
+                1_i64
+            } else {
+                0_i64
+            },
+            recovery.last_error,
+            now_ms(),
+            job_id,
+        ],
+    )
+    .map_err(|e| format!("Failed to update generation job poll recovery: {}", e))?;
+    Ok(())
+}
+
+fn clear_generation_job_poll_recovery(app: &AppHandle, job_id: &str) -> Result<(), String> {
+    update_generation_job_poll_recovery(app, job_id, &clear_poll_recovery())
+}
+
+fn recover_generation_job_after_transient_poll_failure(
+    app: &AppHandle,
+    record: &mut GenerationJobRecord,
+    task_id: &str,
+    error_message: &str,
+) -> Result<GenerationJobStatusDto, String> {
+    let recovery = schedule_transient_poll_retry(
+        task_id,
+        record.poll_retry_count,
+        now_ms(),
+        error_message,
+    );
+    info!(
+        "[GenerationJob] retryable poll error for job {} (attempt {}): {}",
+        record.job_id, recovery.retry_count, error_message
+    );
+    update_generation_job_poll_recovery(app, record.job_id.as_str(), &recovery)?;
+    record.poll_retry_count = recovery.retry_count;
+    record.next_poll_at = recovery.next_poll_at;
+    record.recovery_requires_manual_requery = recovery.requires_manual_requery;
+    record.recovery_error = recovery.last_error;
+    Ok(dto_from_record(record))
 }
 
 fn touch_generation_job(app: &AppHandle, job_id: &str) -> Result<(), String> {
@@ -257,7 +416,11 @@ fn get_generation_job(app: &AppHandle, job_id: &str) -> Result<Option<Generation
               external_task_id,
               external_task_meta_json,
               result,
-              error
+              error,
+              poll_retry_count,
+              next_poll_at,
+              recovery_requires_manual_requery,
+              recovery_error
             FROM ai_generation_jobs
             WHERE job_id = ?1
             LIMIT 1
@@ -275,6 +438,10 @@ fn get_generation_job(app: &AppHandle, job_id: &str) -> Result<Option<Generation
             external_task_meta_json: row.get(5)?,
             result: row.get(6)?,
             error: row.get(7)?,
+            poll_retry_count: row.get::<_, i64>(8)?.clamp(0, i64::from(u32::MAX)) as u32,
+            next_poll_at: row.get(9)?,
+            recovery_requires_manual_requery: row.get::<_, i64>(10)? != 0,
+            recovery_error: row.get(11)?,
         })
     });
 
@@ -299,6 +466,49 @@ fn dto_from_record(record: &GenerationJobRecord) -> GenerationJobStatusDto {
         error: record.error.clone(),
         seed,
         external_task_id: record.external_task_id.clone(),
+        recovery: (record.poll_retry_count > 0
+            || record.next_poll_at.is_some()
+            || record.recovery_requires_manual_requery
+            || record.recovery_error.is_some())
+        .then(|| GenerationJobRecoveryDto {
+            retry_count: record.poll_retry_count,
+            next_retry_at: record.next_poll_at,
+            requires_manual_requery: record.recovery_requires_manual_requery,
+            last_error: record.recovery_error.clone(),
+        }),
+    }
+}
+
+#[cfg(test)]
+mod generation_job_recovery_dto_tests {
+    use super::{dto_from_record, GenerationJobRecord};
+
+    #[test]
+    fn exposes_network_poll_recovery_without_marking_the_job_failed() {
+        let dto = dto_from_record(&GenerationJobRecord {
+            job_id: "local-job-id".to_string(),
+            provider_id: "ai-media".to_string(),
+            status: "running".to_string(),
+            resumable: true,
+            external_task_id: Some("imgtask_795e3255-352c-420d-9785-91e167b416a3".to_string()),
+            external_task_meta_json: None,
+            result: None,
+            error: None,
+            poll_retry_count: 1,
+            next_poll_at: Some(2_000),
+            recovery_requires_manual_requery: false,
+            recovery_error: Some("Network error: error sending request".to_string()),
+        });
+
+        assert_eq!(dto.status, "running");
+        let recovery = dto.recovery.expect("retryable jobs expose recovery state");
+        assert_eq!(recovery.retry_count, 1);
+        assert_eq!(recovery.next_retry_at, Some(2_000));
+        assert!(!recovery.requires_manual_requery);
+        assert_eq!(
+            recovery.last_error.as_deref(),
+            Some("Network error: error sending request")
+        );
     }
 }
 
@@ -1414,6 +1624,45 @@ pub async fn get_generate_image_job(
     app: AppHandle,
     job_id: String,
 ) -> Result<GenerationJobStatusDto, String> {
+    get_generate_image_job_inner(app, job_id, false).await
+}
+
+#[tauri::command]
+pub async fn retry_generate_image_job(
+    app: AppHandle,
+    job_id: String,
+) -> Result<GenerationJobStatusDto, String> {
+    let maybe_record = get_generation_job(&app, job_id.as_str())?;
+    let Some(record) = maybe_record else {
+        return Ok(GenerationJobStatusDto {
+            job_id,
+            status: "not_found".to_string(),
+            result: None,
+            error: Some("job not found".to_string()),
+            seed: None,
+            external_task_id: None,
+            recovery: None,
+        });
+    };
+
+    if !record.resumable {
+        return Err("This generation job does not support task re-query".to_string());
+    }
+    if record.status == "succeeded" || record.status == "failed" || record.status == "cancelled" {
+        return Ok(dto_from_record(&record));
+    }
+    if !record.recovery_requires_manual_requery {
+        return Ok(dto_from_record(&record));
+    }
+
+    get_generate_image_job_inner(app, job_id, true).await
+}
+
+async fn get_generate_image_job_inner(
+    app: AppHandle,
+    job_id: String,
+    force_poll_after_manual_requery: bool,
+) -> Result<GenerationJobStatusDto, String> {
     info!("[get_generate_image_job] called with job_id: {}", job_id);
     let maybe_record = get_generation_job(&app, job_id.as_str())?;
     let Some(mut record) = maybe_record else {
@@ -1425,6 +1674,7 @@ pub async fn get_generate_image_job(
             error: Some("job not found".to_string()),
             seed: None,
             external_task_id: None,
+            recovery: None,
         });
     };
 
@@ -1478,10 +1728,22 @@ pub async fn get_generate_image_job(
         return Ok(dto_from_record(&record));
     };
 
+    if record.recovery_requires_manual_requery && !force_poll_after_manual_requery {
+        info!(
+            "[GenerationJob] waiting for manual task re-query: job={}, retries={}",
+            job_id, record.poll_retry_count
+        );
+        return Ok(dto_from_record(&record));
+    }
+    if record.next_poll_at.is_some_and(|next_poll_at| next_poll_at > now_ms()) {
+        return Ok(dto_from_record(&record));
+    }
+
     let task_meta = record
         .external_task_meta_json
         .as_deref()
         .and_then(|raw| serde_json::from_str::<Value>(raw).ok());
+    let task_id_for_recovery = task_id.clone();
 
     info!("[get_generate_image_job] calling provider.poll_task for job: {}, task_id: {}", job_id, task_id);
     match provider
@@ -1492,7 +1754,11 @@ pub async fn get_generate_image_job(
         .await
     {
         Ok(ProviderTaskPollResult::Running) => {
-            let _ = touch_generation_job(&app, record.job_id.as_str());
+            clear_generation_job_poll_recovery(&app, record.job_id.as_str())?;
+            record.poll_retry_count = 0;
+            record.next_poll_at = None;
+            record.recovery_requires_manual_requery = false;
+            record.recovery_error = None;
             Ok(dto_from_record(&record))
         }
         Ok(ProviderTaskPollResult::Succeeded(image_source)) => {
@@ -1510,6 +1776,7 @@ pub async fn get_generate_image_job(
                 error: None,
                 seed: None,
                 external_task_id: record.external_task_id.clone(),
+                recovery: None,
             })
         }
         Ok(ProviderTaskPollResult::SucceededWithMeta { url, seed }) => {
@@ -1528,6 +1795,7 @@ pub async fn get_generate_image_job(
                 error: None,
                 seed,
                 external_task_id: record.external_task_id.clone(),
+                recovery: None,
             })
         }
         Ok(ProviderTaskPollResult::Failed(message)) => {
@@ -1545,6 +1813,7 @@ pub async fn get_generate_image_job(
                 error: Some(message),
                 seed: None,
                 external_task_id: record.external_task_id.clone(),
+                recovery: None,
             })
         }
         Err(AIError::TaskFailed(message)) => {
@@ -1562,7 +1831,25 @@ pub async fn get_generate_image_job(
                 error: Some(message),
                 seed: None,
                 external_task_id: record.external_task_id.clone(),
+                recovery: None,
             })
+        }
+        Err(AIError::Network(error)) => {
+            let error_msg = error.to_string();
+            recover_generation_job_after_transient_poll_failure(
+                &app,
+                &mut record,
+                task_id_for_recovery.as_str(),
+                error_msg.as_str(),
+            )
+        }
+        Err(AIError::Transient(error_msg)) => {
+            recover_generation_job_after_transient_poll_failure(
+                &app,
+                &mut record,
+                task_id_for_recovery.as_str(),
+                error_msg.as_str(),
+            )
         }
         Err(error) => {
             let error_msg = error.to_string();
@@ -1581,6 +1868,7 @@ pub async fn get_generate_image_job(
                 error: Some(error_msg),
                 seed: None,
                 external_task_id: record.external_task_id.clone(),
+                recovery: None,
             })
         }
     }

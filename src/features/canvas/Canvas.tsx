@@ -44,6 +44,10 @@ import {
   buildGenerationErrorReport,
   CURRENT_RUNTIME_SESSION_ID,
 } from '@/features/canvas/application/generationErrorReport';
+import {
+  resolveGenerationPollDelay,
+  resolveImageGenerationRecoveryState,
+} from '@/features/canvas/application/generationJobRecovery';
 import { showErrorDialog } from '@/features/canvas/application/errorDialog';
 import { shouldSuppressKeyboardCommand } from '@/features/canvas/application/compositionInputState';
 import { snapNodePositionChanges } from '@/features/canvas/application/nodePositionAlignment';
@@ -647,8 +651,18 @@ export function Canvas() {
                 });
             }
 
-            const status = await canvasAiGateway.getGenerateImageJob(jobId).catch((error) => {
-              logger.warn('[GenerationJob] poll failed', { nodeId: pendingNode.id, jobId, error });
+            const shouldRetryAfterManualIntervention = currentData.generationRecoveryState === 'retry_requested';
+            const status = await (
+              shouldRetryAfterManualIntervention
+                ? canvasAiGateway.retryGenerateImageJob(jobId)
+                : canvasAiGateway.getGenerateImageJob(jobId)
+            ).catch((error) => {
+              logger.warn('[GenerationJob] poll failed', {
+                nodeId: pendingNode.id,
+                jobId,
+                manualRequery: shouldRetryAfterManualIntervention,
+                error,
+              });
               return null;
             });
             if (!status) {
@@ -657,7 +671,35 @@ export function Canvas() {
             }
 
             if (status.status === 'queued' || status.status === 'running') {
-              await sleep(GENERATION_JOB_POLL_INTERVAL_MS);
+              const recoveryState = resolveImageGenerationRecoveryState(status.recovery);
+              const recoveryRetryCount = status.recovery?.retry_count ?? 0;
+              const recoveryNextRetryAt = status.recovery?.next_retry_at ?? null;
+              const recoveryError = status.recovery?.last_error ?? null;
+              if (
+                currentData.generationRecoveryState !== recoveryState
+                || currentData.generationRetryCount !== recoveryRetryCount
+                || currentData.generationNextRetryAt !== recoveryNextRetryAt
+                || currentData.generationRetryError !== recoveryError
+              ) {
+                updateNodeDataWithoutHistory(pendingNode.id, {
+                  generationRecoveryState: recoveryState,
+                  generationRetryCount: recoveryRetryCount,
+                  generationNextRetryAt: recoveryNextRetryAt,
+                  generationRetryError: recoveryError,
+                });
+              }
+
+              if (recoveryState === 'attention_required') {
+                break;
+              }
+
+              await sleep(
+                resolveGenerationPollDelay(
+                  status.recovery,
+                  Date.now(),
+                  GENERATION_JOB_POLL_INTERVAL_MS
+                )
+              );
               continue;
             }
 
@@ -725,6 +767,10 @@ export function Canvas() {
                 generationError: null,
                 generationErrorDetails: null,
                 generationDebugContext: undefined,
+                generationRecoveryState: null,
+                generationRetryCount: 0,
+                generationNextRetryAt: null,
+                generationRetryError: null,
               });
               break;
             }
@@ -753,6 +799,10 @@ export function Canvas() {
               generationStoryboardMetadata: undefined,
               generationError: errorMessage,
               generationErrorDetails: status.error ?? null,
+              generationRecoveryState: null,
+              generationRetryCount: 0,
+              generationNextRetryAt: null,
+              generationRetryError: null,
             });
             break;
           }
@@ -761,7 +811,14 @@ export function Canvas() {
         }
       })();
     }
-  }, [chaomoImageApi, customImageApis, nodes, openAiImageApi, updateNodeData]);
+  }, [
+    chaomoImageApi,
+    customImageApis,
+    nodes,
+    openAiImageApi,
+    updateNodeData,
+    updateNodeDataWithoutHistory,
+  ]);
 
   // Polling for export video nodes
   useEffect(() => {
@@ -820,8 +877,18 @@ export function Canvas() {
               }
             }
 
-            const status = await canvasAiGateway.getGenerateImageJob(jobId).catch((error) => {
-              logger.warn('[VideoJob] poll failed', { nodeId: pendingNode.id, jobId, error });
+            const shouldRetryAfterManualIntervention = currentData.generationRecoveryState === 'retry_requested';
+            const status = await (
+              shouldRetryAfterManualIntervention
+                ? canvasAiGateway.retryGenerateImageJob(jobId)
+                : canvasAiGateway.getGenerateImageJob(jobId)
+            ).catch((error) => {
+              logger.warn('[VideoJob] poll failed', {
+                nodeId: pendingNode.id,
+                jobId,
+                manualRequery: shouldRetryAfterManualIntervention,
+                error,
+              });
               return null;
             });
             if (!status) {
@@ -838,6 +905,10 @@ export function Canvas() {
                   generationJobId: null,
                   generationProviderId: null,
                   generationError: '网络请求失败，请检查网络连接后重试',
+                  generationRecoveryState: null,
+                  generationRetryCount: 0,
+                  generationNextRetryAt: null,
+                  generationRetryError: null,
                 });
                 break;
               }
@@ -857,10 +928,42 @@ export function Canvas() {
                   generationJobId: null,
                   generationProviderId: null,
                   generationError: status.error,
+                  generationRecoveryState: null,
+                  generationRetryCount: 0,
+                  generationNextRetryAt: null,
+                  generationRetryError: null,
                 });
                 break;
               }
-              await sleep(GENERATION_JOB_POLL_INTERVAL_MS);
+              const recoveryState = resolveImageGenerationRecoveryState(status.recovery);
+              const recoveryRetryCount = status.recovery?.retry_count ?? 0;
+              const recoveryNextRetryAt = status.recovery?.next_retry_at ?? null;
+              const recoveryError = status.recovery?.last_error ?? null;
+              if (
+                currentData.generationRecoveryState !== recoveryState
+                || currentData.generationRetryCount !== recoveryRetryCount
+                || currentData.generationNextRetryAt !== recoveryNextRetryAt
+                || currentData.generationRetryError !== recoveryError
+              ) {
+                updateNodeDataWithoutHistory(pendingNode.id, {
+                  generationRecoveryState: recoveryState,
+                  generationRetryCount: recoveryRetryCount,
+                  generationNextRetryAt: recoveryNextRetryAt,
+                  generationRetryError: recoveryError,
+                });
+              }
+
+              if (recoveryState === 'attention_required') {
+                break;
+              }
+
+              await sleep(
+                resolveGenerationPollDelay(
+                  status.recovery,
+                  Date.now(),
+                  GENERATION_JOB_POLL_INTERVAL_MS
+                )
+              );
               continue;
             }
 
@@ -876,6 +979,10 @@ export function Canvas() {
                 generationJobId: null,
                 generationProviderId: null,
                 generationError: existingError || '已取消生成',
+                generationRecoveryState: null,
+                generationRetryCount: 0,
+                generationNextRetryAt: null,
+                generationRetryError: null,
               });
               break;
             }
@@ -902,6 +1009,10 @@ export function Canvas() {
                 generationJobId: null,
                 generationProviderId: null,
                 generationError: null,
+                generationRecoveryState: null,
+                generationRetryCount: 0,
+                generationNextRetryAt: null,
+                generationRetryError: null,
               };
               // If this was a draft video, preserve the external task ID (not internal jobId) for generating final video
               if (isDraft && status.external_task_id) {
@@ -924,6 +1035,10 @@ export function Canvas() {
               generationJobId: null,
               generationProviderId: null,
               generationError: errorMessage,
+              generationRecoveryState: null,
+              generationRetryCount: 0,
+              generationNextRetryAt: null,
+              generationRetryError: null,
             });
             break;
           }
@@ -932,7 +1047,7 @@ export function Canvas() {
         }
       })();
     }
-  }, [videoApis, nodes, updateNodeData]);
+  }, [nodes, updateNodeData, updateNodeDataWithoutHistory, videoApis]);
 
   useEffect(() => {
     const element = wrapperRef.current;
@@ -1907,6 +2022,18 @@ export function Canvas() {
         }
         if ('generationDebugContext' in (data as Record<string, unknown>)) {
           (data as { generationDebugContext?: unknown }).generationDebugContext = undefined;
+        }
+        if ('generationRecoveryState' in (data as Record<string, unknown>)) {
+          (data as { generationRecoveryState?: string | null }).generationRecoveryState = null;
+        }
+        if ('generationRetryCount' in (data as Record<string, unknown>)) {
+          (data as { generationRetryCount?: number }).generationRetryCount = 0;
+        }
+        if ('generationNextRetryAt' in (data as Record<string, unknown>)) {
+          (data as { generationNextRetryAt?: number | null }).generationNextRetryAt = null;
+        }
+        if ('generationRetryError' in (data as Record<string, unknown>)) {
+          (data as { generationRetryError?: string | null }).generationRetryError = null;
         }
 
         const nextNodeId = addNode(

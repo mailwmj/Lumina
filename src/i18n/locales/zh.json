@@ -204,7 +204,11 @@
       "waitingResult": "等待输出结果图片",
       "waitingResultDelayed": "已经等待 {{minutes}} 分钟了，还没有结果。继续等待中...",
       "selectToEdit": "选中后在下方输入提示词生成或编辑图片",
-      "generationFailed": "生成失败"
+      "generationFailed": "生成失败",
+      "recoveringResult": "网络连接异常，正在重新查询原任务",
+      "requeryRequired": "暂时无法自动查询结果",
+      "requeryTask": "重新查询原任务",
+      "requeryTaskHint": "该操作只查询已有任务，不会重新生成或重复计费。"
     },
     "imageEdit": {
       "promptRequired": "请输入提示词",
@@ -290,6 +294,10 @@
       "noVideo": "暂无视频",
       "generating": "生成中...",
       "generationFailed": "生成失败",
+      "recoveringResult": "网络连接异常，正在重新查询原任务",
+      "requeryRequired": "暂时无法自动查询结果",
+      "requeryTask": "重新查询原任务",
+      "requeryTaskHint": "该操作只查询已有任务，不会重新生成或重复计费。",
       "promptPlaceholder": "描述你想要的视频内容",
       "advancedOptions": "高级",
       "shotType": "镜头",

@@ -738,28 +738,23 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
 
         <div className="ml-auto" />
 
-        <UiTooltip content={isGenerationSubmitting
-          ? t('node.imageEdit.submitting')
-          : t('canvas.generate')}
+        <UiButton
+          onClick={(event) => {
+            event.stopPropagation();
+            void handleGenerate();
+          }}
+          variant="primary"
+          className={`nodrag nowheel min-w-[88px] shrink-0 ${NODE_CONTROL_PRIMARY_BUTTON_CLASS}`}
+          disabled={!hasConfiguredModel || isGenerationSubmitting}
+          aria-busy={isGenerationSubmitting}
         >
-          <UiButton
-            onClick={(event) => {
-              event.stopPropagation();
-              void handleGenerate();
-            }}
-            variant="primary"
-            className={`nodrag nowheel min-w-[88px] shrink-0 ${NODE_CONTROL_PRIMARY_BUTTON_CLASS}`}
-            disabled={!hasConfiguredModel || isGenerationSubmitting}
-            aria-busy={isGenerationSubmitting}
-          >
-            {isGenerationSubmitting ? (
-              <Loader2 className={`${NODE_CONTROL_ICON_CLASS} animate-spin`} strokeWidth={2.8} />
-            ) : (
-              <Sparkles className={NODE_CONTROL_ICON_CLASS} strokeWidth={2.8} />
-            )}
-            {isGenerationSubmitting ? t('node.imageEdit.submitting') : t('canvas.generate')}
-          </UiButton>
-        </UiTooltip>
+          {isGenerationSubmitting ? (
+            <Loader2 className={`${NODE_CONTROL_ICON_CLASS} animate-spin`} strokeWidth={2.8} />
+          ) : (
+            <Sparkles className={NODE_CONTROL_ICON_CLASS} strokeWidth={2.8} />
+          )}
+          {isGenerationSubmitting ? t('node.imageEdit.submitting') : t('canvas.generate')}
+        </UiButton>
       </div>
 
       {error && <div className="mt-1 shrink-0 text-xs text-red-400">{error}</div>}

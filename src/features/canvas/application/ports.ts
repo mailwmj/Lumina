@@ -77,6 +77,26 @@ export interface AiGateway {
     error?: string | null;
     seed?: number | null;
     external_task_id?: string | null;
+    recovery?: {
+      retry_count: number;
+      next_retry_at?: number | null;
+      requires_manual_requery: boolean;
+      last_error?: string | null;
+    } | null;
+  }>;
+  retryGenerateImageJob: (jobId: string) => Promise<{
+    job_id: string;
+    status: 'queued' | 'running' | 'succeeded' | 'failed' | 'not_found' | 'cancelled';
+    result?: string | null;
+    error?: string | null;
+    seed?: number | null;
+    external_task_id?: string | null;
+    recovery?: {
+      retry_count: number;
+      next_retry_at?: number | null;
+      requires_manual_requery: boolean;
+      last_error?: string | null;
+    } | null;
   }>;
 }
 

@@ -47,4 +47,10 @@ describe('custom image provider protocols', () => {
     expect(normalizeCustomImageProtocol('fhl')).toBe('fhl-images');
     expect(normalizeCustomImageRemoteModelId('fhl-images', 'fhl/gpt-image-2')).toBe('gpt-image-2');
   });
+
+  it('keeps every custom protocol on its existing backend capability boundary', () => {
+    expect(getCustomImageProtocolDefinition('openai-images').backendProviderId).toBe('openai');
+    expect(getCustomImageProtocolDefinition('fhl-images').backendProviderId).toBe('fhl');
+    expect(getCustomImageProtocolDefinition('gemini-native').backendProviderId).toBe('gemini');
+  });
 });

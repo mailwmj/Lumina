@@ -5,7 +5,7 @@ import {
   useUpdateNodeInternals,
   type NodeProps,
 } from '@xyflow/react';
-import { AlertTriangle, Copy, Video, Check, ChevronDown, ChevronUp, X } from '@/components/ui/icons';
+import { AlertTriangle, Copy, Video, Check, ChevronDown, ChevronUp, RefreshCw, X } from '@/components/ui/icons';
 import { useTranslation } from 'react-i18next';
 
 import {
@@ -22,7 +22,7 @@ import { useSettingsStore } from '@/stores/settingsStore';
 import { submitGenerateImageJob, setApiKey } from '@/commands/ai';
 import { resolveVideoDisplayUrl } from '@/features/canvas/application/imageData';
 import { logger } from '@/lib/logger';
-import { UiTooltip } from '@/components/ui';
+import { UiButton, UiTooltip } from '@/components/ui';
 
 type VideoResultNodeProps = NodeProps & {
   id: string;
@@ -47,6 +47,9 @@ export const VideoResultNode = memo(({ id, data, selected, width, height }: Vide
   const updateNodeInternals = useUpdateNodeInternals();
   const setSelectedNode = useCanvasStore((state) => state.setSelectedNode);
   const updateNodeData = useCanvasStore((state) => state.updateNodeData);
+  const updateNodeDataWithoutHistory = useCanvasStore(
+    (state) => state.updateNodeDataWithoutHistory
+  );
   const addNode = useCanvasStore((state) => state.addNode);
   const addEdge = useCanvasStore((state) => state.addEdge);
   const [now, setNow] = useState(() => Date.now());
@@ -59,6 +62,16 @@ export const VideoResultNode = memo(({ id, data, selected, width, height }: Vide
       ? (data.generationError ?? '').trim()
       : '';
   const hasGenerationError = isGenerating === false && !data.videoUrl && generationError.length > 0;
+  const generationRecoveryState =
+    data.generationRecoveryState === 'retrying'
+    || data.generationRecoveryState === 'attention_required'
+    || data.generationRecoveryState === 'retry_requested'
+      ? data.generationRecoveryState
+      : null;
+  const generationRetryError =
+    typeof data.generationRetryError === 'string' ? data.generationRetryError.trim() : '';
+  const requiresManualRequery =
+    isGenerating && generationRecoveryState === 'attention_required';
 
   const handleCopyError = useCallback(async () => {
     if (!generationError) return;
@@ -265,11 +278,14 @@ export const VideoResultNode = memo(({ id, data, selected, width, height }: Vide
   }, [generationStartedAt, isGenerating, now]);
 
   const waitingResultText = useMemo(() => {
+    if (generationRecoveryState === 'retrying' || generationRecoveryState === 'retry_requested') {
+      return t('node.videoGen.recoveringResult');
+    }
     if (!isGenerating || waitedMinutes < 2) {
       return t('node.videoGen.generating');
     }
     return t('node.videoGen.generating') + ` (${waitedMinutes}m)`;
-  }, [isGenerating, waitedMinutes, t]);
+  }, [generationRecoveryState, isGenerating, waitedMinutes, t]);
 
   // Check if there's any generation info to show
   const hasGenerationInfo = !!(data.prompt || data.model || data.seed !== undefined || data.resolution || data.duration);
@@ -282,6 +298,10 @@ export const VideoResultNode = memo(({ id, data, selected, width, height }: Vide
           ? (selected
             ? 'border-red-400 shadow-[0_0_0_1px_rgba(248,113,113,0.42)]'
             : 'border-red-500/70 bg-[rgba(127,29,29,0.12)] hover:border-red-400/80 dark:border-red-500/70 dark:hover:border-red-400/80')
+          : requiresManualRequery
+            ? (selected
+              ? 'border-amber-400 shadow-[0_0_0_1px_rgba(251,191,36,0.34)]'
+              : 'border-amber-500/65 bg-[rgba(120,83,13,0.12)] hover:border-amber-400/80')
           : resolveNodeSurfaceStateClass(selected)}
       `}
       style={{ width: `${resolvedWidth}px`, height: `${resolvedHeight}px` }}
@@ -348,6 +368,38 @@ export const VideoResultNode = memo(({ id, data, selected, width, height }: Vide
               </UiTooltip>
             </div>
           </div>
+        ) : requiresManualRequery ? (
+          <div className="flex h-full w-full flex-col items-center justify-center gap-2 px-4 text-amber-200">
+            <AlertTriangle className="h-7 w-7 opacity-90" />
+            <span className="text-center text-[12px] font-medium leading-5">
+              {t('node.videoGen.requeryRequired')}
+            </span>
+            {generationRetryError && (
+              <span className="max-h-[44px] overflow-y-auto break-words text-center text-[11px] leading-4 text-amber-100/80">
+                {generationRetryError}
+              </span>
+            )}
+            <UiButton
+              type="button"
+              size="sm"
+              variant="muted"
+              className="nodrag nowheel z-10 gap-1.5 border-amber-300/30 bg-amber-200/10 text-amber-100 hover:bg-amber-200/20"
+              onClick={(event) => {
+                event.stopPropagation();
+                updateNodeDataWithoutHistory(id, {
+                  generationRecoveryState: 'retry_requested',
+                  generationNextRetryAt: null,
+                  generationRetryError: null,
+                });
+              }}
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              {t('node.videoGen.requeryTask')}
+            </UiButton>
+            <span className="text-center text-[10px] leading-4 text-amber-100/65">
+              {t('node.videoGen.requeryTaskHint')}
+            </span>
+          </div>
         ) : (
           <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-text-muted/85">
             <Video className="h-7 w-7 opacity-60" />
@@ -357,7 +409,7 @@ export const VideoResultNode = memo(({ id, data, selected, width, height }: Vide
           </div>
         )}
 
-        {isGenerating && (
+        {isGenerating && !requiresManualRequery && (
           <div className="pointer-events-none absolute inset-0 overflow-hidden">
             <div className="absolute inset-0 bg-bg-dark/55" />
             <div

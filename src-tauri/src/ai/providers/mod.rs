@@ -36,3 +36,29 @@ pub fn build_default_providers() -> Vec<Arc<dyn AIProvider>> {
         Arc::new(VolcVideoProvider::new()),
     ]
 }
+
+#[cfg(test)]
+mod tests {
+    use super::build_default_providers;
+
+    #[test]
+    fn default_provider_task_resume_capabilities_remain_explicit() {
+        let capabilities = build_default_providers()
+            .into_iter()
+            .map(|provider| (provider.name().to_string(), provider.supports_task_resume()))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            capabilities,
+            vec![
+                ("openai".to_string(), false),
+                ("ai-media".to_string(), true),
+                ("chaomo".to_string(), true),
+                ("fhl".to_string(), false),
+                ("gemini".to_string(), true),
+                ("codingplan".to_string(), false),
+                ("volcvideo".to_string(), true),
+            ]
+        );
+    }
+}

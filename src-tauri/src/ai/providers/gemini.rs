@@ -8,6 +8,7 @@ use tracing::info;
 
 use super::image_input::load_reference_image;
 use crate::ai::error::AIError;
+use crate::ai::generation_recovery::is_retryable_poll_status;
 use crate::ai::{
     AIProvider, GenerateRequest, ProviderTaskHandle, ProviderTaskPollResult, ProviderTaskSubmission,
 };
@@ -379,7 +380,13 @@ impl GeminiNativeImageProvider {
             .send()
             .await?;
         let status = response.status();
-        let raw = response.text().await.unwrap_or_default();
+        let raw = response.text().await?;
+        if is_retryable_poll_status(status) {
+            return Err(AIError::Transient(format!(
+                "Gemini Native image task poll temporarily unavailable ({})",
+                status
+            )));
+        }
         let body = serde_json::from_str::<Value>(&raw).map_err(|error| {
             AIError::Provider(format!(
                 "Gemini Native image task poll returned invalid JSON ({}): {}; body={}",
