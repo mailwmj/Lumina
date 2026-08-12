@@ -34,9 +34,6 @@ export function useCanvasNodeImageSource({
   const isFocused = useCanvasImageQualityStore(
     (state) => state.focusedNodeId === nodeId
   );
-  const isFocusedInteractionActive = useCanvasImageQualityStore(
-    (state) => state.isInteractionActive && state.focusedNodeId === nodeId
-  );
   const originalDisplaySource = useMemo(
     () => imageUrl ? resolveImageDisplayUrl(imageUrl) : null,
     [imageUrl]
@@ -58,13 +55,9 @@ export function useCanvasNodeImageSource({
     imageUrl,
     previewImageUrl,
     focusedNodeId: isFocused ? nodeId : null,
-    isInteractionActive: isFocusedInteractionActive,
-    hasLoadedOriginal,
   }), [
-    hasLoadedOriginal,
     imageUrl,
     isFocused,
-    isFocusedInteractionActive,
     nodeId,
     previewImageUrl,
   ]);
@@ -81,7 +74,6 @@ export function useCanvasNodeImageSource({
 
     const shouldPreloadOriginal = (
       isFocused
-      && !isFocusedInteractionActive
       && !hasLoadedOriginal
       && originalDisplaySource === preferredDisplaySource
       && previewDisplaySource
@@ -111,7 +103,6 @@ export function useCanvasNodeImageSource({
   }, [
     hasLoadedOriginal,
     isFocused,
-    isFocusedInteractionActive,
     originalDisplaySource,
     preferredDisplaySource,
     previewDisplaySource,

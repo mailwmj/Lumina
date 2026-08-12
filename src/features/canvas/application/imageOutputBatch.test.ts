@@ -1,45 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
-import { CANVAS_NODE_TYPES } from '@/features/canvas/domain/canvasNodes';
+import {
+  CANVAS_NODE_TYPES,
+  type CanvasEdge,
+  type CanvasNode,
+} from '@/features/canvas/domain/canvasNodes';
 import {
   createImageOutputBatchNodes,
-  resolveImageOutputBatchLayout,
 } from './imageOutputBatch';
 
 describe('image output batch layout', () => {
-  it('keeps a single output at the batch origin', () => {
-    expect(resolveImageOutputBatchLayout(1, 384, 288)).toEqual({
-      width: 384,
-      height: 288,
-      offsets: [{ x: 0, y: 0 }],
-    });
-  });
-
-  it('lays out two outputs in a compact vertical comparison strip', () => {
-    expect(resolveImageOutputBatchLayout(2, 384, 288)).toEqual({
-      width: 384,
-      height: 604,
-      offsets: [
-        { x: 0, y: 0 },
-        { x: 0, y: 316 },
-      ],
-    });
-  });
-
-  it('lays out four outputs in a compact two-by-two grid', () => {
-    expect(resolveImageOutputBatchLayout(4, 384, 288)).toEqual({
-      width: 796,
-      height: 604,
-      offsets: [
-        { x: 0, y: 0 },
-        { x: 412, y: 0 },
-        { x: 0, y: 316 },
-        { x: 412, y: 316 },
-      ],
-    });
-  });
-
-  it('creates and connects one result node per output in reading order', () => {
+  it('creates four outputs in a three-row, column-first result lane', () => {
     type CreateBatchInput = Parameters<typeof createImageOutputBatchNodes>[0];
     type BatchNodeInput = Parameters<CreateBatchInput['addNodeBatch']>[0][number];
     const addedNodes: BatchNodeInput[] = [];
@@ -69,6 +40,7 @@ describe('image output batch layout', () => {
           data: {} as never,
         },
       ],
+      existingEdges: [],
       addNodeBatch,
       addEdge,
     });
@@ -80,10 +52,10 @@ describe('image output batch layout', () => {
       { nodeId: 'result-4', outputIndex: 3 },
     ]);
     expect(addedNodes.map(({ position }) => position)).toEqual([
-      { x: 640, y: 24 },
-      { x: 956, y: 24 },
-      { x: 640, y: 340 },
-      { x: 956, y: 340 },
+      { x: 640, y: 182 },
+      { x: 640, y: 498 },
+      { x: 640, y: 814 },
+      { x: 956, y: 182 },
     ]);
     expect(addedNodes.map(({ type }) => type)).toEqual(
       Array.from({ length: 4 }, () => CANVAS_NODE_TYPES.exportImage)
@@ -95,6 +67,7 @@ describe('image output batch layout', () => {
       'City at dusk · 4/4',
     ]);
     expect(addedNodes.map(({ data }) => data?.generationBatchIndex)).toEqual([0, 1, 2, 3]);
+    expect(addedNodes.map(({ data }) => data?.generationLaneSlot)).toEqual([0, 1, 2, 3]);
     expect(addedNodes.map(({ data }) => data?.generationBatchId)).toEqual(
       Array.from({ length: 4 }, () => 'source-1:generation:123')
     );
@@ -111,5 +84,58 @@ describe('image output batch layout', () => {
       { source: 'source-1', target: 'result-3' },
       { source: 'source-1', target: 'result-4' },
     ]);
+  });
+
+  it('continues a source lane after existing direct results', () => {
+    type CreateBatchInput = Parameters<typeof createImageOutputBatchNodes>[0];
+    type BatchNodeInput = Parameters<CreateBatchInput['addNodeBatch']>[0][number];
+    const addedNodes: BatchNodeInput[] = [];
+    const addNodeBatch: CreateBatchInput['addNodeBatch'] = (nodes) => {
+      addedNodes.push(...nodes);
+      return nodes.map((_, index) => `new-result-${index + 1}`);
+    };
+    const addEdge: CreateBatchInput['addEdge'] = () => 'edge-id';
+    const source: CanvasNode = {
+      id: 'source-1',
+      type: CANVAS_NODE_TYPES.imageEdit,
+      position: { x: 392, y: 182 },
+      width: 220,
+      height: 288,
+      data: {} as never,
+    };
+    const existingResult: CanvasNode = {
+      id: 'existing-result',
+      type: CANVAS_NODE_TYPES.exportImage,
+      position: { x: 640, y: 182 },
+      width: 288,
+      height: 288,
+      data: {
+        resultKind: 'generic',
+        generationLaneSlot: 0,
+      } as never,
+    };
+
+    createImageOutputBatchNodes({
+      sourceNodeId: source.id,
+      outputCount: 2,
+      aspectRatio: '1:1',
+      resultNodeTitle: 'City at dusk',
+      generationStartedAt: 456,
+      generationDurationMs: 45_000,
+      existingNodes: [source, existingResult],
+      existingEdges: [{
+        id: 'source-1-existing-result',
+        source: source.id,
+        target: existingResult.id,
+      } as CanvasEdge],
+      addNodeBatch,
+      addEdge,
+    });
+
+    expect(addedNodes.map(({ position }) => position)).toEqual([
+      { x: 640, y: 498 },
+      { x: 640, y: 814 },
+    ]);
+    expect(addedNodes.map(({ data }) => data?.generationLaneSlot)).toEqual([1, 2]);
   });
 });

@@ -5,6 +5,7 @@ import {
   EXPORT_RESULT_NODE_LAYOUT_HEIGHT,
   EXPORT_RESULT_NODE_MIN_HEIGHT,
   EXPORT_RESULT_NODE_MIN_WIDTH,
+  type CanvasEdge,
   type CanvasNode,
   type CanvasNodeData,
   type CanvasNodeType,
@@ -12,22 +13,13 @@ import {
 } from '@/features/canvas/domain/canvasNodes';
 import { resolveFittedImageNodeSize } from '@/features/canvas/application/imageNodeSizing';
 import {
-  IMAGE_RESULT_LANE_GAP,
-  resolveImageResultBatchPosition,
+  resolveImageResultBatchPositions,
 } from '@/features/canvas/application/imageResultPlacement';
 import {
   resolveErrorContent,
   type ResolvedErrorContent,
 } from '@/features/canvas/application/errorDialog';
 import type { GenerationDebugContext } from '@/features/canvas/application/generationErrorReport';
-
-export interface ImageOutputBatchLayout {
-  width: number;
-  height: number;
-  offsets: Array<{ x: number; y: number }>;
-}
-
-const IMAGE_OUTPUT_BATCH_GAP = IMAGE_RESULT_LANE_GAP;
 
 export interface ImageOutputBatchNode {
   nodeId: string;
@@ -42,6 +34,7 @@ interface CreateImageOutputBatchInput {
   generationStartedAt: number;
   generationDurationMs: number;
   existingNodes: readonly CanvasNode[];
+  existingEdges: readonly CanvasEdge[];
   addNodeBatch: (
     nodes: Array<{
       type: CanvasNodeType;
@@ -67,31 +60,6 @@ export interface ImageOutputNodeFailure {
   generationDebugContext: GenerationDebugContext;
 }
 
-export function resolveImageOutputBatchLayout(
-  outputCount: ImageOutputCount,
-  nodeWidth: number,
-  nodeHeight: number
-): ImageOutputBatchLayout {
-  if (outputCount === 1) {
-    return {
-      width: nodeWidth,
-      height: nodeHeight,
-      offsets: [{ x: 0, y: 0 }],
-    };
-  }
-
-  const columnCount = outputCount === 2 ? 1 : 2;
-  const rowCount = Math.ceil(outputCount / columnCount);
-  return {
-    width: columnCount * nodeWidth + (columnCount - 1) * IMAGE_OUTPUT_BATCH_GAP,
-    height: rowCount * nodeHeight + (rowCount - 1) * IMAGE_OUTPUT_BATCH_GAP,
-    offsets: Array.from({ length: outputCount }, (_, index) => ({
-      x: (index % columnCount) * (nodeWidth + IMAGE_OUTPUT_BATCH_GAP),
-      y: Math.floor(index / columnCount) * (nodeHeight + IMAGE_OUTPUT_BATCH_GAP),
-    })),
-  };
-}
-
 export function createImageOutputBatchNodes({
   sourceNodeId,
   outputCount,
@@ -100,6 +68,7 @@ export function createImageOutputBatchNodes({
   generationDurationMs,
   aspectRatio = DEFAULT_ASPECT_RATIO,
   existingNodes,
+  existingEdges,
   addNodeBatch,
   addEdge,
 }: CreateImageOutputBatchInput): ImageOutputBatchNode[] {
@@ -114,23 +83,21 @@ export function createImageOutputBatchNodes({
       minHeight: EXPORT_RESULT_NODE_MIN_HEIGHT,
     }
   );
-  const layout = resolveImageOutputBatchLayout(outputCount, outputSize.width, outputSize.height);
-  const batchPosition = resolveImageResultBatchPosition({
+  const placements = resolveImageResultBatchPositions({
     sourceNodeId,
     nodes: existingNodes,
-    batchSize: { width: layout.width, height: layout.height },
+    edges: existingEdges,
+    resultSize: outputSize,
+    resultCount: outputCount,
   });
   const generationBatchId = `${sourceNodeId}:generation:${generationStartedAt}`;
 
   const nodeIds = addNodeBatch(
-    layout.offsets.map((offset, outputIndex) => ({
+    placements.map(({ position, laneSlot }, outputIndex) => ({
       type: CANVAS_NODE_TYPES.exportImage,
       width: outputSize.width,
       height: outputSize.height,
-      position: {
-        x: batchPosition.x + offset.x,
-        y: batchPosition.y + offset.y,
-      },
+      position,
       data: {
         aspectRatio,
         isGenerating: true,
@@ -143,6 +110,7 @@ export function createImageOutputBatchNodes({
         generationBatchIndex: outputIndex,
         generationBatchSize: outputCount,
         generationBatchId,
+        generationLaneSlot: laneSlot,
       },
     }))
   );

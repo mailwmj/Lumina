@@ -38,38 +38,16 @@ describe('canvas image render policy', () => {
       imageUrl: 'file:///original.jpg',
       previewImageUrl: 'file:///preview.jpg',
       focusedNodeId: null,
-      isInteractionActive: false,
-      hasLoadedOriginal: false,
     })).toBe('file:///preview.jpg');
   });
 
-  it('keeps a decoded original during panning without promoting a new original', () => {
+  it('does not keep a focused, zoomed image on its thumbnail during wheel interaction', () => {
     expect(resolveCanvasImageRenderSource({
       nodeId: 'image-1',
       imageUrl: 'file:///original.jpg',
       previewImageUrl: 'file:///preview.jpg',
       focusedNodeId: 'image-1',
-      isInteractionActive: false,
-      hasLoadedOriginal: false,
     })).toBe('file:///original.jpg');
-
-    expect(resolveCanvasImageRenderSource({
-      nodeId: 'image-1',
-      imageUrl: 'file:///original.jpg',
-      previewImageUrl: 'file:///preview.jpg',
-      focusedNodeId: 'image-1',
-      isInteractionActive: true,
-      hasLoadedOriginal: true,
-    })).toBe('file:///original.jpg');
-
-    expect(resolveCanvasImageRenderSource({
-      nodeId: 'image-1',
-      imageUrl: 'file:///original.jpg',
-      previewImageUrl: 'file:///preview.jpg',
-      focusedNodeId: 'image-1',
-      isInteractionActive: true,
-      hasLoadedOriginal: false,
-    })).toBe('file:///preview.jpg');
   });
 
   it('falls back to the original when no distinct preview exists', () => {
@@ -79,8 +57,6 @@ describe('canvas image render policy', () => {
       imageUrl: 'file:///original.jpg',
       previewImageUrl: 'file:///original.jpg',
       focusedNodeId: null,
-      isInteractionActive: false,
-      hasLoadedOriginal: false,
     })).toBe('file:///original.jpg');
   });
 

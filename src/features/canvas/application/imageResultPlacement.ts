@@ -1,7 +1,9 @@
 import {
   CANVAS_NODE_TYPES,
   DEFAULT_NODE_WIDTH,
+  type CanvasEdge,
   type CanvasNode,
+  type ExportImageNodeData,
 } from '@/features/canvas/domain/canvasNodes';
 
 export interface ImageResultBatchSize {
@@ -12,7 +14,14 @@ export interface ImageResultBatchSize {
 export interface ImageResultBatchPlacementInput {
   sourceNodeId: string;
   nodes: readonly CanvasNode[];
-  batchSize: ImageResultBatchSize;
+  edges: readonly CanvasEdge[];
+  resultSize: ImageResultBatchSize;
+  resultCount: number;
+}
+
+export interface ImageResultBatchPlacement {
+  laneSlot: number;
+  position: { x: number; y: number };
 }
 
 interface CanvasRect {
@@ -23,9 +32,8 @@ interface CanvasRect {
 }
 
 export const IMAGE_RESULT_LANE_GAP = 28;
-
-const MAX_VERTICAL_LANE_STEPS = 4;
-const MAX_LANE_COLUMNS = 6;
+export const IMAGE_RESULT_LANE_ROWS = 3;
+const MAX_LANE_SLOT_SEARCH = 1_000;
 
 function resolveNodeSize(node: CanvasNode): ImageResultBatchSize {
   const styleWidth = typeof node.style?.width === 'number' ? node.style.width : null;
@@ -80,65 +88,138 @@ function rectsCollide(left: CanvasRect, right: CanvasRect): boolean {
   );
 }
 
-function verticalLaneOffsets(): number[] {
-  const offsets = [0];
-  for (let step = 1; step <= MAX_VERTICAL_LANE_STEPS; step += 1) {
-    offsets.push(step, -step);
+function isGenericImageResult(node: CanvasNode): boolean {
+  if (node.type !== CANVAS_NODE_TYPES.exportImage) {
+    return false;
   }
-  return offsets;
+  const data = node.data as ExportImageNodeData;
+  return data.resultKind === undefined || data.resultKind === 'generic';
+}
+
+function getDirectGenericImageResults(
+  sourceNodeId: string,
+  nodesById: ReadonlyMap<string, CanvasNode>,
+  edges: readonly CanvasEdge[]
+): CanvasNode[] {
+  const targetIds = new Set(
+    edges
+      .filter((edge) => edge.source === sourceNodeId)
+      .map((edge) => edge.target)
+  );
+
+  return Array.from(targetIds)
+    .map((nodeId) => nodesById.get(nodeId))
+    .filter((node): node is CanvasNode => Boolean(node))
+    .filter(isGenericImageResult);
+}
+
+function resolveNextLaneSlot(results: readonly CanvasNode[]): number {
+  const assignedSlots = results.flatMap((node) => {
+    const laneSlot = (node.data as ExportImageNodeData).generationLaneSlot;
+    return typeof laneSlot === 'number' && Number.isInteger(laneSlot) && laneSlot >= 0
+      ? [laneSlot]
+      : [];
+  });
+  const nextAssignedSlot = assignedSlots.length > 0
+    ? Math.max(...assignedSlots) + 1
+    : 0;
+  const legacyResultCount = results.length - assignedSlots.length;
+
+  return Math.max(nextAssignedSlot, legacyResultCount);
+}
+
+function resolveLanePosition(
+  laneSlot: number,
+  origin: { x: number; y: number },
+  resultSize: ImageResultBatchSize
+): { x: number; y: number } {
+  const column = Math.floor(laneSlot / IMAGE_RESULT_LANE_ROWS);
+  const row = laneSlot % IMAGE_RESULT_LANE_ROWS;
+
+  return {
+    x: origin.x + column * (resultSize.width + IMAGE_RESULT_LANE_GAP),
+    y: origin.y + row * (resultSize.height + IMAGE_RESULT_LANE_GAP),
+  };
 }
 
 /**
- * Finds the nearest available position in the result lane to the right of an image node.
- * Existing nodes are never moved and viewport visibility never changes the
- * direction of the result branch.
+ * Reserves deterministic, top-to-bottom result slots to the right of one image node.
+ * A source-local lane holds three images per column. Existing nodes are never moved;
+ * unrelated obstacles only cause later slots to be selected, never an upward jump.
  */
-export function resolveImageResultBatchPosition({
+export function resolveImageResultBatchPositions({
   sourceNodeId,
   nodes,
-  batchSize,
-}: ImageResultBatchPlacementInput): { x: number; y: number } {
+  edges,
+  resultSize,
+  resultCount,
+}: ImageResultBatchPlacementInput): ImageResultBatchPlacement[] {
+  const safeResultCount = Math.max(0, Math.floor(resultCount));
+  if (safeResultCount === 0) {
+    return [];
+  }
+
   const sourceNode = nodes.find((node) => node.id === sourceNodeId);
   if (!sourceNode) {
-    return { x: 100, y: 100 };
+    return Array.from({ length: safeResultCount }, (_, laneSlot) => ({
+      laneSlot,
+      position: resolveLanePosition(laneSlot, { x: 100, y: 100 }, resultSize),
+    }));
   }
 
   const nodesById = new Map(nodes.map((node) => [node.id, node] as const));
   const sourceRect = resolveNodeRect(sourceNode, nodesById);
-  const baseX = sourceRect.x + sourceRect.width + IMAGE_RESULT_LANE_GAP;
-  const baseY = sourceRect.y + sourceRect.height / 2 - batchSize.height / 2;
-  const verticalStep = batchSize.height + IMAGE_RESULT_LANE_GAP;
-  const horizontalStep = batchSize.width + IMAGE_RESULT_LANE_GAP;
+  const origin = {
+    x: sourceRect.x + sourceRect.width + IMAGE_RESULT_LANE_GAP,
+    y: sourceRect.y,
+  };
+  const directResults = getDirectGenericImageResults(sourceNodeId, nodesById, edges);
   const ignoredNodeIds = new Set([sourceNodeId]);
-  const obstacleNodes = nodes.filter(
-    (node) => node.type !== CANVAS_NODE_TYPES.group && !ignoredNodeIds.has(node.id)
-  );
+  const obstacleRects = nodes
+    .filter((node) => node.type !== CANVAS_NODE_TYPES.group && !ignoredNodeIds.has(node.id))
+    .map((node) => resolveNodeRect(node, nodesById));
+  const placements: ImageResultBatchPlacement[] = [];
+  const reservedRects: CanvasRect[] = [];
+  let nextLaneSlot = resolveNextLaneSlot(directResults);
 
-  const collidesWithCanvas = (candidate: CanvasRect): boolean => obstacleNodes.some((node) => (
-    rectsCollide(candidate, resolveNodeRect(node, nodesById))
-  ));
+  for (let outputIndex = 0; outputIndex < safeResultCount; outputIndex += 1) {
+    let laneSlot = nextLaneSlot;
+    let candidate: CanvasRect | null = null;
 
-  for (let column = 0; column <= MAX_LANE_COLUMNS; column += 1) {
-    const x = baseX + column * horizontalStep;
-    for (const verticalOffset of verticalLaneOffsets()) {
-      const candidate = {
-        x,
-        y: baseY + verticalOffset * verticalStep,
-        width: batchSize.width,
-        height: batchSize.height,
-      };
-      if (!collidesWithCanvas(candidate)) {
-        return { x: Math.round(candidate.x), y: Math.round(candidate.y) };
+    for (let searchStep = 0; searchStep < MAX_LANE_SLOT_SEARCH; searchStep += 1) {
+      const position = resolveLanePosition(laneSlot, origin, resultSize);
+      const nextCandidate = { ...position, ...resultSize };
+      const collides = [...obstacleRects, ...reservedRects].some((obstacle) => (
+        rectsCollide(nextCandidate, obstacle)
+      ));
+      if (!collides) {
+        candidate = nextCandidate;
+        break;
       }
+      laneSlot += 1;
     }
+
+    if (!candidate) {
+      const rightmostObstacleEdge = obstacleRects.reduce((rightEdge, obstacle) => (
+        Math.max(rightEdge, obstacle.x + obstacle.width)
+      ), origin.x - IMAGE_RESULT_LANE_GAP);
+      const minimumColumn = Math.max(
+        Math.floor(laneSlot / IMAGE_RESULT_LANE_ROWS),
+        Math.ceil((rightmostObstacleEdge + IMAGE_RESULT_LANE_GAP - origin.x)
+          / (resultSize.width + IMAGE_RESULT_LANE_GAP))
+      );
+      laneSlot = minimumColumn * IMAGE_RESULT_LANE_ROWS;
+      const position = resolveLanePosition(laneSlot, origin, resultSize);
+      candidate = { ...position, ...resultSize };
+    }
+
+    placements.push({
+      laneSlot,
+      position: { x: Math.round(candidate.x), y: Math.round(candidate.y) },
+    });
+    reservedRects.push(candidate);
+    nextLaneSlot = laneSlot + 1;
   }
 
-  const rightmostObstacleEdge = obstacleNodes.reduce((rightEdge, node) => {
-    const rect = resolveNodeRect(node, nodesById);
-    return Math.max(rightEdge, rect.x + rect.width);
-  }, baseX - IMAGE_RESULT_LANE_GAP);
-  return {
-    x: Math.round(Math.max(baseX, rightmostObstacleEdge + IMAGE_RESULT_LANE_GAP)),
-    y: Math.round(baseY),
-  };
+  return placements;
 }

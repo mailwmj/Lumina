@@ -447,6 +447,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
         generationStartedAt,
         generationDurationMs,
         existingNodes: canvasSnapshot.nodes,
+        existingEdges: canvasSnapshot.edges,
         addNodeBatch,
         addEdge,
       });
