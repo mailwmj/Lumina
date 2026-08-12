@@ -4,6 +4,7 @@ import {
   type CanvasWorkflowNode,
 } from '@/features/canvas/domain/canvasNodes';
 import { saveImageSourceToDirectory } from '@/commands/image';
+import { resolveImageFileName, resolveImageFileStem } from './imageMetadata';
 
 export interface DownloadableCanvasImage {
   nodeId: string;
@@ -46,7 +47,9 @@ export function resolveDownloadableCanvasImages(
     return [{
       nodeId: node.id,
       source,
-      suggestedFileName: `node-${node.id}`,
+      suggestedFileName: resolveImageFileStem(
+        resolveImageFileName(source, `node-${node.id}`)
+      ),
     }];
   });
 }

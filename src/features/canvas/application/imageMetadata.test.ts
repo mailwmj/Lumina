@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { resolveImageFileName } from './imageMetadata';
+import {
+  resolveImageFileExtension,
+  resolveImageFileName,
+  resolveImageFileStem,
+} from './imageMetadata';
 
 describe('resolveImageFileName', () => {
   it.each([
@@ -18,5 +22,12 @@ describe('resolveImageFileName', () => {
     ['data:image/png;base64,AAAA', 'Result image'],
   ])('uses the fallback for non-file source %s', (source, expected) => {
     expect(resolveImageFileName(source, expected)).toBe(expected);
+  });
+
+  it('splits a resolved filename into stem and extension', () => {
+    expect(resolveImageFileStem('AI_Media_GPT_Image_1.webp')).toBe('AI_Media_GPT_Image_1');
+    expect(resolveImageFileExtension('AI_Media_GPT_Image_1.webp')).toBe('webp');
+    expect(resolveImageFileStem('node-output-1')).toBe('node-output-1');
+    expect(resolveImageFileExtension('node-output-1')).toBeNull();
   });
 });

@@ -46,7 +46,10 @@ describe('image batch download', () => {
           generatedText: null,
         },
       },
-      outputNode('output-1', 'https://example.com/result.png'),
+      outputNode(
+        'output-1',
+        '/projects/project-1/outputs/images/AI_Media_GPT_Image_1_20260812_143015_a1b2c3d4.webp'
+      ),
       {
         ...outputNode('pending-output', 'data:image/png;base64,pending'),
         data: {
@@ -65,8 +68,8 @@ describe('image batch download', () => {
       },
       {
         nodeId: 'output-1',
-        source: 'https://example.com/result.png',
-        suggestedFileName: 'node-output-1',
+        source: '/projects/project-1/outputs/images/AI_Media_GPT_Image_1_20260812_143015_a1b2c3d4.webp',
+        suggestedFileName: 'AI_Media_GPT_Image_1_20260812_143015_a1b2c3d4',
       },
     ]);
   });

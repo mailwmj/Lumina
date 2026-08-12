@@ -43,6 +43,11 @@ import { useProjectStore } from '@/stores/projectStore';
 import { UI_POPOVER_TRANSITION_MS } from '@/components/ui/motion';
 import { sanitizeStoryboardText } from '@/features/canvas/application/storyboardText';
 import { buildGenerationErrorReport } from '@/features/canvas/application/generationErrorReport';
+import {
+  resolveImageFileExtension,
+  resolveImageFileName,
+  resolveImageFileStem,
+} from '@/features/canvas/application/imageMetadata';
 import { logger } from '@/lib/logger';
 import {
   NODE_TOOLBAR_ALIGN,
@@ -133,6 +138,18 @@ export const NodeActionToolbar = memo(({ node }: NodeActionToolbarProps) => {
     return null;
   }, [node]);
   const canHandleImage = Boolean(imageSource);
+  const imageFileName = useMemo(
+    () => resolveImageFileName(imageSource, `node-${node.id}`),
+    [imageSource, node.id]
+  );
+  const imageFileStem = useMemo(
+    () => resolveImageFileStem(imageFileName),
+    [imageFileName]
+  );
+  const imageFileExtension = useMemo(
+    () => resolveImageFileExtension(imageFileName),
+    [imageFileName]
+  );
 
   // Video source for export video nodes
   const videoSource = useMemo(() => {
@@ -364,10 +381,12 @@ export const NodeActionToolbar = memo(({ node }: NodeActionToolbarProps) => {
 
     try {
       const downloadPath = await downloadDir();
-      const defaultFilePath = await join(downloadPath, `node-${node.id}.png`);
+      const defaultFilePath = await join(downloadPath, imageFileName);
       const selectedPath = await save({
         defaultPath: defaultFilePath,
-        filters: [{ name: 'Image', extensions: ['png'] }],
+        filters: imageFileExtension
+          ? [{ name: 'Image', extensions: [imageFileExtension] }]
+          : [{ name: 'Image', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
       });
       if (!selectedPath || Array.isArray(selectedPath)) {
         return;
@@ -377,7 +396,7 @@ export const NodeActionToolbar = memo(({ node }: NodeActionToolbarProps) => {
     } catch (error) {
       logger.error('Failed to save image with save-as', error);
     }
-  }, [closeDownloadMenu, imageSource, node.id]);
+  }, [closeDownloadMenu, imageFileExtension, imageFileName, imageSource]);
 
   const handleDownloadToPreset = useCallback(
     async (targetDir: string) => {
@@ -385,13 +404,13 @@ export const NodeActionToolbar = memo(({ node }: NodeActionToolbarProps) => {
         return;
       }
       try {
-        await saveImageSourceToDirectory(imageSource, targetDir, `node-${node.id}`);
+        await saveImageSourceToDirectory(imageSource, targetDir, imageFileStem);
         closeDownloadMenu();
       } catch (error) {
         logger.error('Failed to save image to preset dir', error);
       }
     },
-    [closeDownloadMenu, imageSource, node.id]
+    [closeDownloadMenu, imageFileStem, imageSource]
   );
 
   // Video download handlers
