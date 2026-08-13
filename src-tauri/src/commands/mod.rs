@@ -1,4 +1,5 @@
 pub mod ai;
+pub mod batch_image_crop;
 pub mod cleanup;
 pub mod image;
 pub mod logging;

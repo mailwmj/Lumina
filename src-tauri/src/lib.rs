@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use commands::ai as ai_commands;
+use commands::batch_image_crop;
 use commands::image;
 use commands::logging;
 use commands::project_state;
@@ -192,6 +193,10 @@ pub fn run() {
             image::auto_save_video_to_project,
             image::auto_save_image_to_project,
             image::delete_project_upload_file,
+            batch_image_crop::prepare_batch_crop_image,
+            batch_image_crop::suggest_batch_crop,
+            batch_image_crop::export_batch_crop_image,
+            batch_image_crop::cleanup_batch_crop_cache,
             ai_commands::set_api_key,
             ai_commands::discover_image_models,
             ai_commands::discover_text_models,

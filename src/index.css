@@ -178,6 +178,29 @@ html[data-platform='macos'] #root {
   background: rgba(148, 163, 184, 0.72);
 }
 
+.batch-crop-react-crop {
+  --rc-border-color: rgb(var(--accent-rgb) / 0.94);
+  --rc-focus-color: var(--accent);
+  --rc-drag-handle-bg-colour: var(--accent);
+  background: #09090b;
+}
+
+.batch-crop-react-crop .ReactCrop__crop-mask {
+  color: rgba(0, 0, 0, 0.66);
+}
+
+.batch-crop-react-crop .ReactCrop__crop-selection {
+  animation: none;
+  background-image: none;
+  border: 1px solid rgb(var(--accent-rgb) / 0.95);
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.28);
+}
+
+.batch-crop-react-crop .ReactCrop__drag-handle {
+  border-color: rgb(9 9 11 / 0.8);
+  border-radius: 2px;
+}
+
 /* 隐藏滚动条但保留滚动功能 */
 .no-scrollbar::-webkit-scrollbar {
   display: none;

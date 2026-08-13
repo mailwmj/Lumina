@@ -18,6 +18,7 @@ interface TitleBarProps {
   onSettingsClick: () => void;
   showBackButton?: boolean;
   onBackClick?: () => void;
+  contextTitle?: string;
 }
 
 interface TitleBarButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -53,7 +54,7 @@ function TitleBarButton({
   );
 }
 
-export function TitleBar({ onSettingsClick, showBackButton, onBackClick }: TitleBarProps) {
+export function TitleBar({ onSettingsClick, showBackButton, onBackClick, contextTitle }: TitleBarProps) {
   const { t, i18n } = useTranslation();
   const { theme, toggleTheme } = useThemeStore();
   const currentProjectName = useProjectStore((state) => state.currentProject?.name);
@@ -64,7 +65,11 @@ export function TitleBar({ onSettingsClick, showBackButton, onBackClick }: Title
     typeof navigator !== 'undefined'
     && /(Mac|iPhone|iPad|iPod)/i.test(`${navigator.platform} ${navigator.userAgent}`);
   const appTitle = t('app.title');
-  const titleText = currentProjectName ? `${currentProjectName} - ${appTitle}` : appTitle;
+  const titleText = contextTitle
+    ? `${contextTitle} - ${appTitle}`
+    : currentProjectName
+      ? `${currentProjectName} - ${appTitle}`
+      : appTitle;
 
   const handleMinimize = useCallback(async () => {
     if (!appWindow) return;
@@ -168,7 +173,7 @@ export function TitleBar({ onSettingsClick, showBackButton, onBackClick }: Title
         <span className="text-sm font-medium text-text-dark">
           {titleText}
         </span>
-        {!isZh && !currentProjectName ? (
+        {!isZh && !currentProjectName && !contextTitle ? (
           <span className="text-xs text-text-muted ml-2">{t('app.subtitle')}</span>
         ) : null}
       </div>

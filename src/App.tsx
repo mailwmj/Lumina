@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ReactFlowProvider } from '@xyflow/react';
 import { invoke } from '@tauri-apps/api/core';
 import { Canvas } from './features/canvas/Canvas';
@@ -9,6 +10,7 @@ import { SettingsDialog } from './components/SettingsDialog';
 import { UpdateAvailableDialog, type UpdateIgnoreMode } from './components/UpdateAvailableDialog';
 import { GlobalErrorDialog } from './components/GlobalErrorDialog';
 import { ProjectManager } from './features/project/ProjectManager';
+import { BatchImageCropWorkbench } from './features/batch-image-crop/BatchImageCropWorkbench';
 import { useThemeStore } from './stores/themeStore';
 import { useProjectStore } from './stores/projectStore';
 import { useSettingsStore } from './stores/settingsStore';
@@ -33,6 +35,7 @@ import {
 } from './features/settings/application/accentColor';
 
 function App() {
+  const { t } = useTranslation();
   useLogPanelHotkey();
   const { theme } = useThemeStore();
   const accentColor = useSettingsStore((state) => state.accentColor);
@@ -45,6 +48,8 @@ function App() {
   const [latestVersion, setLatestVersion] = useState<string>('');
   const [currentVersion, setCurrentVersion] = useState<string>('');
   const [globalError, setGlobalError] = useState<GlobalErrorDialogDetail | null>(null);
+  const [activeHomeTool, setActiveHomeTool] = useState<'batch-crop' | null>(null);
+  const homeToolBackHandlerRef = useRef<() => void>(() => undefined);
 
   const isHydrated = useProjectStore((state) => state.isHydrated);
   const hydrate = useProjectStore((state) => state.hydrate);
@@ -185,12 +190,22 @@ function App() {
             setSettingsInitialCategory('general');
             setShowSettings(true);
           }}
-          showBackButton={!!currentProjectId}
-          onBackClick={closeProject}
+          showBackButton={Boolean(currentProjectId || activeHomeTool)}
+          onBackClick={activeHomeTool ? () => homeToolBackHandlerRef.current() : closeProject}
+          contextTitle={activeHomeTool ? t('batchCrop.entry') : undefined}
         />
 
-        <main className="flex-1 relative">
-          {currentProjectId ? <Canvas /> : <ProjectManager />}
+        <main className="relative min-h-0 flex-1 overflow-hidden">
+          {currentProjectId ? (
+            <Canvas />
+          ) : activeHomeTool === 'batch-crop' ? (
+            <BatchImageCropWorkbench
+              backHandlerRef={homeToolBackHandlerRef}
+              onExit={() => setActiveHomeTool(null)}
+            />
+          ) : (
+            <ProjectManager onOpenBatchCrop={() => setActiveHomeTool('batch-crop')} />
+          )}
         </main>
 
         <SettingsDialog

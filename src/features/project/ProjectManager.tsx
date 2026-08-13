@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus, FolderOpen, Pencil, Trash2, AlertTriangle } from '@/components/ui/icons';
+import { Plus, FolderOpen, Pencil, Trash2, AlertTriangle, Crop } from '@/components/ui/icons';
 import { useProjectStore } from '@/stores/projectStore';
 import { recordProjectOpenClick } from '@/features/app/projectOpenPaneClickGuard';
 import { UI_CONTENT_OVERLAY_INSET_CLASS } from '@/components/ui/motion';
@@ -57,7 +57,11 @@ function DeleteConfirmDialog({
   );
 }
 
-export function ProjectManager() {
+interface ProjectManagerProps {
+  onOpenBatchCrop: () => void;
+}
+
+export function ProjectManager({ onOpenBatchCrop }: ProjectManagerProps) {
   const { t } = useTranslation();
   const [showRenameDialog, setShowRenameDialog] = useState(false);
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
@@ -151,10 +155,16 @@ export function ProjectManager() {
               </UiSelect>
             </div>
           </div>
-          <UiButton type="button" variant="primary" onClick={handleCreateProject} className="gap-2">
-            <Plus className="h-4 w-4" />
-            {t('project.newProject')}
-          </UiButton>
+          <div className="flex items-center gap-2">
+            <UiButton type="button" onClick={onOpenBatchCrop} className="gap-2">
+              <Crop className="h-4 w-4" />
+              {t('batchCrop.entry')}
+            </UiButton>
+            <UiButton type="button" variant="primary" onClick={handleCreateProject} className="gap-2">
+              <Plus className="h-4 w-4" />
+              {t('project.newProject')}
+            </UiButton>
+          </div>
         </div>
 
         {projects.length === 0 ? (

@@ -1,0 +1,72 @@
+import { convertFileSrc, invoke, isTauri } from '@tauri-apps/api/core';
+import type { NormalizedCropRect } from '../domain';
+
+export interface PreparedBatchCropImage {
+  sourcePath: string;
+  fileName: string;
+  fileSize: number;
+  previewPath: string;
+  thumbnailPath: string;
+  width: number;
+  height: number;
+}
+
+export interface ExportBatchCropImagePayload {
+  sourcePath: string;
+  fileName: string;
+  outputDirectory: string;
+  targetWidth: number;
+  targetHeight: number;
+  rotationDegrees: number;
+  crop: NormalizedCropRect;
+}
+
+export interface ExportedBatchCropImage {
+  outputPath: string;
+}
+
+export interface BatchCropSuggestion {
+  crop: NormalizedCropRect;
+  requiresReview: boolean;
+}
+
+export function resolveBatchCropDisplayUrl(path: string): string {
+  return isTauri() ? convertFileSrc(path) : path;
+}
+
+export async function prepareBatchCropImage(
+  batchId: string,
+  sourcePath: string,
+  rotationDegrees: number
+): Promise<PreparedBatchCropImage> {
+  return await invoke<PreparedBatchCropImage>('prepare_batch_crop_image', {
+    batchId,
+    sourcePath,
+    rotationDegrees,
+  });
+}
+
+export async function exportBatchCropImage(
+  payload: ExportBatchCropImagePayload
+): Promise<ExportedBatchCropImage> {
+  return await invoke<ExportedBatchCropImage>('export_batch_crop_image', { payload });
+}
+
+export async function suggestBatchCrop(
+  previewPath: string,
+  targetWidth: number,
+  targetHeight: number
+): Promise<BatchCropSuggestion> {
+  return await invoke<BatchCropSuggestion>('suggest_batch_crop', {
+    previewPath,
+    targetWidth,
+    targetHeight,
+  });
+}
+
+export async function cleanupBatchCropCache(batchId: string): Promise<void> {
+  if (!isTauri()) {
+    return;
+  }
+  await invoke('cleanup_batch_crop_cache', { batchId });
+}

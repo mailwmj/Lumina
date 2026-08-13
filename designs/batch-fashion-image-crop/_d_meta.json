@@ -1,0 +1,23 @@
+{
+  "type": "design",
+  "designSystems": [],
+  "primaryDesignSystem": null,
+  "assets": {
+    "Lumina 批量图片裁剪原型": {
+      "versions": [
+        {
+          "path": "index.html",
+          "createdAt": "2026-08-13T04:38:42.071Z",
+          "status": "needs-review",
+          "subtitle": "首页入口、自动裁剪、风险复核与批量导出",
+          "viewport": {
+            "width": 1360,
+            "height": 820
+          }
+        }
+      ]
+    }
+  },
+  "createdAt": "2026-08-13T04:38:42.079Z",
+  "updatedAt": "2026-08-13T04:44:55.439Z"
+}

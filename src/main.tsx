@@ -6,6 +6,7 @@ import "./i18n";
 import "@fontsource-variable/geist";
 import "@fontsource-variable/geist-mono";
 import "./index.css";
+import "react-image-crop/dist/ReactCrop.css";
 
 const queryClient = new QueryClient({
   defaultOptions: {
