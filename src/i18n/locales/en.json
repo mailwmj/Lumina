@@ -434,6 +434,7 @@
     "filterReview": "Review",
     "generatePlans": "Generate Crop Plans",
     "confirmAndExport": "Confirm and Export",
+    "addNewBatch": "Add New Batch",
     "exportAgain": "Export Again",
     "retryFailed": "Retry Failed",
     "confirmCurrent": "Confirm Current",

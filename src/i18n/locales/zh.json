@@ -434,6 +434,7 @@
     "filterReview": "需检查",
     "generatePlans": "生成裁剪方案",
     "confirmAndExport": "确认并导出",
+    "addNewBatch": "添加新批次",
     "exportAgain": "再次导出",
     "retryFailed": "重试失败项",
     "confirmCurrent": "确认当前",

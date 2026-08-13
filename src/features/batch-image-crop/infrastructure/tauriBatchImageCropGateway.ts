@@ -9,6 +9,7 @@ export interface PreparedBatchCropImage {
   thumbnailPath: string;
   width: number;
   height: number;
+  suggestion?: BatchCropSuggestion;
 }
 
 export interface ExportBatchCropImagePayload {
@@ -37,12 +38,15 @@ export function resolveBatchCropDisplayUrl(path: string): string {
 export async function prepareBatchCropImage(
   batchId: string,
   sourcePath: string,
-  rotationDegrees: number
+  rotationDegrees: number,
+  target?: { width: number; height: number }
 ): Promise<PreparedBatchCropImage> {
   return await invoke<PreparedBatchCropImage>('prepare_batch_crop_image', {
     batchId,
     sourcePath,
     rotationDegrees,
+    targetWidth: target?.width,
+    targetHeight: target?.height,
   });
 }
 

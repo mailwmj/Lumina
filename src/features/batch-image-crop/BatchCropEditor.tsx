@@ -24,6 +24,7 @@ interface BatchCropEditorProps {
   index: number;
   total: number;
   busy: boolean;
+  keyboardNavigationEnabled?: boolean;
   onCropChange: (crop: NormalizedCropRect) => void;
   onRestore: () => void;
   onConfirm: () => void;
@@ -57,6 +58,7 @@ export function BatchCropEditor({
   index,
   total,
   busy,
+  keyboardNavigationEnabled = true,
   onCropChange,
   onRestore,
   onConfirm,
@@ -71,6 +73,33 @@ export function BatchCropEditor({
   const editable = Boolean(item?.crop) && !busy;
   const canConfirm = item?.status === 'review';
   const hasItem = item !== null;
+
+  useEffect(() => {
+    if (!hasItem || busy || !keyboardNavigationEnabled) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
+      const targetElement = event.target instanceof Element ? event.target : null;
+      if (
+        targetElement?.closest('input, textarea, select, button, [contenteditable="true"]')
+        || (targetElement instanceof HTMLElement && targetElement.isContentEditable)
+        || targetElement?.closest('.ReactCrop__drag-handle, .ReactCrop__crop-selection')
+      ) {
+        return;
+      }
+      if (event.key === 'ArrowLeft' && index > 0) {
+        event.preventDefault();
+        onPrevious();
+      }
+      if (event.key === 'ArrowRight' && index < total - 1) {
+        event.preventDefault();
+        onNext();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [busy, hasItem, index, keyboardNavigationEnabled, onNext, onPrevious, total]);
 
   useEffect(() => {
     if (!hasItem) return;

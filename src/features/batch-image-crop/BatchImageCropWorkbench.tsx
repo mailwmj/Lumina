@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { UiButton, UiModal } from '@/components/ui';
 import {
   BATCH_CROP_MAX_IMAGES,
+  createBatchCropItemFromPreparedImage,
   createCenteredCrop,
   getBatchCropTarget,
   isLowResolutionCrop,
@@ -25,6 +26,8 @@ import {
 
 type BatchCropPhase = 'idle' | 'preparing' | 'planning' | 'exporting';
 type DialogState = 'exit' | 'change-size' | 'complete' | null;
+
+const BATCH_CROP_PREPARE_CONCURRENCY = 2;
 
 interface BatchImageCropWorkbenchProps {
   onExit: () => void;
@@ -158,7 +161,7 @@ export function BatchImageCropWorkbench({ onExit, backHandlerRef }: BatchImageCr
   }, []);
 
   const addPaths = useCallback(async (paths: string[]) => {
-    if (!targetId || busy || paths.length === 0) return;
+    if (!target || busy || paths.length === 0) return;
     const existing = new Set(items.map((item) => item.sourcePath));
     const unique = paths.filter((path, index) => path && !existing.has(path) && paths.indexOf(path) === index);
     const available = Math.max(0, BATCH_CROP_MAX_IMAGES - items.length);
@@ -172,46 +175,68 @@ export function BatchImageCropWorkbench({ onExit, backHandlerRef }: BatchImageCr
     setPhase('preparing');
     setProgress(0);
     setProgressTotal(accepted.length);
+    cancelRequestedRef.current = false;
     let added = 0;
-    for (const sourcePath of accepted) {
-      if (cancelRequestedRef.current) break;
-      try {
-        const prepared = await prepareBatchCropImage(batchIdRef.current, sourcePath, 0);
-        const item: BatchCropImageItem = {
-          id: crypto.randomUUID(),
-          sourcePath: prepared.sourcePath,
-          fileName: prepared.fileName,
-          fileSize: prepared.fileSize,
-          previewPath: prepared.previewPath,
-          thumbnailPath: prepared.thumbnailPath,
-          width: prepared.width,
-          height: prepared.height,
-          rotationDegrees: 0,
-          status: 'pending',
-          crop: null,
-          automaticCrop: null,
-          requiresReview: false,
-          lowResolution: false,
-        };
-        setItems((current) => [...current, item]);
-        setSelectedId((current) => current ?? item.id);
-        added += 1;
-      } catch (error) {
-        showToast(t(toErrorMessageKey(error)));
-      } finally {
-        setProgress((current) => current + 1);
+    let nextIndex = 0;
+    let firstReviewId: string | null = null;
+    const preparedItems: Array<BatchCropImageItem | null> = Array(accepted.length).fill(null);
+    const preparedItemIds = new Set<string>();
+    const publishPreparedItems = () => {
+      setItems((current) => [
+        ...current.filter((item) => !preparedItemIds.has(item.id)),
+        ...preparedItems.filter((item): item is BatchCropImageItem => item !== null),
+      ]);
+    };
+    const prepareNext = async () => {
+      while (!cancelRequestedRef.current) {
+        const index = nextIndex;
+        nextIndex += 1;
+        if (index >= accepted.length) return;
+        try {
+          const prepared = await prepareBatchCropImage(
+            batchIdRef.current,
+            accepted[index],
+            0,
+            target
+          );
+          const item = createBatchCropItemFromPreparedImage(
+            prepared,
+            target,
+            crypto.randomUUID(),
+            0,
+            t('batchCrop.fallbackNotice')
+          );
+          preparedItems[index] = item;
+          preparedItemIds.add(item.id);
+          publishPreparedItems();
+          setSelectedId((current) => current ?? item.id);
+          if (item.status === 'review' && !firstReviewId) firstReviewId = item.id;
+          added += 1;
+        } catch (error) {
+          showToast(t(toErrorMessageKey(error)));
+        } finally {
+          setProgress((current) => current + 1);
+        }
       }
-    }
+    };
+    await Promise.all(Array.from(
+      { length: Math.min(BATCH_CROP_PREPARE_CONCURRENCY, accepted.length) },
+      () => prepareNext()
+    ));
     setPhase('idle');
     setProgress(0);
     setProgressTotal(0);
+    if (firstReviewId) {
+      setSelectedId(firstReviewId);
+      setFilter('review');
+    }
     showToast(skipped > 0
       ? t('batchCrop.addResultWithSkipped', { added, skipped })
       : t('batchCrop.addResult', { count: added }));
-  }, [busy, items, showToast, t, targetId]);
+  }, [busy, items, showToast, t, target]);
 
   const chooseImages = useCallback(async () => {
-    if (!targetId || busy) return;
+    if (!target || busy) return;
     const selected = await open({
       multiple: true,
       directory: false,
@@ -219,7 +244,7 @@ export function BatchImageCropWorkbench({ onExit, backHandlerRef }: BatchImageCr
     });
     if (!selected) return;
     await addPaths(Array.isArray(selected) ? selected : [selected]);
-  }, [addPaths, busy, t, targetId]);
+  }, [addPaths, busy, t, target]);
 
   const generatePlans = useCallback(async () => {
     if (!target) return;
@@ -365,7 +390,7 @@ export function BatchImageCropWorkbench({ onExit, backHandlerRef }: BatchImageCr
   }, []);
 
   const rotateSelected = useCallback(async (degrees: -90 | 90) => {
-    if (!selectedItem || busy) return;
+    if (!selectedItem || !target || busy) return;
     cancelRequestedRef.current = false;
     const rotationDegrees = normalizeRotationDegrees(selectedItem.rotationDegrees + degrees);
     updateItem(selectedItem.id, { status: 'processing', errorMessage: undefined });
@@ -376,22 +401,23 @@ export function BatchImageCropWorkbench({ onExit, backHandlerRef }: BatchImageCr
       const prepared = await prepareBatchCropImage(
         batchIdRef.current,
         selectedItem.sourcePath,
-        rotationDegrees
-      );
-      updateItem(selectedItem.id, {
-        previewPath: prepared.previewPath,
-        thumbnailPath: prepared.thumbnailPath,
-        width: prepared.width,
-        height: prepared.height,
         rotationDegrees,
-        status: 'pending',
-        crop: null,
-        automaticCrop: null,
-        requiresReview: false,
-        lowResolution: false,
-        outputPath: undefined,
-      });
-      setFilter('all');
+        target
+      );
+      const updatedItem = createBatchCropItemFromPreparedImage(
+        prepared,
+        target,
+        selectedItem.id,
+        rotationDegrees,
+        t('batchCrop.fallbackNotice')
+      );
+      updateItem(selectedItem.id, { ...updatedItem, outputPath: undefined });
+      if (updatedItem.status === 'review') {
+        setSelectedId(updatedItem.id);
+        setFilter('review');
+      } else {
+        setFilter('all');
+      }
     } catch (error) {
       updateItem(selectedItem.id, { status: 'error', errorMessage: t(toErrorMessageKey(error)) });
     } finally {
@@ -400,7 +426,7 @@ export function BatchImageCropWorkbench({ onExit, backHandlerRef }: BatchImageCr
       setProgress(0);
       setProgressTotal(0);
     }
-  }, [busy, selectedItem, t, updateItem]);
+  }, [busy, selectedItem, t, target, updateItem]);
 
   const applyCrop = useCallback((crop: NormalizedCropRect) => {
     if (!selectedItem || !target) return;
@@ -451,6 +477,19 @@ export function BatchImageCropWorkbench({ onExit, backHandlerRef }: BatchImageCr
     }
   }, [items, selectedId]);
 
+  const startNewBatch = useCallback(async () => {
+    if (!allExported || busy) return;
+    setPhase('preparing');
+    await clearBatch();
+    batchIdRef.current = crypto.randomUUID();
+    setItems([]);
+    setSelectedId(null);
+    setFilter('all');
+    setExportDirectory('');
+    setDialog(null);
+    setPhase('idle');
+  }, [allExported, busy, clearBatch]);
+
   const editorTarget = target ?? getBatchCropTarget('1440x1920');
   const dialogFooter = useMemo(() => {
     if (dialog === 'exit') {
@@ -482,8 +521,22 @@ export function BatchImageCropWorkbench({ onExit, backHandlerRef }: BatchImageCr
         </>
       );
     }
-    return <UiButton variant="primary" onClick={() => setDialog(null)}>{t('common.confirm')}</UiButton>;
-  }, [busy, confirmTargetChange, dialog, exitWorkbench, t]);
+    return (
+      <>
+        <UiButton className="w-32" onClick={() => setDialog(null)}>{t('common.confirm')}</UiButton>
+        {allExported && (
+          <UiButton
+            variant="primary"
+            className="w-32"
+            disabled={busy}
+            onClick={() => void startNewBatch()}
+          >
+            {t('batchCrop.addNewBatch')}
+          </UiButton>
+        )}
+      </>
+    );
+  }, [allExported, busy, confirmTargetChange, dialog, exitWorkbench, startNewBatch, t]);
 
   return (
     <section className="absolute inset-0 flex min-h-0 overflow-hidden bg-bg-dark">
@@ -511,6 +564,7 @@ export function BatchImageCropWorkbench({ onExit, backHandlerRef }: BatchImageCr
         index={selectedIndex}
         total={items.length}
         busy={busy}
+        keyboardNavigationEnabled={dialog === null}
         onCropChange={applyCrop}
         onRestore={restoreSelected}
         onConfirm={confirmSelected}

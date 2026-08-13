@@ -13,6 +13,8 @@ const MAX_FILE_BYTES: u64 = 60 * 1024 * 1024;
 const MAX_IMAGE_PIXELS: u64 = 120_000_000;
 const PREVIEW_LONGEST_EDGE: u32 = 2560;
 const THUMBNAIL_LONGEST_EDGE: u32 = 160;
+const PREVIEW_JPEG_QUALITY: u8 = 90;
+const THUMBNAIL_JPEG_QUALITY: u8 = 82;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -24,6 +26,8 @@ pub struct PreparedBatchCropImage {
     thumbnail_path: String,
     width: u32,
     height: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    suggestion: Option<BatchCropSuggestion>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -165,10 +169,11 @@ fn resized_dimensions(width: u32, height: u32, longest_edge: u32) -> (u32, u32) 
     )
 }
 
-fn resize_rgba_lanczos3(
+fn resize_rgba_with_filter(
     source: &DynamicImage,
     target_width: u32,
     target_height: u32,
+    filter_type: fir::FilterType,
 ) -> Result<image::RgbaImage, String> {
     let source_rgba = source.to_rgba8();
     let source_image = FirImage::from_vec_u8(
@@ -183,8 +188,7 @@ fn resize_rgba_lanczos3(
         target_height.max(1),
         fir::PixelType::U8x4,
     );
-    let options = fir::ResizeOptions::new()
-        .resize_alg(fir::ResizeAlg::Convolution(fir::FilterType::Lanczos3));
+    let options = fir::ResizeOptions::new().resize_alg(fir::ResizeAlg::Convolution(filter_type));
     fir::Resizer::new()
         .resize(&source_image, &mut target, Some(&options))
         .map_err(|error| format!("Failed to resize image: {error}"))?;
@@ -192,24 +196,89 @@ fn resize_rgba_lanczos3(
         .ok_or_else(|| "Failed to build resized image".to_string())
 }
 
-fn write_preview(
+fn resize_rgba_lanczos3(
+    source: &DynamicImage,
+    target_width: u32,
+    target_height: u32,
+) -> Result<image::RgbaImage, String> {
+    resize_rgba_with_filter(
+        source,
+        target_width,
+        target_height,
+        fir::FilterType::Lanczos3,
+    )
+}
+
+fn resize_rgba_for_preview(
+    source: &DynamicImage,
+    target_width: u32,
+    target_height: u32,
+) -> Result<image::RgbaImage, String> {
+    resize_rgba_with_filter(
+        source,
+        target_width,
+        target_height,
+        fir::FilterType::CatmullRom,
+    )
+}
+
+fn write_preview_jpeg(image: &DynamicImage, output_path: &Path, quality: u8) -> Result<(), String> {
+    let output =
+        File::create(output_path).map_err(|error| format!("Failed to create preview: {error}"))?;
+    let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(output, quality);
+    DynamicImage::ImageRgb8(flatten_to_white(image))
+        .write_with_encoder(encoder)
+        .map_err(|error| format!("Failed to encode preview: {error}"))
+}
+
+fn write_resized_preview_jpeg(
     image: &DynamicImage,
     output_path: &Path,
     longest_edge: u32,
+    quality: u8,
 ) -> Result<(), String> {
     let (target_width, target_height) =
         resized_dimensions(image.width(), image.height(), longest_edge);
-    let resized = if target_width == image.width() && target_height == image.height() {
-        image.clone()
-    } else {
-        DynamicImage::ImageRgba8(resize_rgba_lanczos3(image, target_width, target_height)?)
-    };
-    let output =
-        File::create(output_path).map_err(|error| format!("Failed to create preview: {error}"))?;
-    let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(output, 92);
-    DynamicImage::ImageRgb8(flatten_to_white(&resized))
-        .write_with_encoder(encoder)
-        .map_err(|error| format!("Failed to encode preview: {error}"))
+    if target_width == image.width() && target_height == image.height() {
+        return write_preview_jpeg(image, output_path, quality);
+    }
+
+    let resized =
+        DynamicImage::ImageRgba8(resize_rgba_for_preview(image, target_width, target_height)?);
+    write_preview_jpeg(&resized, output_path, quality)
+}
+
+fn write_preview_assets(
+    image: &DynamicImage,
+    preview_path: &Path,
+    thumbnail_path: &Path,
+) -> Result<(), String> {
+    let (preview_width, preview_height) =
+        resized_dimensions(image.width(), image.height(), PREVIEW_LONGEST_EDGE);
+
+    if preview_width == image.width() && preview_height == image.height() {
+        write_preview_jpeg(image, preview_path, PREVIEW_JPEG_QUALITY)?;
+        return write_resized_preview_jpeg(
+            image,
+            thumbnail_path,
+            THUMBNAIL_LONGEST_EDGE,
+            THUMBNAIL_JPEG_QUALITY,
+        );
+    }
+
+    // Thumbnails are derived from the display preview, so the full source is resized only once.
+    let preview = DynamicImage::ImageRgba8(resize_rgba_for_preview(
+        image,
+        preview_width,
+        preview_height,
+    )?);
+    write_preview_jpeg(&preview, preview_path, PREVIEW_JPEG_QUALITY)?;
+    write_resized_preview_jpeg(
+        &preview,
+        thumbnail_path,
+        THUMBNAIL_LONGEST_EDGE,
+        THUMBNAIL_JPEG_QUALITY,
+    )
 }
 
 fn prepare_batch_crop_image_sync(
@@ -217,6 +286,8 @@ fn prepare_batch_crop_image_sync(
     batch_id: String,
     source_path: String,
     rotation_degrees: i32,
+    target_width: Option<u32>,
+    target_height: Option<u32>,
 ) -> Result<PreparedBatchCropImage, String> {
     let (source, file_size, file_name) = validate_source_path(&source_path)?;
     let image = apply_rotation(load_oriented_image(&source)?, rotation_degrees);
@@ -225,8 +296,14 @@ fn prepare_batch_crop_image_sync(
     let preview_path = cache.join(format!("{asset_id}-preview.jpg"));
     let thumbnail_path = cache.join(format!("{asset_id}-thumbnail.jpg"));
 
-    write_preview(&image, &preview_path, PREVIEW_LONGEST_EDGE)?;
-    write_preview(&image, &thumbnail_path, THUMBNAIL_LONGEST_EDGE)?;
+    write_preview_assets(&image, &preview_path, &thumbnail_path)?;
+    let suggestion = match (target_width, target_height) {
+        (None, None) => None,
+        (Some(target_width), Some(target_height)) if target_width > 0 && target_height > 0 => Some(
+            default_crop_suggestion(image.width(), image.height(), target_width, target_height),
+        ),
+        _ => return Err("INVALID_TARGET_SIZE".to_string()),
+    };
 
     Ok(PreparedBatchCropImage {
         source_path: source.to_string_lossy().to_string(),
@@ -236,6 +313,7 @@ fn prepare_batch_crop_image_sync(
         thumbnail_path: thumbnail_path.to_string_lossy().to_string(),
         width: image.width(),
         height: image.height(),
+        suggestion,
     })
 }
 
@@ -245,9 +323,18 @@ pub async fn prepare_batch_crop_image(
     batch_id: String,
     source_path: String,
     rotation_degrees: i32,
+    target_width: Option<u32>,
+    target_height: Option<u32>,
 ) -> Result<PreparedBatchCropImage, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        prepare_batch_crop_image_sync(app, batch_id, source_path, rotation_degrees)
+        prepare_batch_crop_image_sync(
+            app,
+            batch_id,
+            source_path,
+            rotation_degrees,
+            target_width,
+            target_height,
+        )
     })
     .await
     .map_err(|error| format!("Image preview task failed: {error}"))?
@@ -629,5 +716,20 @@ mod tests {
             flatten_to_white(&transparent).get_pixel(0, 0),
             &Rgb([255, 255, 255])
         );
+    }
+
+    #[test]
+    fn preview_assets_cap_dimensions_and_derive_a_small_thumbnail() {
+        let root = std::env::temp_dir().join(format!("lumina-batch-crop-test-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        let preview = root.join("preview.jpg");
+        let thumbnail = root.join("thumbnail.jpg");
+        let source = DynamicImage::ImageRgb8(RgbImage::from_pixel(3200, 2000, Rgb([80, 120, 160])));
+
+        write_preview_assets(&source, &preview, &thumbnail).unwrap();
+
+        assert_eq!(image::image_dimensions(&preview).unwrap(), (2560, 1600));
+        assert_eq!(image::image_dimensions(&thumbnail).unwrap(), (160, 100));
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

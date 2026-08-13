@@ -47,6 +47,20 @@ export interface BatchCropImageItem {
   outputPath?: string;
 }
 
+export interface PreparedBatchCropImageData {
+  sourcePath: string;
+  fileName: string;
+  fileSize: number;
+  previewPath: string;
+  thumbnailPath: string;
+  width: number;
+  height: number;
+  suggestion?: {
+    crop: NormalizedCropRect;
+    requiresReview: boolean;
+  };
+}
+
 export function getBatchCropTarget(id: BatchCropTargetId): BatchCropTarget {
   return BATCH_CROP_TARGETS.find((target) => target.id === id) ?? BATCH_CROP_TARGETS[0];
 }
@@ -103,6 +117,42 @@ export function isLowResolutionCrop(
   targetHeight: number
 ): boolean {
   return imageWidth * crop.width < targetWidth || imageHeight * crop.height < targetHeight;
+}
+
+export function createBatchCropItemFromPreparedImage(
+  prepared: PreparedBatchCropImageData,
+  target: BatchCropTarget,
+  id: string,
+  rotationDegrees: number,
+  fallbackErrorMessage: string
+): BatchCropImageItem {
+  const crop = prepared.suggestion?.crop
+    ?? createCenteredCrop(prepared.width, prepared.height, target.width, target.height);
+  const requiresReview = prepared.suggestion?.requiresReview ?? true;
+
+  return {
+    id,
+    sourcePath: prepared.sourcePath,
+    fileName: prepared.fileName,
+    fileSize: prepared.fileSize,
+    previewPath: prepared.previewPath,
+    thumbnailPath: prepared.thumbnailPath,
+    width: prepared.width,
+    height: prepared.height,
+    rotationDegrees,
+    status: requiresReview ? 'review' : 'auto',
+    crop,
+    automaticCrop: crop,
+    requiresReview,
+    lowResolution: isLowResolutionCrop(
+      prepared.width,
+      prepared.height,
+      crop,
+      target.width,
+      target.height
+    ),
+    errorMessage: prepared.suggestion ? undefined : fallbackErrorMessage,
+  };
 }
 
 export function formatBatchCropFileSize(bytes: number): string {

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { createCenteredCrop, fitImageWithinBounds, normalizeRotationDegrees } from './domain';
+import {
+  createBatchCropItemFromPreparedImage,
+  createCenteredCrop,
+  fitImageWithinBounds,
+  normalizeRotationDegrees,
+} from './domain';
 
 describe('batch image crop geometry', () => {
   it('centers a portrait crop without changing the requested ratio', () => {
@@ -32,5 +37,53 @@ describe('batch image crop geometry', () => {
     expect(rendered.width / rendered.height).toBeCloseTo(3574 / 5361, 3);
     expect(rendered.width).toBe(613);
     expect(rendered.height).toBe(920);
+  });
+
+  it('applies the automatic suggestion as soon as a preview is prepared', () => {
+    const item = createBatchCropItemFromPreparedImage(
+      {
+        sourcePath: '/fixtures/source.jpg',
+        fileName: 'source.jpg',
+        fileSize: 1024,
+        previewPath: '/fixtures/preview.jpg',
+        thumbnailPath: '/fixtures/thumbnail.jpg',
+        width: 3574,
+        height: 5361,
+        suggestion: {
+          crop: { x: 0, y: 1 / 18, width: 1, height: 8 / 9 },
+          requiresReview: false,
+        },
+      },
+      { id: '1440x1920', width: 1440, height: 1920 },
+      'image-1',
+      0,
+      'fallback'
+    );
+
+    expect(item.status).toBe('auto');
+    expect(item.crop).toEqual(item.automaticCrop);
+    expect(item.errorMessage).toBeUndefined();
+  });
+
+  it('keeps the image reviewable when a prepared preview has no suggestion', () => {
+    const item = createBatchCropItemFromPreparedImage(
+      {
+        sourcePath: '/fixtures/source.jpg',
+        fileName: 'source.jpg',
+        fileSize: 1024,
+        previewPath: '/fixtures/preview.jpg',
+        thumbnailPath: '/fixtures/thumbnail.jpg',
+        width: 3574,
+        height: 5361,
+      },
+      { id: '1440x1920', width: 1440, height: 1920 },
+      'image-1',
+      0,
+      'fallback'
+    );
+
+    expect(item.status).toBe('review');
+    expect(item.errorMessage).toBe('fallback');
+    expect(item.crop).not.toBeNull();
   });
 });

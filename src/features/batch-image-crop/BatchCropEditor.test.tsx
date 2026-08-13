@@ -92,4 +92,85 @@ describe('BatchCropEditor preview lifecycle', () => {
     expect(preview?.style.width).toBe('427px');
     expect(preview?.style.height).toBe('640px');
   });
+
+  it('uses left and right keys to navigate previews outside editable controls', async () => {
+    const onPrevious = vi.fn();
+    const onNext = vi.fn();
+    await act(async () => root.render(
+      <BatchCropEditor
+        item={{ ...item, crop: { x: 0, y: 0, width: 1, height: 1 } }}
+        target={target}
+        index={1}
+        total={3}
+        busy={false}
+        onCropChange={() => undefined}
+        onRestore={() => undefined}
+        onConfirm={() => undefined}
+        onRotate={() => undefined}
+        onPrevious={onPrevious}
+        onNext={onNext}
+      />
+    ));
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    });
+
+    expect(onPrevious).toHaveBeenCalledTimes(1);
+    expect(onNext).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not use arrow keys while a button has focus', async () => {
+    const onPrevious = vi.fn();
+    const onNext = vi.fn();
+    await act(async () => root.render(
+      <BatchCropEditor
+        item={{ ...item, crop: { x: 0, y: 0, width: 1, height: 1 } }}
+        target={target}
+        index={1}
+        total={3}
+        busy={false}
+        onCropChange={() => undefined}
+        onRestore={() => undefined}
+        onConfirm={() => undefined}
+        onRotate={() => undefined}
+        onPrevious={onPrevious}
+        onNext={onNext}
+      />
+    ));
+
+    const button = container.querySelector('button');
+    expect(button).not.toBeNull();
+    button?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+
+    expect(onPrevious).not.toHaveBeenCalled();
+    expect(onNext).not.toHaveBeenCalled();
+  });
+
+  it('does not use arrow keys while navigation is disabled by an open dialog', async () => {
+    const onPrevious = vi.fn();
+    const onNext = vi.fn();
+    await act(async () => root.render(
+      <BatchCropEditor
+        item={{ ...item, crop: { x: 0, y: 0, width: 1, height: 1 } }}
+        target={target}
+        index={1}
+        total={3}
+        busy={false}
+        keyboardNavigationEnabled={false}
+        onCropChange={() => undefined}
+        onRestore={() => undefined}
+        onConfirm={() => undefined}
+        onRotate={() => undefined}
+        onPrevious={onPrevious}
+        onNext={onNext}
+      />
+    ));
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+
+    expect(onPrevious).not.toHaveBeenCalled();
+    expect(onNext).not.toHaveBeenCalled();
+  });
 });
