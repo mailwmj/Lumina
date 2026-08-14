@@ -61,8 +61,8 @@ function buildUniversalMacBinary(destination) {
     throw new Error('The macOS Universal Canvas Agent binary must be assembled on macOS.');
   }
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lumina-canvas-agent-'));
-  const arm64Binary = path.join(tempDir, 'lumina-canvas-agent-arm64');
-  const x64Binary = path.join(tempDir, 'lumina-canvas-agent-x64');
+  const arm64Binary = path.join(binariesDir, 'lumina-canvas-agent-aarch64-apple-darwin');
+  const x64Binary = path.join(binariesDir, 'lumina-canvas-agent-x86_64-apple-darwin');
   try {
     buildTargetBinary('aarch64-apple-darwin', arm64Binary);
     buildTargetBinary('x86_64-apple-darwin', x64Binary);
