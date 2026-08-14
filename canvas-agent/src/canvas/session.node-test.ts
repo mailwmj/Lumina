@@ -87,7 +87,7 @@ test('creates a pending proposal and marks it stale after a revision change', ()
   response.end();
 });
 
-test('records one approved proposal result for polling', () => {
+test('records one applied change-set result for polling', () => {
   const session = new CanvasSession();
   const response = new TestResponse();
   session.openEvents('client-1', response as unknown as ServerResponse);

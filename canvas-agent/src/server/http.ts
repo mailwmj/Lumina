@@ -175,7 +175,6 @@ function sendError(response: ServerResponse, error: unknown): void {
 
 function isTerminalProposalStatus(value: unknown): value is Exclude<CanvasProposalStatus, 'pending'> {
   return value === 'applied'
-    || value === 'rejected'
     || value === 'stale'
     || value === 'failed';
 }

@@ -12,12 +12,14 @@ const PACKAGE_ROOT = fileURLToPath(new URL('../../', import.meta.url));
 
 test('stdio MCP initializes and lists exactly the P0 canvas tools', { timeout: 8_000 }, async () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lumina-mcp-test-'));
-  const child = spawn(process.execPath, [path.join(PACKAGE_ROOT, 'dist/index.js'), 'mcp'], {
+  const configFile = path.join(tempDir, 'canvas-agent.json');
+  const child = spawn(process.execPath, [
+    path.join(PACKAGE_ROOT, 'dist/index.js'),
+    'mcp',
+    '--config',
+    configFile,
+  ], {
     cwd: PACKAGE_ROOT,
-    env: {
-      ...process.env,
-      LUMINA_CANVAS_AGENT_CONFIG: path.join(tempDir, 'canvas-agent.json'),
-    },
     stdio: ['pipe', 'pipe', 'pipe'],
   });
   let stderr = '';

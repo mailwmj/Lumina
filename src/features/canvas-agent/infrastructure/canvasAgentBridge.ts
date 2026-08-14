@@ -50,7 +50,7 @@ export async function postCanvasProposalResult(
   clientId: string,
   body: {
     proposalId: string;
-    status: 'applied' | 'rejected' | 'stale' | 'failed';
+    status: 'applied' | 'stale' | 'failed';
     result?: unknown;
     error?: string;
   }

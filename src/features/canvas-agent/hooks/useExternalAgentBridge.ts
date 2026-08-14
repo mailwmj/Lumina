@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import {
+  getCanvasAgentRuntime,
+  isCanvasAgentManagedByLumina,
+  type CanvasAgentRuntimeInfo,
+} from '@/commands/canvasAgent';
 import type { CanvasEdge, CanvasNode } from '@/features/canvas/domain/canvasNodes';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useProjectStore } from '@/stores/projectStore';
@@ -27,7 +32,6 @@ import type {
   CanvasAgentConnectionStatus,
   CanvasAgentImagePreview,
   CanvasAgentSnapshot,
-  PendingCanvasChangeProposal,
 } from '@/features/canvas-agent/domain/types';
 import type { Viewport } from '@xyflow/react';
 
@@ -54,17 +58,31 @@ export function useExternalAgentBridge({
   viewport,
 }: UseExternalAgentBridgeInput) {
   const connectionConfig = useSettingsStore((state) => state.externalAgentConnection);
-  const endpoint = useMemo(
+  const managedByLumina = isCanvasAgentManagedByLumina();
+  const [managedRuntime, setManagedRuntime] = useState<CanvasAgentRuntimeInfo | null>(null);
+  const manualEndpoint = useMemo(
     () => resolveCanvasAgentEndpoint(connectionConfig),
     [connectionConfig]
+  );
+  const endpoint = useMemo(
+    () => {
+      if (!connectionConfig.enabled) {
+        return null;
+      }
+      if (!managedByLumina) {
+        return manualEndpoint;
+      }
+      if (!managedRuntime?.running || !managedRuntime.url || !managedRuntime.token) {
+        return null;
+      }
+      return { url: managedRuntime.url, token: managedRuntime.token };
+    },
+    [connectionConfig.enabled, managedByLumina, managedRuntime, manualEndpoint]
   );
   const clientIdRef = useRef(crypto.randomUUID());
   const [connectionStatus, setConnectionStatus] = useState<CanvasAgentConnectionStatus>(
     connectionConfig.enabled ? 'disconnected' : 'disabled'
   );
-  const [pendingProposal, setPendingProposal] =
-    useState<PendingCanvasChangeProposal | null>(null);
-  const pendingProposalRef = useRef<PendingCanvasChangeProposal | null>(null);
   const selectedImagePreviewSources = useStableSelectedImagePreviewSources(
     nodes,
     selectedNodeIds
@@ -103,14 +121,10 @@ export function useExternalAgentBridge({
     });
   }
 
-  const updatePendingProposal = useCallback((proposal: PendingCanvasChangeProposal | null) => {
-    pendingProposalRef.current = proposal;
-    setPendingProposal(proposal);
-  }, []);
   const reportProposal = useCallback((
     activeEndpoint: CanvasAgentEndpoint,
     proposalId: string,
-    status: 'applied' | 'rejected' | 'stale' | 'failed',
+    status: 'applied' | 'stale' | 'failed',
     result?: unknown,
     error?: string
   ) => postCanvasProposalResult(activeEndpoint, clientIdRef.current, {
@@ -121,6 +135,37 @@ export function useExternalAgentBridge({
   }).catch((requestError) => {
     logger.debug('[ExternalAgent] Failed to report proposal result', requestError);
   }), []);
+
+  useEffect(() => {
+    if (!managedByLumina) {
+      setManagedRuntime(null);
+      return;
+    }
+    let cancelled = false;
+    const refreshRuntime = async () => {
+      try {
+        const runtime = await getCanvasAgentRuntime();
+        if (!cancelled) {
+          setManagedRuntime((current) => (
+            haveSameManagedRuntime(current, runtime) ? current : runtime
+          ));
+        }
+      } catch (error) {
+        logger.debug('[ExternalAgent] Failed to read managed Canvas Agent runtime', error);
+        if (!cancelled) {
+          setManagedRuntime(null);
+        }
+      }
+    };
+    void refreshRuntime();
+    const timer = window.setInterval(() => {
+      void refreshRuntime();
+    }, 5_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [managedByLumina]);
 
   useEffect(() => {
     let cancelled = false;
@@ -161,7 +206,6 @@ export function useExternalAgentBridge({
   useEffect(() => {
     if (!connectionConfig.enabled) {
       setConnectionStatus('disabled');
-      updatePendingProposal(null);
       return;
     }
     if (!endpoint) {
@@ -201,17 +245,6 @@ export function useExternalAgentBridge({
       }
       if (!controller.signal.aborted) {
         setConnectionStatus('disconnected');
-        const proposal = pendingProposalRef.current;
-        if (proposal) {
-          void reportProposal(
-            endpoint,
-            proposal.proposalId,
-            'stale',
-            undefined,
-            'canvas_disconnected'
-          );
-          updatePendingProposal(null);
-        }
         reconnectTimer = window.setTimeout(() => {
           void connect();
         }, RECONNECT_DELAY_MS);
@@ -221,7 +254,20 @@ export function useExternalAgentBridge({
     const handleProposalEvent = (activeEndpoint: CanvasAgentEndpoint, payload: unknown) => {
       try {
         const proposal = parsePendingCanvasChangeProposal(payload);
-        const current = snapshotRef.current;
+        const project = useProjectStore.getState().getCurrentProject();
+        const canvas = useCanvasStore.getState();
+        if (!project) {
+          void reportProposal(activeEndpoint, proposal.proposalId, 'stale', undefined, 'project_closed');
+          return;
+        }
+        const current = buildCanvasAgentSnapshot({
+          projectId: project.id,
+          projectName: project.name,
+          nodes: canvas.nodes,
+          edges: canvas.edges,
+          selectedNodeIds: canvas.nodes.filter((node) => node.selected).map((node) => node.id),
+          viewport: canvas.currentViewport,
+        });
         if (
           proposal.changeSet.projectId !== current.projectId
           || proposal.changeSet.baseRevision !== current.revision
@@ -229,11 +275,18 @@ export function useExternalAgentBridge({
           void reportProposal(activeEndpoint, proposal.proposalId, 'stale', undefined, 'canvas_changed');
           return;
         }
-        if (pendingProposalRef.current) {
-          void reportProposal(activeEndpoint, proposal.proposalId, 'failed', undefined, 'proposal_already_open');
-          return;
+        try {
+          const result = canvas.applyAgentChangeSet(proposal.changeSet);
+          void reportProposal(activeEndpoint, proposal.proposalId, 'applied', result);
+        } catch (error) {
+          void reportProposal(
+            activeEndpoint,
+            proposal.proposalId,
+            'failed',
+            undefined,
+            error instanceof Error ? error.message : String(error)
+          );
         }
-        updatePendingProposal(proposal);
       } catch (error) {
         const proposalId = readProposalId(payload);
         if (proposalId) {
@@ -250,17 +303,6 @@ export function useExternalAgentBridge({
 
     void connect();
     return () => {
-      const proposal = pendingProposalRef.current;
-      if (proposal) {
-        void reportProposal(
-          endpoint,
-          proposal.proposalId,
-          'stale',
-          undefined,
-          'canvas_disconnected'
-        );
-        updatePendingProposal(null);
-      }
       controller.abort();
       if (reconnectTimer) {
         window.clearTimeout(reconnectTimer);
@@ -271,7 +313,6 @@ export function useExternalAgentBridge({
     endpoint,
     queueSnapshotPublish,
     reportProposal,
-    updatePendingProposal,
   ]);
 
   useEffect(() => {
@@ -294,88 +335,8 @@ export function useExternalAgentBridge({
     return () => window.clearInterval(timer);
   }, [connectionStatus, endpoint, queueSnapshotPublish]);
 
-  useEffect(() => {
-    const proposal = pendingProposalRef.current;
-    if (
-      !proposal
-      || (
-        proposal.changeSet.projectId === baseSnapshot.projectId
-        && proposal.changeSet.baseRevision === baseSnapshot.revision
-      )
-    ) {
-      return;
-    }
-    if (endpoint) {
-      void reportProposal(endpoint, proposal.proposalId, 'stale', undefined, 'canvas_changed');
-    }
-    updatePendingProposal(null);
-  }, [
-    baseSnapshot.projectId,
-    baseSnapshot.revision,
-    endpoint,
-    reportProposal,
-    updatePendingProposal,
-  ]);
-
-  const approveProposal = useCallback(() => {
-    const proposal = pendingProposalRef.current;
-    if (!proposal || !endpoint) {
-      return;
-    }
-    const project = useProjectStore.getState().getCurrentProject();
-    const canvas = useCanvasStore.getState();
-    if (!project) {
-      void reportProposal(endpoint, proposal.proposalId, 'stale', undefined, 'project_closed');
-      updatePendingProposal(null);
-      return;
-    }
-    const liveSnapshot = buildCanvasAgentSnapshot({
-      projectId: project.id,
-      projectName: project.name,
-      nodes: canvas.nodes,
-      edges: canvas.edges,
-      selectedNodeIds: canvas.nodes.filter((node) => node.selected).map((node) => node.id),
-      viewport: canvas.currentViewport,
-    });
-    if (
-      proposal.changeSet.projectId !== liveSnapshot.projectId
-      || proposal.changeSet.baseRevision !== liveSnapshot.revision
-    ) {
-      void reportProposal(endpoint, proposal.proposalId, 'stale', undefined, 'canvas_changed');
-      updatePendingProposal(null);
-      return;
-    }
-    try {
-      const result = canvas.applyAgentChangeSet(proposal.changeSet);
-      void reportProposal(endpoint, proposal.proposalId, 'applied', result);
-    } catch (error) {
-      void reportProposal(
-        endpoint,
-        proposal.proposalId,
-        'failed',
-        undefined,
-        error instanceof Error ? error.message : String(error)
-      );
-    }
-    updatePendingProposal(null);
-  }, [endpoint, reportProposal, updatePendingProposal]);
-
-  const rejectProposal = useCallback(() => {
-    const proposal = pendingProposalRef.current;
-    if (!proposal) {
-      return;
-    }
-    if (endpoint) {
-      void reportProposal(endpoint, proposal.proposalId, 'rejected');
-    }
-    updatePendingProposal(null);
-  }, [endpoint, reportProposal, updatePendingProposal]);
-
   return {
     connectionStatus,
-    pendingProposal,
-    approveProposal,
-    rejectProposal,
   };
 }
 
@@ -385,4 +346,15 @@ function readProposalId(value: unknown): string {
   }
   const proposalId = (value as Record<string, unknown>).proposalId;
   return typeof proposalId === 'string' ? proposalId : '';
+}
+
+function haveSameManagedRuntime(
+  current: CanvasAgentRuntimeInfo | null,
+  next: CanvasAgentRuntimeInfo | null
+): boolean {
+  return current?.available === next?.available
+    && current?.running === next?.running
+    && current?.url === next?.url
+    && current?.token === next?.token
+    && current?.error === next?.error;
 }

@@ -17,6 +17,7 @@ dist-ssr
 # Tauri/Rust
 src-tauri/target/
 src-tauri/gen/
+src-tauri/binaries/lumina-canvas-agent-*
 
 # TypeScript
 *.tsbuildinfo

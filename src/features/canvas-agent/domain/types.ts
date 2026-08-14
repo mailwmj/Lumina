@@ -26,7 +26,7 @@ export interface CanvasAgentCapabilities {
   operations: readonly ['create_node', 'update_node', 'move_node', 'connect_nodes'];
   restrictions: readonly [
     'active_project_only',
-    'approval_required',
+    'direct_apply',
     'no_delete',
     'no_upload',
     'no_generation',

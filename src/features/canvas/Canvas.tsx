@@ -94,7 +94,6 @@ import { resolveCanvasConnectionRadius } from './application/connectionSnap';
 import { useCanvasImagePreviewBackfill } from './hooks/useCanvasImagePreviewBackfill';
 import { logger } from '@/lib/logger';
 import { useExternalAgentBridge } from '@/features/canvas-agent/hooks/useExternalAgentBridge';
-import { CanvasChangeApprovalDialog } from '@/features/canvas-agent/ui/CanvasChangeApprovalDialog';
 
 const DEFAULT_VIEWPORT: Viewport = { x: 0, y: 0, zoom: 1 };
 const DEFAULT_EDGE_OPTIONS = { type: 'disconnectableEdge' };
@@ -427,7 +426,7 @@ export function Canvas() {
   const setCanvasImageFocusedNodeId = useCanvasImageQualityStore(
     (state) => state.setFocusedNodeId
   );
-  const externalAgentBridge = useExternalAgentBridge({
+  useExternalAgentBridge({
     projectId: currentProjectId ?? '',
     projectName: currentProjectName,
     nodes,
@@ -2743,11 +2742,6 @@ export function Canvas() {
         onNavigate={navigateImageViewer}
       />
 
-      <CanvasChangeApprovalDialog
-        proposal={externalAgentBridge.pendingProposal}
-        onApprove={externalAgentBridge.approveProposal}
-        onReject={externalAgentBridge.rejectProposal}
-      />
     </div>
   );
 }

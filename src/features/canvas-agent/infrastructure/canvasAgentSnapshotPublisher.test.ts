@@ -25,7 +25,7 @@ function snapshot(revision: string): CanvasAgentSnapshot {
       operations: ['create_node', 'update_node', 'move_node', 'connect_nodes'],
       restrictions: [
         'active_project_only',
-        'approval_required',
+        'direct_apply',
         'no_delete',
         'no_upload',
         'no_generation',

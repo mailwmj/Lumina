@@ -1,4 +1,5 @@
 pub mod ai;
+pub mod canvas_agent;
 pub mod commands;
 pub mod session;
 
@@ -147,6 +148,11 @@ pub fn run() {
             let session_id = session::SessionId::new();
             info!("session_id = {}", session_id.0);
             app.manage(session_id);
+            let canvas_agent_manager = canvas_agent::CanvasAgentManager::new(app.handle());
+            if let Some(error) = canvas_agent_manager.startup_error() {
+                warn!("Canvas Agent unavailable: {error}");
+            }
+            app.manage(canvas_agent_manager);
             tauri::async_runtime::spawn(async move {
                 tokio::time::sleep(Duration::from_millis(FRONTEND_READY_TIMEOUT_MS)).await;
 
@@ -170,6 +176,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             frontend_ready,
+            canvas_agent::get_canvas_agent_runtime,
             image::split_image,
             image::split_image_source,
             image::prepare_node_image_source,

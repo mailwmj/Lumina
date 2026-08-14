@@ -141,7 +141,7 @@ describe('external Agent CanvasChangeSet', () => {
     })).toThrowError(/already has an input/);
   });
 
-  it('normalizes storyboard frames inside the approved atomic batch', () => {
+  it('normalizes storyboard frames inside the atomic batch', () => {
     const applied = applyCanvasChangeSet({ nodes: [], edges: [] }, {
       projectId: 'project-1',
       baseRevision: 'revision-1',
@@ -223,7 +223,7 @@ describe('external Agent CanvasChangeSet', () => {
     });
   });
 
-  it('commits an approved batch as exactly one undo step', () => {
+  it('commits a directly applied batch as exactly one undo step', () => {
     const source = node(CANVAS_NODE_TYPES.textGeneration, 'source');
     useCanvasStore.getState().setCanvasData([source], []);
 

@@ -35,6 +35,7 @@ Windows 用户如果在启动时遇到了报错，请尝试安装 [WebView2 运�
 
 - Node.js 20+
 - npm 10+
+- Bun 1.3+（仅用于编译桌面安装包内的 Canvas Agent 可执行文件）
 - Rust stable（含 Cargo）
 - Tauri 平台依赖（Windows/macOS）
 
@@ -45,6 +46,7 @@ Windows 用户如果在启动时遇到了报错，请尝试安装 [WebView2 运�
 
 ```bash
 npm install
+npm install --prefix canvas-agent
 ```
 
 仅前端开发：
@@ -59,10 +61,11 @@ Tauri 联调（推荐）：
 npm run tauri dev
 ```
 
-### 外部 Agent MCP（开发态）
+### 外部 Agent MCP
 
-Lumina 包含一个本机 Canvas Agent companion，通过应用内整批审批向 MCP 暴露当前打开的画布。
-接入步骤、工具权限和验证方式见
+桌面安装包包含由 Lumina 自动管理的本机 MCP companion。用户启用外部 Agent 后，
+通过校验的变更会直接应用到当前画布，并保留整批一次撤销；安装后的用户不需要源码、
+Node.js 或 Bun。Codex 注册、开发态接入、工具权限和验证方式见
 [外部 Agent MCP 文档](./docs/agents/external-agent-mcp.md)。
 
 ## 常用命令

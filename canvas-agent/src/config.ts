@@ -5,9 +5,7 @@ import path from 'node:path';
 
 export const DEFAULT_PORT = 17372;
 export const CONFIG_DIR = path.join(os.homedir(), '.lumina');
-export const CONFIG_FILE = process.env.LUMINA_CANVAS_AGENT_CONFIG
-  ? path.resolve(process.env.LUMINA_CANVAS_AGENT_CONFIG)
-  : path.join(CONFIG_DIR, 'canvas-agent.json');
+export const CONFIG_FILE = path.join(CONFIG_DIR, 'canvas-agent.json');
 
 export interface CanvasAgentConfig {
   url: string;
@@ -71,9 +69,10 @@ function normalizeConfig(value: unknown): CanvasAgentConfig | null {
   };
 }
 
-export function loadConfig(create = false): CanvasAgentConfig {
+export function loadConfig(create = false, configFile?: string): CanvasAgentConfig {
+  const resolvedConfigFile = resolveConfigFile(configFile);
   try {
-    const parsed = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')) as unknown;
+    const parsed = JSON.parse(fs.readFileSync(resolvedConfigFile, 'utf8')) as unknown;
     const normalized = normalizeConfig(parsed);
     if (normalized) {
       return normalized;
@@ -84,25 +83,31 @@ export function loadConfig(create = false): CanvasAgentConfig {
 
   const config = createDefaultConfig();
   if (create) {
-    saveConfig(config);
+    saveConfig(config, resolvedConfigFile);
   }
   return config;
 }
 
-export function saveConfig(config: CanvasAgentConfig): void {
-  fs.mkdirSync(path.dirname(CONFIG_FILE), { recursive: true, mode: 0o700 });
+export function saveConfig(config: CanvasAgentConfig, configFile?: string): void {
+  const resolvedConfigFile = resolveConfigFile(configFile);
+  fs.mkdirSync(path.dirname(resolvedConfigFile), { recursive: true, mode: 0o700 });
   try {
-    fs.chmodSync(path.dirname(CONFIG_FILE), 0o700);
+    fs.chmodSync(path.dirname(resolvedConfigFile), 0o700);
   } catch {
     // Windows does not implement POSIX file modes; the directory remains user-local.
   }
-  fs.writeFileSync(CONFIG_FILE, `${JSON.stringify(config, null, 2)}\n`, {
+  fs.writeFileSync(resolvedConfigFile, `${JSON.stringify(config, null, 2)}\n`, {
     encoding: 'utf8',
     mode: 0o600,
   });
   try {
-    fs.chmodSync(CONFIG_FILE, 0o600);
+    fs.chmodSync(resolvedConfigFile, 0o600);
   } catch {
     // Windows does not implement POSIX file modes; the file remains user-local.
   }
+}
+
+function resolveConfigFile(configFile?: string): string {
+  const configuredPath = configFile?.trim() || process.env.LUMINA_CANVAS_AGENT_CONFIG?.trim();
+  return configuredPath ? path.resolve(configuredPath) : CONFIG_FILE;
 }

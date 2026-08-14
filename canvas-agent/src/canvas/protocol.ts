@@ -69,8 +69,8 @@ export const canvasAgentToolDescriptions: Record<CanvasAgentToolName, string> = 
   canvas_get_state: 'Read the live state of the project currently open in Lumina, including nodes, edges, selection, viewport, revision, and selected image previews.',
   canvas_get_selection: 'Read the currently selected Lumina canvas nodes and any explicitly selected compressed image previews.',
   canvas_get_capabilities: 'Read the node types, editable fields, and connection capabilities allowed for external Agents.',
-  canvas_propose_changes: 'Submit one bounded CanvasChangeSet for review in Lumina. This never mutates the canvas until the user approves the whole proposal.',
-  canvas_get_change_status: 'Poll the status of a previously submitted canvas change proposal.',
+  canvas_propose_changes: 'Submit one bounded CanvasChangeSet for direct validation and atomic application in Lumina.',
+  canvas_get_change_status: 'Poll the application status of a previously submitted canvas change set.',
 };
 
 export interface CanvasSnapshot {
@@ -90,7 +90,7 @@ export interface CanvasSnapshot {
   capabilities: unknown;
 }
 
-export type CanvasProposalStatus = 'pending' | 'applied' | 'rejected' | 'stale' | 'failed';
+export type CanvasProposalStatus = 'pending' | 'applied' | 'stale' | 'failed';
 
 export interface CanvasProposalRecord {
   proposalId: string;

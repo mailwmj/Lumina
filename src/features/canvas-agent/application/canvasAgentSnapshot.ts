@@ -25,7 +25,7 @@ const AGENT_OPERATIONS = [
 
 const AGENT_RESTRICTIONS = [
   'active_project_only',
-  'approval_required',
+  'direct_apply',
   'no_delete',
   'no_upload',
   'no_generation',

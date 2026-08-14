@@ -20,9 +20,9 @@ interface ToolHttpResponse {
 
 const MCP_INSTRUCTIONS = [
   'Lumina exposes only the project currently open in the desktop app.',
-  'Read canvas_get_state before proposing changes and reuse its projectId and revision.',
-  'canvas_propose_changes creates a pending proposal; it never applies changes automatically.',
-  'Poll canvas_get_change_status until the user approves, rejects, or invalidates the proposal.',
+  'Read canvas_get_state before changing the canvas and reuse its projectId and revision.',
+  'canvas_propose_changes validates and atomically applies one bounded change set without an in-app approval step.',
+  'Poll canvas_get_change_status until Lumina reports applied, stale, or failed.',
   'Deletion, uploads, result-node creation, and AI generation are intentionally unavailable.',
 ].join(' ');
 

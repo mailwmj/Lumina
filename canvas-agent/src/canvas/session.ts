@@ -169,7 +169,7 @@ export class CanvasSession {
       (proposal) => proposal.clientId === clientId && proposal.status === 'pending'
     );
     if (pendingProposal) {
-      throw new CanvasAgentError('PROPOSAL_PENDING', 'Another canvas change proposal is already awaiting review.', {
+      throw new CanvasAgentError('PROPOSAL_PENDING', 'Another canvas change set is still being applied.', {
         proposalId: pendingProposal.proposalId,
       });
     }
