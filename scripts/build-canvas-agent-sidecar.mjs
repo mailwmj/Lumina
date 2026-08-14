@@ -61,13 +61,20 @@ function buildUniversalMacBinary(destination) {
     throw new Error('The macOS Universal Canvas Agent binary must be assembled on macOS.');
   }
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lumina-canvas-agent-'));
-  const arm64Binary = path.join(binariesDir, 'lumina-canvas-agent-aarch64-apple-darwin');
-  const x64Binary = path.join(binariesDir, 'lumina-canvas-agent-x86_64-apple-darwin');
+  const arm64Binary = path.join(tempDir, 'lumina-canvas-agent-arm64');
+  const x64Binary = path.join(tempDir, 'lumina-canvas-agent-x64');
+  const arm64Sidecar = path.join(binariesDir, 'lumina-canvas-agent-aarch64-apple-darwin');
+  const x64Sidecar = path.join(binariesDir, 'lumina-canvas-agent-x86_64-apple-darwin');
   try {
     buildTargetBinary('aarch64-apple-darwin', arm64Binary);
     buildTargetBinary('x86_64-apple-darwin', x64Binary);
     fs.rmSync(destination, { force: true });
     run('lipo', ['-create', arm64Binary, x64Binary, '-output', destination]);
+    // Tauri resolves each target-specific path while assembling a Universal app.
+    fs.copyFileSync(destination, arm64Sidecar);
+    fs.copyFileSync(destination, x64Sidecar);
+    fs.chmodSync(arm64Sidecar, 0o755);
+    fs.chmodSync(x64Sidecar, 0o755);
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }

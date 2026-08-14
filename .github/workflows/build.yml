@@ -167,7 +167,7 @@ jobs:
             echo "Bundled Canvas Agent executable not found"
             exit 1
           fi
-          lipo -verify_arch arm64 x86_64 "$SIDECAR_PATH"
+          lipo "$SIDECAR_PATH" -verify_arch arm64 x86_64
           node scripts/smoke-canvas-agent-sidecar.mjs --executable "$SIDECAR_PATH"
 
       - name: Rename macOS DMG
