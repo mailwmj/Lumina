@@ -1,7 +1,8 @@
 use fast_image_resize as fir;
 use fast_image_resize::images::Image as FirImage;
 use image::metadata::Orientation;
-use image::{DynamicImage, ImageDecoder, ImageReader, Rgb, RgbImage};
+use image::{DynamicImage, GrayImage, ImageDecoder, ImageReader, Luma, Rgb, RgbImage};
+use imageproc::filter::gaussian_blur_f32;
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::BufReader;
@@ -15,6 +16,9 @@ const PREVIEW_LONGEST_EDGE: u32 = 2560;
 const THUMBNAIL_LONGEST_EDGE: u32 = 160;
 const PREVIEW_JPEG_QUALITY: u8 = 90;
 const THUMBNAIL_JPEG_QUALITY: u8 = 82;
+const OUTPUT_SHARPEN_SIGMA: f32 = 0.65;
+const OUTPUT_SHARPEN_AMOUNT: f32 = 0.35;
+const OUTPUT_SHARPEN_THRESHOLD: f32 = 3.0;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -477,6 +481,43 @@ fn flatten_to_white(image: &DynamicImage) -> RgbImage {
     output
 }
 
+fn rgb_luminance(pixel: &Rgb<u8>) -> u8 {
+    (0.2126 * pixel[0] as f32 + 0.7152 * pixel[1] as f32 + 0.0722 * pixel[2] as f32)
+        .round()
+        .clamp(0.0, 255.0) as u8
+}
+
+fn sharpen_luminance_usm(image: &RgbImage) -> RgbImage {
+    let luminance = GrayImage::from_fn(image.width(), image.height(), |x, y| {
+        Luma([rgb_luminance(image.get_pixel(x, y))])
+    });
+    let blurred = gaussian_blur_f32(&luminance, OUTPUT_SHARPEN_SIGMA);
+    let mut output = image.clone();
+
+    for (x, y, pixel) in output.enumerate_pixels_mut() {
+        let detail = luminance.get_pixel(x, y)[0] as f32 - blurred.get_pixel(x, y)[0] as f32;
+        if detail.abs() < OUTPUT_SHARPEN_THRESHOLD {
+            continue;
+        }
+
+        let adjustment = (OUTPUT_SHARPEN_AMOUNT * detail).round() as i16;
+        for channel in &mut pixel.0 {
+            *channel = (i16::from(*channel) + adjustment).clamp(0, 255) as u8;
+        }
+    }
+
+    output
+}
+
+fn should_sharpen_after_resize(
+    source_width: u32,
+    source_height: u32,
+    target_width: u32,
+    target_height: u32,
+) -> bool {
+    source_width > target_width || source_height > target_height
+}
+
 fn resolve_pixel_crop(
     image_width: u32,
     image_height: u32,
@@ -546,7 +587,17 @@ fn export_batch_crop_image_sync(
         payload.target_width,
         payload.target_height,
     )?);
-    let flattened = DynamicImage::ImageRgb8(flatten_to_white(&resized));
+    let flattened = flatten_to_white(&resized);
+    let output_image = if should_sharpen_after_resize(
+        crop_width,
+        crop_height,
+        payload.target_width,
+        payload.target_height,
+    ) {
+        sharpen_luminance_usm(&flattened)
+    } else {
+        flattened
+    };
     let output_path = available_output_path(
         &output_directory,
         &payload.file_name,
@@ -555,7 +606,7 @@ fn export_batch_crop_image_sync(
     );
     let output = File::create(&output_path).map_err(|_| "OUTPUT_WRITE_FAILED".to_string())?;
     let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(output, 100);
-    flattened
+    DynamicImage::ImageRgb8(output_image)
         .write_with_encoder(encoder)
         .map_err(|_| "OUTPUT_WRITE_FAILED".to_string())?;
 
@@ -684,6 +735,48 @@ mod tests {
     }
 
     #[test]
+    fn downscaled_export_applies_luminance_sharpening() {
+        let root = std::env::temp_dir().join(format!("lumina-batch-crop-test-{}", Uuid::new_v4()));
+        let source_path = root.join("source.png");
+        let output = root.join("output");
+        std::fs::create_dir_all(&output).unwrap();
+        let source = RgbImage::from_fn(120, 160, |x, _| {
+            if x < 60 {
+                Rgb([70, 90, 110])
+            } else {
+                Rgb([150, 170, 190])
+            }
+        });
+        DynamicImage::ImageRgb8(source.clone())
+            .save(&source_path)
+            .unwrap();
+
+        let exported = export_batch_crop_image_sync(ExportBatchCropImagePayload {
+            source_path: source_path.to_string_lossy().to_string(),
+            file_name: "source.png".to_string(),
+            output_directory: output.to_string_lossy().to_string(),
+            target_width: 60,
+            target_height: 80,
+            rotation_degrees: 0,
+            crop: centered_crop(120, 160, 60, 80),
+        })
+        .unwrap();
+        let exported = image::open(exported.output_path).unwrap().to_rgb8();
+        let resized = DynamicImage::ImageRgba8(
+            resize_rgba_lanczos3(&DynamicImage::ImageRgb8(source), 60, 80).unwrap(),
+        );
+        let unsharpened = flatten_to_white(&resized);
+
+        let exported_contrast = i16::from(rgb_luminance(exported.get_pixel(30, 40)))
+            - i16::from(rgb_luminance(exported.get_pixel(29, 40)));
+        let unsharpened_contrast = i16::from(rgb_luminance(unsharpened.get_pixel(30, 40)))
+            - i16::from(rgb_luminance(unsharpened.get_pixel(29, 40)));
+
+        assert!(exported_contrast > unsharpened_contrast);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn pixel_crop_uses_an_exact_reduced_target_ratio() {
         let crop = NormalizedCropRect {
             x: 0.013,
@@ -716,6 +809,52 @@ mod tests {
             flatten_to_white(&transparent).get_pixel(0, 0),
             &Rgb([255, 255, 255])
         );
+    }
+
+    #[test]
+    fn luminance_usm_preserves_flat_color() {
+        let source = RgbImage::from_pixel(9, 9, Rgb([80, 120, 160]));
+
+        assert_eq!(sharpen_luminance_usm(&source), source);
+    }
+
+    #[test]
+    fn luminance_usm_increases_edge_contrast_without_color_fringing() {
+        let source = RgbImage::from_fn(9, 5, |x, _| {
+            if x < 4 {
+                Rgb([70, 90, 110])
+            } else {
+                Rgb([150, 170, 190])
+            }
+        });
+
+        let sharpened = sharpen_luminance_usm(&source);
+        let dark_edge = sharpened.get_pixel(3, 2);
+        let light_edge = sharpened.get_pixel(4, 2);
+
+        assert!(dark_edge[0] < source.get_pixel(3, 2)[0]);
+        assert!(light_edge[0] > source.get_pixel(4, 2)[0]);
+        assert_eq!(dark_edge[1] - dark_edge[0], 20);
+        assert_eq!(dark_edge[2] - dark_edge[1], 20);
+        assert_eq!(light_edge[1] - light_edge[0], 20);
+        assert_eq!(light_edge[2] - light_edge[1], 20);
+    }
+
+    #[test]
+    fn luminance_usm_threshold_suppresses_low_contrast_detail() {
+        let source = RgbImage::from_fn(9, 5, |x, _| {
+            let value = if x < 4 { 100 } else { 104 };
+            Rgb([value, value, value])
+        });
+
+        assert_eq!(sharpen_luminance_usm(&source), source);
+    }
+
+    #[test]
+    fn output_sharpening_only_runs_for_downscaling() {
+        assert!(should_sharpen_after_resize(4660, 6213, 1440, 1920));
+        assert!(!should_sharpen_after_resize(1440, 1920, 1440, 1920));
+        assert!(!should_sharpen_after_resize(720, 960, 1440, 1920));
     }
 
     #[test]
