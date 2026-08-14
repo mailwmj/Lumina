@@ -93,6 +93,8 @@ import { NodeContextMenu } from './ui/NodeContextMenu';
 import { resolveCanvasConnectionRadius } from './application/connectionSnap';
 import { useCanvasImagePreviewBackfill } from './hooks/useCanvasImagePreviewBackfill';
 import { logger } from '@/lib/logger';
+import { useExternalAgentBridge } from '@/features/canvas-agent/hooks/useExternalAgentBridge';
+import { CanvasChangeApprovalDialog } from '@/features/canvas-agent/ui/CanvasChangeApprovalDialog';
 
 const DEFAULT_VIEWPORT: Viewport = { x: 0, y: 0, zoom: 1 };
 const DEFAULT_EDGE_OPTIONS = { type: 'disconnectableEdge' };
@@ -410,6 +412,7 @@ export function Canvas() {
 
   const getCurrentProject = useProjectStore((state) => state.getCurrentProject);
   const currentProjectId = useProjectStore((state) => state.currentProjectId);
+  const currentProjectName = useProjectStore((state) => state.currentProject?.name ?? '');
   const saveCurrentProject = useProjectStore((state) => state.saveCurrentProject);
   const saveCurrentProjectViewport = useProjectStore((state) => state.saveCurrentProjectViewport);
   const cancelPendingViewportPersist = useProjectStore(
@@ -424,6 +427,14 @@ export function Canvas() {
   const setCanvasImageFocusedNodeId = useCanvasImageQualityStore(
     (state) => state.setFocusedNodeId
   );
+  const externalAgentBridge = useExternalAgentBridge({
+    projectId: currentProjectId ?? '',
+    projectName: currentProjectName,
+    nodes,
+    edges,
+    selectedNodeIds,
+    viewport: currentViewport,
+  });
 
   useCanvasImagePreviewBackfill({
     projectId: currentProjectId,
@@ -2730,6 +2741,12 @@ export function Canvas() {
         currentIndex={imageViewer.currentIndex}
         onClose={closeImageViewer}
         onNavigate={navigateImageViewer}
+      />
+
+      <CanvasChangeApprovalDialog
+        proposal={externalAgentBridge.pendingProposal}
+        onApprove={externalAgentBridge.approveProposal}
+        onReject={externalAgentBridge.rejectProposal}
       />
     </div>
   );

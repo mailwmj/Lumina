@@ -27,6 +27,60 @@ import {
 } from '@/features/canvas/models/imageProviderProtocols';
 
 export type CanvasEdgeRoutingMode = 'spline' | 'orthogonal' | 'smartOrthogonal';
+export const DEFAULT_EXTERNAL_AGENT_URL = 'http://127.0.0.1:17372';
+
+export interface ExternalAgentConnectionConfig {
+  enabled: boolean;
+  url: string;
+  token: string;
+}
+
+export function createDefaultExternalAgentConnectionConfig(): ExternalAgentConnectionConfig {
+  return {
+    enabled: false,
+    url: DEFAULT_EXTERNAL_AGENT_URL,
+    token: '',
+  };
+}
+
+export function normalizeExternalAgentConnectionConfig(
+  input: unknown
+): ExternalAgentConnectionConfig {
+  const defaults = createDefaultExternalAgentConnectionConfig();
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    return defaults;
+  }
+  const record = input as Record<string, unknown>;
+  const url = normalizeExternalAgentUrl(record.url);
+  return {
+    enabled: record.enabled === true && url !== null,
+    url: url ?? defaults.url,
+    token: typeof record.token === 'string' ? record.token.trim() : '',
+  };
+}
+
+export function normalizeExternalAgentUrl(input: unknown): string | null {
+  if (typeof input !== 'string') {
+    return null;
+  }
+  try {
+    const url = new URL(input.trim());
+    if (
+      url.protocol !== 'http:'
+      || url.hostname !== '127.0.0.1'
+      || url.username
+      || url.password
+      || url.pathname !== '/'
+      || url.search
+      || url.hash
+    ) {
+      return null;
+    }
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
 export type BuiltInImageProviderId = 'ai-media' | 'chaomo';
 export const CUSTOM_IMAGE_PROVIDER_ID_PREFIX = 'custom-openai:';
 export type CustomImageProviderId = `${typeof CUSTOM_IMAGE_PROVIDER_ID_PREFIX}${string}`;
@@ -423,6 +477,7 @@ interface SettingsState {
   snapGridSize: number;
   autoCheckAppUpdateOnLaunch: boolean;
   enableUpdateDialog: boolean;
+  externalAgentConnection: ExternalAgentConnectionConfig;
   textApis: TextApiConfig[];
   activeTextApiId: string | null;
   imagePolishConfig: PromptPolishConfig;
@@ -454,6 +509,7 @@ interface SettingsState {
   setSnapGridSize: (size: number) => void;
   setAutoCheckAppUpdateOnLaunch: (enabled: boolean) => void;
   setEnableUpdateDialog: (enabled: boolean) => void;
+  setExternalAgentConnection: (config: ExternalAgentConnectionConfig) => void;
   setTextApis: (apis: TextApiConfig[]) => void;
   setActiveTextApiId: (id: string | null) => void;
   setImagePolishConfig: (config: PromptPolishConfig) => void;
@@ -814,6 +870,7 @@ export function migrateSettingsState(persistedState: unknown, persistedVersion: 
     lastImageGenerationOptions?: LastImageGenerationOptions;
     lastTextGenerationModelSelection?: TextGenerationModelSelection | null;
     accentColor?: unknown;
+    externalAgentConnection?: ExternalAgentConnectionConfig;
   };
   const {
     apiKey: _legacyApiKey,
@@ -853,6 +910,9 @@ export function migrateSettingsState(persistedState: unknown, persistedVersion: 
     customImageApis,
     canvasEdgeRoutingMode: normalizeCanvasEdgeRoutingMode(state.canvasEdgeRoutingMode),
     accentColor: migrateAccentColor(state.accentColor),
+    externalAgentConnection: normalizeExternalAgentConnectionConfig(
+      state.externalAgentConnection
+    ),
     ...(persistedVersion < 22 && (state.snapGridSize === 20 || state.snapGridSize === 36)
       ? { snapGridSize: 72 }
       : {}),
@@ -901,6 +961,7 @@ export const useSettingsStore = create<SettingsState>()(
       snapGridSize: 72,
       autoCheckAppUpdateOnLaunch: true,
       enableUpdateDialog: true,
+      externalAgentConnection: createDefaultExternalAgentConnectionConfig(),
       setOpenAiImageApi: (config) =>
         set((state) => {
           const openAiImageApi = normalizeOpenAiImageApiConfig(config);
@@ -958,6 +1019,9 @@ export const useSettingsStore = create<SettingsState>()(
       setSnapGridSize: (size: number) => set({ snapGridSize: Math.max(5, Math.min(100, size)) }),
       setAutoCheckAppUpdateOnLaunch: (enabled: boolean) => set({ autoCheckAppUpdateOnLaunch: enabled }),
       setEnableUpdateDialog: (enabled) => set({ enableUpdateDialog: enabled }),
+      setExternalAgentConnection: (config) => set({
+        externalAgentConnection: normalizeExternalAgentConnectionConfig(config),
+      }),
       textApis: PRESET_TEXT_APIS,
       activeTextApiId: null,
       setTextApis: (apis) => set({ textApis: normalizeTextApiConfigs(apis) }),
@@ -995,7 +1059,7 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: 'settings-storage',
-      version: 28,
+      version: 29,
       onRehydrateStorage: () => {
         return (_state, error) => {
           if (error) {

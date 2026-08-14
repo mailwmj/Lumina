@@ -498,6 +498,15 @@
     "aboutDesc": "Application information",
     "general": "General",
     "generalDesc": "General settings",
+    "externalAgent": "External Agent",
+    "externalAgentDesc": "Connect to the Lumina Canvas Agent service running on this computer",
+    "externalAgentEnabled": "Allow external Agents to access the active canvas",
+    "externalAgentEnabledDesc": "Live canvas state is published only while a Lumina project is open. Every write still requires one batch approval in Lumina.",
+    "externalAgentUrl": "Local service URL",
+    "externalAgentUrlDesc": "Only HTTP endpoints on 127.0.0.1 are supported.",
+    "externalAgentToken": "Connection token",
+    "externalAgentTokenDesc": "Use the token generated in the Canvas Agent configuration.",
+    "externalAgentTokenPlaceholder": "Enter connection token",
     "apiKey": "API Key",
     "model": "Model",
     "enterApiKey": "Enter API Key",
@@ -653,6 +662,16 @@
     "videoApiEnabled": "Enabled",
     "videoApiActive": "Currently Active",
     "noVideoApisConfigured": "No video APIs configured"
+  },
+  "externalAgentApproval": {
+    "title": "External Agent canvas changes",
+    "approve": "Approve and apply",
+    "reject": "Reject",
+    "undoHint": "After approval, one undo restores the entire batch.",
+    "createNode": "Create {{type}} (temporary ID: {{id}})",
+    "updateNode": "Update node {{id}}: {{fields}}",
+    "moveNode": "Move node {{id}} to ({{x}}, {{y}})",
+    "connectNodes": "Connect {{source}} → {{target}}"
   },
   "update": {
     "dialogTitle": "Update Available",

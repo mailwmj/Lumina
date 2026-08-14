@@ -50,6 +50,13 @@ import {
   resolveFittedImageNodeSize,
 } from '@/features/canvas/application/imageNodeSizing';
 import { pruneImageReferencePromptTokensForEdges } from '@/features/canvas/application/imageReferencePrompt';
+import {
+  applyCanvasChangeSet,
+} from '@/features/canvas-agent/application/canvasChangeSet';
+import type {
+  CanvasChangeApplyResult,
+  CanvasChangeSet,
+} from '@/features/canvas-agent/domain/types';
 
 export type {
   ActiveToolDialog,
@@ -167,6 +174,7 @@ interface CanvasState {
   onEdgesChange: (changes: EdgeChange<CanvasEdge>[]) => void;
   onConnect: (connection: Connection) => void;
   onConnectBatch: (connections: Connection[]) => number;
+  applyAgentChangeSet: (changeSet: CanvasChangeSet) => CanvasChangeApplyResult;
 
   setCanvasData: (nodes: CanvasNode[], edges: CanvasEdge[], history?: CanvasHistoryState) => void;
   addNode: (
@@ -992,6 +1000,32 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     });
 
     return addedCount;
+  },
+
+  applyAgentChangeSet: (changeSet) => {
+    let result: CanvasChangeApplyResult | null = null;
+    set((state) => {
+      const applied = applyCanvasChangeSet(
+        { nodes: state.nodes, edges: state.edges },
+        changeSet
+      );
+      result = applied.result;
+      return {
+        nodes: applied.nodes,
+        edges: applied.edges,
+        selectedNodeId: resolveSelectedNodeId(state.selectedNodeId, applied.nodes),
+        activeToolDialog: resolveActiveToolDialog(state.activeToolDialog, applied.nodes),
+        history: {
+          past: pushSnapshot(state.history.past, createSnapshot(state.nodes, state.edges)),
+          future: [],
+        },
+        dragHistorySnapshot: null,
+      };
+    });
+    if (!result) {
+      throw new Error('Canvas change set did not produce a result.');
+    }
+    return result;
   },
 
   setCanvasData: (nodes, edges, history) => {

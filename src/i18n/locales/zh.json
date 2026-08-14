@@ -498,6 +498,15 @@
     "aboutDesc": "应用信息",
     "general": "通用",
     "generalDesc": "通用设置",
+    "externalAgent": "外部 Agent",
+    "externalAgentDesc": "连接同机运行的 Lumina Canvas Agent 服务",
+    "externalAgentEnabled": "允许外部 Agent 访问当前画布",
+    "externalAgentEnabledDesc": "仅在 Lumina 打开项目时发布实时画布状态；所有写入仍需在 Lumina 内整批确认。",
+    "externalAgentUrl": "本机服务地址",
+    "externalAgentUrlDesc": "仅支持 127.0.0.1 上的 HTTP 地址。",
+    "externalAgentToken": "连接 Token",
+    "externalAgentTokenDesc": "使用 Canvas Agent 配置中生成的 Token。",
+    "externalAgentTokenPlaceholder": "输入连接 Token",
     "apiKey": "API Key",
     "model": "模型",
     "enterApiKey": "输入 API Key",
@@ -653,6 +662,16 @@
     "videoApiEnabled": "启用",
     "videoApiActive": "当前启用",
     "noVideoApisConfigured": "暂无配置的视频API"
+  },
+  "externalAgentApproval": {
+    "title": "外部 Agent 画布变更",
+    "approve": "批准并应用",
+    "reject": "拒绝",
+    "undoHint": "批准后，这批变更可通过一次撤销完整恢复。",
+    "createNode": "创建 {{type}}（临时 ID：{{id}}）",
+    "updateNode": "更新节点 {{id}}：{{fields}}",
+    "moveNode": "移动节点 {{id}} 至 ({{x}}, {{y}})",
+    "connectNodes": "连接 {{source}} → {{target}}"
   },
   "update": {
     "dialogTitle": "发现新版本",

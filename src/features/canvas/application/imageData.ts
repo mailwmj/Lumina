@@ -426,14 +426,15 @@ function resolvePreviewMimeType(imageUrl: string): string {
 function renderPreviewDataUrl(
   image: HTMLImageElement,
   sourceDataUrl: string,
-  maxDimension: number
+  maxDimension: number,
+  forceReencode = false
 ): string {
   const longestSide = Math.max(image.naturalWidth, image.naturalHeight);
-  if (longestSide <= maxDimension) {
+  if (!forceReencode && longestSide <= maxDimension) {
     return sourceDataUrl;
   }
 
-  const scale = maxDimension / longestSide;
+  const scale = Math.min(1, maxDimension / longestSide);
   const targetWidth = Math.max(1, Math.round(image.naturalWidth * scale));
   const targetHeight = Math.max(1, Math.round(image.naturalHeight * scale));
   const canvas = document.createElement('canvas');
@@ -458,12 +459,13 @@ function renderPreviewDataUrl(
 
 export async function createPreviewDataUrl(
   imageUrl: string,
-  maxDimension = DEFAULT_PREVIEW_MAX_DIMENSION
+  maxDimension = DEFAULT_PREVIEW_MAX_DIMENSION,
+  forceReencode = false
 ): Promise<string> {
   const normalizedDataUrl = await imageUrlToDataUrl(imageUrl);
   const image = await loadImageElement(normalizedDataUrl);
   const safeMaxDimension = Math.max(64, Math.floor(maxDimension));
-  return renderPreviewDataUrl(image, normalizedDataUrl, safeMaxDimension);
+  return renderPreviewDataUrl(image, normalizedDataUrl, safeMaxDimension, forceReencode);
 }
 
 export async function createNodeImagePreview(

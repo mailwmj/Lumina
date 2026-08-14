@@ -34,12 +34,20 @@ export interface CanvasNodeCapabilities {
 export interface CanvasNodeConnectivity {
   sourceHandle: boolean;
   targetHandle: boolean;
+  sourceHandleIds?: readonly string[];
+  targetHandleIds?: readonly string[];
   sourceDataTypes: CanvasDataType[];
   targetDataTypes: CanvasDataType[];
   connectMenu: {
     fromSource: boolean;
     fromTarget: boolean;
   };
+}
+
+export interface CanvasNodeAgentAccess {
+  creatable: boolean;
+  readableFields: readonly string[];
+  writableFields: readonly string[];
 }
 
 export interface CanvasNodeDefinition<TData extends CanvasNodeData = CanvasNodeData> {
@@ -49,6 +57,7 @@ export interface CanvasNodeDefinition<TData extends CanvasNodeData = CanvasNodeD
   visibleInMenu: boolean;
   capabilities: CanvasNodeCapabilities;
   connectivity: CanvasNodeConnectivity;
+  agent: CanvasNodeAgentAccess;
   createDefaultData: () => TData;
 }
 
@@ -60,6 +69,11 @@ const uploadNodeDefinition: CanvasNodeDefinition<UploadImageNodeData> = {
   capabilities: {
     toolbar: true,
     promptInput: false,
+  },
+  agent: {
+    creatable: false,
+    readableFields: ['displayName', 'aspectRatio', 'sourceFileName'],
+    writableFields: ['displayName'],
   },
   connectivity: {
     sourceHandle: true,
@@ -89,6 +103,28 @@ const imageEditNodeDefinition: CanvasNodeDefinition<ImageEditNodeData> = {
   capabilities: {
     toolbar: false,
     promptInput: false,
+  },
+  agent: {
+    creatable: true,
+    readableFields: [
+      'displayName',
+      'prompt',
+      'model',
+      'size',
+      'outputCount',
+      'requestAspectRatio',
+      'aspectRatio',
+      'extraParams',
+    ],
+    writableFields: [
+      'displayName',
+      'prompt',
+      'model',
+      'size',
+      'outputCount',
+      'requestAspectRatio',
+      'extraParams',
+    ],
   },
   connectivity: {
     sourceHandle: true,
@@ -127,6 +163,11 @@ const exportImageNodeDefinition: CanvasNodeDefinition<ExportImageNodeData> = {
     toolbar: true,
     promptInput: false,
   },
+  agent: {
+    creatable: false,
+    readableFields: ['displayName', 'aspectRatio', 'resultKind'],
+    writableFields: ['displayName'],
+  },
   connectivity: {
     sourceHandle: true,
     targetHandle: true,
@@ -156,6 +197,11 @@ const groupNodeDefinition: CanvasNodeDefinition<GroupNodeData> = {
     toolbar: true,
     promptInput: false,
   },
+  agent: {
+    creatable: false,
+    readableFields: ['displayName', 'label'],
+    writableFields: [],
+  },
   connectivity: {
     sourceHandle: false,
     targetHandle: false,
@@ -181,6 +227,11 @@ const textAnnotationNodeDefinition: CanvasNodeDefinition<TextAnnotationNodeData>
     toolbar: false,
     promptInput: false,
   },
+  agent: {
+    creatable: true,
+    readableFields: ['displayName', 'content'],
+    writableFields: ['displayName', 'content'],
+  },
   connectivity: {
     sourceHandle: false,
     targetHandle: false,
@@ -205,6 +256,24 @@ const textGenerationNodeDefinition: CanvasNodeDefinition<TextGenerationNodeData>
   capabilities: {
     toolbar: false,
     promptInput: false,
+  },
+  agent: {
+    creatable: true,
+    readableFields: [
+      'displayName',
+      'inputText',
+      'generatedText',
+      'textApiId',
+      'textModelId',
+      'textReasoningEffort',
+    ],
+    writableFields: [
+      'displayName',
+      'inputText',
+      'textApiId',
+      'textModelId',
+      'textReasoningEffort',
+    ],
   },
   connectivity: {
     sourceHandle: true,
@@ -235,6 +304,17 @@ const storyboardSplitDefinition: CanvasNodeDefinition<StoryboardSplitNodeData> =
   capabilities: {
     toolbar: true,
     promptInput: false,
+  },
+  agent: {
+    creatable: false,
+    readableFields: [
+      'displayName',
+      'aspectRatio',
+      'frameAspectRatio',
+      'gridRows',
+      'gridCols',
+    ],
+    writableFields: ['displayName'],
   },
   connectivity: {
     sourceHandle: true,
@@ -277,6 +357,34 @@ const storyboardGenNodeDefinition: CanvasNodeDefinition<StoryboardGenNodeData> =
     toolbar: true,
     promptInput: false,
   },
+  agent: {
+    creatable: true,
+    readableFields: [
+      'displayName',
+      'gridRows',
+      'gridCols',
+      'frames',
+      'ratioControlMode',
+      'model',
+      'size',
+      'requestAspectRatio',
+      'globalPrompt',
+      'aspectRatio',
+      'extraParams',
+    ],
+    writableFields: [
+      'displayName',
+      'gridRows',
+      'gridCols',
+      'frames',
+      'ratioControlMode',
+      'model',
+      'size',
+      'requestAspectRatio',
+      'globalPrompt',
+      'extraParams',
+    ],
+  },
   connectivity: {
     sourceHandle: true,
     targetHandle: true,
@@ -316,9 +424,41 @@ const videoFrameNodeDefinition: CanvasNodeDefinition<VideoGenNodeData> = {
     toolbar: false,
     promptInput: false,
   },
+  agent: {
+    creatable: true,
+    readableFields: [
+      'displayName',
+      'aspectRatio',
+      'prompt',
+      'model',
+      'resolution',
+      'duration',
+      'hasAudio',
+      'returnLastFrame',
+      'seed',
+      'camerafixed',
+      'watermark',
+      'extraParams',
+    ],
+    writableFields: [
+      'displayName',
+      'aspectRatio',
+      'prompt',
+      'model',
+      'resolution',
+      'duration',
+      'hasAudio',
+      'returnLastFrame',
+      'seed',
+      'camerafixed',
+      'watermark',
+      'extraParams',
+    ],
+  },
   connectivity: {
     sourceHandle: true,
     targetHandle: true,
+    targetHandleIds: ['target-first', 'target-last'],
     sourceDataTypes: ['video'],
     targetDataTypes: ['image'],
     connectMenu: {
@@ -356,6 +496,37 @@ const videoSingleNodeDefinition: CanvasNodeDefinition<VideoGenNodeData> = {
   capabilities: {
     toolbar: false,
     promptInput: false,
+  },
+  agent: {
+    creatable: true,
+    readableFields: [
+      'displayName',
+      'aspectRatio',
+      'prompt',
+      'model',
+      'resolution',
+      'duration',
+      'hasAudio',
+      'returnLastFrame',
+      'seed',
+      'camerafixed',
+      'watermark',
+      'extraParams',
+    ],
+    writableFields: [
+      'displayName',
+      'aspectRatio',
+      'prompt',
+      'model',
+      'resolution',
+      'duration',
+      'hasAudio',
+      'returnLastFrame',
+      'seed',
+      'camerafixed',
+      'watermark',
+      'extraParams',
+    ],
   },
   connectivity: {
     sourceHandle: true,
@@ -398,6 +569,11 @@ const audioUploadNodeDefinition: CanvasNodeDefinition<AudioUploadRefNodeData> = 
     toolbar: false,
     promptInput: false,
   },
+  agent: {
+    creatable: false,
+    readableFields: ['displayName', 'sourceFileName'],
+    writableFields: ['displayName'],
+  },
   connectivity: {
     sourceHandle: true,
     targetHandle: false,
@@ -423,6 +599,11 @@ const videoUploadNodeDefinition: CanvasNodeDefinition<VideoUploadRefNodeData> = 
   capabilities: {
     toolbar: false,
     promptInput: false,
+  },
+  agent: {
+    creatable: false,
+    readableFields: ['displayName', 'sourceFileName'],
+    writableFields: ['displayName'],
   },
   connectivity: {
     sourceHandle: true,
@@ -463,6 +644,20 @@ const exportVideoNodeDefinition: CanvasNodeDefinition<ExportVideoNodeData> = {
     toolbar: true,
     promptInput: false,
   },
+  agent: {
+    creatable: false,
+    readableFields: [
+      'displayName',
+      'aspectRatio',
+      'model',
+      'resolution',
+      'duration',
+      'hasAudio',
+      'prompt',
+      'resultKind',
+    ],
+    writableFields: ['displayName'],
+  },
   connectivity: {
     sourceHandle: true,
     targetHandle: true,
@@ -501,9 +696,37 @@ const sd2VideoGenNodeDefinition: CanvasNodeDefinition<SD2VideoGenNodeData> = {
     toolbar: false,
     promptInput: true,
   },
+  agent: {
+    creatable: true,
+    readableFields: [
+      'displayName',
+      'prompt',
+      'model',
+      'aspectRatio',
+      'resolution',
+      'duration',
+      'hasAudio',
+      'watermark',
+      'returnLastFrame',
+      'generationMode',
+    ],
+    writableFields: [
+      'displayName',
+      'prompt',
+      'model',
+      'aspectRatio',
+      'resolution',
+      'duration',
+      'hasAudio',
+      'watermark',
+      'returnLastFrame',
+      'generationMode',
+    ],
+  },
   connectivity: {
     sourceHandle: true,
     targetHandle: true,
+    targetHandleIds: ['target-images', 'target-audios', 'target-videos'],
     sourceDataTypes: ['video'],
     targetDataTypes: ['image', 'audio', 'video'],
     connectMenu: {
@@ -553,6 +776,16 @@ export const canvasNodeDefinitions: Record<CanvasNodeType, CanvasNodeDefinition>
 
 export function getNodeDefinition(type: CanvasNodeType): CanvasNodeDefinition {
   return canvasNodeDefinitions[type];
+}
+
+export function getNodeAgentAccess(type: CanvasNodeType): CanvasNodeAgentAccess {
+  return canvasNodeDefinitions[type].agent;
+}
+
+export function getAgentCreatableNodeTypes(): CanvasNodeType[] {
+  return Object.values(canvasNodeDefinitions)
+    .filter((definition) => definition.agent.creatable)
+    .map((definition) => definition.type);
 }
 
 export function getMenuNodeDefinitions(): CanvasNodeDefinition[] {

@@ -59,6 +59,12 @@ Tauri 联调（推荐）：
 npm run tauri dev
 ```
 
+### 外部 Agent MCP（开发态）
+
+Lumina 包含一个本机 Canvas Agent companion，通过应用内整批审批向 MCP 暴露当前打开的画布。
+接入步骤、工具权限和验证方式见
+[外部 Agent MCP 文档](./docs/agents/external-agent-mcp.md)。
+
 ## 常用命令
 
 ```bash
