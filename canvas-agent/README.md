@@ -42,18 +42,27 @@ Remove the development registration with:
 codex mcp remove lumina
 ```
 
-## P0 tools
+## MCP tools
 
 - `canvas_get_state`
 - `canvas_get_selection`
 - `canvas_get_capabilities`
 - `canvas_propose_changes`
 - `canvas_get_change_status`
+- `canvas_import_images`
+- `canvas_run_nodes`
+- `canvas_get_node_images`
+- `canvas_get_action_status`
 
 `canvas_propose_changes` sends a bounded `CanvasChangeSet` to the live Lumina canvas. Lumina validates
-and applies it directly as one atomic history step, so one undo restores the full batch. P0 does not
-expose deletion, uploads, AI generation, result-node creation, closed projects, SQLite state, local
-media paths, or background canvas access.
+and applies it directly as one atomic history step, so one undo restores the full batch. The surface
+does not expose deletion, arbitrary result-node creation, closed projects, SQLite state, local media
+paths, or background canvas access.
+
+Media import, existing image-node execution, and explicit result-image reads use action tools. Actions
+complete inline when Lumina responds within eight seconds; only a returned `pending` action requires
+`canvas_get_action_status`. Imported references and positionless generation nodes use readable column
+layout, while generation itself reuses the same application service as Lumina's Generate button.
 
 The bridge binds only to `127.0.0.1`, requires a bearer token, limits request size, rejects unlisted
 browser origins, and expires live canvas state when the WebView stops publishing heartbeats.

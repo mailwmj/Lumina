@@ -23,13 +23,18 @@ const AGENT_OPERATIONS = [
   'connect_nodes',
 ] as const;
 
+const AGENT_ACTIONS = [
+  'import_images',
+  'run_nodes',
+  'get_node_images',
+] as const;
+
 const AGENT_RESTRICTIONS = [
   'active_project_only',
   'direct_apply',
   'no_delete',
-  'no_upload',
-  'no_generation',
-  'no_result_node_creation',
+  'no_arbitrary_result_node_creation',
+  'explicit_image_reads',
 ] as const;
 
 const nodeDataFingerprintCache = new WeakMap<
@@ -40,6 +45,7 @@ const nodeDataFingerprintCache = new WeakMap<
 export function buildCanvasAgentCapabilities(): CanvasAgentCapabilities {
   return {
     operations: AGENT_OPERATIONS,
+    actions: AGENT_ACTIONS,
     restrictions: AGENT_RESTRICTIONS,
     nodeTypes: Object.values(canvasNodeDefinitions).map((definition) => ({
       nodeType: definition.type,

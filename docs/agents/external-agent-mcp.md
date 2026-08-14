@@ -37,11 +37,28 @@ live Zustand / React Flow canvas
 
 ## Tool workflow
 
-1. Call `canvas_get_state` or `canvas_get_selection`.
-2. Call `canvas_get_capabilities` before choosing node types, fields, or handles.
-3. Submit `canvas_propose_changes` with the returned `projectId` and `revision`.
-4. Poll `canvas_get_change_status` with the returned `proposalId` until it is `applied`, `stale`, or
-   `failed`.
+The lightweight image-production flow uses only existing Lumina nodes:
+
+1. Call `canvas_get_state`, then use its `projectId` and `revision` for the next write.
+2. Import all user-provided references in one `canvas_import_images` call. The result maps each
+   caller-owned `clientId` to an existing `uploadNode` ID.
+3. Read the new canvas revision and submit one `canvas_propose_changes` batch. Create one existing
+   `imageNode` per shot, connect its references, and write its complete prompt.
+4. Keep reference edges in the same order as the prompt labels: the first connected image is
+   `图片 1`, the second is `图片 2`, and so on.
+5. Omit `create_node.position` to place new nodes in a stable column to the right of current content.
+   Reference uploads, generation nodes, and normal result nodes therefore form a readable
+   left-to-right workflow.
+6. Wait for the user to inspect the visible nodes and authorize generation. Then call
+   `canvas_run_nodes` with only the approved `imageNode` IDs.
+7. Read the returned result-node IDs from the submission result. Use `canvas_get_state` for status
+   and `canvas_get_node_images` for explicit, vision-ready result previews.
+8. To revise one shot, update only its source `imageNode` prompt or connections with a new
+   `canvas_propose_changes` call, then run only that node again.
+
+`canvas_propose_changes` returns a proposal ID; poll `canvas_get_change_status` until terminal.
+Import, run, and image-read actions wait up to eight seconds and return their final result directly
+when possible. Call `canvas_get_action_status` only when the original action returned `pending`.
 
 Despite the compatibility-preserving tool and response names, there is no approval queue. Lumina
 revalidates the active project and revision, applies the complete change set immediately, and records
@@ -50,7 +67,7 @@ the request stale instead of partially applying it.
 
 ## CanvasChangeSet
 
-P0 accepts only these operations:
+The change-set surface accepts only these operations:
 
 - `create_node`: create a registry-approved manually configurable node using a temporary `clientId`.
 - `update_node`: patch fields explicitly listed as writable in `nodeRegistry`.
@@ -58,7 +75,22 @@ P0 accepts only these operations:
 - `connect_nodes`: add a connection accepted by Lumina's typed connection validator.
 
 Temporary `clientId` values can be referenced by later operations in the same change set. The apply
-result returns their final Lumina node IDs.
+result returns their final Lumina node IDs. Upload media is intentionally handled by
+`canvas_import_images`, not by writable media fields on `create_node` or `update_node`.
+
+## Action tools
+
+- `canvas_import_images`: prepare up to 12 absolute local paths, file URLs, HTTP(S) URLs, or raster
+  image data URLs in parallel, then create one batch of existing upload nodes.
+- `canvas_run_nodes`: submit up to 12 existing image-generation nodes in parallel through the same
+  application service used by each node's Generate button.
+- `canvas_get_node_images`: return status metadata and compressed WebP previews for up to 12
+  explicitly named image nodes.
+- `canvas_get_action_status`: poll only a previously returned pending action.
+
+Running nodes creates the same result nodes and provider jobs as manual generation. The MCP bridge
+does not create result nodes directly and does not introduce task, photoshoot, or workflow-specific
+node types.
 
 ## Security and privacy
 
@@ -66,10 +98,13 @@ result returns their final Lumina node IDs.
 - The server binds only to numeric loopback address `127.0.0.1`.
 - Every bridge request except `/health` requires a high-entropy owner-local bearer token.
 - API credentials, local paths, original image payloads, and SQLite snapshots are never returned.
-- Only explicitly selected image nodes may include compressed 320px data-URL previews.
-- One client can have only one in-flight change set.
+- Selection reads may include compressed 320px previews; larger result previews require explicit
+  node IDs through `canvas_get_node_images`.
+- Imported media uses Lumina's existing project image pipeline and is copied into the active project.
+- One client can have only one in-flight proposal or action.
 - No active heartbeat returns `NO_ACTIVE_CANVAS`; there is no persisted-state fallback.
-- Deletion, upload, generation, result creation, and closed-project access remain unavailable.
+- Deletion, arbitrary result-node creation, media-field patching, and closed-project access remain
+  unavailable.
 
 Enabling access authorizes compatible writes to the currently open project without an additional
 dialog. The operation whitelist, revision check, atomic application, and one-step undo remain enforced.

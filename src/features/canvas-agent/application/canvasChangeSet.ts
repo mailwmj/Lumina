@@ -27,6 +27,7 @@ import type {
   CanvasChangeSet,
   PendingCanvasChangeProposal,
 } from '@/features/canvas-agent/domain/types';
+import { resolveCanvasAgentColumnLayout } from './canvasAgentLayout';
 
 const MAX_OPERATIONS = 100;
 const MAX_POSITION = 10_000_000;
@@ -68,6 +69,16 @@ export function applyCanvasChangeSet(
   const movedNodeIds = new Set<string>();
   const connectedEdgeIds: string[] = [];
   const affectedStoryboardNodeIds = new Set<string>();
+  const automaticPositions = new Map(
+    resolveCanvasAgentColumnLayout(
+      graph.nodes,
+      changeSet.operations.flatMap((operation) => (
+        operation.type === 'create_node' && !operation.position
+          ? [{ key: operation.clientId, nodeType: operation.nodeType }]
+          : []
+      ))
+    ).map((placement) => [placement.key, placement.position])
+  );
 
   changeSet.operations.forEach((operation, index) => {
     if (operation.type === 'create_node') {
@@ -91,7 +102,15 @@ export function applyCanvasChangeSet(
           `External Agents cannot create node type ${operation.nodeType}.`
         );
       }
-      const position = validatePosition(operation.position);
+      const position = operation.position
+        ? validatePosition(operation.position)
+        : automaticPositions.get(operation.clientId);
+      if (!position) {
+        throw new CanvasChangeSetError(
+          'POSITION_NOT_RESOLVED',
+          `Operation ${index + 1} could not resolve a node position.`
+        );
+      }
       const data = validateNodeDataPatch(operation.nodeType, operation.data ?? {});
       const node = canvasNodeFactory.createNode(
         operation.nodeType,
@@ -294,7 +313,7 @@ function parseOperation(value: unknown): CanvasChangeOperation {
       type: 'create_node',
       clientId: operation.clientId,
       nodeType: operation.nodeType,
-      position: parsePosition(operation.position),
+      ...(operation.position === undefined ? {} : { position: parsePosition(operation.position) }),
       ...(isRecord(operation.data) ? { data: operation.data } : {}),
     };
   }

@@ -42,10 +42,10 @@ function snapshot(
   };
 }
 
-test('returns a structured error when no active live canvas exists', () => {
+test('returns a structured error when no active live canvas exists', async () => {
   const session = new CanvasSession();
-  assert.throws(
-    () => session.callTool('canvas_get_state', {}),
+  await assert.rejects(
+    session.callTool('canvas_get_state', {}),
     (error: unknown) => Boolean(
       error
       && typeof error === 'object'
@@ -55,13 +55,13 @@ test('returns a structured error when no active live canvas exists', () => {
   );
 });
 
-test('creates a pending proposal and marks it stale after a revision change', () => {
+test('creates a pending proposal and marks it stale after a revision change', async () => {
   const session = new CanvasSession();
   const response = new TestResponse();
   session.openEvents('client-1', response as unknown as ServerResponse);
   session.updateState('client-1', snapshot());
 
-  const created = session.callTool('canvas_propose_changes', {
+  const created = await session.callTool('canvas_propose_changes', {
     projectId: 'project-1',
     baseRevision: 'revision-1',
     summary: 'Create an annotation',
@@ -78,7 +78,7 @@ test('creates a pending proposal and marks it stale after a revision change', ()
   assert.match(response.chunks.join(''), /change_proposal/);
 
   session.updateState('client-1', snapshot('revision-2'));
-  const status = session.callTool('canvas_get_change_status', {
+  const status = await session.callTool('canvas_get_change_status', {
     proposalId: created.proposalId,
   }) as { status: string; error?: string };
   assert.equal(status.status, 'stale');
@@ -87,12 +87,12 @@ test('creates a pending proposal and marks it stale after a revision change', ()
   response.end();
 });
 
-test('records one applied change-set result for polling', () => {
+test('records one applied change-set result for polling', async () => {
   const session = new CanvasSession();
   const response = new TestResponse();
   session.openEvents('client-1', response as unknown as ServerResponse);
   session.updateState('client-1', snapshot());
-  const created = session.callTool('canvas_propose_changes', {
+  const created = await session.callTool('canvas_propose_changes', {
     projectId: 'project-1',
     baseRevision: 'revision-1',
     summary: 'Move a node',
@@ -106,7 +106,7 @@ test('records one applied change-set result for polling', () => {
   session.resolveProposal('client-1', created.proposalId, 'applied', {
     updatedNodeIds: ['node-1'],
   });
-  const status = session.callTool('canvas_get_change_status', {
+  const status = await session.callTool('canvas_get_change_status', {
     proposalId: created.proposalId,
   }) as { status: string; result: unknown };
   assert.equal(status.status, 'applied');
@@ -115,7 +115,7 @@ test('records one applied change-set result for polling', () => {
   response.end();
 });
 
-test('preserves selected previews across lightweight snapshot heartbeats', () => {
+test('preserves selected previews across lightweight snapshot heartbeats', async () => {
   const session = new CanvasSession();
   const response = new TestResponse();
   session.openEvents('client-1', response as unknown as ServerResponse);
@@ -127,7 +127,7 @@ test('preserves selected previews across lightweight snapshot heartbeats', () =>
   const { selectedImagePreviews: _previews, ...lightweightSnapshot } = snapshot('revision-2');
   session.updateState('client-1', lightweightSnapshot);
 
-  const state = session.callTool('canvas_get_state', {}) as CanvasSnapshot;
+  const state = await session.callTool('canvas_get_state', {}) as CanvasSnapshot;
   assert.deepEqual(state.selectedImagePreviews, [{
     nodeId: 'node-1',
     mimeType: 'image/jpeg',
@@ -137,12 +137,12 @@ test('preserves selected previews across lightweight snapshot heartbeats', () =>
   response.end();
 });
 
-test('records an applied result that arrives after its committed snapshot', () => {
+test('records an applied result that arrives after its committed snapshot', async () => {
   const session = new CanvasSession();
   const response = new TestResponse();
   session.openEvents('client-1', response as unknown as ServerResponse);
   session.updateState('client-1', snapshot('revision-1'));
-  const created = session.callTool('canvas_propose_changes', {
+  const created = await session.callTool('canvas_propose_changes', {
     projectId: 'project-1',
     baseRevision: 'revision-1',
     summary: 'Move a node',
@@ -156,7 +156,7 @@ test('records an applied result that arrives after its committed snapshot', () =
   session.updateState('client-1', snapshot('revision-after-apply'));
   session.resolveProposal('client-1', created.proposalId, 'applied', { movedNodeIds: ['node-1'] });
 
-  const status = session.callTool('canvas_get_change_status', {
+  const status = await session.callTool('canvas_get_change_status', {
     proposalId: created.proposalId,
   }) as { status: string; result?: unknown };
   assert.equal(status.status, 'applied');
@@ -164,3 +164,81 @@ test('records an applied result that arrives after its committed snapshot', () =
 
   response.end();
 });
+
+test('returns an action result directly when Lumina completes within the fast wait', async () => {
+  const session = new CanvasSession(100);
+  const response = new TestResponse();
+  session.openEvents('client-1', response as unknown as ServerResponse);
+  session.updateState('client-1', snapshot());
+
+  const resultPromise = session.callTool('canvas_get_node_images', {
+    projectId: 'project-1',
+    nodeIds: ['node-1'],
+    maxDimension: 768,
+  });
+  const actionId = readLastActionId(response);
+  session.resolveAction('client-1', actionId, 'applied', {
+    images: [{ nodeId: 'node-1', dataUrl: 'data:image/webp;base64,cHJldmlldw==' }],
+  });
+
+  const result = await resultPromise as { status: string; result?: unknown };
+  assert.equal(result.status, 'applied');
+  assert.deepEqual(result.result, {
+    images: [{ nodeId: 'node-1', dataUrl: 'data:image/webp;base64,cHJldmlldw==' }],
+  });
+  const retained = await session.callTool('canvas_get_action_status', { actionId }) as {
+    result?: unknown;
+  };
+  assert.deepEqual(retained.result, { images: [{ nodeId: 'node-1' }] });
+  response.end();
+});
+
+test('returns pending only after the action fast wait expires', async () => {
+  const session = new CanvasSession(5);
+  const response = new TestResponse();
+  session.openEvents('client-1', response as unknown as ServerResponse);
+  session.updateState('client-1', snapshot());
+
+  const result = await session.callTool('canvas_import_images', {
+    projectId: 'project-1',
+    baseRevision: 'revision-1',
+    images: [{ clientId: 'model', source: 'data:image/png;base64,AA==' }],
+  }) as { actionId: string; status: string };
+  assert.equal(result.status, 'pending');
+
+  session.resolveAction('client-1', result.actionId, 'applied', { createdNodeIds: ['upload-1'] });
+  const status = await session.callTool('canvas_get_action_status', {
+    actionId: result.actionId,
+  }) as { status: string; result?: unknown };
+  assert.equal(status.status, 'applied');
+  assert.deepEqual(status.result, { createdNodeIds: ['upload-1'] });
+  response.end();
+});
+
+test('marks an in-flight action stale when its canvas disconnects', async () => {
+  const session = new CanvasSession(100);
+  const response = new TestResponse();
+  session.openEvents('client-1', response as unknown as ServerResponse);
+  session.updateState('client-1', snapshot());
+
+  const resultPromise = session.callTool('canvas_run_nodes', {
+    projectId: 'project-1',
+    baseRevision: 'revision-1',
+    nodeIds: ['node-1'],
+  });
+  response.end();
+
+  const result = await resultPromise as { status: string; error?: string };
+  assert.equal(result.status, 'stale');
+  assert.equal(result.error, 'canvas_disconnected');
+});
+
+function readLastActionId(response: TestResponse): string {
+  const block = [...response.chunks].reverse().find((chunk) => chunk.includes('event: action_request'));
+  assert.ok(block, 'expected an action_request event');
+  const dataLine = block.split('\n').find((line) => line.startsWith('data: '));
+  assert.ok(dataLine, 'expected action_request data');
+  const payload = JSON.parse(dataLine.slice('data: '.length)) as { actionId?: string };
+  assert.ok(payload.actionId, 'expected actionId');
+  return payload.actionId;
+}

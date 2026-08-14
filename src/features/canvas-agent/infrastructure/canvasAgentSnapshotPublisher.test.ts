@@ -11,7 +11,7 @@ const endpoint: CanvasAgentEndpoint = {
 
 function snapshot(revision: string): CanvasAgentSnapshot {
   return {
-    protocolVersion: 1,
+    protocolVersion: 2,
     projectId: 'project-1',
     projectName: 'Project',
     revision,
@@ -23,13 +23,13 @@ function snapshot(revision: string): CanvasAgentSnapshot {
     capabilities: {
       nodeTypes: [],
       operations: ['create_node', 'update_node', 'move_node', 'connect_nodes'],
+      actions: ['import_images', 'run_nodes', 'get_node_images'],
       restrictions: [
         'active_project_only',
         'direct_apply',
         'no_delete',
-        'no_upload',
-        'no_generation',
-        'no_result_node_creation',
+        'no_arbitrary_result_node_creation',
+        'explicit_image_reads',
       ],
     },
   };

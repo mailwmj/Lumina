@@ -70,6 +70,31 @@ export async function postCanvasProposalResult(
   throw lastError;
 }
 
+export async function postCanvasActionResult(
+  endpoint: CanvasAgentEndpoint,
+  clientId: string,
+  body: {
+    actionId: string;
+    status: 'applied' | 'stale' | 'failed';
+    result?: unknown;
+    error?: string;
+  }
+): Promise<void> {
+  let lastError: unknown;
+  for (const delayMs of PROPOSAL_RESULT_RETRY_DELAYS_MS) {
+    if (delayMs > 0) {
+      await delay(delayMs);
+    }
+    try {
+      await postJson(endpoint, `/canvas/action-result?clientId=${encodeURIComponent(clientId)}`, body);
+      return;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError;
+}
+
 export async function consumeCanvasAgentEvents(
   endpoint: CanvasAgentEndpoint,
   clientId: string,

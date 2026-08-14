@@ -17,11 +17,15 @@ const executable = readOption(cliArgs, '--executable')
     `lumina-canvas-agent-${target}${extension}`
   );
 const expectedTools = [
+  'canvas_get_action_status',
   'canvas_get_capabilities',
   'canvas_get_change_status',
+  'canvas_get_node_images',
   'canvas_get_selection',
   'canvas_get_state',
+  'canvas_import_images',
   'canvas_propose_changes',
+  'canvas_run_nodes',
 ];
 
 if (!fs.statSync(executable).isFile()) {

@@ -66,6 +66,8 @@ test('serves an authenticated live canvas and stale proposal lifecycle over loop
       signal: eventsController.signal,
     });
     assert.equal(events.status, 200);
+    assert.ok(events.body);
+    const eventReader = events.body.getReader();
 
     await post(baseUrl, '/canvas/state?clientId=client-1', snapshot('revision-1'));
     const state = await callTool(baseUrl, 'canvas_get_state', {});
@@ -88,6 +90,25 @@ test('serves an authenticated live canvas and stale proposal lifecycle over loop
       proposalId: proposal.proposalId,
     }) as { status: string };
     assert.equal(status.status, 'stale');
+
+    const actionCall = callTool(baseUrl, 'canvas_get_node_images', {
+      projectId: 'project-1',
+      nodeIds: ['node-1'],
+      maxDimension: 768,
+    });
+    const actionEvent = await readSseEvent(eventReader, 'action_request');
+    assert.equal((actionEvent.request as { type?: string })?.type, 'get_node_images');
+    await post(baseUrl, '/canvas/action-result?clientId=client-1', {
+      actionId: actionEvent.actionId,
+      status: 'applied',
+      result: { projectId: 'project-1', images: [{ nodeId: 'node-1', status: 'empty' }] },
+    });
+    const actionResult = await actionCall as { status: string; result?: unknown };
+    assert.equal(actionResult.status, 'applied');
+    assert.deepEqual(actionResult.result, {
+      projectId: 'project-1',
+      images: [{ nodeId: 'node-1', status: 'empty' }],
+    });
   } finally {
     eventsController.abort();
     server.closeAllConnections();
@@ -113,4 +134,28 @@ async function post(baseUrl: string, path: string, body: unknown): Promise<Respo
   });
   assert.equal(response.ok, true);
   return response;
+}
+
+async function readSseEvent(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  expectedType: string
+): Promise<Record<string, unknown>> {
+  const decoder = new TextDecoder();
+  let buffer = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    assert.equal(done, false, `event stream ended before ${expectedType}`);
+    buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
+    let separatorIndex = buffer.indexOf('\n\n');
+    while (separatorIndex >= 0) {
+      const block = buffer.slice(0, separatorIndex);
+      buffer = buffer.slice(separatorIndex + 2);
+      const typeLine = block.split('\n').find((line) => line.startsWith('event: '));
+      const dataLine = block.split('\n').find((line) => line.startsWith('data: '));
+      if (typeLine?.slice('event: '.length) === expectedType && dataLine) {
+        return JSON.parse(dataLine.slice('data: '.length)) as Record<string, unknown>;
+      }
+      separatorIndex = buffer.indexOf('\n\n');
+    }
+  }
 }

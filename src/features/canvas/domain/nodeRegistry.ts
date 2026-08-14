@@ -165,7 +165,18 @@ const exportImageNodeDefinition: CanvasNodeDefinition<ExportImageNodeData> = {
   },
   agent: {
     creatable: false,
-    readableFields: ['displayName', 'aspectRatio', 'resultKind'],
+    readableFields: [
+      'displayName',
+      'aspectRatio',
+      'resultKind',
+      'isGenerating',
+      'generationStartedAt',
+      'generationError',
+      'generationRecoveryState',
+      'generationBatchId',
+      'generationBatchIndex',
+      'generationBatchSize',
+    ],
     writableFields: ['displayName'],
   },
   connectivity: {

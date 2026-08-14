@@ -427,7 +427,8 @@ function renderPreviewDataUrl(
   image: HTMLImageElement,
   sourceDataUrl: string,
   maxDimension: number,
-  forceReencode = false
+  forceReencode = false,
+  outputMimeType?: 'image/jpeg' | 'image/png' | 'image/webp'
 ): string {
   const longestSide = Math.max(image.naturalWidth, image.naturalHeight);
   if (!forceReencode && longestSide <= maxDimension) {
@@ -450,9 +451,9 @@ function renderPreviewDataUrl(
   context.imageSmoothingQuality = 'high';
   context.drawImage(image, 0, 0, targetWidth, targetHeight);
 
-  const mimeType = resolvePreviewMimeType(sourceDataUrl);
-  if (mimeType === 'image/jpeg') {
-    return canvas.toDataURL(mimeType, 0.86);
+  const mimeType = outputMimeType ?? resolvePreviewMimeType(sourceDataUrl);
+  if (mimeType === 'image/jpeg' || mimeType === 'image/webp') {
+    return canvas.toDataURL(mimeType, 0.82);
   }
   return canvas.toDataURL(mimeType);
 }
@@ -460,12 +461,19 @@ function renderPreviewDataUrl(
 export async function createPreviewDataUrl(
   imageUrl: string,
   maxDimension = DEFAULT_PREVIEW_MAX_DIMENSION,
-  forceReencode = false
+  forceReencode = false,
+  outputMimeType?: 'image/jpeg' | 'image/png' | 'image/webp'
 ): Promise<string> {
   const normalizedDataUrl = await imageUrlToDataUrl(imageUrl);
   const image = await loadImageElement(normalizedDataUrl);
   const safeMaxDimension = Math.max(64, Math.floor(maxDimension));
-  return renderPreviewDataUrl(image, normalizedDataUrl, safeMaxDimension, forceReencode);
+  return renderPreviewDataUrl(
+    image,
+    normalizedDataUrl,
+    safeMaxDimension,
+    forceReencode,
+    outputMimeType
+  );
 }
 
 export async function createNodeImagePreview(

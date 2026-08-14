@@ -65,6 +65,8 @@ describe('external Agent canvas snapshots', () => {
     expect(imageEdit).toMatchObject({ creatable: true });
     expect(imageEdit?.writableFields).toContain('prompt');
     expect(exportImage).toMatchObject({ creatable: false });
+    expect(exportImage?.readableFields).toContain('generationError');
+    expect(exportImage?.readableFields).not.toContain('generationErrorDetails');
     expect(videoFrame?.targetHandleIds).toEqual(['target-first', 'target-last']);
   });
 

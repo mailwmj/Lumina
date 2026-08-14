@@ -21,14 +21,18 @@ interface ToolHttpResponse {
 const MCP_INSTRUCTIONS = [
   'Lumina exposes only the project currently open in the desktop app.',
   'Read canvas_get_state before changing the canvas and reuse its projectId and revision.',
+  'Import user-provided images in one canvas_import_images batch; absolute local paths, file URLs, HTTP(S) URLs, and raster image data URLs are supported.',
+  'Create one existing imageNode per distinct shot, omit create_node.position for automatic readable column layout, and connect references in the same order used by 图片 1, 图片 2, and subsequent prompt labels.',
   'canvas_propose_changes validates and atomically applies one bounded change set without an in-app approval step.',
   'Poll canvas_get_change_status until Lumina reports applied, stale, or failed.',
-  'Deletion, uploads, result-node creation, and AI generation are intentionally unavailable.',
+  'Call canvas_run_nodes only after the user has approved the visible setup; successful calls create normal Lumina result nodes.',
+  'Use canvas_get_node_images with explicit result node IDs to inspect outputs; call canvas_get_action_status only when an action returns pending.',
+  'Deletion and arbitrary result-node creation remain unavailable.',
 ].join(' ');
 
 export async function startMcpServer(config: CanvasAgentConfig): Promise<void> {
   const server = new McpServer(
-    { name: 'lumina-canvas', version: '0.1.0' },
+    { name: 'lumina-canvas', version: '0.2.0' },
     { instructions: MCP_INSTRUCTIONS }
   );
   canvasAgentToolNames.forEach((name) => registerTool(server, config, name));
@@ -52,7 +56,7 @@ function registerTool(
         const input = schema.parse(rawInput);
         const result = await postTool(config, name, input);
         return {
-          content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+          content: toMcpContent(result),
         };
       } catch (error) {
         const payload = toErrorPayload(error);
@@ -63,6 +67,49 @@ function registerTool(
       }
     }
   );
+}
+
+type McpToolContent =
+  | { type: 'text'; text: string }
+  | { type: 'image'; data: string; mimeType: string };
+
+export function toMcpContent(result: unknown): McpToolContent[] {
+  const images: Array<{ data: string; mimeType: string }> = [];
+  const metadata = stripImageDataUrls(result, images);
+  return [
+    { type: 'text', text: JSON.stringify(metadata, null, 2) },
+    ...images.map((image) => ({ type: 'image' as const, ...image })),
+  ];
+}
+
+function stripImageDataUrls(
+  value: unknown,
+  images: Array<{ data: string; mimeType: string }>
+): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => stripImageDataUrls(item, images));
+  }
+  if (!value || typeof value !== 'object') {
+    return value;
+  }
+
+  const record = value as Record<string, unknown>;
+  const dataUrl = typeof record.dataUrl === 'string' ? record.dataUrl : '';
+  const match = dataUrl.match(/^data:(image\/[a-z0-9.+-]+);base64,([a-z0-9+/=\r\n]+)$/i);
+  const metadata: Record<string, unknown> = {};
+  Object.entries(record).forEach(([key, entry]) => {
+    if (key === 'dataUrl' && match) {
+      return;
+    }
+    metadata[key] = stripImageDataUrls(entry, images);
+  });
+  if (match) {
+    images.push({
+      mimeType: match[1],
+      data: match[2].replace(/\s/g, ''),
+    });
+  }
+  return metadata;
 }
 
 async function postTool(

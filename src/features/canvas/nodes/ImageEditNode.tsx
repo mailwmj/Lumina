@@ -26,25 +26,16 @@ import {
 import { NodeResizeHandle } from '@/features/canvas/ui/NodeResizeHandle';
 import { resolveNodeSurfaceStateClass } from '@/features/canvas/ui/nodeSurfaceStyles';
 import {
-  canvasAiGateway,
-} from '@/features/canvas/application/canvasServices';
+  ImageGenerationRunError,
+  runImageGenerationNode,
+} from '@/features/canvas/application/imageGenerationRun';
 import {
-  resolveEffectivePromptForNode,
   resolveTextGenerationInputs,
 } from '@/features/canvas/application/textGenerationInputs';
 import {
-  buildImageReferenceModelPrompt,
   materializeImageReferencePrompt,
 } from '@/features/canvas/application/imageReferencePrompt';
 import { showErrorDialog } from '@/features/canvas/application/errorDialog';
-import { detectAspectRatio, parseAspectRatio } from '@/features/canvas/application/imageData';
-import {
-  buildGenerationErrorReport,
-  CURRENT_RUNTIME_SESSION_ID,
-  createReferenceImagePlaceholders,
-  getRuntimeDiagnostics,
-  type GenerationDebugContext,
-} from '@/features/canvas/application/generationErrorReport';
 import {
   beginCompositionInput,
   commitCompositionInputOnBlur,
@@ -60,9 +51,7 @@ import {
 import {
   IMAGE_GENERATION_ASPECT_RATIO_OPTIONS,
   IMAGE_GENERATION_RESOLUTION_OPTIONS,
-  getModelProvider,
   listConfiguredImageModels,
-  pickClosestImageGenerationAspectRatio,
   resolveImageGenerationResolution,
   resolveConfiguredImageModel,
   UNCONFIGURED_IMAGE_MODEL,
@@ -76,17 +65,11 @@ import {
   NODE_CONTROL_PARAMS_CHIP_CLASS,
   NODE_CONTROL_PRIMARY_BUTTON_CLASS,
 } from '@/features/canvas/ui/nodeControlStyles';
-import {
-  createImageOutputBatchNodes,
-  markImageOutputNodeFailed,
-} from '@/features/canvas/application/imageOutputBatch';
 import { ModelParamsControls } from '@/features/canvas/ui/ModelParamsControls';
 import { UiButton, UiTooltip } from '@/components/ui';
 import { useCanvasStore } from '@/stores/canvasStore';
-import { useProjectStore } from '@/stores/projectStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { polishText } from '@/features/canvas/infrastructure/textPolishService';
-import { resolveImageProviderRuntime } from '@/features/canvas/application/imageProviderRuntime';
 import { resolveTextModelSelection } from '@/features/canvas/application/textModelSelection';
 import { selectWorkflowNodes } from '@/features/canvas/application/canvasNodeSelectors';
 import { locateReferencedNode } from '@/features/canvas/application/referencedNodeLocation';
@@ -109,15 +92,6 @@ interface AspectRatioChoice {
   label: string;
 }
 
-function buildAiResultNodeTitle(prompt: string, fallbackTitle: string): string {
-  const normalizedPrompt = prompt.trim();
-  if (!normalizedPrompt) {
-    return fallbackTitle;
-  }
-
-  return normalizedPrompt;
-}
-
 export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageEditNodeProps) => {
   const { t } = useTranslation();
   const reactFlow = useReactFlow();
@@ -138,8 +112,6 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
   const updateNodeData = useCanvasStore((state) => state.updateNodeData);
   const deleteEdge = useCanvasStore((state) => state.deleteEdge);
   const reorderNodeInput = useCanvasStore((state) => state.reorderNodeInput);
-  const addNodeBatch = useCanvasStore((state) => state.addNodeBatch);
-  const addEdge = useCanvasStore((state) => state.addEdge);
   const openAiImageApi = useSettingsStore((state) => state.openAiImageApi);
   const chaomoImageApi = useSettingsStore((state) => state.chaomoImageApi);
   const customImageApis = useSettingsStore((state) => state.customImageApis);
@@ -163,7 +135,6 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
     () => resolveTextGenerationInputs(id, workflowNodes, edges),
     [id, workflowNodes, edges]
   );
-  const incomingImages = workflowInputs.referenceImages;
 
   const imageModels = useMemo(
     () =>
@@ -186,19 +157,6 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
   );
   const hasConfiguredModel = configuredModel !== null;
   const selectedModel = configuredModel ?? UNCONFIGURED_IMAGE_MODEL;
-  const providerRuntime = useMemo(
-    () => resolveImageProviderRuntime(selectedModel.providerId, {
-      openAiImageApi,
-      chaomoImageApi,
-      customImageApis,
-    }),
-    [chaomoImageApi, customImageApis, openAiImageApi, selectedModel.providerId]
-  );
-  const providerApiKey = providerRuntime.apiKey;
-  const effectiveExtraParams = useMemo(
-    () => ({ ...(data.extraParams ?? {}) }),
-    [data.extraParams]
-  );
   const resolutionOptions = IMAGE_GENERATION_RESOLUTION_OPTIONS;
 
   const selectedResolution = useMemo(
@@ -221,10 +179,6 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
       aspectRatioOptions[0],
     [aspectRatioOptions, data.requestAspectRatio]
   );
-
-  const requestResolution = selectedModel.resolveRequest({
-    referenceImageCount: incomingImages.length,
-  });
 
   const layout = resolveTextGenerationLayout({
     width,
@@ -366,48 +320,6 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
       return;
     }
 
-    if (workflowInputs.blockingImageNodeIds.length > 0) {
-      const unavailableNames = workflowInputs.imageInputs
-        .flatMap((input, index) => !input.imageUrl
-          ? [t('node.imageReference.label', { index: index + 1 })]
-          : [])
-        .join(', ');
-      const errorMessage = unavailableNames
-        ? t('node.textGeneration.imageUnavailableSources', { names: unavailableNames })
-        : t('node.textGeneration.imageUnavailable');
-      setError(errorMessage);
-      void showErrorDialog(errorMessage, t('common.error'));
-      return;
-    }
-
-    // Freeze both prompt labels and image transport order before any async work.
-    // A tag resolves by edge id here, so reordering changes its visible ordinal
-    // without ever making it point at a different image.
-    const referenceImageSnapshot = workflowInputs.imageInputs.flatMap((input) => input.imageUrl
-      ? [{ edgeId: input.edgeId, imageUrl: input.imageUrl, previewImageUrl: input.previewImageUrl }]
-      : []
-    );
-    const referenceImages = referenceImageSnapshot.map((input) => input.imageUrl);
-    const localPrompt = materializeImageReferencePrompt(
-      promptDraft,
-      referenceImageSnapshot
-    ).trim();
-    const userPrompt = resolveEffectivePromptForNode(id, localPrompt, workflowNodes, edges);
-    if (!userPrompt) {
-      const errorMessage = t('node.imageEdit.promptRequired');
-      setError(errorMessage);
-      void showErrorDialog(errorMessage, t('common.error'));
-      return;
-    }
-    const prompt = buildImageReferenceModelPrompt(userPrompt, referenceImageSnapshot);
-
-    if (!providerApiKey) {
-      const errorMessage = t('node.imageEdit.apiKeyRequired');
-      setError(errorMessage);
-      void showErrorDialog(errorMessage, t('common.error'));
-      return;
-    }
-
     if (generationSubmissionInFlightRef.current) {
       return;
     }
@@ -415,181 +327,53 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
     setIsGenerationSubmitting(true);
 
     try {
-      const generationDurationMs = selectedModel.expectedDurationMs ?? 60000;
-      const generationStartedAt = Date.now();
-      const resultNodeTitle = buildAiResultNodeTitle(userPrompt, t('node.imageEdit.resultTitle'));
-      let resolvedRequestAspectRatio = selectedAspectRatio.value;
-      if (resolvedRequestAspectRatio === AUTO_REQUEST_ASPECT_RATIO) {
-        if (referenceImages.length > 0) {
-          try {
-            const sourceAspectRatio = await detectAspectRatio(referenceImages[0]);
-            const sourceAspectRatioValue = parseAspectRatio(sourceAspectRatio);
-            resolvedRequestAspectRatio = pickClosestImageGenerationAspectRatio(
-              sourceAspectRatioValue
-            );
-          } catch {
-            resolvedRequestAspectRatio = pickClosestImageGenerationAspectRatio(1);
-          }
-        } else {
-          resolvedRequestAspectRatio = pickClosestImageGenerationAspectRatio(1);
-        }
-      }
-      const outputAspectRatio = resolvedRequestAspectRatio;
-      const runtimeDiagnostics = await getRuntimeDiagnostics();
       setError(null);
-      const canvasSnapshot = useCanvasStore.getState();
-
-      const resultNodes = createImageOutputBatchNodes({
-        sourceNodeId: id,
-        outputCount,
-        aspectRatio: outputAspectRatio,
-        resultNodeTitle,
-        generationStartedAt,
-        generationDurationMs,
-        existingNodes: canvasSnapshot.nodes,
-        existingEdges: canvasSnapshot.edges,
-        addNodeBatch,
-        addEdge,
+      const result = await runImageGenerationNode(id, {
+        fallbackResultTitle: t('node.imageEdit.resultTitle'),
+        fallbackErrorMessage: t('ai.error'),
       });
-
-      const buildDebugContext = (outputIndex: number): GenerationDebugContext => ({
-        sourceType: 'imageEdit',
-        providerId: selectedModel.providerId,
-        requestModel: requestResolution.requestModel,
-        requestSize: selectedResolution.value,
-        requestAspectRatio: resolvedRequestAspectRatio,
-        prompt,
-        extraParams: effectiveExtraParams,
-        referenceImageCount: referenceImages.length,
-        referenceImagePlaceholders: createReferenceImagePlaceholders(referenceImages.length),
-        outputCount,
-        outputIndex: outputIndex + 1,
-        appVersion: runtimeDiagnostics.appVersion,
-        osName: runtimeDiagnostics.osName,
-        osVersion: runtimeDiagnostics.osVersion,
-        osBuild: runtimeDiagnostics.osBuild,
-        userAgent: runtimeDiagnostics.userAgent,
-      });
-
-      const markNodeFailed = (
-        nodeId: string,
-        outputIndex: number,
-        generationError: unknown
-      ) =>
-        markImageOutputNodeFailed({
-          nodeId,
-          generationError,
-          fallbackMessage: t('ai.error'),
-          generationDebugContext: buildDebugContext(outputIndex),
-          updateNodeData,
-        });
-
-      try {
-        await canvasAiGateway.setApiKey(providerRuntime.backendProviderId, providerApiKey);
-
-        const projectId = useProjectStore.getState().getCurrentProject()?.id;
-        const submissionFailures: Array<ReturnType<typeof markNodeFailed>> = [];
-        await canvasAiGateway.submitGenerateImageJobs(
-          {
-            prompt,
-            model: requestResolution.requestModel,
-            size: selectedResolution.value,
-            aspectRatio: resolvedRequestAspectRatio,
-            referenceImages,
-            extraParams: effectiveExtraParams,
-            providerConfig: providerRuntime.providerConfig,
-            projectId,
-          },
-          outputCount,
-          (submission, submissionIndex) => {
-            const resultNode = resultNodes[submissionIndex];
-            if (!resultNode) {
-              return;
-            }
-            const { nodeId, outputIndex } = resultNode;
-            if (submission.status === 'fulfilled') {
-              updateNodeData(nodeId, {
-                generationJobId: submission.jobId,
-                generationSourceType: 'imageEdit',
-                generationProviderId: selectedModel.providerId,
-                generationProviderName: getModelProvider(
-                  selectedModel.providerId,
-                  selectedModel.providerName
-                ).name,
-                generationModelName: selectedModel.displayName,
-                generationClientSessionId: CURRENT_RUNTIME_SESSION_ID,
-                generationDebugContext: buildDebugContext(outputIndex),
-              });
-              return;
-            }
-
-            const failure = markNodeFailed(nodeId, outputIndex, submission.error);
-            submissionFailures.push(failure);
-          }
-        );
-
-        const firstFailure = submissionFailures[0];
-        if (firstFailure) {
-          const reportText = buildGenerationErrorReport({
-            errorMessage: firstFailure.resolvedError.message,
-            errorDetails: firstFailure.resolvedError.details,
-            context: firstFailure.generationDebugContext,
-          });
-          setError(firstFailure.resolvedError.message);
-          void showErrorDialog(
-            firstFailure.resolvedError.message,
-            t('common.error'),
-            firstFailure.resolvedError.details,
-            reportText
-          );
-        }
-      } catch (generationError) {
-        const failures = resultNodes.map(({ nodeId, outputIndex }) =>
-          markNodeFailed(nodeId, outputIndex, generationError)
-        );
-        const firstFailure = failures[0];
-        if (!firstFailure) {
-          return;
-        }
-        const reportText = buildGenerationErrorReport({
-          errorMessage: firstFailure.resolvedError.message,
-          errorDetails: firstFailure.resolvedError.details,
-          context: firstFailure.generationDebugContext,
-        });
-        setError(firstFailure.resolvedError.message);
+      const firstFailure = result.submissions.find((submission) => submission.status === 'failed');
+      if (firstFailure?.errorMessage) {
+        setError(firstFailure.errorMessage);
         void showErrorDialog(
-          firstFailure.resolvedError.message,
+          firstFailure.errorMessage,
           t('common.error'),
-          firstFailure.resolvedError.details,
-          reportText
+          firstFailure.errorDetails,
+          firstFailure.errorReport
         );
       }
+    } catch (generationError) {
+      let message = generationError instanceof Error
+        ? generationError.message
+        : t('ai.error');
+      if (generationError instanceof ImageGenerationRunError) {
+        if (generationError.code === 'MODEL_REQUIRED') {
+          message = t('node.imageEdit.modelRequired');
+        } else if (generationError.code === 'PROMPT_REQUIRED') {
+          message = t('node.imageEdit.promptRequired');
+        } else if (generationError.code === 'API_KEY_REQUIRED') {
+          message = t('node.imageEdit.apiKeyRequired');
+        } else if (generationError.code === 'REFERENCE_IMAGES_UNAVAILABLE') {
+          const unavailableNames = workflowInputs.imageInputs
+            .flatMap((input, index) => !input.imageUrl
+              ? [t('node.imageReference.label', { index: index + 1 })]
+              : [])
+            .join(', ');
+          message = unavailableNames
+            ? t('node.textGeneration.imageUnavailableSources', { names: unavailableNames })
+            : t('node.textGeneration.imageUnavailable');
+        }
+      }
+      setError(message);
+      void showErrorDialog(message, t('common.error'));
     } finally {
       generationSubmissionInFlightRef.current = false;
       setIsGenerationSubmitting(false);
     }
   }, [
-    addNodeBatch,
-    addEdge,
-    providerApiKey,
-    providerRuntime.providerConfig,
-    promptDraft,
-    effectiveExtraParams,
     hasConfiguredModel,
     id,
-    edges,
-    workflowNodes,
-    outputCount,
-    requestResolution.requestModel,
-    selectedAspectRatio.value,
-    selectedModel.id,
-    selectedModel.expectedDurationMs,
-    selectedModel.providerId,
-    selectedModel.providerName,
-    selectedResolution.value,
     t,
-    updateNodeData,
-    workflowInputs.blockingImageNodeIds.length,
     workflowInputs.imageInputs,
   ]);
 

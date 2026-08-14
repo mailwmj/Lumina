@@ -72,6 +72,23 @@ async function routeRequest(
     sendJson(response, 200, { ok: true, result: proposal });
     return;
   }
+  if (request.method === 'POST' && url.pathname === '/canvas/action-result') {
+    const body = await readJson(request) as Record<string, unknown>;
+    const actionId = typeof body.actionId === 'string' ? body.actionId : '';
+    const status = body.status;
+    if (!isTerminalProposalStatus(status)) {
+      throw new CanvasAgentError('INVALID_ACTION_STATUS', 'The canvas action result status is invalid.');
+    }
+    const action = session.resolveAction(
+      url.searchParams.get('clientId') ?? '',
+      actionId,
+      status,
+      body.result,
+      typeof body.error === 'string' ? body.error : undefined
+    );
+    sendJson(response, 200, { ok: true, result: action });
+    return;
+  }
   if (request.method === 'POST' && url.pathname === '/api/tools') {
     const body = await readJson(request) as Record<string, unknown>;
     if (!isCanvasAgentToolName(body.name)) {
@@ -90,7 +107,7 @@ async function routeRequest(
     }
     sendJson(response, 200, {
       ok: true,
-      result: session.callTool(body.name, parsedInput.data),
+      result: await session.callTool(body.name, parsedInput.data),
     });
     return;
   }

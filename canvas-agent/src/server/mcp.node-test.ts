@@ -7,10 +7,11 @@ import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
 import { canvasAgentToolNames } from '../canvas/protocol.js';
+import { toMcpContent } from './mcp.js';
 
 const PACKAGE_ROOT = fileURLToPath(new URL('../../', import.meta.url));
 
-test('stdio MCP initializes and lists exactly the P0 canvas tools', { timeout: 8_000 }, async () => {
+test('stdio MCP initializes and lists the complete canvas tool surface', { timeout: 8_000 }, async () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lumina-mcp-test-'));
   const configFile = path.join(tempDir, 'canvas-agent.json');
   const child = spawn(process.execPath, [
@@ -66,6 +67,26 @@ test('stdio MCP initializes and lists exactly the P0 canvas tools', { timeout: 8
     child.kill('SIGTERM');
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
+});
+
+test('converts node preview data URLs into native MCP image content', () => {
+  const content = toMcpContent({
+    projectId: 'project-1',
+    images: [{
+      nodeId: 'result-1',
+      status: 'ready',
+      mimeType: 'image/webp',
+      dataUrl: 'data:image/webp;base64,cHJldmlldw==',
+    }],
+  });
+
+  assert.equal(content[0]?.type, 'text');
+  assert.doesNotMatch((content[0] as { text: string }).text, /data:image/);
+  assert.deepEqual(content[1], {
+    type: 'image',
+    mimeType: 'image/webp',
+    data: 'cHJldmlldw==',
+  });
 });
 
 interface JsonRpcResponse {

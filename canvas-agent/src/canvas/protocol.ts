@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const CANVAS_AGENT_PROTOCOL_VERSION = 1;
+export const CANVAS_AGENT_PROTOCOL_VERSION = 2;
 
 export const canvasAgentToolNames = [
   'canvas_get_state',
@@ -8,6 +8,10 @@ export const canvasAgentToolNames = [
   'canvas_get_capabilities',
   'canvas_propose_changes',
   'canvas_get_change_status',
+  'canvas_import_images',
+  'canvas_run_nodes',
+  'canvas_get_node_images',
+  'canvas_get_action_status',
 ] as const;
 
 export type CanvasAgentToolName = (typeof canvasAgentToolNames)[number];
@@ -19,12 +23,17 @@ const positionSchema = z.object({
 
 const nodeDataSchema = z.record(z.unknown());
 
+const imageSourceSchema = z.string().trim().min(1).max(10_000_000).refine(
+  isSupportedImageSource,
+  'source must be an absolute local path, file URL, HTTP(S) URL, or raster image data URL'
+);
+
 export const canvasChangeOperationSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('create_node'),
     clientId: z.string().trim().min(1).max(80),
     nodeType: z.string().trim().min(1).max(80),
-    position: positionSchema,
+    position: positionSchema.optional(),
     data: nodeDataSchema.optional(),
   }).strict(),
   z.object({
@@ -55,6 +64,30 @@ export const canvasChangeSetSchema = z.object({
 
 export type CanvasChangeSet = z.infer<typeof canvasChangeSetSchema>;
 
+export const canvasImportImagesSchema = z.object({
+  projectId: z.string().trim().min(1).max(160),
+  baseRevision: z.string().trim().min(1).max(160),
+  images: z.array(z.object({
+    clientId: z.string().trim().min(1).max(80),
+    source: imageSourceSchema,
+    fileName: z.string().trim().min(1).max(260).optional(),
+    displayName: z.string().trim().min(1).max(200).optional(),
+  }).strict()).min(1).max(12),
+  position: positionSchema.optional(),
+}).strict();
+
+export const canvasRunNodesSchema = z.object({
+  projectId: z.string().trim().min(1).max(160),
+  baseRevision: z.string().trim().min(1).max(160),
+  nodeIds: z.array(z.string().trim().min(1).max(160)).min(1).max(12),
+}).strict();
+
+export const canvasGetNodeImagesSchema = z.object({
+  projectId: z.string().trim().min(1).max(160),
+  nodeIds: z.array(z.string().trim().min(1).max(160)).min(1).max(12),
+  maxDimension: z.number().int().min(256).max(1024).default(768),
+}).strict();
+
 export const canvasAgentToolSchemas = {
   canvas_get_state: z.object({}).strict(),
   canvas_get_selection: z.object({}).strict(),
@@ -62,6 +95,12 @@ export const canvasAgentToolSchemas = {
   canvas_propose_changes: canvasChangeSetSchema,
   canvas_get_change_status: z.object({
     proposalId: z.string().uuid(),
+  }).strict(),
+  canvas_import_images: canvasImportImagesSchema,
+  canvas_run_nodes: canvasRunNodesSchema,
+  canvas_get_node_images: canvasGetNodeImagesSchema,
+  canvas_get_action_status: z.object({
+    actionId: z.string().uuid(),
   }).strict(),
 } satisfies Record<CanvasAgentToolName, z.AnyZodObject>;
 
@@ -71,7 +110,20 @@ export const canvasAgentToolDescriptions: Record<CanvasAgentToolName, string> = 
   canvas_get_capabilities: 'Read the node types, editable fields, and connection capabilities allowed for external Agents.',
   canvas_propose_changes: 'Submit one bounded CanvasChangeSet for direct validation and atomic application in Lumina.',
   canvas_get_change_status: 'Poll the application status of a previously submitted canvas change set.',
+  canvas_import_images: 'Import up to 12 absolute local paths, file URLs, HTTP(S) URLs, or raster image data URLs into existing Lumina upload nodes. Images are prepared in parallel and placed as one readable reference column.',
+  canvas_run_nodes: 'Run up to 12 existing Lumina image-generation nodes in parallel after validating the active project, canvas revision, prompts, references, and configured models.',
+  canvas_get_node_images: 'Read status metadata and vision-ready compressed previews for up to 12 image nodes in the active Lumina project. Local paths and original payloads are never returned.',
+  canvas_get_action_status: 'Poll an import, node-run, or node-image read only when its initial tool call returned pending.',
 };
+
+export type CanvasImportImagesInput = z.infer<typeof canvasImportImagesSchema>;
+export type CanvasRunNodesInput = z.infer<typeof canvasRunNodesSchema>;
+export type CanvasGetNodeImagesInput = z.infer<typeof canvasGetNodeImagesSchema>;
+
+export type CanvasActionRequest =
+  | ({ type: 'import_images' } & CanvasImportImagesInput)
+  | ({ type: 'run_nodes' } & CanvasRunNodesInput)
+  | ({ type: 'get_node_images' } & CanvasGetNodeImagesInput);
 
 export interface CanvasSnapshot {
   protocolVersion: number;
@@ -103,6 +155,17 @@ export interface CanvasProposalRecord {
   error?: string;
 }
 
+export interface CanvasActionRecord {
+  actionId: string;
+  clientId: string;
+  request: CanvasActionRequest;
+  status: CanvasProposalStatus;
+  createdAt: number;
+  updatedAt: number;
+  result?: unknown;
+  error?: string;
+}
+
 export interface CanvasAgentErrorPayload {
   code: string;
   message: string;
@@ -126,6 +189,11 @@ export class CanvasAgentError extends Error {
       ...(this.details === undefined ? {} : { details: this.details }),
     };
   }
+}
+
+function isSupportedImageSource(value: string): boolean {
+  return /^(?:https?:\/\/|file:\/\/|\/|[a-z]:[\\/]|\\\\)/i.test(value)
+    || /^data:image\/(?:png|jpe?g|webp|gif|bmp|tiff|avif);base64,/i.test(value);
 }
 
 export function isCanvasAgentToolName(value: unknown): value is CanvasAgentToolName {

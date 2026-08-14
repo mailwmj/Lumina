@@ -5,7 +5,7 @@ import type {
   CanvasNodeType,
 } from '@/features/canvas/domain/canvasNodes';
 
-export const CANVAS_AGENT_PROTOCOL_VERSION = 1;
+export const CANVAS_AGENT_PROTOCOL_VERSION = 2;
 
 export interface CanvasAgentNodeCapability {
   nodeType: CanvasNodeType;
@@ -24,13 +24,13 @@ export interface CanvasAgentNodeCapability {
 export interface CanvasAgentCapabilities {
   nodeTypes: CanvasAgentNodeCapability[];
   operations: readonly ['create_node', 'update_node', 'move_node', 'connect_nodes'];
+  actions: readonly ['import_images', 'run_nodes', 'get_node_images'];
   restrictions: readonly [
     'active_project_only',
     'direct_apply',
     'no_delete',
-    'no_upload',
-    'no_generation',
-    'no_result_node_creation'
+    'no_arbitrary_result_node_creation',
+    'explicit_image_reads'
   ];
 }
 
@@ -79,7 +79,7 @@ export type CanvasChangeOperation =
     type: 'create_node';
     clientId: string;
     nodeType: CanvasNodeType;
-    position: { x: number; y: number };
+    position?: { x: number; y: number };
     data?: Record<string, unknown>;
   }
   | {
@@ -110,6 +110,40 @@ export interface CanvasChangeSet {
 export interface PendingCanvasChangeProposal {
   proposalId: string;
   changeSet: CanvasChangeSet;
+  createdAt: number;
+}
+
+export interface CanvasAgentImportImageInput {
+  clientId: string;
+  source: string;
+  fileName?: string;
+  displayName?: string;
+}
+
+export type CanvasAgentActionRequest =
+  | {
+    type: 'import_images';
+    projectId: string;
+    baseRevision: string;
+    images: CanvasAgentImportImageInput[];
+    position?: { x: number; y: number };
+  }
+  | {
+    type: 'run_nodes';
+    projectId: string;
+    baseRevision: string;
+    nodeIds: string[];
+  }
+  | {
+    type: 'get_node_images';
+    projectId: string;
+    nodeIds: string[];
+    maxDimension: number;
+  };
+
+export interface PendingCanvasAgentAction {
+  actionId: string;
+  request: CanvasAgentActionRequest;
   createdAt: number;
 }
 

@@ -4,6 +4,8 @@ import type { ServerResponse } from 'node:http';
 import {
   CANVAS_AGENT_PROTOCOL_VERSION,
   CanvasAgentError,
+  type CanvasActionRecord,
+  type CanvasActionRequest,
   type CanvasAgentToolName,
   type CanvasChangeSet,
   type CanvasProposalRecord,
@@ -14,6 +16,7 @@ import {
 const ACTIVE_CANVAS_TTL_MS = 15_000;
 const PROPOSAL_TTL_MS = 10 * 60_000;
 const MAX_RETAINED_PROPOSALS = 100;
+const ACTION_FAST_WAIT_MS = 8_000;
 const MAX_SELECTED_IMAGE_PREVIEWS = 6;
 const MAX_PREVIEW_DATA_URL_LENGTH = 1_500_000;
 
@@ -26,7 +29,14 @@ export class CanvasSession {
   private readonly clients = new Map<string, ServerResponse>();
   private readonly canvasStates = new Map<string, CanvasClientState>();
   private readonly proposals = new Map<string, CanvasProposalRecord>();
+  private readonly actions = new Map<string, CanvasActionRecord>();
+  private readonly actionWaiters = new Map<
+    string,
+    (record: CanvasActionRecord) => void
+  >();
   private activeClientId = '';
+
+  constructor(private readonly actionFastWaitMs = ACTION_FAST_WAIT_MS) {}
 
   health(): { ok: true; protocolVersion: number; hasActiveCanvas: boolean } {
     return {
@@ -40,7 +50,7 @@ export class CanvasSession {
     const resolvedClientId = clientId || crypto.randomUUID();
     const previous = this.clients.get(resolvedClientId);
     if (previous && previous !== response) {
-      this.markClientProposalsStale(resolvedClientId, 'canvas_disconnected');
+      this.markClientRequestsStale(resolvedClientId, 'canvas_disconnected');
       previous.end();
     }
     this.canvasStates.delete(resolvedClientId);
@@ -65,7 +75,7 @@ export class CanvasSession {
       }
       this.clients.delete(resolvedClientId);
       this.canvasStates.delete(resolvedClientId);
-      this.markClientProposalsStale(resolvedClientId, 'canvas_disconnected');
+      this.markClientRequestsStale(resolvedClientId, 'canvas_disconnected');
       if (this.activeClientId === resolvedClientId) {
         this.activeClientId = [...this.clients.keys()][0] ?? '';
       }
@@ -120,10 +130,31 @@ export class CanvasSession {
     return proposal;
   }
 
-  callTool(name: CanvasAgentToolName, input: Record<string, unknown>): unknown {
-    this.pruneProposals();
+  resolveAction(
+    clientId: string,
+    actionId: string,
+    status: Exclude<CanvasProposalStatus, 'pending'>,
+    result?: unknown,
+    error?: string
+  ): CanvasActionRecord {
+    const action = this.actions.get(actionId);
+    if (!action || action.clientId !== clientId) {
+      throw new CanvasAgentError('ACTION_NOT_FOUND', 'The canvas action was not found.');
+    }
+    if (action.status !== 'pending') {
+      return action;
+    }
+    this.updateActionRecord(action, status, result, error);
+    return action;
+  }
+
+  async callTool(name: CanvasAgentToolName, input: Record<string, unknown>): Promise<unknown> {
+    this.pruneRequests();
     if (name === 'canvas_get_change_status') {
       return this.getProposalStatus(String(input.proposalId ?? ''));
+    }
+    if (name === 'canvas_get_action_status') {
+      return this.getActionStatus(String(input.actionId ?? ''));
     }
 
     const { clientId, snapshot } = this.requireActiveState();
@@ -147,6 +178,25 @@ export class CanvasSession {
       };
     }
 
+    if (name === 'canvas_import_images') {
+      return this.createAction(clientId, snapshot, {
+        type: 'import_images',
+        ...(input as Omit<Extract<CanvasActionRequest, { type: 'import_images' }>, 'type'>),
+      });
+    }
+    if (name === 'canvas_run_nodes') {
+      return this.createAction(clientId, snapshot, {
+        type: 'run_nodes',
+        ...(input as Omit<Extract<CanvasActionRequest, { type: 'run_nodes' }>, 'type'>),
+      });
+    }
+    if (name === 'canvas_get_node_images') {
+      return this.createAction(clientId, snapshot, {
+        type: 'get_node_images',
+        ...(input as Omit<Extract<CanvasActionRequest, { type: 'get_node_images' }>, 'type'>),
+      });
+    }
+
     return this.createProposal(clientId, snapshot, input as unknown as CanvasChangeSet);
   }
 
@@ -165,14 +215,7 @@ export class CanvasSession {
         activeRevision: snapshot.revision,
       });
     }
-    const pendingProposal = [...this.proposals.values()].find(
-      (proposal) => proposal.clientId === clientId && proposal.status === 'pending'
-    );
-    if (pendingProposal) {
-      throw new CanvasAgentError('PROPOSAL_PENDING', 'Another canvas change set is still being applied.', {
-        proposalId: pendingProposal.proposalId,
-      });
-    }
+    this.ensureNoPendingRequest(clientId);
 
     const now = Date.now();
     const proposal: CanvasProposalRecord = {
@@ -202,6 +245,66 @@ export class CanvasSession {
     };
   }
 
+  private async createAction(
+    clientId: string,
+    snapshot: CanvasSnapshot,
+    request: CanvasActionRequest
+  ): Promise<Omit<CanvasActionRecord, 'clientId' | 'request'>> {
+    if (request.projectId !== snapshot.projectId) {
+      throw new CanvasAgentError('PROJECT_CHANGED', 'The active Lumina project no longer matches the action.', {
+        activeProjectId: snapshot.projectId,
+      });
+    }
+    if ('baseRevision' in request && request.baseRevision !== snapshot.revision) {
+      throw new CanvasAgentError('REVISION_STALE', 'The canvas changed after the Agent read it.', {
+        activeRevision: snapshot.revision,
+      });
+    }
+    this.ensureNoPendingRequest(clientId);
+
+    const now = Date.now();
+    const action: CanvasActionRecord = {
+      actionId: crypto.randomUUID(),
+      clientId,
+      request,
+      status: 'pending',
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.actions.set(action.actionId, action);
+    const client = this.clients.get(clientId);
+    if (!client) {
+      this.updateActionRecord(action, 'stale', undefined, 'canvas_disconnected');
+      throw new CanvasAgentError('NO_ACTIVE_CANVAS', 'No active Lumina canvas is connected.');
+    }
+
+    const completion = new Promise<CanvasActionRecord>((resolve) => {
+      this.actionWaiters.set(action.actionId, resolve);
+    });
+    sendEvent(client, 'action_request', {
+      actionId: action.actionId,
+      request: action.request,
+      createdAt: action.createdAt,
+    });
+
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const completed = await Promise.race([
+      completion,
+      new Promise<CanvasActionRecord>((resolve) => {
+        timeout = setTimeout(() => resolve(action), this.actionFastWaitMs);
+      }),
+    ]);
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+    if (completed.status === 'pending') {
+      this.actionWaiters.delete(action.actionId);
+    }
+    const status = this.toActionStatus(completed);
+    this.compactDeliveredActionResult(completed);
+    return status;
+  }
+
   private getProposalStatus(proposalId: string): Omit<CanvasProposalRecord, 'clientId' | 'changeSet'> {
     const proposal = this.proposals.get(proposalId);
     if (!proposal) {
@@ -215,6 +318,39 @@ export class CanvasSession {
       ...(proposal.result === undefined ? {} : { result: proposal.result }),
       ...(proposal.error ? { error: proposal.error } : {}),
     };
+  }
+
+  private getActionStatus(actionId: string): Omit<CanvasActionRecord, 'clientId' | 'request'> & {
+    actionType: CanvasActionRequest['type'];
+  } {
+    const action = this.actions.get(actionId);
+    if (!action) {
+      throw new CanvasAgentError('ACTION_NOT_FOUND', 'The canvas action was not found.');
+    }
+    const status = this.toActionStatus(action);
+    this.compactDeliveredActionResult(action);
+    return status;
+  }
+
+  private toActionStatus(action: CanvasActionRecord): Omit<CanvasActionRecord, 'clientId' | 'request'> & {
+    actionType: CanvasActionRequest['type'];
+  } {
+    return {
+      actionId: action.actionId,
+      actionType: action.request.type,
+      status: action.status,
+      createdAt: action.createdAt,
+      updatedAt: action.updatedAt,
+      ...(action.result === undefined ? {} : { result: action.result }),
+      ...(action.error ? { error: action.error } : {}),
+    };
+  }
+
+  private compactDeliveredActionResult(action: CanvasActionRecord): void {
+    if (action.status === 'pending' || action.request.type !== 'get_node_images') {
+      return;
+    }
+    action.result = omitDataUrls(action.result);
   }
 
   private requireActiveState(): { clientId: string; snapshot: CanvasSnapshot } {
@@ -242,10 +378,30 @@ export class CanvasSession {
     return { clientId, snapshot: state.snapshot };
   }
 
-  private markClientProposalsStale(clientId: string, reason: string): void {
+  private ensureNoPendingRequest(clientId: string): void {
+    const pendingProposal = [...this.proposals.values()].find(
+      (proposal) => proposal.clientId === clientId && proposal.status === 'pending'
+    );
+    const pendingAction = [...this.actions.values()].find(
+      (action) => action.clientId === clientId && action.status === 'pending'
+    );
+    if (pendingProposal || pendingAction) {
+      throw new CanvasAgentError('REQUEST_PENDING', 'Another canvas request is still being applied.', {
+        ...(pendingProposal ? { proposalId: pendingProposal.proposalId } : {}),
+        ...(pendingAction ? { actionId: pendingAction.actionId } : {}),
+      });
+    }
+  }
+
+  private markClientRequestsStale(clientId: string, reason: string): void {
     this.proposals.forEach((proposal) => {
       if (proposal.clientId === clientId && proposal.status === 'pending') {
         this.updateProposalRecord(proposal, 'stale', undefined, reason);
+      }
+    });
+    this.actions.forEach((action) => {
+      if (action.clientId === clientId && action.status === 'pending') {
+        this.updateActionRecord(action, 'stale', undefined, reason);
       }
     });
   }
@@ -262,7 +418,24 @@ export class CanvasSession {
     proposal.error = error;
   }
 
-  private pruneProposals(): void {
+  private updateActionRecord(
+    action: CanvasActionRecord,
+    status: CanvasProposalStatus,
+    result?: unknown,
+    error?: string
+  ): void {
+    action.status = status;
+    action.updatedAt = Date.now();
+    action.result = result;
+    action.error = error;
+    const waiter = this.actionWaiters.get(action.actionId);
+    if (waiter) {
+      this.actionWaiters.delete(action.actionId);
+      waiter(action);
+    }
+  }
+
+  private pruneRequests(): void {
     const now = Date.now();
     this.proposals.forEach((proposal, proposalId) => {
       if (proposal.status === 'pending' && now - proposal.createdAt > PROPOSAL_TTL_MS) {
@@ -278,6 +451,21 @@ export class CanvasSession {
         break;
       }
       this.proposals.delete(oldestId);
+    }
+    this.actions.forEach((action, actionId) => {
+      if (action.status === 'pending' && now - action.createdAt > PROPOSAL_TTL_MS) {
+        this.updateActionRecord(action, 'stale', undefined, 'action_expired');
+      }
+      if (now - action.updatedAt > PROPOSAL_TTL_MS) {
+        this.actions.delete(actionId);
+      }
+    });
+    while (this.actions.size > MAX_RETAINED_PROPOSALS) {
+      const oldestId = this.actions.keys().next().value as string | undefined;
+      if (!oldestId) {
+        break;
+      }
+      this.actions.delete(oldestId);
     }
   }
 }
@@ -330,6 +518,20 @@ function parseCanvasSnapshot(
       selectedNodeIds.has(preview.nodeId)
     )),
   };
+}
+
+function omitDataUrls(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(omitDataUrls);
+  }
+  if (!value || typeof value !== 'object') {
+    return value;
+  }
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([key]) => key !== 'dataUrl')
+      .map(([key, entry]) => [key, omitDataUrls(entry)])
+  );
 }
 
 function parseSelectedImagePreviews(value: unknown): CanvasSnapshot['selectedImagePreviews'] {

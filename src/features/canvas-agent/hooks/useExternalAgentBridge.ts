@@ -17,12 +17,19 @@ import {
   parsePendingCanvasChangeProposal,
 } from '@/features/canvas-agent/application/canvasChangeSet';
 import {
+  parsePendingCanvasAgentAction,
+} from '@/features/canvas-agent/application/canvasAgentAction';
+import { importCanvasAgentImages } from '@/features/canvas-agent/application/importCanvasAgentImages';
+import { buildCanvasAgentNodeImages } from '@/features/canvas-agent/application/canvasAgentNodeImages';
+import { runImageGenerationNodes } from '@/features/canvas/application/imageGenerationRun';
+import {
   buildSelectedImagePreviews,
   type SelectedImagePreviewSource,
 } from '@/features/canvas-agent/application/selectedImagePreviews';
 import { useStableSelectedImagePreviewSources } from '@/features/canvas-agent/hooks/useStableSelectedImagePreviewSources';
 import {
   consumeCanvasAgentEvents,
+  postCanvasActionResult,
   postCanvasProposalResult,
   resolveCanvasAgentEndpoint,
   type CanvasAgentEndpoint,
@@ -136,6 +143,19 @@ export function useExternalAgentBridge({
     logger.debug('[ExternalAgent] Failed to report proposal result', requestError);
   }), []);
 
+  const reportAction = useCallback((
+    activeEndpoint: CanvasAgentEndpoint,
+    actionId: string,
+    status: 'applied' | 'stale' | 'failed',
+    result?: unknown,
+    error?: string
+  ) => postCanvasActionResult(activeEndpoint, clientIdRef.current, {
+    actionId,
+    status,
+    ...(result === undefined ? {} : { result }),
+    ...(error ? { error } : {}),
+  }), []);
+
   useEffect(() => {
     if (!managedByLumina) {
       setManagedRuntime(null);
@@ -231,10 +251,13 @@ export function useExternalAgentBridge({
               queueSnapshotPublish(endpoint, true);
             },
             onEvent: (event) => {
-              if (event.type !== 'change_proposal') {
+              if (event.type === 'change_proposal') {
+                handleProposalEvent(endpoint, event.payload);
                 return;
               }
-              handleProposalEvent(endpoint, event.payload);
+              if (event.type === 'action_request') {
+                void handleActionEvent(endpoint, event.payload);
+              }
             },
           }
         );
@@ -301,6 +324,81 @@ export function useExternalAgentBridge({
       }
     };
 
+    const handleActionEvent = async (
+      activeEndpoint: CanvasAgentEndpoint,
+      payload: unknown
+    ) => {
+      const actionId = readActionId(payload);
+      try {
+        const action = parsePendingCanvasAgentAction(payload);
+        const current = readCurrentCanvasSnapshot();
+        if (!current) {
+          await reportAction(activeEndpoint, action.actionId, 'stale', undefined, 'project_closed');
+          return;
+        }
+        if (action.request.projectId !== current.projectId) {
+          await reportAction(activeEndpoint, action.actionId, 'stale', undefined, 'project_changed');
+          return;
+        }
+        if (
+          'baseRevision' in action.request
+          && action.request.baseRevision !== current.revision
+        ) {
+          await reportAction(activeEndpoint, action.actionId, 'stale', undefined, 'canvas_changed');
+          return;
+        }
+
+        let result: unknown;
+        if (action.request.type === 'import_images') {
+          const importRequest = action.request;
+          result = await importCanvasAgentImages({
+            projectId: importRequest.projectId,
+            images: importRequest.images,
+            ...(importRequest.position ? { position: importRequest.position } : {}),
+            assertCurrent: () => {
+              const latest = readCurrentCanvasSnapshot();
+              if (
+                !latest
+                || latest.projectId !== importRequest.projectId
+                || latest.revision !== importRequest.baseRevision
+              ) {
+                throw new CanvasActionStaleError();
+              }
+            },
+          });
+        } else if (action.request.type === 'run_nodes') {
+          const runRequest = action.request;
+          result = await runImageGenerationNodes(runRequest.nodeIds, {
+            assertCurrent: () => {
+              if (useProjectStore.getState().getCurrentProject()?.id !== runRequest.projectId) {
+                throw new CanvasActionStaleError('project_changed');
+              }
+            },
+          });
+        } else {
+          result = await buildCanvasAgentNodeImages({
+            projectId: action.request.projectId,
+            nodeIds: action.request.nodeIds,
+            maxDimension: action.request.maxDimension,
+          });
+        }
+        await reportAction(activeEndpoint, action.actionId, 'applied', result);
+      } catch (error) {
+        if (!actionId) {
+          return;
+        }
+        await reportAction(
+          activeEndpoint,
+          actionId,
+          error instanceof CanvasActionStaleError ? 'stale' : 'failed',
+          undefined,
+          error instanceof Error ? error.message : String(error)
+        ).catch((requestError) => {
+          logger.debug('[ExternalAgent] Failed to report action result', requestError);
+        });
+      }
+    };
+
     void connect();
     return () => {
       controller.abort();
@@ -312,6 +410,7 @@ export function useExternalAgentBridge({
     connectionConfig.enabled,
     endpoint,
     queueSnapshotPublish,
+    reportAction,
     reportProposal,
   ]);
 
@@ -346,6 +445,37 @@ function readProposalId(value: unknown): string {
   }
   const proposalId = (value as Record<string, unknown>).proposalId;
   return typeof proposalId === 'string' ? proposalId : '';
+}
+
+function readActionId(value: unknown): string {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return '';
+  }
+  const actionId = (value as Record<string, unknown>).actionId;
+  return typeof actionId === 'string' ? actionId : '';
+}
+
+function readCurrentCanvasSnapshot(): CanvasAgentSnapshot | null {
+  const project = useProjectStore.getState().getCurrentProject();
+  if (!project) {
+    return null;
+  }
+  const canvas = useCanvasStore.getState();
+  return buildCanvasAgentSnapshot({
+    projectId: project.id,
+    projectName: project.name,
+    nodes: canvas.nodes,
+    edges: canvas.edges,
+    selectedNodeIds: canvas.nodes.filter((node) => node.selected).map((node) => node.id),
+    viewport: canvas.currentViewport,
+  });
+}
+
+class CanvasActionStaleError extends Error {
+  constructor(reason = 'canvas_changed') {
+    super(reason);
+    this.name = 'CanvasActionStaleError';
+  }
 }
 
 function haveSameManagedRuntime(

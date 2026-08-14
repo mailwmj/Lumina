@@ -256,4 +256,33 @@ describe('external Agent CanvasChangeSet', () => {
     expect(useCanvasStore.getState().nodes.map((item) => item.id)).toEqual([source.id]);
     expect(useCanvasStore.getState().edges).toEqual([]);
   });
+
+  it('places positionless generation nodes in one readable non-overlapping column', () => {
+    const reference = {
+      ...node(CANVAS_NODE_TYPES.upload, 'reference'),
+      position: { x: 40, y: 80 },
+      width: 280,
+      height: 240,
+    };
+    const applied = applyCanvasChangeSet({ nodes: [reference], edges: [] }, {
+      projectId: 'project-1',
+      baseRevision: 'revision-1',
+      summary: 'Create four product shots',
+      operations: Array.from({ length: 4 }, (_, index) => ({
+        type: 'create_node' as const,
+        clientId: `shot-${index + 1}`,
+        nodeType: CANVAS_NODE_TYPES.imageEdit,
+        data: { prompt: `Shot ${index + 1}` },
+      })),
+    });
+    const created = applied.result.createdNodeIds.map(
+      (nodeId) => applied.nodes.find((item) => item.id === nodeId)
+    );
+
+    expect(created.every((item) => item?.position.x === 480)).toBe(true);
+    expect(created.map((item) => item?.position.y)).toEqual([80, 532, 984, 1436]);
+    expect(created.every((item, index) => (
+      index === 0 || (item?.position.y ?? 0) >= (created[index - 1]?.position.y ?? 0) + 380
+    ))).toBe(true);
+  });
 });
