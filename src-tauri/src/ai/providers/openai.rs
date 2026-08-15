@@ -930,9 +930,14 @@ impl AIProvider for OpenAiProvider {
             .unwrap_or_default()
             .to_ascii_lowercase();
         match task_status.as_str() {
-            "queued" | "dispatching" | "running" | "pending_confirmation" | "uncertain" => {
+            "queued" | "dispatching" | "running" | "pending_confirmation" => {
                 Ok(ProviderTaskPollResult::Running)
             }
+            "uncertain" => Ok(self
+                .image_from_task_body(&body, &api_key, &base_url)
+                .await?
+                .map(ProviderTaskPollResult::Succeeded)
+                .unwrap_or(ProviderTaskPollResult::Running)),
             "success" | "succeeded" | "completed" => self
                 .image_from_task_body(&body, &api_key, &base_url)
                 .await?
@@ -976,7 +981,7 @@ impl AIProvider for OpenAiProvider {
 mod tests {
     use super::OpenAiProvider;
     use crate::ai::providers::image_input::reference_image;
-    use crate::ai::{AIProvider, GenerateRequest};
+    use crate::ai::{AIProvider, GenerateRequest, ProviderTaskHandle, ProviderTaskPollResult};
     use serde_json::{json, Value};
     use std::collections::HashMap;
     use std::path::Path;
@@ -1102,6 +1107,62 @@ mod tests {
         assert!(body.get("ratio").is_none());
         assert_eq!(body["response_format"], "b64_json");
         assert_eq!(body["async"], true);
+    }
+
+    #[tokio::test]
+    async fn ai_media_uncertain_task_uses_an_available_asset_without_resubmission() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut pending_socket, _) = listener.accept().await.unwrap();
+            let pending_request = read_http_request(&mut pending_socket).await;
+            write_json_response(
+                &mut pending_socket,
+                "200 OK",
+                r#"{"task_id":"imgtask-123","status":"uncertain","image_succeeded":0,"assets":[]}"#,
+            )
+            .await;
+            drop(pending_socket);
+
+            let (mut asset_socket, _) = listener.accept().await.unwrap();
+            let asset_request = read_http_request(&mut asset_socket).await;
+            write_json_response(
+                &mut asset_socket,
+                "200 OK",
+                r#"{"task_id":"imgtask-123","status":"uncertain","image_succeeded":1,"assets":[{"signed_url":"https://assets.example/generated.png"}]}"#,
+            )
+            .await;
+
+            (pending_request, asset_request)
+        });
+
+        let provider = OpenAiProvider::ai_media();
+        provider.set_api_key("test-key".to_string()).await.unwrap();
+        let handle = ProviderTaskHandle {
+            task_id: "imgtask-123".to_string(),
+            metadata: Some(json!({
+                "base_url": format!("http://{address}/v1"),
+                "status_url": "/v1/images/tasks/imgtask-123?view=summary",
+            })),
+        };
+
+        assert!(matches!(
+            provider.poll_task(handle.clone()).await.unwrap(),
+            ProviderTaskPollResult::Running
+        ));
+        assert!(matches!(
+            provider.poll_task(handle).await.unwrap(),
+            ProviderTaskPollResult::Succeeded(source)
+                if source == "https://assets.example/generated.png"
+        ));
+
+        let (pending_request, asset_request) = server.await.unwrap();
+        for request in [pending_request, asset_request] {
+            let request_text = String::from_utf8_lossy(&request);
+            assert!(
+                request_text.starts_with("GET /v1/images/tasks/imgtask-123?view=summary HTTP/1.1")
+            );
+        }
     }
 
     #[test]

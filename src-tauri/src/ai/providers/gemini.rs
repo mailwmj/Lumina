@@ -411,6 +411,9 @@ impl GeminiNativeImageProvider {
             "failed" | "cancelled" | "canceled" => Ok(ProviderTaskPollResult::Failed(
                 Self::response_error_message(&body),
             )),
+            "uncertain" => Ok(Self::response_image_source(&body)
+                .map(ProviderTaskPollResult::Succeeded)
+                .unwrap_or(ProviderTaskPollResult::Running)),
             "succeeded" | "success" | "completed" | "finished" => {
                 Self::response_image_source(&body)
                     .map(ProviderTaskPollResult::Succeeded)
@@ -517,7 +520,10 @@ impl AIProvider for GeminiNativeImageProvider {
 #[cfg(test)]
 mod tests {
     use super::GeminiNativeImageProvider;
-    use crate::ai::{AIProvider, GenerateRequest, ProviderTaskPollResult, ProviderTaskSubmission};
+    use crate::ai::{
+        AIProvider, GenerateRequest, ProviderTaskHandle, ProviderTaskPollResult,
+        ProviderTaskSubmission,
+    };
     use serde_json::{json, Value};
     use std::collections::HashMap;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -765,6 +771,46 @@ mod tests {
         assert!(second_request.starts_with(
             "POST /v1beta/models/gemini-3-pro-image-preview:generateContent HTTP/1.1"
         ));
+    }
+
+    #[tokio::test]
+    async fn uncertain_gateway_task_with_image_asset_succeeds() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let request = read_http_request(&mut socket).await;
+            write_json_response(
+                &mut socket,
+                "200 OK",
+                r#"{"task_id":"imgtask-123","status":"uncertain","image_succeeded":1,"assets":[{"signed_url":"https://assets.example/generated.png"}]}"#,
+            )
+            .await;
+            request
+        });
+
+        let provider = GeminiNativeImageProvider::new();
+        provider.set_api_key("test-key".to_string()).await.unwrap();
+        let result = provider
+            .poll_task(ProviderTaskHandle {
+                task_id: "imgtask-123".to_string(),
+                metadata: Some(json!({
+                    "base_url": format!("http://{address}/v1beta"),
+                    "status_url": "/v1/images/tasks/imgtask-123?view=summary",
+                })),
+            })
+            .await
+            .unwrap();
+
+        assert!(matches!(
+            result,
+            ProviderTaskPollResult::Succeeded(source)
+                if source == "https://assets.example/generated.png"
+        ));
+
+        let request = server.await.unwrap();
+        let request_text = String::from_utf8_lossy(&request);
+        assert!(request_text.starts_with("GET /v1/images/tasks/imgtask-123?view=summary HTTP/1.1"));
     }
 
     #[tokio::test]
