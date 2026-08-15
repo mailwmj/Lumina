@@ -21,9 +21,9 @@ interface ToolHttpResponse {
 const MCP_TOOL_TIMEOUT_MS = 35_000;
 
 const MCP_INSTRUCTIONS = [
-  'There is no fixed total call limit: let calls follow business phases and avoid repeated full-state reads without a state change or specific reason.',
-  'Use one canvas_propose_changes call for each atomic setup phase; create nodes with complete data and connect same-batch clientIds in that proposal instead of splitting by node, edge, or field.',
-  'Use terminal proposal and action results directly, and call their status tools only when the initial result is pending.',
+  'Calls follow business phases; there is no fixed total call limit. Avoid repeated full-state reads without a state change or reason.',
+  'Use one canvas_propose_changes per atomic setup phase; include complete node data and same-batch clientId connections instead of splitting by object or field.',
+  'Use terminal results directly; call status tools only when the initial result is pending.',
   'Call canvas_run_nodes only after the user has explicitly authorized the visible setup.',
   'Lumina exposes only the project currently open in the desktop app.',
   'Read canvas_get_state before changing the canvas and reuse its projectId and revision.',

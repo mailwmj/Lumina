@@ -26,6 +26,7 @@ const expectedTools = [
   'canvas_import_images',
   'canvas_propose_changes',
   'canvas_run_nodes',
+  'canvas_wait_for_nodes',
 ];
 
 if (!fs.statSync(executable).isFile()) {

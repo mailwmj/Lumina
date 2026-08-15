@@ -328,9 +328,9 @@ export async function runImageGenerationNode(
   }
 }
 
-export function buildAiResultNodeTitle(prompt: string, fallbackTitle: string): string {
-  const normalizedPrompt = prompt.trim();
-  return normalizedPrompt || fallbackTitle;
+export function buildAiResultNodeTitle(sourceTitle: string, fallbackTitle: string): string {
+  const normalizedTitle = sourceTitle.trim();
+  return normalizedTitle || fallbackTitle;
 }
 
 async function resolveRequestAspectRatio(

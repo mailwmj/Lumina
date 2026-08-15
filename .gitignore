@@ -63,8 +63,12 @@ Henji-AI/
 rustup_init.exe
 rustup-init.exe
 
-# Claude Code
-.agents/
+# Local Agent state; keep only the repository-scoped Lumina skill.
+.agents/*
+!.agents/skills/
+.agents/skills/*
+!.agents/skills/lumina-canvas/
+!.agents/skills/lumina-canvas/**
 
 # Superpowers skill workflow (local-only progress files)
 .superpowers/
