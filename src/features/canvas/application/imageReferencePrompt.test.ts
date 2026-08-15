@@ -8,6 +8,7 @@ import {
   findImageReferencePromptTokens,
   insertImageReferencePromptToken,
   materializeImageReferencePrompt,
+  normalizeImageReferenceShortcuts,
   pruneImageReferencePromptTokensForEdges,
   removeImageReferencePromptToken,
 } from './imageReferencePrompt';
@@ -64,6 +65,34 @@ describe('image reference prompt', () => {
       .toBe('衣服参考图片 1。');
   });
 
+  it('turns typed Chinese image ordinals into edge-bound reference tokens', () => {
+    const firstToken = createImageReferencePromptToken('first-edge');
+    const secondToken = createImageReferencePromptToken('second-edge');
+    const typedPrompt = '保留图 1的身份，使用图片2的服装，并参考图一和图片二。';
+    const normalized = normalizeImageReferenceShortcuts(typedPrompt, [
+      { edgeId: 'first-edge' },
+      { edgeId: 'second-edge' },
+    ], typedPrompt.length);
+
+    expect(normalized.nextText).toBe(
+      `保留${firstToken}的身份，使用${secondToken}的服装，并参考${firstToken}和${secondToken}。`
+    );
+    expect(normalized.selectionOffset).toBe(normalized.nextText.length);
+    expect(materializeImageReferencePrompt(normalized.nextText, [
+      { edgeId: 'second-edge' },
+      { edgeId: 'first-edge' },
+    ])).toBe('保留图片 2的身份，使用图片 1的服装，并参考图片 2和图片 1。');
+  });
+
+  it('leaves an unavailable image ordinal as ordinary prompt text', () => {
+    const typedPrompt = '保持图片三中的帽子。';
+
+    expect(normalizeImageReferenceShortcuts(typedPrompt, [
+      { edgeId: 'first-edge' },
+      { edgeId: 'second-edge' },
+    ])).toEqual({ nextText: typedPrompt, selectionOffset: typedPrompt.length });
+  });
+
   it('silently prunes only tags that point to removed image edges across supported nodes', () => {
     const text = createNode(CANVAS_NODE_TYPES.textGeneration, 'text');
     text.data = {
@@ -89,7 +118,7 @@ describe('image reference prompt', () => {
       { edgeId: 'red' },
       { edgeId: 'yellow' },
     ])).toBe([
-      '参考图片按以下编号和顺序提供：',
+      '参考图片会按以下顺序提供。提示词中的“图片 N”专指第 N 张参考图片，必须按此对应关系理解和执行：',
       '- 图片 1：第 1 张参考图片',
       '- 图片 2：第 2 张参考图片',
       '',

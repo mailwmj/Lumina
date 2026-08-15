@@ -21,6 +21,7 @@ import {
   findImageReferencePromptTokens,
   insertImageReferencePromptToken,
   moveImageReferencePickerIndex,
+  normalizeImageReferenceShortcuts,
   removeImageReferencePromptToken,
   type ImageReferencePromptInput as ImageReferencePromptValue,
 } from '@/features/canvas/application/imageReferencePrompt';
@@ -412,6 +413,33 @@ export const ImageReferencePromptInput = forwardRef<ImageReferencePromptInputHan
     onValueChange(nextValue, nativeIsComposing);
   }, [onValueChange]);
 
+  const normalizeReferenceShortcuts = useCallback((
+    root: HTMLDivElement,
+    nextValue: string,
+    selectionOffset: number | null,
+    restoreFocus = true
+  ): string | null => {
+    const normalized = normalizeImageReferenceShortcuts(
+      nextValue,
+      imageInputs,
+      selectionOffset ?? nextValue.length
+    );
+    if (normalized.nextText === nextValue) {
+      return null;
+    }
+
+    pendingSelectionOffsetRef.current = normalized.selectionOffset;
+    pendingSelectionAffinityRef.current = 'after';
+    emitValue(normalized.nextText, false);
+    if (restoreFocus) {
+      requestAnimationFrame(() => {
+        root.focus();
+        setSelectionOffset(root, normalized.selectionOffset, 'after');
+      });
+    }
+    return normalized.nextText;
+  }, [emitValue, imageInputs]);
+
   const closePicker = useCallback(() => {
     pickerOpenRef.current = false;
     setShowPicker(false);
@@ -539,8 +567,15 @@ export const ImageReferencePromptInput = forwardRef<ImageReferencePromptInputHan
       return;
     }
 
+    if (!nativeIsComposing && !isComposingRef.current) {
+      const normalizedValue = normalizeReferenceShortcuts(root, nextValue, cursor);
+      if (normalizedValue !== null) {
+        return;
+      }
+    }
+
     emitValue(nextValue, nativeIsComposing);
-  }, [emitValue, imageInputs.length, openPicker]);
+  }, [emitValue, imageInputs.length, normalizeReferenceShortcuts, openPicker]);
 
   const handleCompositionStart = useCallback(() => {
     isComposingRef.current = true;
@@ -551,14 +586,31 @@ export const ImageReferencePromptInput = forwardRef<ImageReferencePromptInputHan
   const handleCompositionEnd = useCallback((event: CompositionEvent<HTMLDivElement>) => {
     isComposingRef.current = false;
     const nextValue = readEditorValue(event.currentTarget);
-    emitValue(nextValue, false);
-    onCompositionEnd?.(nextValue);
-  }, [emitValue, onCompositionEnd]);
+    const normalizedValue = normalizeReferenceShortcuts(
+      event.currentTarget,
+      nextValue,
+      getSelectionOffset(event.currentTarget)
+    );
+    const emittedValue = normalizedValue ?? nextValue;
+    if (normalizedValue === null) {
+      emitValue(emittedValue, false);
+    }
+    onCompositionEnd?.(emittedValue);
+  }, [emitValue, normalizeReferenceShortcuts, onCompositionEnd]);
 
   const handleBlur = useCallback((event: FocusEvent<HTMLDivElement>) => {
     closePicker();
-    onBlur?.(readEditorValue(event.currentTarget));
-  }, [closePicker, onBlur]);
+    const nextValue = readEditorValue(event.currentTarget);
+    const normalizedValue = isComposingRef.current
+      ? null
+      : normalizeReferenceShortcuts(
+        event.currentTarget,
+        nextValue,
+        getSelectionOffset(event.currentTarget),
+        false
+      );
+    onBlur?.(normalizedValue ?? nextValue);
+  }, [closePicker, normalizeReferenceShortcuts, onBlur]);
 
   const handlePaste = useCallback((event: ClipboardEvent<HTMLDivElement>) => {
     const text = event.clipboardData.getData('text/plain');

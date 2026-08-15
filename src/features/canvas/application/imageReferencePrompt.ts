@@ -12,6 +12,27 @@ import {
 const IMAGE_REFERENCE_TOKEN_PREFIX = '{{image-ref:';
 const IMAGE_REFERENCE_TOKEN_SUFFIX = '}}';
 const IMAGE_REFERENCE_TOKEN_PATTERN = /\{\{image-ref:([^{}\s]+)\}\}/g;
+const IMAGE_REFERENCE_SHORTCUT_PATTERN = /(图片|图)[ \t\u3000]*([0-9]+|[零〇一二三四五六七八九十百千]+)/g;
+
+const CHINESE_REFERENCE_DIGITS: Record<string, number> = {
+  零: 0,
+  〇: 0,
+  一: 1,
+  二: 2,
+  三: 3,
+  四: 4,
+  五: 5,
+  六: 6,
+  七: 7,
+  八: 8,
+  九: 9,
+};
+
+const CHINESE_REFERENCE_UNITS: Record<string, number> = {
+  十: 10,
+  百: 100,
+  千: 1000,
+};
 
 export interface ImageReferencePromptInput {
   edgeId: string;
@@ -23,6 +44,11 @@ export interface ImageReferencePromptToken {
   edgeId: string;
   start: number;
   end: number;
+}
+
+export interface ImageReferenceShortcutNormalization {
+  nextText: string;
+  selectionOffset: number;
 }
 
 export const DEFAULT_IMAGE_REFERENCE_PICKER_INDEX = 0;
@@ -47,6 +73,89 @@ export function moveImageReferencePickerIndex(
 
 export function createImageReferencePromptToken(edgeId: string): string {
   return `${IMAGE_REFERENCE_TOKEN_PREFIX}${edgeId}${IMAGE_REFERENCE_TOKEN_SUFFIX}`;
+}
+
+function parseImageReferenceOrdinal(value: string): number | null {
+  if (/^\d+$/.test(value)) {
+    const ordinal = Number(value);
+    return Number.isSafeInteger(ordinal) && ordinal > 0 ? ordinal : null;
+  }
+
+  let ordinal = 0;
+  let currentDigit: number | null = null;
+  for (const character of value) {
+    const digit = CHINESE_REFERENCE_DIGITS[character];
+    if (digit !== undefined) {
+      currentDigit = digit;
+      continue;
+    }
+
+    const unit = CHINESE_REFERENCE_UNITS[character];
+    if (unit === undefined) {
+      return null;
+    }
+    ordinal += (currentDigit ?? 1) * unit;
+    currentDigit = null;
+  }
+
+  const parsed = ordinal + (currentDigit ?? 0);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+/**
+ * Turns a typed ordinal such as "图 1" or "图片一" into an edge-bound
+ * reference token when that ordinal exists in the current image input order.
+ */
+export function normalizeImageReferenceShortcuts(
+  text: string,
+  imageInputs: ImageReferencePromptInput[],
+  selectionOffset = text.length
+): ImageReferenceShortcutNormalization {
+  const replacements: Array<{ start: number; end: number; token: string }> = [];
+
+  for (const match of text.matchAll(IMAGE_REFERENCE_SHORTCUT_PATTERN)) {
+    const ordinal = parseImageReferenceOrdinal(match[2]);
+    const input = ordinal === null ? undefined : imageInputs[ordinal - 1];
+    const start = match.index;
+    if (!input || start === undefined) {
+      continue;
+    }
+    replacements.push({
+      start,
+      end: start + match[0].length,
+      token: createImageReferencePromptToken(input.edgeId),
+    });
+  }
+
+  if (replacements.length === 0) {
+    return { nextText: text, selectionOffset };
+  }
+
+  let nextText = '';
+  let previousEnd = 0;
+  for (const replacement of replacements) {
+    nextText += text.slice(previousEnd, replacement.start);
+    nextText += replacement.token;
+    previousEnd = replacement.end;
+  }
+  nextText += text.slice(previousEnd);
+
+  const boundedSelectionOffset = Math.max(0, Math.min(selectionOffset, text.length));
+  let normalizedSelectionOffset = boundedSelectionOffset;
+  let accumulatedDelta = 0;
+  for (const replacement of replacements) {
+    if (boundedSelectionOffset <= replacement.start) {
+      break;
+    }
+    if (boundedSelectionOffset < replacement.end) {
+      normalizedSelectionOffset = replacement.start + accumulatedDelta + replacement.token.length;
+      break;
+    }
+    accumulatedDelta += replacement.token.length - (replacement.end - replacement.start);
+    normalizedSelectionOffset = boundedSelectionOffset + accumulatedDelta;
+  }
+
+  return { nextText, selectionOffset: normalizedSelectionOffset };
 }
 
 export function findImageReferencePromptTokens(text: string): ImageReferencePromptToken[] {
@@ -137,7 +246,12 @@ export function buildImageReferenceModelPrompt(
   const mapping = imageInputs
     .map((_input, index) => `- ${getImageReferencePromptLabel(index)}：第 ${index + 1} 张参考图片`)
     .join('\n');
-  return `参考图片按以下编号和顺序提供：\n${mapping}\n\n${prompt}`;
+  return [
+    '参考图片会按以下顺序提供。提示词中的“图片 N”专指第 N 张参考图片，必须按此对应关系理解和执行：',
+    mapping,
+    '',
+    prompt,
+  ].join('\n');
 }
 
 export function removeImageReferencePromptTokensForEdges(

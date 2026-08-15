@@ -11,18 +11,35 @@ import {
   type CanvasProposalRecord,
   type CanvasProposalStatus,
   type CanvasSnapshot,
+  type CanvasWaitForNodesInput,
 } from './protocol.js';
+import {
+  buildNodeProgress,
+  fingerprintNodeProgress,
+  type CanvasNodeProgressResult,
+} from './nodeProgress.js';
 
 const ACTIVE_CANVAS_TTL_MS = 15_000;
 const PROPOSAL_TTL_MS = 10 * 60_000;
 const MAX_RETAINED_PROPOSALS = 100;
 const ACTION_FAST_WAIT_MS = 8_000;
+const PROPOSAL_FAST_WAIT_MS = 750;
 const MAX_SELECTED_IMAGE_PREVIEWS = 6;
 const MAX_PREVIEW_DATA_URL_LENGTH = 1_500_000;
 
 interface CanvasClientState {
   snapshot: CanvasSnapshot;
   updatedAt: number;
+}
+
+interface CanvasNodeWaiter {
+  clientId: string;
+  projectId: string;
+  nodeIds: string[];
+  baselineFingerprint: string;
+  resolve: (result: CanvasNodeProgressResult) => void;
+  reject: (error: CanvasAgentError) => void;
+  timeout: ReturnType<typeof setTimeout>;
 }
 
 export class CanvasSession {
@@ -34,15 +51,41 @@ export class CanvasSession {
     string,
     (record: CanvasActionRecord) => void
   >();
+  private readonly proposalWaiters = new Map<
+    string,
+    (record: CanvasProposalRecord) => void
+  >();
+  private readonly nodeWaiters = new Set<CanvasNodeWaiter>();
   private activeClientId = '';
 
-  constructor(private readonly actionFastWaitMs = ACTION_FAST_WAIT_MS) {}
+  constructor(
+    private readonly actionFastWaitMs = ACTION_FAST_WAIT_MS,
+    private readonly proposalFastWaitMs = PROPOSAL_FAST_WAIT_MS
+  ) {}
 
-  health(): { ok: true; protocolVersion: number; hasActiveCanvas: boolean } {
+  health(includeActiveProject = false): {
+    ok: true;
+    protocolVersion: number;
+    hasActiveCanvas: boolean;
+    readiness: 'waiting_for_canvas' | 'connecting' | 'ready';
+    activeProject?: { id: string; name: string };
+  } {
+    const activeState = this.resolveActiveState(false);
     return {
       ok: true,
       protocolVersion: CANVAS_AGENT_PROTOCOL_VERSION,
-      hasActiveCanvas: Boolean(this.resolveActiveState(false)),
+      hasActiveCanvas: Boolean(activeState),
+      readiness: activeState
+        ? 'ready'
+        : this.clients.size > 0
+          ? 'connecting'
+          : 'waiting_for_canvas',
+      ...(activeState && includeActiveProject ? {
+        activeProject: {
+          id: activeState.snapshot.projectId,
+          name: activeState.snapshot.projectName,
+        },
+      } : {}),
     };
   }
 
@@ -76,6 +119,10 @@ export class CanvasSession {
       this.clients.delete(resolvedClientId);
       this.canvasStates.delete(resolvedClientId);
       this.markClientRequestsStale(resolvedClientId, 'canvas_disconnected');
+      this.rejectNodeWaiters(
+        resolvedClientId,
+        new CanvasAgentError('NO_ACTIVE_CANVAS', 'The Lumina canvas disconnected while waiting for node progress.')
+      );
       if (this.activeClientId === resolvedClientId) {
         this.activeClientId = [...this.clients.keys()][0] ?? '';
       }
@@ -107,6 +154,7 @@ export class CanvasSession {
         }
       });
     }
+    this.resolveNodeWaiters(clientId, snapshot);
   }
 
   resolveProposal(
@@ -177,6 +225,13 @@ export class CanvasSession {
         capabilities: snapshot.capabilities,
       };
     }
+    if (name === 'canvas_wait_for_nodes') {
+      return this.waitForNodes(
+        clientId,
+        snapshot,
+        input as unknown as CanvasWaitForNodesInput
+      );
+    }
 
     if (name === 'canvas_import_images') {
       return this.createAction(clientId, snapshot, {
@@ -200,11 +255,11 @@ export class CanvasSession {
     return this.createProposal(clientId, snapshot, input as unknown as CanvasChangeSet);
   }
 
-  private createProposal(
+  private async createProposal(
     clientId: string,
     snapshot: CanvasSnapshot,
     changeSet: CanvasChangeSet
-  ): Pick<CanvasProposalRecord, 'proposalId' | 'status' | 'createdAt' | 'updatedAt'> {
+  ): Promise<Omit<CanvasProposalRecord, 'clientId' | 'changeSet'>> {
     if (changeSet.projectId !== snapshot.projectId) {
       throw new CanvasAgentError('PROJECT_CHANGED', 'The active Lumina project no longer matches the proposal.', {
         activeProjectId: snapshot.projectId,
@@ -232,17 +287,29 @@ export class CanvasSession {
       this.updateProposalRecord(proposal, 'stale', undefined, 'canvas_disconnected');
       throw new CanvasAgentError('NO_ACTIVE_CANVAS', 'No active Lumina canvas is connected.');
     }
+    const completion = new Promise<CanvasProposalRecord>((resolve) => {
+      this.proposalWaiters.set(proposal.proposalId, resolve);
+    });
     sendEvent(client, 'change_proposal', {
       proposalId: proposal.proposalId,
       changeSet: proposal.changeSet,
       createdAt: proposal.createdAt,
     });
-    return {
-      proposalId: proposal.proposalId,
-      status: proposal.status,
-      createdAt: proposal.createdAt,
-      updatedAt: proposal.updatedAt,
-    };
+
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const completed = await Promise.race([
+      completion,
+      new Promise<CanvasProposalRecord>((resolve) => {
+        timeout = setTimeout(() => resolve(proposal), this.proposalFastWaitMs);
+      }),
+    ]);
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+    if (completed.status === 'pending') {
+      this.proposalWaiters.delete(proposal.proposalId);
+    }
+    return this.toProposalStatus(completed);
   }
 
   private async createAction(
@@ -310,6 +377,12 @@ export class CanvasSession {
     if (!proposal) {
       throw new CanvasAgentError('PROPOSAL_NOT_FOUND', 'The canvas change proposal was not found.');
     }
+    return this.toProposalStatus(proposal);
+  }
+
+  private toProposalStatus(
+    proposal: CanvasProposalRecord
+  ): Omit<CanvasProposalRecord, 'clientId' | 'changeSet'> {
     return {
       proposalId: proposal.proposalId,
       status: proposal.status,
@@ -318,6 +391,86 @@ export class CanvasSession {
       ...(proposal.result === undefined ? {} : { result: proposal.result }),
       ...(proposal.error ? { error: proposal.error } : {}),
     };
+  }
+
+  private waitForNodes(
+    clientId: string,
+    snapshot: CanvasSnapshot,
+    input: CanvasWaitForNodesInput
+  ): Promise<CanvasNodeProgressResult> {
+    if (input.projectId !== snapshot.projectId) {
+      throw new CanvasAgentError(
+        'PROJECT_CHANGED',
+        'The active Lumina project no longer matches the requested node progress.',
+        { activeProjectId: snapshot.projectId }
+      );
+    }
+    const nodeIds = [...new Set(input.nodeIds)];
+    const initial = buildNodeProgress(snapshot, nodeIds, false, false);
+    if (initial.summary.allTerminal) {
+      return Promise.resolve(initial);
+    }
+
+    return new Promise<CanvasNodeProgressResult>((resolve, reject) => {
+      const waiter: CanvasNodeWaiter = {
+        clientId,
+        projectId: input.projectId,
+        nodeIds,
+        baselineFingerprint: fingerprintNodeProgress(initial),
+        resolve,
+        reject,
+        timeout: setTimeout(() => {
+          this.nodeWaiters.delete(waiter);
+          const current = this.canvasStates.get(clientId)?.snapshot;
+          if (!current || current.projectId !== input.projectId) {
+            reject(new CanvasAgentError(
+              'NO_ACTIVE_CANVAS',
+              'The Lumina canvas became unavailable while waiting for node progress.'
+            ));
+            return;
+          }
+          resolve(buildNodeProgress(current, nodeIds, false, true));
+        }, input.timeoutMs),
+      };
+      this.nodeWaiters.add(waiter);
+    });
+  }
+
+  private resolveNodeWaiters(clientId: string, snapshot: CanvasSnapshot): void {
+    this.nodeWaiters.forEach((waiter) => {
+      if (waiter.clientId !== clientId) {
+        return;
+      }
+      if (waiter.projectId !== snapshot.projectId) {
+        this.finishNodeWaiter(waiter, () => waiter.reject(new CanvasAgentError(
+          'PROJECT_CHANGED',
+          'The active Lumina project changed while waiting for node progress.',
+          { activeProjectId: snapshot.projectId }
+        )));
+        return;
+      }
+      const current = buildNodeProgress(snapshot, waiter.nodeIds, true, false);
+      if (
+        current.summary.allTerminal
+        || fingerprintNodeProgress(current) !== waiter.baselineFingerprint
+      ) {
+        this.finishNodeWaiter(waiter, () => waiter.resolve(current));
+      }
+    });
+  }
+
+  private rejectNodeWaiters(clientId: string, error: CanvasAgentError): void {
+    this.nodeWaiters.forEach((waiter) => {
+      if (waiter.clientId === clientId) {
+        this.finishNodeWaiter(waiter, () => waiter.reject(error));
+      }
+    });
+  }
+
+  private finishNodeWaiter(waiter: CanvasNodeWaiter, finish: () => void): void {
+    clearTimeout(waiter.timeout);
+    this.nodeWaiters.delete(waiter);
+    finish();
   }
 
   private getActionStatus(actionId: string): Omit<CanvasActionRecord, 'clientId' | 'request'> & {
@@ -416,6 +569,12 @@ export class CanvasSession {
     proposal.updatedAt = Date.now();
     proposal.result = result;
     proposal.error = error;
+    const waiter = this.proposalWaiters.get(proposal.proposalId);
+    const mayBeCommittedSnapshotRace = status === 'stale' && error === 'canvas_changed';
+    if (waiter && !mayBeCommittedSnapshotRace) {
+      this.proposalWaiters.delete(proposal.proposalId);
+      waiter(proposal);
+    }
   }
 
   private updateActionRecord(

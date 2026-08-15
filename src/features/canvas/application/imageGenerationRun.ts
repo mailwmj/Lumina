@@ -3,6 +3,7 @@ import {
   DEFAULT_IMAGE_OUTPUT_COUNT,
   isImageEditNode,
 } from '@/features/canvas/domain/canvasNodes';
+import { resolveNodeDisplayName } from '@/features/canvas/domain/nodeDisplay';
 import {
   buildImageReferenceModelPrompt,
   materializeImageReferencePrompt,
@@ -214,7 +215,7 @@ export async function runImageGenerationNode(
       outputCount,
       aspectRatio: resolvedRequestAspectRatio,
       resultNodeTitle: buildAiResultNodeTitle(
-        userPrompt,
+        resolveNodeDisplayName(sourceNode.type, sourceNode.data),
         options.fallbackResultTitle ?? 'AI image result'
       ),
       generationStartedAt,

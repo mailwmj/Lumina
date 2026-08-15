@@ -51,11 +51,13 @@ codex mcp remove lumina
 - `canvas_get_change_status`
 - `canvas_import_images`
 - `canvas_run_nodes`
+- `canvas_wait_for_nodes`
 - `canvas_get_node_images`
 - `canvas_get_action_status`
 
 `canvas_propose_changes` sends a bounded `CanvasChangeSet` to the live Lumina canvas. Lumina validates
-and applies it directly as one atomic history step, so one undo restores the full batch. The surface
+and applies it directly as one atomic history step, so one undo restores the full batch. Fast proposal
+results return inline; only a returned `pending` proposal requires `canvas_get_change_status`. The surface
 does not expose deletion, arbitrary result-node creation, closed projects, SQLite state, local media
 paths, or background canvas access.
 
@@ -64,5 +66,14 @@ complete inline when Lumina responds within eight seconds; only a returned `pend
 `canvas_get_action_status`. Imported references and positionless generation nodes use readable column
 layout, while generation itself reuses the same application service as Lumina's Generate button.
 
+`canvas_wait_for_nodes` is a compact long-poll read for generation progress. It returns when one target
+node changes, all targets become terminal, or the requested timeout expires. Its response contains only
+the target-node statuses, revision, and batch counts; callers repeat it as needed instead of polling the
+full canvas on a fixed interval. Workflow call counts therefore scale with business phases and observed
+progress waves rather than a fixed total-call limit.
+
 The bridge binds only to `127.0.0.1`, requires a bearer token, limits request size, rejects unlisted
-browser origins, and expires live canvas state when the WebView stops publishing heartbeats.
+browser origins, and expires live canvas state when the WebView stops publishing heartbeats. Its health
+response distinguishes a running bridge that is waiting for a canvas from one with a ready active project.
+The basic readiness response is public on loopback; active project identity is included only for callers
+that provide the owner-local bearer token.

@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import {
+  getCanvasAgentHealth,
   getCanvasAgentRuntime,
   isCanvasAgentManagedByLumina,
+  type CanvasAgentHealthInfo,
   type CanvasAgentRuntimeInfo,
 } from '@/commands/canvasAgent';
 import { Check, Copy } from '@/components/ui/icons';
@@ -23,6 +25,7 @@ export function ExternalAgentSettings({
   const { t } = useTranslation();
   const managedByLumina = isCanvasAgentManagedByLumina();
   const [runtime, setRuntime] = useState<CanvasAgentRuntimeInfo | null>(null);
+  const [health, setHealth] = useState<CanvasAgentHealthInfo | null>(null);
   const [runtimeError, setRuntimeError] = useState('');
   const [commandCopied, setCommandCopied] = useState(false);
 
@@ -32,14 +35,35 @@ export function ExternalAgentSettings({
     }
     let cancelled = false;
     const refresh = async () => {
+      let nextRuntime: CanvasAgentRuntimeInfo | null;
       try {
-        const nextRuntime = await getCanvasAgentRuntime();
+        nextRuntime = await getCanvasAgentRuntime();
+      } catch (error) {
         if (!cancelled) {
-          setRuntime(nextRuntime);
+          setRuntime(null);
+          setHealth(null);
+          setRuntimeError(error instanceof Error ? error.message : String(error));
+        }
+        return;
+      }
+      if (cancelled) {
+        return;
+      }
+      setRuntime(nextRuntime);
+      if (!nextRuntime?.running || !nextRuntime.url || !nextRuntime.token) {
+        setHealth(null);
+        setRuntimeError('');
+        return;
+      }
+      try {
+        const nextHealth = await getCanvasAgentHealth(nextRuntime.url, nextRuntime.token);
+        if (!cancelled) {
+          setHealth(nextHealth);
           setRuntimeError('');
         }
       } catch (error) {
         if (!cancelled) {
+          setHealth(null);
           setRuntimeError(error instanceof Error ? error.message : String(error));
         }
       }
@@ -63,6 +87,8 @@ export function ExternalAgentSettings({
     window.setTimeout(() => setCommandCopied(false), 1_500);
   };
 
+  const readiness = resolveReadiness(value.enabled, runtime, health, runtimeError);
+
   return (
     <div className="space-y-5 py-5">
       <SettingsCheckboxCard
@@ -84,18 +110,28 @@ export function ExternalAgentSettings({
               </p>
             </div>
             <span className={`mt-0.5 inline-flex shrink-0 items-center gap-2 text-xs ${
-              runtime?.running ? 'text-emerald-500' : 'text-text-muted'
+              readiness.tone === 'ready'
+                ? 'text-emerald-500'
+                : readiness.tone === 'attention'
+                  ? 'text-amber-500'
+                  : 'text-text-muted'
             }`}>
               <span className={`h-2 w-2 rounded-full ${
-                runtime?.running ? 'bg-emerald-500' : 'bg-text-muted/45'
+                readiness.tone === 'ready'
+                  ? 'bg-emerald-500'
+                  : readiness.tone === 'attention'
+                    ? 'bg-amber-500'
+                    : 'bg-text-muted/45'
               }`} />
-              {runtime?.running
-                ? t('settings.externalAgentServiceReady')
-                : runtime || runtimeError
-                  ? t('settings.externalAgentServiceUnavailable')
-                  : t('settings.externalAgentServiceStarting')}
+              {t(readiness.labelKey)}
             </span>
           </div>
+
+          {value.enabled && health?.readiness === 'ready' && health.activeProject && (
+            <p className="mt-3 text-xs leading-5 text-text-muted">
+              {t('settings.externalAgentActiveProject', { name: health.activeProject.name })}
+            </p>
+          )}
 
           {(runtime?.error || runtimeError) && (
             <p className="mt-3 break-words text-xs leading-5 text-red-500">
@@ -177,4 +213,35 @@ export function ExternalAgentSettings({
       )}
     </div>
   );
+}
+
+interface ReadinessView {
+  tone: 'ready' | 'attention' | 'neutral';
+  labelKey:
+    | 'settings.externalAgentCanvasReady'
+    | 'settings.externalAgentPermissionRequired'
+    | 'settings.externalAgentCanvasWaiting'
+    | 'settings.externalAgentServiceUnavailable'
+    | 'settings.externalAgentServiceStarting';
+}
+
+function resolveReadiness(
+  enabled: boolean,
+  runtime: CanvasAgentRuntimeInfo | null,
+  health: CanvasAgentHealthInfo | null,
+  runtimeError: string
+): ReadinessView {
+  if (!runtime && !runtimeError) {
+    return { tone: 'neutral', labelKey: 'settings.externalAgentServiceStarting' };
+  }
+  if (!runtime?.running || runtimeError) {
+    return { tone: 'neutral', labelKey: 'settings.externalAgentServiceUnavailable' };
+  }
+  if (!enabled) {
+    return { tone: 'attention', labelKey: 'settings.externalAgentPermissionRequired' };
+  }
+  if (health?.readiness === 'ready') {
+    return { tone: 'ready', labelKey: 'settings.externalAgentCanvasReady' };
+  }
+  return { tone: 'attention', labelKey: 'settings.externalAgentCanvasWaiting' };
 }

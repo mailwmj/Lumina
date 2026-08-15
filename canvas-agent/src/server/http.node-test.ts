@@ -73,6 +73,22 @@ test('serves an authenticated live canvas and stale proposal lifecycle over loop
     const state = await callTool(baseUrl, 'canvas_get_state', {});
     assert.equal((state as CanvasSnapshot).revision, 'revision-1');
 
+    const publicHealth = await fetch(`${baseUrl}/health`).then((response) => response.json()) as {
+      readiness: string;
+      activeProject?: unknown;
+    };
+    assert.equal(publicHealth.readiness, 'ready');
+    assert.equal(publicHealth.activeProject, undefined);
+    const authenticatedHealth = await fetch(`${baseUrl}/health`, {
+      headers: { Authorization: `Bearer ${TOKEN}` },
+    }).then((response) => response.json()) as {
+      activeProject?: { id: string; name: string };
+    };
+    assert.deepEqual(authenticatedHealth.activeProject, {
+      id: 'project-1',
+      name: 'Project',
+    });
+
     const proposal = await callTool(baseUrl, 'canvas_propose_changes', {
       projectId: 'project-1',
       baseRevision: 'revision-1',

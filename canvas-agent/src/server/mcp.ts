@@ -18,15 +18,20 @@ interface ToolHttpResponse {
   error?: CanvasAgentErrorPayload;
 }
 
+const MCP_TOOL_TIMEOUT_MS = 35_000;
+
 const MCP_INSTRUCTIONS = [
+  'There is no fixed total call limit: let calls follow business phases and avoid repeated full-state reads without a state change or specific reason.',
+  'Use one canvas_propose_changes call for each atomic setup phase; create nodes with complete data and connect same-batch clientIds in that proposal instead of splitting by node, edge, or field.',
+  'Use terminal proposal and action results directly, and call their status tools only when the initial result is pending.',
+  'Call canvas_run_nodes only after the user has explicitly authorized the visible setup.',
   'Lumina exposes only the project currently open in the desktop app.',
   'Read canvas_get_state before changing the canvas and reuse its projectId and revision.',
   'Import user-provided images in one canvas_import_images batch; absolute local paths, file URLs, HTTP(S) URLs, and raster image data URLs are supported.',
   'Create one existing imageNode per distinct shot, omit create_node.position for automatic readable column layout, and connect references in the same order used by 图片 1, 图片 2, and subsequent prompt labels.',
   'canvas_propose_changes validates and atomically applies one bounded change set without an in-app approval step.',
-  'Poll canvas_get_change_status until Lumina reports applied, stale, or failed.',
-  'Call canvas_run_nodes only after the user has approved the visible setup; successful calls create normal Lumina result nodes.',
-  'Use canvas_get_node_images with explicit result node IDs to inspect outputs; call canvas_get_action_status only when an action returns pending.',
+  'After a run, use canvas_wait_for_nodes with the returned result node IDs for compact progress; repeat waits as needed until every target is terminal.',
+  'Use canvas_get_node_images with explicit ready result node IDs to inspect outputs.',
   'Deletion and arbitrary result-node creation remain unavailable.',
 ].join(' ');
 
@@ -126,7 +131,7 @@ async function postTool(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ name, input }),
-      signal: AbortSignal.timeout(15_000),
+      signal: AbortSignal.timeout(MCP_TOOL_TIMEOUT_MS),
     });
   } catch (error) {
     throw new CanvasAgentError(

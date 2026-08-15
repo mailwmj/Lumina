@@ -10,6 +10,7 @@ export const canvasAgentToolNames = [
   'canvas_get_change_status',
   'canvas_import_images',
   'canvas_run_nodes',
+  'canvas_wait_for_nodes',
   'canvas_get_node_images',
   'canvas_get_action_status',
 ] as const;
@@ -88,6 +89,12 @@ export const canvasGetNodeImagesSchema = z.object({
   maxDimension: z.number().int().min(256).max(1024).default(768),
 }).strict();
 
+export const canvasWaitForNodesSchema = z.object({
+  projectId: z.string().trim().min(1).max(160),
+  nodeIds: z.array(z.string().trim().min(1).max(160)).min(1).max(12),
+  timeoutMs: z.number().int().min(1_000).max(30_000).default(15_000),
+}).strict();
+
 export const canvasAgentToolSchemas = {
   canvas_get_state: z.object({}).strict(),
   canvas_get_selection: z.object({}).strict(),
@@ -98,6 +105,7 @@ export const canvasAgentToolSchemas = {
   }).strict(),
   canvas_import_images: canvasImportImagesSchema,
   canvas_run_nodes: canvasRunNodesSchema,
+  canvas_wait_for_nodes: canvasWaitForNodesSchema,
   canvas_get_node_images: canvasGetNodeImagesSchema,
   canvas_get_action_status: z.object({
     actionId: z.string().uuid(),
@@ -112,12 +120,14 @@ export const canvasAgentToolDescriptions: Record<CanvasAgentToolName, string> = 
   canvas_get_change_status: 'Poll the application status of a previously submitted canvas change set.',
   canvas_import_images: 'Import up to 12 absolute local paths, file URLs, HTTP(S) URLs, or raster image data URLs into existing Lumina upload nodes. Images are prepared in parallel and placed as one readable reference column.',
   canvas_run_nodes: 'Run up to 12 existing Lumina image-generation nodes in parallel after validating the active project, canvas revision, prompts, references, and configured models.',
+  canvas_wait_for_nodes: 'Wait until any of up to 12 target nodes changes or the timeout expires, then return compact per-node generation progress without the full canvas or capabilities registry.',
   canvas_get_node_images: 'Read status metadata and vision-ready compressed previews for up to 12 image nodes in the active Lumina project. Local paths and original payloads are never returned.',
   canvas_get_action_status: 'Poll an import, node-run, or node-image read only when its initial tool call returned pending.',
 };
 
 export type CanvasImportImagesInput = z.infer<typeof canvasImportImagesSchema>;
 export type CanvasRunNodesInput = z.infer<typeof canvasRunNodesSchema>;
+export type CanvasWaitForNodesInput = z.infer<typeof canvasWaitForNodesSchema>;
 export type CanvasGetNodeImagesInput = z.infer<typeof canvasGetNodeImagesSchema>;
 
 export type CanvasActionRequest =

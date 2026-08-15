@@ -41,7 +41,8 @@ async function routeRequest(
     return;
   }
   if (request.method === 'GET' && url.pathname === '/health') {
-    sendJson(response, 200, session.health());
+    const includeActiveProject = request.headers.authorization === `Bearer ${config.token}`;
+    sendJson(response, 200, session.health(includeActiveProject));
     return;
   }
   requireAuthorization(request, config.token);

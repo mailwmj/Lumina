@@ -51,14 +51,17 @@ The lightweight image-production flow uses only existing Lumina nodes:
    left-to-right workflow.
 6. Wait for the user to inspect the visible nodes and authorize generation. Then call
    `canvas_run_nodes` with only the approved `imageNode` IDs.
-7. Read the returned result-node IDs from the submission result. Use `canvas_get_state` for status
-   and `canvas_get_node_images` for explicit, vision-ready result previews.
+7. Read the returned result-node IDs from the submission result. Repeat `canvas_wait_for_nodes` for
+   compact progress until all targets are terminal, then use `canvas_get_node_images` for explicit,
+   vision-ready result previews.
 8. To revise one shot, update only its source `imageNode` prompt or connections with a new
    `canvas_propose_changes` call, then run only that node again.
 
-`canvas_propose_changes` returns a proposal ID; poll `canvas_get_change_status` until terminal.
-Import, run, and image-read actions wait up to eight seconds and return their final result directly
-when possible. Call `canvas_get_action_status` only when the original action returned `pending`.
+`canvas_propose_changes`, imports, runs, and image reads return their final result directly when they
+finish inside their fast-wait window. Call `canvas_get_change_status` or
+`canvas_get_action_status` only when the original request returned `pending`. There is no fixed total
+call limit; calls follow clarification, atomic setup, execution, observed progress waves, QA, and
+localized rework.
 
 Despite the compatibility-preserving tool and response names, there is no approval queue. Lumina
 revalidates the active project and revision, applies the complete change set immediately, and records
@@ -84,6 +87,8 @@ result returns their final Lumina node IDs. Upload media is intentionally handle
   image data URLs in parallel, then create one batch of existing upload nodes.
 - `canvas_run_nodes`: submit up to 12 existing image-generation nodes in parallel through the same
   application service used by each node's Generate button.
+- `canvas_wait_for_nodes`: long-poll up to 12 explicit target nodes and return only their statuses,
+  revision, and batch counts when progress changes or the wait times out.
 - `canvas_get_node_images`: return status metadata and compressed WebP previews for up to 12
   explicitly named image nodes.
 - `canvas_get_action_status`: poll only a previously returned pending action.
@@ -96,7 +101,8 @@ node types.
 
 - External access is disabled until the user enables it in Lumina settings.
 - The server binds only to numeric loopback address `127.0.0.1`.
-- Every bridge request except `/health` requires a high-entropy owner-local bearer token.
+- Every bridge request except the basic `/health` readiness check requires a high-entropy owner-local
+  bearer token. `/health` returns active project identity only to authenticated callers.
 - API credentials, local paths, original image payloads, and SQLite snapshots are never returned.
 - Selection reads may include compressed 320px previews; larger result previews require explicit
   node IDs through `canvas_get_node_images`.

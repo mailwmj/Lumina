@@ -43,6 +43,11 @@ test('stdio MCP initializes and lists the complete canvas tool surface', { timeo
     });
     const initialized = await responses.waitFor(1);
     assert.equal(initialized.error, undefined, stderr);
+    const initialization = initialized.result as { instructions?: string };
+    assert.match(initialization.instructions ?? '', /no fixed total call limit/i);
+    assert.match(initialization.instructions ?? '', /one canvas_propose_changes/i);
+    assert.match(initialization.instructions ?? '', /only when .*pending/i);
+    assert.match(initialization.instructions ?? '', /explicitly authorized/i);
 
     send(child.stdin, {
       jsonrpc: '2.0',
