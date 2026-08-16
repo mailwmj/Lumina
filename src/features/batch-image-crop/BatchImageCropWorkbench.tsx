@@ -6,20 +6,29 @@ import { useTranslation } from 'react-i18next';
 import { UiButton, UiModal } from '@/components/ui';
 import {
   BATCH_CROP_MAX_IMAGES,
+  createDefaultFixedCanvasDraft,
   createBatchCropItemFromPreparedImage,
   createCenteredCrop,
   getBatchCropTarget,
   isLowResolutionCrop,
+  isBatchCropItemReadyForExport,
+  isBatchCompositionModeLocked,
   normalizeRotationDegrees,
+  resolveFixedCanvasStatus,
+  type BatchCompositionMode,
   type BatchCropImageItem,
   type BatchCropTargetId,
+  type FixedCanvasDraft,
   type NormalizedCropRect,
 } from './domain';
+import { BatchAiFillDialog } from './BatchAiFillDialog';
 import { BatchCropEditor } from './BatchCropEditor';
 import { BatchCropSidebar } from './BatchCropSidebar';
+import { useBatchAiFill } from './hooks/useBatchAiFill';
 import {
   cleanupBatchCropCache,
   exportBatchCropImage,
+  exportBatchFixedCanvas,
   prepareBatchCropImage,
   suggestBatchCrop,
 } from './infrastructure/tauriBatchImageCropGateway';
@@ -68,6 +77,7 @@ export function BatchImageCropWorkbench({ onExit, backHandlerRef }: BatchImageCr
   const [dialog, setDialog] = useState<DialogState>(null);
   const [exportDirectory, setExportDirectory] = useState('');
   const [toast, setToast] = useState('');
+  const [aiDialogOpen, setAiDialogOpen] = useState(false);
   const toastTimerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
 
   const busy = phase !== 'idle';
@@ -75,10 +85,11 @@ export function BatchImageCropWorkbench({ onExit, backHandlerRef }: BatchImageCr
   const selectedItem = items.find((item) => item.id === selectedId) ?? items[0] ?? null;
   const dirty = items.some((item) => item.status !== 'exported');
   const target = targetId ? getBatchCropTarget(targetId) : null;
-  const reviewCount = items.filter((item) => item.status === 'review').length;
-  const pendingCount = items.filter((item) => item.status === 'pending').length;
+  const pendingCount = items.filter((item) => item.compositionMode === 'crop' && item.cropStatus === 'pending').length;
+  const exportableCount = items.filter(isBatchCropItemReadyForExport).length;
   const exportedCount = items.filter((item) => item.status === 'exported').length;
   const failedCount = items.filter((item) => item.status === 'error').length;
+  const hasAiProcessing = items.some((item) => item.fixedCanvas.ai.status === 'processing');
   const allExported = items.length > 0 && exportedCount === items.length;
 
   const showToast = useCallback((message: string) => {
@@ -86,6 +97,22 @@ export function BatchImageCropWorkbench({ onExit, backHandlerRef }: BatchImageCr
     if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
     toastTimerRef.current = window.setTimeout(() => setToast(''), 2600);
   }, []);
+  const closeAiDialog = useCallback(() => setAiDialogOpen(false), []);
+  const {
+    models: imageModels,
+    defaultModelId,
+    submitting: aiSubmitting,
+    submit: submitAiFill,
+    requerySelected: requerySelectedAi,
+  } = useBatchAiFill({
+    batchId: batchIdRef.current,
+    items,
+    selectedItem,
+    target,
+    setItems,
+    onDialogClose: closeAiDialog,
+    onToast: showToast,
+  });
 
   const clearBatch = useCallback(async () => {
     await cleanupBatchCropCache(batchIdRef.current).catch(() => undefined);
@@ -204,7 +231,8 @@ export function BatchImageCropWorkbench({ onExit, backHandlerRef }: BatchImageCr
             target,
             crypto.randomUUID(),
             0,
-            t('batchCrop.fallbackNotice')
+            t('batchCrop.fallbackNotice'),
+            t('batchCrop.fixed.ai.defaultPrompt')
           );
           preparedItems[index] = item;
           preparedItemIds.add(item.id);
@@ -248,7 +276,9 @@ export function BatchImageCropWorkbench({ onExit, backHandlerRef }: BatchImageCr
 
   const generatePlans = useCallback(async () => {
     if (!target) return;
-    const candidates = items.filter((item) => item.status === 'pending');
+    const candidates = items.filter(
+      (item) => item.compositionMode === 'crop' && item.cropStatus === 'pending'
+    );
     if (candidates.length === 0) return;
     setPhase('planning');
     setProgress(0);
@@ -256,7 +286,7 @@ export function BatchImageCropWorkbench({ onExit, backHandlerRef }: BatchImageCr
     let firstReviewId: string | null = null;
     for (const item of candidates) {
       if (cancelRequestedRef.current) break;
-      updateItem(item.id, { status: 'processing', errorMessage: undefined });
+      updateItem(item.id, { status: 'processing', cropStatus: 'processing', errorMessage: undefined });
       try {
         const suggestion = await suggestBatchCrop(item.previewPath, target.width, target.height);
         const lowResolution = isLowResolutionCrop(
@@ -273,6 +303,7 @@ export function BatchImageCropWorkbench({ onExit, backHandlerRef }: BatchImageCr
           requiresReview,
           lowResolution,
           status: requiresReview ? 'review' : 'auto',
+          cropStatus: requiresReview ? 'review' : 'auto',
         });
         if (requiresReview && !firstReviewId) firstReviewId = item.id;
       } catch (error) {
@@ -283,6 +314,7 @@ export function BatchImageCropWorkbench({ onExit, backHandlerRef }: BatchImageCr
           requiresReview: true,
           lowResolution: isLowResolutionCrop(item.width, item.height, fallback, target.width, target.height),
           status: 'review',
+          cropStatus: 'review',
           errorMessage: t('batchCrop.fallbackNotice'),
         });
         if (!firstReviewId) firstReviewId = item.id;
@@ -300,13 +332,13 @@ export function BatchImageCropWorkbench({ onExit, backHandlerRef }: BatchImageCr
   }, [items, t, target, updateItem]);
 
   const requestExport = useCallback(async () => {
-    if (!target || reviewCount > 0 || pendingCount > 0 || busy) return;
+    if (!target || pendingCount > 0 || busy) return;
     const selected = await open({ directory: true, multiple: false });
     if (!selected || Array.isArray(selected)) return;
 
     const candidates = allExported
-      ? items
-      : items.filter((item) => item.status !== 'exported');
+      ? items.filter(isBatchCropItemReadyForExport)
+      : items.filter((item) => item.status !== 'exported' && isBatchCropItemReadyForExport(item));
     if (candidates.length === 0) return;
     setExportDirectory(selected);
     setPhase('exporting');
@@ -314,19 +346,30 @@ export function BatchImageCropWorkbench({ onExit, backHandlerRef }: BatchImageCr
     setProgressTotal(candidates.length);
     for (const item of candidates) {
       if (cancelRequestedRef.current) break;
-      const crop = item.crop;
-      if (!crop) continue;
       updateItem(item.id, { status: 'exporting', errorMessage: undefined });
       try {
-        const result = await exportBatchCropImage({
-          sourcePath: item.sourcePath,
-          fileName: item.fileName,
-          outputDirectory: selected,
-          targetWidth: target.width,
-          targetHeight: target.height,
-          rotationDegrees: item.rotationDegrees,
-          crop,
-        });
+        const result = item.compositionMode === 'fixed'
+          ? await exportBatchFixedCanvas(selected, {
+              sourcePath: item.sourcePath,
+              fileName: item.fileName,
+              targetWidth: target.width,
+              targetHeight: target.height,
+              rotationDegrees: item.rotationDegrees,
+              transform: item.fixedCanvas.transform,
+              stretches: item.fixedCanvas.stretches,
+              resultSourcePath: item.fixedCanvas.ai.status === 'accepted'
+                ? item.fixedCanvas.ai.resultPath
+                : undefined,
+            })
+          : await exportBatchCropImage({
+              sourcePath: item.sourcePath,
+              fileName: item.fileName,
+              outputDirectory: selected,
+              targetWidth: target.width,
+              targetHeight: target.height,
+              rotationDegrees: item.rotationDegrees,
+              crop: item.crop!,
+            });
         updateItem(item.id, { status: 'exported', outputPath: result.outputPath });
       } catch (error) {
         updateItem(item.id, { status: 'error', errorMessage: t(toErrorMessageKey(error)) });
@@ -338,7 +381,7 @@ export function BatchImageCropWorkbench({ onExit, backHandlerRef }: BatchImageCr
     setProgress(0);
     setProgressTotal(0);
     if (!cancelRequestedRef.current) setDialog('complete');
-  }, [allExported, busy, items, pendingCount, reviewCount, t, target, updateItem]);
+  }, [allExported, busy, items, pendingCount, t, target, updateItem]);
 
   const handlePrimaryAction = useCallback(() => {
     if (pendingCount > 0) void generatePlans();
@@ -353,14 +396,13 @@ export function BatchImageCropWorkbench({ onExit, backHandlerRef }: BatchImageCr
         ? t('batchCrop.exportAgain')
         : failedCount > 0
           ? t('batchCrop.retryFailed')
-          : t('batchCrop.confirmAndExport');
+          : t('batchCrop.confirmAndExportCount', { count: exportableCount });
   const primaryDisabled = busy
     || items.length === 0
-    || (!pendingCount && reviewCount > 0)
-    || (!pendingCount && items.some((item) => !item.crop));
+    || (!pendingCount && exportableCount === 0);
 
   const changeTarget = useCallback((nextTarget: BatchCropTargetId) => {
-    if (nextTarget === targetId) return;
+    if (nextTarget === targetId || hasAiProcessing) return;
     const hasPlans = items.some((item) => item.crop || item.status === 'exported');
     if (hasPlans) {
       pendingTargetRef.current = nextTarget;
@@ -368,7 +410,7 @@ export function BatchImageCropWorkbench({ onExit, backHandlerRef }: BatchImageCr
       return;
     }
     setTargetId(nextTarget);
-  }, [items, targetId]);
+  }, [hasAiProcessing, items, targetId]);
 
   const confirmTargetChange = useCallback(() => {
     const nextTarget = pendingTargetRef.current;
@@ -377,17 +419,20 @@ export function BatchImageCropWorkbench({ onExit, backHandlerRef }: BatchImageCr
     setItems((current) => current.map((item) => ({
       ...item,
       status: 'pending',
+      cropStatus: 'pending',
+      compositionMode: 'crop',
       crop: null,
       automaticCrop: null,
       requiresReview: false,
       lowResolution: false,
+      fixedCanvas: createDefaultFixedCanvasDraft(t('batchCrop.fixed.ai.defaultPrompt')),
       outputPath: undefined,
       errorMessage: undefined,
     })));
     setFilter('all');
     pendingTargetRef.current = null;
     setDialog(null);
-  }, []);
+  }, [t]);
 
   const rotateSelected = useCallback(async (degrees: -90 | 90) => {
     if (!selectedItem || !target || busy) return;
@@ -409,7 +454,8 @@ export function BatchImageCropWorkbench({ onExit, backHandlerRef }: BatchImageCr
         target,
         selectedItem.id,
         rotationDegrees,
-        t('batchCrop.fallbackNotice')
+        t('batchCrop.fallbackNotice'),
+        t('batchCrop.fixed.ai.defaultPrompt')
       );
       updateItem(selectedItem.id, { ...updatedItem, outputPath: undefined });
       if (updatedItem.status === 'review') {
@@ -433,6 +479,7 @@ export function BatchImageCropWorkbench({ onExit, backHandlerRef }: BatchImageCr
     updateItem(selectedItem.id, {
       crop,
       status: 'adjusted',
+      cropStatus: 'adjusted',
       lowResolution: isLowResolutionCrop(
         selectedItem.width,
         selectedItem.height,
@@ -449,6 +496,7 @@ export function BatchImageCropWorkbench({ onExit, backHandlerRef }: BatchImageCr
     updateItem(selectedItem.id, {
       crop: selectedItem.automaticCrop,
       status: selectedItem.requiresReview ? 'review' : 'auto',
+      cropStatus: selectedItem.requiresReview ? 'review' : 'auto',
       lowResolution: isLowResolutionCrop(
         selectedItem.width,
         selectedItem.height,
@@ -461,12 +509,35 @@ export function BatchImageCropWorkbench({ onExit, backHandlerRef }: BatchImageCr
   }, [selectedItem, target, updateItem]);
 
   const confirmSelected = useCallback(() => {
-    if (!selectedItem || selectedItem.status !== 'review') return;
-    updateItem(selectedItem.id, { status: 'confirmed' });
-    const next = items.find((item) => item.id !== selectedItem.id && item.status === 'review');
+    if (!selectedItem || selectedItem.cropStatus !== 'review') return;
+    updateItem(selectedItem.id, { status: 'confirmed', cropStatus: 'confirmed' });
+    const next = items.find((item) => item.id !== selectedItem.id && item.cropStatus === 'review');
     if (next) setSelectedId(next.id);
     else setFilter('all');
   }, [items, selectedItem, updateItem]);
+
+  const changeCompositionMode = useCallback((mode: BatchCompositionMode) => {
+    if (!selectedItem || selectedItem.compositionMode === mode) return;
+    if (isBatchCompositionModeLocked(selectedItem, busy)) return;
+    updateItem(selectedItem.id, {
+      compositionMode: mode,
+      status: mode === 'crop'
+        ? selectedItem.cropStatus
+        : resolveFixedCanvasStatus(selectedItem.fixedCanvas),
+      outputPath: undefined,
+      errorMessage: undefined,
+    });
+  }, [busy, selectedItem, updateItem]);
+
+  const applyFixedCanvas = useCallback((draft: FixedCanvasDraft) => {
+    if (!selectedItem || selectedItem.compositionMode !== 'fixed') return;
+    updateItem(selectedItem.id, {
+      fixedCanvas: draft,
+      status: resolveFixedCanvasStatus(draft),
+      outputPath: undefined,
+      errorMessage: draft.ai.status === 'failed' ? draft.ai.errorMessage : undefined,
+    });
+  }, [selectedItem, updateItem]);
 
   const removeItem = useCallback((itemId: string) => {
     const currentIndex = items.findIndex((item) => item.id === itemId);
@@ -550,6 +621,7 @@ export function BatchImageCropWorkbench({ onExit, backHandlerRef }: BatchImageCr
         progressTotal={progressTotal}
         primaryLabel={primaryLabel}
         primaryDisabled={primaryDisabled}
+        targetChangeDisabled={hasAiProcessing}
         onTargetChange={changeTarget}
         onSelectItem={setSelectedId}
         onFilterChange={setFilter}
@@ -564,13 +636,32 @@ export function BatchImageCropWorkbench({ onExit, backHandlerRef }: BatchImageCr
         index={selectedIndex}
         total={items.length}
         busy={busy}
-        keyboardNavigationEnabled={dialog === null}
+        keyboardNavigationEnabled={dialog === null && !aiDialogOpen}
+        onModeChange={changeCompositionMode}
         onCropChange={applyCrop}
         onRestore={restoreSelected}
         onConfirm={confirmSelected}
         onRotate={(degrees) => void rotateSelected(degrees)}
+        onFixedCanvasChange={applyFixedCanvas}
+        onOpenAi={() => setAiDialogOpen(true)}
+        onRetryAi={() => setAiDialogOpen(true)}
+        onRequeryAi={() => void requerySelectedAi()}
+        onToast={showToast}
         onPrevious={() => setSelectedId(items[Math.max(0, selectedIndex - 1)]?.id ?? null)}
         onNext={() => setSelectedId(items[Math.min(items.length - 1, selectedIndex + 1)]?.id ?? null)}
+      />
+
+      <BatchAiFillDialog
+        isOpen={aiDialogOpen}
+        item={selectedItem}
+        target={editorTarget}
+        models={imageModels}
+        defaultModelId={defaultModelId}
+        submitting={aiSubmitting}
+        onClose={() => {
+          if (!aiSubmitting) setAiDialogOpen(false);
+        }}
+        onSubmit={(submission) => void submitAiFill(submission)}
       />
 
       <UiModal

@@ -455,6 +455,27 @@ describe('new image generation node defaults', () => {
     });
   });
 
+  it('assigns sequential short titles only when image nodes are unnamed', () => {
+    const firstId = useCanvasStore.getState().addNode(
+      CANVAS_NODE_TYPES.imageEdit,
+      { x: 0, y: 0 }
+    );
+    const secondId = useCanvasStore.getState().addNode(
+      CANVAS_NODE_TYPES.imageEdit,
+      { x: 320, y: 0 }
+    );
+    const namedId = useCanvasStore.getState().addNode(
+      CANVAS_NODE_TYPES.imageEdit,
+      { x: 640, y: 0 },
+      { displayName: '毛衣细节' }
+    );
+    const nodes = useCanvasStore.getState().nodes;
+
+    expect(nodes.find((node) => node.id === firstId)?.data.displayName).toBe('AI生图 1');
+    expect(nodes.find((node) => node.id === secondId)?.data.displayName).toBe('AI生图 2');
+    expect(nodes.find((node) => node.id === namedId)?.data.displayName).toBe('毛衣细节');
+  });
+
   it('shares the last applicable generation parameters without copying creative content', () => {
     useSettingsStore.setState({
       openAiImageApi: {

@@ -81,6 +81,10 @@ Temporary `clientId` values can be referenced by later operations in the same ch
 result returns their final Lumina node IDs. Upload media is intentionally handled by
 `canvas_import_images`, not by writable media fields on `create_node` or `update_node`.
 
+For externally created or updated nodes, `displayName` is a concise canvas title of at most 80
+characters. Put the complete generation instruction in `prompt`; an unnamed `imageNode` receives a
+stable `AI生图 N` title, and its generated result uses the source title plus `· 结果`.
+
 ## Action tools
 
 - `canvas_import_images`: prepare up to 12 absolute local paths, file URLs, HTTP(S) URLs, or raster

@@ -3,9 +3,9 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import '@/i18n';
+import i18n from '@/i18n';
 import { BatchCropEditor } from './BatchCropEditor';
-import type { BatchCropImageItem } from './domain';
+import { createDefaultFixedCanvasDraft, type BatchCropImageItem } from './domain';
 
 const item: BatchCropImageItem = {
   id: 'image-1',
@@ -17,18 +17,31 @@ const item: BatchCropImageItem = {
   width: 3574,
   height: 5361,
   rotationDegrees: 0,
+  compositionMode: 'crop',
   status: 'pending',
+  cropStatus: 'pending',
   crop: null,
   automaticCrop: null,
   requiresReview: false,
   lowResolution: false,
+  fixedCanvas: createDefaultFixedCanvasDraft('default prompt'),
 };
 
 const target = { id: '1440x1920', width: 1440, height: 1920 } as const;
 
+const fixedCanvasProps = {
+  onModeChange: () => undefined,
+  onFixedCanvasChange: () => undefined,
+  onOpenAi: () => undefined,
+  onRetryAi: () => undefined,
+  onRequeryAi: () => undefined,
+  onToast: () => undefined,
+};
+
 function editor(itemValue: BatchCropImageItem | null) {
   return (
     <BatchCropEditor
+      {...fixedCanvasProps}
       item={itemValue}
       target={target}
       index={0}
@@ -48,7 +61,8 @@ describe('BatchCropEditor preview lifecycle', () => {
   let container: HTMLDivElement;
   let root: Root;
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    await i18n.changeLanguage('zh');
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
     container = document.createElement('div');
     document.body.append(container);
@@ -93,11 +107,69 @@ describe('BatchCropEditor preview lifecycle', () => {
     expect(preview?.style.height).toBe('640px');
   });
 
+  it('switches only the current image mode without rendering the removed label', async () => {
+    const onModeChange = vi.fn();
+    await act(async () => root.render(
+      <BatchCropEditor
+        {...fixedCanvasProps}
+        item={{ ...item, crop: { x: 0, y: 0, width: 1, height: 1 } }}
+        target={target}
+        index={0}
+        total={1}
+        busy={false}
+        onModeChange={onModeChange}
+        onCropChange={() => undefined}
+        onRestore={() => undefined}
+        onConfirm={() => undefined}
+        onRotate={() => undefined}
+        onPrevious={() => undefined}
+        onNext={() => undefined}
+      />
+    ));
+
+    expect(container.textContent).not.toContain('当前图片');
+    const fixedModeButton = Array.from(container.querySelectorAll('button'))
+      .find((button) => button.textContent?.trim() === '固定画布');
+    expect(fixedModeButton).toBeInstanceOf(HTMLButtonElement);
+
+    await act(async () => fixedModeButton?.click());
+    expect(onModeChange).toHaveBeenCalledWith('fixed');
+  });
+
+  it('disables composition mode changes while an AI result is awaiting review', async () => {
+    const onModeChange = vi.fn();
+    await act(async () => root.render(
+      <BatchCropEditor
+        {...fixedCanvasProps}
+        item={{ ...item, status: 'aiReview', crop: { x: 0, y: 0, width: 1, height: 1 } }}
+        target={target}
+        index={0}
+        total={1}
+        busy={false}
+        onModeChange={onModeChange}
+        onCropChange={() => undefined}
+        onRestore={() => undefined}
+        onConfirm={() => undefined}
+        onRotate={() => undefined}
+        onPrevious={() => undefined}
+        onNext={() => undefined}
+      />
+    ));
+
+    const fixedModeButton = Array.from(container.querySelectorAll('button'))
+      .find((button) => button.textContent?.trim() === '固定画布');
+    expect(fixedModeButton).toBeInstanceOf(HTMLButtonElement);
+    expect((fixedModeButton as HTMLButtonElement).disabled).toBe(true);
+    await act(async () => fixedModeButton?.click());
+    expect(onModeChange).not.toHaveBeenCalled();
+  });
+
   it('uses left and right keys to navigate previews outside editable controls', async () => {
     const onPrevious = vi.fn();
     const onNext = vi.fn();
     await act(async () => root.render(
       <BatchCropEditor
+        {...fixedCanvasProps}
         item={{ ...item, crop: { x: 0, y: 0, width: 1, height: 1 } }}
         target={target}
         index={1}
@@ -126,6 +198,7 @@ describe('BatchCropEditor preview lifecycle', () => {
     const onNext = vi.fn();
     await act(async () => root.render(
       <BatchCropEditor
+        {...fixedCanvasProps}
         item={{ ...item, crop: { x: 0, y: 0, width: 1, height: 1 } }}
         target={target}
         index={1}
@@ -153,6 +226,7 @@ describe('BatchCropEditor preview lifecycle', () => {
     const onNext = vi.fn();
     await act(async () => root.render(
       <BatchCropEditor
+        {...fixedCanvasProps}
         item={{ ...item, crop: { x: 0, y: 0, width: 1, height: 1 } }}
         target={target}
         index={1}

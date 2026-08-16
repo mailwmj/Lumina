@@ -8,6 +8,7 @@ use std::time::Duration;
 
 use commands::ai as ai_commands;
 use commands::batch_image_crop;
+use commands::batch_image_composition;
 use commands::image;
 use commands::logging;
 use commands::project_state;
@@ -204,6 +205,8 @@ pub fn run() {
             batch_image_crop::suggest_batch_crop,
             batch_image_crop::export_batch_crop_image,
             batch_image_crop::cleanup_batch_crop_cache,
+            batch_image_composition::render_batch_fixed_canvas,
+            batch_image_composition::export_batch_fixed_canvas,
             ai_commands::set_api_key,
             ai_commands::discover_image_models,
             ai_commands::discover_text_models,

@@ -24,6 +24,7 @@ interface BatchCropSidebarProps {
   progressTotal: number;
   primaryLabel: string;
   primaryDisabled: boolean;
+  targetChangeDisabled: boolean;
   onTargetChange: (targetId: BatchCropTargetId) => void;
   onSelectItem: (itemId: string) => void;
   onFilterChange: (filter: 'all' | 'review') => void;
@@ -40,6 +41,11 @@ const STATUS_KEYS: Record<BatchCropItemStatus, string> = {
   review: 'batchCrop.status.review',
   adjusted: 'batchCrop.status.adjusted',
   confirmed: 'batchCrop.status.confirmed',
+  fixedCompose: 'batchCrop.status.fixedCompose',
+  fixedFill: 'batchCrop.status.fixedFill',
+  fixedReady: 'batchCrop.status.fixedReady',
+  aiProcessing: 'batchCrop.status.aiProcessing',
+  aiReview: 'batchCrop.status.aiReview',
   exporting: 'batchCrop.status.exporting',
   exported: 'batchCrop.status.exported',
   error: 'batchCrop.status.error',
@@ -61,6 +67,7 @@ export function BatchCropSidebar({
   progressTotal,
   primaryLabel,
   primaryDisabled,
+  targetChangeDisabled,
   onTargetChange,
   onSelectItem,
   onFilterChange,
@@ -71,9 +78,9 @@ export function BatchCropSidebar({
 }: BatchCropSidebarProps) {
   const { t } = useTranslation();
   const busy = phase !== 'idle';
-  const reviewCount = items.filter((item) => item.status === 'review').length;
+  const reviewCount = items.filter((item) => item.compositionMode === 'crop' && item.cropStatus === 'review').length;
   const visibleItems = filter === 'review'
-    ? items.filter((item) => item.status === 'review')
+    ? items.filter((item) => item.compositionMode === 'crop' && item.cropStatus === 'review')
     : items;
 
   const handleDrop = (event: DragEvent<HTMLElement>) => {
@@ -92,7 +99,7 @@ export function BatchCropSidebar({
             <button
               key={target.id}
               type="button"
-              disabled={busy}
+              disabled={busy || targetChangeDisabled}
               onClick={() => onTargetChange(target.id)}
               className={`h-8 rounded-md text-[11px] font-medium transition-colors ${
                 targetId === target.id
@@ -170,7 +177,7 @@ export function BatchCropSidebar({
             <span className="min-w-0 flex-1">
               <span className="block truncate text-xs font-medium text-text-dark">{item.fileName}</span>
               <span className="mt-1 block font-mono text-[11px] text-text-muted">
-                {formatBatchCropFileSize(item.fileSize)}
+                {t(`batchCrop.mode.${item.compositionMode}`)} · {formatBatchCropFileSize(item.fileSize)}
               </span>
             </span>
             <UiTooltip content={item.errorMessage || t(STATUS_KEYS[item.status])}>
@@ -181,9 +188,11 @@ export function BatchCropSidebar({
                     ? 'bg-amber-500'
                     : item.status === 'error'
                       ? 'bg-red-500'
-                      : item.status === 'exported'
-                        ? 'bg-emerald-500'
-                        : item.status === 'processing' || item.status === 'exporting'
+                    : item.status === 'exported'
+                      ? 'bg-emerald-500'
+                      : item.status === 'aiReview'
+                        ? 'bg-cyan-400'
+                      : item.status === 'processing' || item.status === 'exporting' || item.status === 'aiProcessing'
                           ? 'animate-pulse bg-accent'
                           : item.status === 'pending'
                             ? 'bg-zinc-500'
@@ -192,7 +201,7 @@ export function BatchCropSidebar({
               >
               </span>
             </UiTooltip>
-            {!busy && (
+            {!busy && item.status !== 'aiProcessing' && item.status !== 'exporting' && (
               <UiTooltip content={t('batchCrop.removeImage')}>
                 <span
                   role="button"

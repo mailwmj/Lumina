@@ -83,7 +83,7 @@ fn sanitize_batch_id(value: &str) -> Result<String, String> {
     }
 }
 
-fn batch_cache_dir(app: &AppHandle, batch_id: &str) -> Result<PathBuf, String> {
+pub(crate) fn batch_cache_dir(app: &AppHandle, batch_id: &str) -> Result<PathBuf, String> {
     let safe_batch_id = sanitize_batch_id(batch_id)?;
     let directory = app
         .path()
@@ -96,7 +96,7 @@ fn batch_cache_dir(app: &AppHandle, batch_id: &str) -> Result<PathBuf, String> {
     Ok(directory)
 }
 
-fn validate_source_path(source_path: &str) -> Result<(PathBuf, u64, String), String> {
+pub(crate) fn validate_source_path(source_path: &str) -> Result<(PathBuf, u64, String), String> {
     let source = PathBuf::from(source_path);
     let metadata = std::fs::metadata(&source).map_err(|_| "SOURCE_NOT_FOUND".to_string())?;
     if !metadata.is_file() {
@@ -124,7 +124,7 @@ fn validate_source_path(source_path: &str) -> Result<(PathBuf, u64, String), Str
     Ok((source, metadata.len(), file_name))
 }
 
-fn load_oriented_image(path: &Path) -> Result<DynamicImage, String> {
+pub(crate) fn load_oriented_image(path: &Path) -> Result<DynamicImage, String> {
     let file = File::open(path).map_err(|_| "SOURCE_NOT_FOUND".to_string())?;
     let reader = ImageReader::new(BufReader::new(file))
         .with_guessed_format()
@@ -150,7 +150,7 @@ fn validate_image_dimensions(width: u32, height: u32) -> Result<(), String> {
     Ok(())
 }
 
-fn apply_rotation(image: DynamicImage, rotation_degrees: i32) -> DynamicImage {
+pub(crate) fn apply_rotation(image: DynamicImage, rotation_degrees: i32) -> DynamicImage {
     match rotation_degrees.rem_euclid(360) {
         90 => image.rotate90(),
         180 => image.rotate180(),
@@ -200,7 +200,7 @@ fn resize_rgba_with_filter(
         .ok_or_else(|| "Failed to build resized image".to_string())
 }
 
-fn resize_rgba_lanczos3(
+pub(crate) fn resize_rgba_lanczos3(
     source: &DynamicImage,
     target_width: u32,
     target_height: u32,
@@ -441,7 +441,7 @@ fn sanitize_stem(file_name: &str) -> String {
     }
 }
 
-fn available_output_path(
+pub(crate) fn available_output_path(
     directory: &Path,
     file_name: &str,
     target_width: u32,
@@ -462,7 +462,7 @@ fn available_output_path(
     unreachable!()
 }
 
-fn flatten_to_white(image: &DynamicImage) -> RgbImage {
+pub(crate) fn flatten_to_white(image: &DynamicImage) -> RgbImage {
     let rgba = image.to_rgba8();
     let mut output = RgbImage::new(rgba.width(), rgba.height());
     for (x, y, pixel) in rgba.enumerate_pixels() {

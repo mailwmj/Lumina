@@ -87,6 +87,36 @@ describe('external Agent CanvasChangeSet', () => {
     })).toThrowError(/not writable/);
   });
 
+  it('assigns a short default image title and rejects Agent prompt-sized titles', () => {
+    const applied = applyCanvasChangeSet({ nodes: [], edges: [] }, {
+      projectId: 'project-1',
+      baseRevision: 'revision-1',
+      summary: 'Create an image node without a title',
+      operations: [{
+        type: 'create_node',
+        clientId: 'image',
+        nodeType: CANVAS_NODE_TYPES.imageEdit,
+        position: { x: 0, y: 0 },
+        data: { prompt: 'Keep the prompt separate from the title.' },
+      }],
+    });
+    const created = applied.nodes.find((node) => node.id === applied.result.nodeIdMap.image);
+    expect(created?.data.displayName).toBe('AI生图 1');
+
+    expect(() => applyCanvasChangeSet({ nodes: [], edges: [] }, {
+      projectId: 'project-1',
+      baseRevision: 'revision-1',
+      summary: 'Create an image node with a prompt as its title',
+      operations: [{
+        type: 'create_node',
+        clientId: 'image',
+        nodeType: CANVAS_NODE_TYPES.imageEdit,
+        position: { x: 0, y: 0 },
+        data: { displayName: 'x'.repeat(81) },
+      }],
+    })).toThrowError(/no longer than 80 characters/);
+  });
+
   it('rejects operation types outside the P0 protocol', () => {
     expect(() => parsePendingCanvasChangeProposal({
       proposalId: 'proposal-1',

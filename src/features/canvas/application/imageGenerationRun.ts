@@ -330,7 +330,7 @@ export async function runImageGenerationNode(
 
 export function buildAiResultNodeTitle(sourceTitle: string, fallbackTitle: string): string {
   const normalizedTitle = sourceTitle.trim();
-  return normalizedTitle || fallbackTitle;
+  return `${normalizedTitle || fallbackTitle} · 结果`;
 }
 
 async function resolveRequestAspectRatio(

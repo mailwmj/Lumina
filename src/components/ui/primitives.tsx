@@ -71,6 +71,7 @@ interface UiModalProps {
   widthClassName?: string;
   containerClassName?: string;
   closeLabel?: string;
+  closeOnBackdrop?: boolean;
 }
 
 function resolveButtonVariant(variant: ButtonVariant): string {
@@ -510,6 +511,7 @@ export function UiModal({
   widthClassName = 'w-[460px]',
   containerClassName = '',
   closeLabel = 'Close',
+  closeOnBackdrop = true,
 }: UiModalProps) {
   const { shouldRender, isVisible } = useDialogTransition(isOpen, UI_DIALOG_TRANSITION_MS);
 
@@ -520,8 +522,9 @@ export function UiModal({
   return (
     <div className={`fixed ${UI_CONTENT_OVERLAY_INSET_CLASS} z-50 flex items-center justify-center ${containerClassName}`}>
       <div
+        data-testid="ui-modal-backdrop"
         className={`absolute inset-0 bg-black/55 transition-opacity duration-200 ${isVisible ? 'opacity-100' : 'opacity-0'}`}
-        onClick={onClose}
+        onClick={closeOnBackdrop ? onClose : undefined}
       />
       <UiPanel
         className={`relative transition-opacity duration-200 ${isVisible ? 'opacity-100' : 'opacity-0'} ${widthClassName}`}

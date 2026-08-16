@@ -29,6 +29,7 @@ const MCP_INSTRUCTIONS = [
   'Read canvas_get_state before changing the canvas and reuse its projectId and revision.',
   'Import user-provided images in one canvas_import_images batch; absolute local paths, file URLs, HTTP(S) URLs, and raster image data URLs are supported.',
   'Create one existing imageNode per distinct shot, omit create_node.position for automatic readable column layout, and connect references in the same order used by 图片 1, 图片 2, and subsequent prompt labels.',
+  'Use displayName only for a concise canvas title of at most 80 characters; keep the complete generation instruction in prompt.',
   'canvas_propose_changes validates and atomically applies one bounded change set without an in-app approval step.',
   'After a run, use canvas_wait_for_nodes with the returned result node IDs for compact progress; repeat waits as needed until every target is terminal.',
   'Use canvas_get_node_images with explicit ready result node IDs to inspect outputs.',

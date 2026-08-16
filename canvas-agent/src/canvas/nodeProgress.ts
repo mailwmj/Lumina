@@ -27,7 +27,6 @@ export interface CanvasNodeProgressResult {
   nodes: Array<{
     nodeId: string;
     nodeType: string | null;
-    displayName: string | null;
     status: CanvasNodeProgressStatus;
     generationError: string | null;
     generationRecoveryState: string | null;
@@ -47,7 +46,6 @@ export function buildNodeProgress(
       return {
         nodeId,
         nodeType: null,
-        displayName: null,
         status: 'missing' as const,
         generationError: null,
         generationRecoveryState: null,
@@ -59,7 +57,6 @@ export function buildNodeProgress(
     return {
       nodeId,
       nodeType: typeof node.type === 'string' ? node.type : null,
-      displayName: readNonEmptyString(data.displayName),
       status: resolveNodeProgressStatus(data, generationError, generationRecoveryState),
       generationError,
       generationRecoveryState,

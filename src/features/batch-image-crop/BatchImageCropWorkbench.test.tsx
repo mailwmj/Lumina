@@ -9,7 +9,9 @@ import { BatchImageCropWorkbench } from './BatchImageCropWorkbench';
 import {
   cleanupBatchCropCache,
   exportBatchCropImage,
+  exportBatchFixedCanvas,
   prepareBatchCropImage,
+  renderBatchFixedCanvas,
 } from './infrastructure/tauriBatchImageCropGateway';
 
 vi.mock('@tauri-apps/api/core', () => ({
@@ -30,7 +32,9 @@ vi.mock('@tauri-apps/plugin-dialog', () => ({
 vi.mock('./infrastructure/tauriBatchImageCropGateway', () => ({
   cleanupBatchCropCache: vi.fn(),
   exportBatchCropImage: vi.fn(),
+  exportBatchFixedCanvas: vi.fn(),
   prepareBatchCropImage: vi.fn(),
+  renderBatchFixedCanvas: vi.fn(),
   resolveBatchCropDisplayUrl: (path: string) => path,
   suggestBatchCrop: vi.fn(),
 }));
@@ -72,7 +76,7 @@ async function createCompletedBatch(container: HTMLElement): Promise<void> {
     findButton(container, '添加图片').click();
   });
   await act(async () => {
-    findButton(container, '确认并导出').click();
+    findButton(container, '批量导出 1 张').click();
   });
 }
 
@@ -93,6 +97,8 @@ describe('BatchImageCropWorkbench completed export', () => {
     document.body.append(container);
     root = createRoot(container);
     vi.mocked(cleanupBatchCropCache).mockResolvedValue(undefined);
+    vi.mocked(exportBatchFixedCanvas).mockResolvedValue({ outputPath: '/exports/fixed.jpg' });
+    vi.mocked(renderBatchFixedCanvas).mockResolvedValue({ renderedPath: '/cache/fixed.jpg' });
   });
 
   afterEach(async () => {
@@ -176,5 +182,54 @@ describe('BatchImageCropWorkbench completed export', () => {
     await act(async () => {
       completePreparations.splice(0).forEach((complete) => complete());
     });
+  });
+
+  it('exports the current image through the fixed-canvas renderer after composition is completed', async () => {
+    vi.mocked(open)
+      .mockResolvedValueOnce(['/fixtures/source.jpg'])
+      .mockResolvedValueOnce('/exports');
+    vi.mocked(prepareBatchCropImage).mockResolvedValue(preparedImage);
+
+    await act(async () => {
+      root.render(<BatchImageCropWorkbench onExit={() => undefined} backHandlerRef={{ current: () => undefined }} />);
+    });
+    await act(async () => findButton(container, '1440×1440').click());
+    await act(async () => findButton(container, '添加图片').click());
+    await act(async () => findButton(container, '固定画布').click());
+    await act(async () => findButton(container, '确认构图').click());
+    await act(async () => findButton(container, '完成填充').click());
+    await act(async () => findButton(container, '批量导出 1 张').click());
+
+    expect(exportBatchFixedCanvas).toHaveBeenCalledWith('/exports', expect.objectContaining({
+      sourcePath: '/fixtures/source.jpg',
+      targetWidth: 1440,
+      targetHeight: 1440,
+      transform: { zoom: 100, pan: { x: 0, y: 0 } },
+    }));
+    expect(exportBatchCropImage).not.toHaveBeenCalled();
+  });
+
+  it('preserves the fixed-canvas transform when one image switches between composition modes', async () => {
+    vi.mocked(open).mockResolvedValueOnce(['/fixtures/source.jpg']);
+    vi.mocked(prepareBatchCropImage).mockResolvedValue(preparedImage);
+
+    await act(async () => {
+      root.render(<BatchImageCropWorkbench onExit={() => undefined} backHandlerRef={{ current: () => undefined }} />);
+    });
+    await act(async () => findButton(container, '1440×1440').click());
+    await act(async () => findButton(container, '添加图片').click());
+    await act(async () => findButton(container, '固定画布').click());
+
+    const zoom = container.querySelector('input[aria-label="整图缩放"]') as HTMLInputElement | null;
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+    await act(async () => {
+      if (!zoom) return;
+      setValue?.call(zoom, '75');
+      zoom.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await act(async () => findButton(container, '裁剪填满').click());
+    await act(async () => findButton(container, '固定画布').click());
+
+    expect((container.querySelector('input[aria-label="整图缩放"]') as HTMLInputElement | null)?.value).toBe('75');
   });
 });

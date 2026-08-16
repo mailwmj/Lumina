@@ -32,6 +32,7 @@ import { resolveCanvasAgentColumnLayout } from './canvasAgentLayout';
 const MAX_OPERATIONS = 100;
 const MAX_POSITION = 10_000_000;
 const MAX_DATA_JSON_LENGTH = 64_000;
+const MAX_AGENT_DISPLAY_NAME_LENGTH = 80;
 const NODE_TYPES = new Set<string>(Object.values(CANVAS_NODE_TYPES));
 
 export class CanvasChangeSetError extends Error {
@@ -111,7 +112,11 @@ export function applyCanvasChangeSet(
           `Operation ${index + 1} could not resolve a node position.`
         );
       }
-      const data = validateNodeDataPatch(operation.nodeType, operation.data ?? {});
+      const data = applyDefaultDisplayName(
+        operation.nodeType,
+        validateNodeDataPatch(operation.nodeType, operation.data ?? {}),
+        nodes
+      );
       const node = canvasNodeFactory.createNode(
         operation.nodeType,
         position,
@@ -390,7 +395,7 @@ function validateFieldValue(field: string, value: unknown): unknown {
     throw new CanvasChangeSetError('INVALID_FIELD_VALUE', `Field ${field} has an invalid value.`);
   }
   if (['displayName', 'model', 'textApiId', 'textModelId'].includes(field)) {
-    validateString(field, value, field === 'displayName' ? 200 : 500);
+    validateString(field, value, field === 'displayName' ? MAX_AGENT_DISPLAY_NAME_LENGTH : 500);
     return value;
   }
   if (['content', 'inputText', 'prompt', 'globalPrompt'].includes(field)) {
@@ -454,6 +459,22 @@ function validateFieldValue(field: string, value: unknown): unknown {
   }
   validateJsonValue(value, 0);
   return value;
+}
+
+function applyDefaultDisplayName(
+  nodeType: CanvasNodeType,
+  data: Record<string, unknown>,
+  existingNodes: readonly CanvasNode[]
+): Record<string, unknown> {
+  if (nodeType !== CANVAS_NODE_TYPES.imageEdit || readNonEmptyString(data.displayName)) {
+    return data;
+  }
+  const nextIndex = existingNodes.filter((node) => node.type === CANVAS_NODE_TYPES.imageEdit).length + 1;
+  return { ...data, displayName: `AI生图 ${nextIndex}` };
+}
+
+function readNonEmptyString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
 function parseStoryboardFrames(value: unknown): StoryboardGenFrameItem[] {

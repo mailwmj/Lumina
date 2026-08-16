@@ -154,6 +154,24 @@ function applyNodeModelDefaults(
   } as Partial<CanvasNodeData>;
 }
 
+function applyDefaultDisplayName(
+  type: CanvasNodeType,
+  data: Partial<CanvasNodeData>,
+  existingNodes: readonly CanvasNode[],
+  batchOffset = 0
+): Partial<CanvasNodeData> {
+  if (
+    type !== CANVAS_NODE_TYPES.imageEdit
+    || (typeof data.displayName === 'string' && data.displayName.trim())
+  ) {
+    return data;
+  }
+  const nextIndex = existingNodes.filter((node) => node.type === CANVAS_NODE_TYPES.imageEdit).length
+    + batchOffset
+    + 1;
+  return { ...data, displayName: `AI生图 ${nextIndex}` };
+}
+
 interface CanvasState {
   nodes: CanvasNode[];
   edges: CanvasEdge[];
@@ -1104,7 +1122,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     const newNode = canvasNodeFactory.createNode(
       type,
       position,
-      applyNodeModelDefaults(type, data)
+      applyDefaultDisplayName(type, applyNodeModelDefaults(type, data), state.nodes)
     );
     set({
       nodes: [...state.nodes, newNode],
@@ -1122,12 +1140,21 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       return [];
     }
     const state = get();
+    let imageNodeOffset = 0;
     const newNodes = nodeInputs.map(({ type, position, data = {}, width, height }) => {
       const node = canvasNodeFactory.createNode(
         type,
         position,
-        applyNodeModelDefaults(type, data)
+        applyDefaultDisplayName(
+          type,
+          applyNodeModelDefaults(type, data),
+          state.nodes,
+          imageNodeOffset
+        )
       );
+      if (type === CANVAS_NODE_TYPES.imageEdit) {
+        imageNodeOffset += 1;
+      }
       const hasExplicitSize =
         typeof width === 'number' && Number.isFinite(width) && width > 1
         && typeof height === 'number' && Number.isFinite(height) && height > 1;

@@ -106,7 +106,7 @@ describe('shared image generation execution', () => {
       (node) => node.id === result.resultNodeIds[0]
     );
 
-    expect(resultNode?.data.displayName).toBe('Sweater front full-body');
+    expect(resultNode?.data.displayName).toBe('Sweater front full-body · 结果');
     expect(resultNode?.data.displayName).not.toContain('production prompt');
   });
 });

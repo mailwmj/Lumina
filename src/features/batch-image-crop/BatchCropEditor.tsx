@@ -1,21 +1,25 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import ReactCrop, { type PercentCrop } from 'react-image-crop';
-import { RotateCcw, RotateCw } from 'lucide-react';
 import {
   AlertTriangle,
   Check,
   ChevronLeft,
   ChevronRight,
   RefreshCw,
+  RotateCcw,
 } from '@/components/ui/icons';
 import { UiButton, UiTooltip } from '@/components/ui';
 import {
   fitImageWithinBounds,
+  isBatchCompositionModeLocked,
+  type BatchCompositionMode,
   type BatchCropImageItem,
   type BatchCropTarget,
+  type FixedCanvasDraft,
   type NormalizedCropRect,
 } from './domain';
+import { BatchFixedCanvasEditor } from './BatchFixedCanvasEditor';
 import { resolveBatchCropDisplayUrl } from './infrastructure/tauriBatchImageCropGateway';
 
 interface BatchCropEditorProps {
@@ -25,10 +29,16 @@ interface BatchCropEditorProps {
   total: number;
   busy: boolean;
   keyboardNavigationEnabled?: boolean;
+  onModeChange: (mode: BatchCompositionMode) => void;
   onCropChange: (crop: NormalizedCropRect) => void;
   onRestore: () => void;
   onConfirm: () => void;
   onRotate: (degrees: -90 | 90) => void;
+  onFixedCanvasChange: (draft: FixedCanvasDraft) => void;
+  onOpenAi: () => void;
+  onRetryAi: () => void;
+  onRequeryAi: () => void;
+  onToast: (message: string) => void;
   onPrevious: () => void;
   onNext: () => void;
 }
@@ -59,10 +69,16 @@ export function BatchCropEditor({
   total,
   busy,
   keyboardNavigationEnabled = true,
+  onModeChange,
   onCropChange,
   onRestore,
   onConfirm,
   onRotate,
+  onFixedCanvasChange,
+  onOpenAi,
+  onRetryAi,
+  onRequeryAi,
+  onToast,
   onPrevious,
   onNext,
 }: BatchCropEditorProps) {
@@ -71,12 +87,12 @@ export function BatchCropEditor({
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
   const crop = useMemo(() => item?.crop ? toPercentCrop(item.crop) : undefined, [item?.crop]);
   const editable = Boolean(item?.crop) && !busy;
-  const canConfirm = item?.status === 'review';
+  const canConfirm = item?.cropStatus === 'review';
   const hasItem = item !== null;
+  const modeLocked = isBatchCompositionModeLocked(item, busy);
 
   useEffect(() => {
     if (!hasItem || busy || !keyboardNavigationEnabled) return;
-
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
       const targetElement = event.target instanceof Element ? event.target : null;
@@ -84,9 +100,7 @@ export function BatchCropEditor({
         targetElement?.closest('input, textarea, select, button, [contenteditable="true"]')
         || (targetElement instanceof HTMLElement && targetElement.isContentEditable)
         || targetElement?.closest('.ReactCrop__drag-handle, .ReactCrop__crop-selection')
-      ) {
-        return;
-      }
+      ) return;
       if (event.key === 'ArrowLeft' && index > 0) {
         event.preventDefault();
         onPrevious();
@@ -96,40 +110,28 @@ export function BatchCropEditor({
         onNext();
       }
     };
-
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [busy, hasItem, index, keyboardNavigationEnabled, onNext, onPrevious, total]);
 
   useEffect(() => {
-    if (!hasItem) return;
+    if (!hasItem || item?.compositionMode === 'fixed') return;
     const element = viewportRef.current;
     if (!element) return;
-
     const updateViewportSize = () => {
       const rect = element.getBoundingClientRect();
-      setViewportSize({
-        width: Math.max(0, Math.round(rect.width)),
-        height: Math.max(0, Math.round(rect.height)),
-      });
+      setViewportSize({ width: Math.max(0, Math.round(rect.width)), height: Math.max(0, Math.round(rect.height)) });
     };
-
     updateViewportSize();
     const observer = new ResizeObserver(updateViewportSize);
     observer.observe(element);
     return () => observer.disconnect();
-  }, [hasItem]);
+  }, [hasItem, item?.compositionMode]);
 
   const renderedImageSize = useMemo(() => {
     if (!item || viewportSize.width <= 0 || viewportSize.height <= 0) return null;
-    return fitImageWithinBounds(
-      item.width,
-      item.height,
-      viewportSize.width,
-      viewportSize.height
-    );
+    return fitImageWithinBounds(item.width, item.height, viewportSize.width, viewportSize.height);
   }, [item, viewportSize.height, viewportSize.width]);
-
   const renderedImageStyle = renderedImageSize ? {
     width: `${renderedImageSize.width}px`,
     height: `${renderedImageSize.height}px`,
@@ -137,144 +139,172 @@ export function BatchCropEditor({
     maxHeight: 'none',
   } : undefined;
 
-  if (!item) {
-    return <div className="h-full w-full bg-bg-dark" />;
-  }
+  if (!item) return <div className="h-full w-full bg-bg-dark" />;
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col bg-bg-dark">
-      <header className="flex h-14 shrink-0 items-center justify-between border-b border-[var(--ui-border-soft)] px-5">
+      <header className="grid h-16 shrink-0 grid-cols-[minmax(160px,1fr)_auto_minmax(90px,1fr)] items-center gap-4 border-b border-[var(--ui-border-soft)] px-5">
         <div className="min-w-0">
           <h1 className="truncate text-sm font-medium text-text-dark">{item.fileName}</h1>
           <p className="mt-0.5 font-mono text-[11px] text-text-muted">
-            {item.width}×{item.height} · {target.width}×{target.height}
+            {item.width}×{item.height} · {t('batchCrop.outputSize')} {target.width}×{target.height}
           </p>
         </div>
-        <span className={`rounded-md px-2 py-1 text-[11px] ${
+        <div
+          role="group"
+          aria-label={t('batchCrop.compositionMode')}
+          className="grid w-[224px] grid-cols-2 gap-1 rounded-lg border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] p-1"
+        >
+          {(['crop', 'fixed'] as const).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              disabled={modeLocked}
+              aria-pressed={item.compositionMode === mode}
+              onClick={() => onModeChange(mode)}
+              className={`h-8 min-w-0 rounded-md px-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/45 ${
+                item.compositionMode === mode
+                  ? 'bg-[var(--ui-surface-elevated)] text-text-dark shadow-[0_0_0_1px_var(--ui-border-strong)]'
+                  : 'text-text-muted hover:bg-[var(--ui-hover)] hover:text-text-dark'
+              } disabled:cursor-not-allowed disabled:opacity-45`}
+            >
+              {t(`batchCrop.mode.${mode}`)}
+            </button>
+          ))}
+        </div>
+        <span className={`justify-self-end rounded-md px-2 py-1 text-[11px] ${
           item.status === 'review'
             ? 'bg-amber-500/12 text-amber-500'
             : item.status === 'error'
               ? 'bg-red-500/12 text-red-500'
-              : 'bg-[var(--ui-hover)] text-text-muted'
+              : item.status === 'aiProcessing' || item.status === 'aiReview'
+                ? 'bg-cyan-500/12 text-cyan-500'
+                : item.status === 'fixedReady' || item.status === 'exported'
+                  ? 'bg-emerald-500/12 text-emerald-500'
+                  : 'bg-[var(--ui-hover)] text-text-muted'
         }`}>
           {t(`batchCrop.status.${item.status}`)}
         </span>
       </header>
 
-      <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden p-6">
-        <div ref={viewportRef} className="flex h-full w-full items-center justify-center">
-          {crop && renderedImageSize ? (
-            <ReactCrop
-              crop={crop}
-              aspect={target.width / target.height}
-              disabled={!editable}
-              keepSelection
-              ruleOfThirds
-              onChange={(_, percentCrop) => onCropChange(toNormalizedCrop(percentCrop))}
-              className="batch-crop-react-crop"
-              style={renderedImageStyle}
-            >
-              <img
-                src={resolveBatchCropDisplayUrl(item.previewPath)}
-                alt={item.fileName}
-                width={item.width}
-                height={item.height}
-                loading="eager"
-                decoding="async"
-                className="block select-none object-contain"
-                style={renderedImageStyle}
-              />
-            </ReactCrop>
-          ) : renderedImageSize ? (
-            <img
-              src={resolveBatchCropDisplayUrl(item.previewPath)}
-              alt={item.fileName}
-              width={item.width}
-              height={item.height}
-              loading="eager"
-              decoding="async"
-              className="block select-none object-contain"
-              style={renderedImageStyle}
-            />
-          ) : null}
-        </div>
+      {item.compositionMode === 'fixed' ? (
+        <BatchFixedCanvasEditor
+          item={item}
+          target={target}
+          index={index}
+          total={total}
+          busy={busy}
+          onChange={onFixedCanvasChange}
+          onOpenAi={onOpenAi}
+          onRetryAi={onRetryAi}
+          onRequeryAi={onRequeryAi}
+          onToast={onToast}
+          onPrevious={onPrevious}
+          onNext={onNext}
+        />
+      ) : (
+        <>
+          <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden p-6">
+            <div ref={viewportRef} className="flex h-full w-full items-center justify-center">
+              {crop && renderedImageSize ? (
+                <ReactCrop
+                  crop={crop}
+                  aspect={target.width / target.height}
+                  disabled={!editable}
+                  keepSelection
+                  ruleOfThirds
+                  onChange={(_, percentCrop) => onCropChange(toNormalizedCrop(percentCrop))}
+                  className="batch-crop-react-crop"
+                  style={renderedImageStyle}
+                >
+                  <img
+                    src={resolveBatchCropDisplayUrl(item.previewPath)}
+                    alt={item.fileName}
+                    width={item.width}
+                    height={item.height}
+                    loading="eager"
+                    decoding="async"
+                    className="block select-none object-contain"
+                    style={renderedImageStyle}
+                  />
+                </ReactCrop>
+              ) : renderedImageSize ? (
+                <img
+                  src={resolveBatchCropDisplayUrl(item.previewPath)}
+                  alt={item.fileName}
+                  width={item.width}
+                  height={item.height}
+                  loading="eager"
+                  decoding="async"
+                  className="block select-none object-contain"
+                  style={renderedImageStyle}
+                />
+              ) : null}
+            </div>
 
-        {(item.status === 'review' || item.lowResolution || item.errorMessage) && (
-          <div className="absolute bottom-4 left-1/2 flex max-w-[min(620px,calc(100%-32px))] -translate-x-1/2 items-start gap-2 rounded-md border border-amber-500/20 bg-[var(--ui-surface-panel)] px-3 py-2 text-xs text-amber-500 shadow-[var(--ui-shadow-toolbar)]">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>
-              {item.errorMessage
-                || (item.lowResolution ? t('batchCrop.lowResolution') : t('batchCrop.reviewNotice'))}
-            </span>
+            {(item.cropStatus === 'review' || item.lowResolution || item.errorMessage) && (
+              <div className="absolute bottom-4 left-1/2 flex max-w-[min(620px,calc(100%-32px))] -translate-x-1/2 items-start gap-2 rounded-md border border-amber-500/20 bg-[var(--ui-surface-panel)] px-3 py-2 text-xs text-amber-500 shadow-[var(--ui-shadow-toolbar)]">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{item.errorMessage || (item.lowResolution ? t('batchCrop.lowResolution') : t('batchCrop.reviewNotice'))}</span>
+              </div>
+            )}
           </div>
-        )}
-      </div>
 
-      <footer className="grid h-14 shrink-0 grid-cols-[1fr_auto_1fr] items-center border-t border-[var(--ui-border-soft)] px-4">
-        <div className="flex items-center gap-1.5">
-          <UiTooltip content={t('batchCrop.rotateLeft')}>
-            <button
-              type="button"
-              aria-label={t('batchCrop.rotateLeft')}
-              disabled={busy}
-              onClick={() => onRotate(-90)}
-              className="flex h-8 w-8 items-center justify-center rounded-md text-text-muted hover:bg-[var(--ui-hover)] hover:text-text-dark disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              <RotateCcw size={16} strokeWidth={1.8} />
-            </button>
-          </UiTooltip>
-          <UiTooltip content={t('batchCrop.rotateRight')}>
-            <button
-              type="button"
-              aria-label={t('batchCrop.rotateRight')}
-              disabled={busy}
-              onClick={() => onRotate(90)}
-              className="flex h-8 w-8 items-center justify-center rounded-md text-text-muted hover:bg-[var(--ui-hover)] hover:text-text-dark disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              <RotateCw size={16} strokeWidth={1.8} />
-            </button>
-          </UiTooltip>
-          <UiButton type="button" onClick={onRestore} disabled={!editable || !item.automaticCrop} className="h-8 gap-1.5 px-2.5 text-xs">
-            <RefreshCw className="h-3.5 w-3.5" />
-            {t('batchCrop.restoreAuto')}
-          </UiButton>
-        </div>
+          <footer className="grid h-14 shrink-0 grid-cols-[1fr_auto_1fr] items-center border-t border-[var(--ui-border-soft)] px-4">
+            <div className="flex items-center gap-1.5">
+              <UiTooltip content={t('batchCrop.rotateLeft')}>
+                <button
+                  type="button"
+                  aria-label={t('batchCrop.rotateLeft')}
+                  disabled={busy}
+                  onClick={() => onRotate(-90)}
+                  className="flex h-8 w-8 items-center justify-center rounded-md text-text-muted hover:bg-[var(--ui-hover)] hover:text-text-dark disabled:opacity-40"
+                >
+                  <RotateCcw className="h-4 w-4" />
+                </button>
+              </UiTooltip>
+              <UiTooltip content={t('batchCrop.rotateRight')}>
+                <button
+                  type="button"
+                  aria-label={t('batchCrop.rotateRight')}
+                  disabled={busy}
+                  onClick={() => onRotate(90)}
+                  className="flex h-8 w-8 items-center justify-center rounded-md text-text-muted hover:bg-[var(--ui-hover)] hover:text-text-dark disabled:opacity-40"
+                >
+                  <RotateCcw className="h-4 w-4 -scale-x-100" />
+                </button>
+              </UiTooltip>
+              <UiButton type="button" onClick={onRestore} disabled={!editable || !item.automaticCrop} className="h-8 gap-1.5 px-2.5 text-xs">
+                <RefreshCw className="h-3.5 w-3.5" />
+                {t('batchCrop.restoreAuto')}
+              </UiButton>
+            </div>
 
-        <div className="flex items-center gap-2">
-          <UiTooltip content={t('viewer.prev')}>
-            <button
-              type="button"
-              aria-label={t('viewer.prev')}
-              disabled={index <= 0}
-              onClick={onPrevious}
-              className="flex h-8 w-8 items-center justify-center rounded-md text-text-muted hover:bg-[var(--ui-hover)] hover:text-text-dark disabled:opacity-35"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-          </UiTooltip>
-          <span className="w-14 text-center font-mono text-[11px] text-text-muted">{index + 1}/{total}</span>
-          <UiTooltip content={t('viewer.next')}>
-            <button
-              type="button"
-              aria-label={t('viewer.next')}
-              disabled={index >= total - 1}
-              onClick={onNext}
-              className="flex h-8 w-8 items-center justify-center rounded-md text-text-muted hover:bg-[var(--ui-hover)] hover:text-text-dark disabled:opacity-35"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </button>
-          </UiTooltip>
-        </div>
+            <div className="flex items-center gap-2">
+              <UiTooltip content={t('viewer.prev')}>
+                <button type="button" aria-label={t('viewer.prev')} disabled={index <= 0} onClick={onPrevious} className="flex h-8 w-8 items-center justify-center rounded-md text-text-muted hover:bg-[var(--ui-hover)] hover:text-text-dark disabled:opacity-35">
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+              </UiTooltip>
+              <span className="w-14 text-center font-mono text-[11px] text-text-muted">{index + 1}/{total}</span>
+              <UiTooltip content={t('viewer.next')}>
+                <button type="button" aria-label={t('viewer.next')} disabled={index >= total - 1} onClick={onNext} className="flex h-8 w-8 items-center justify-center rounded-md text-text-muted hover:bg-[var(--ui-hover)] hover:text-text-dark disabled:opacity-35">
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </UiTooltip>
+            </div>
 
-        <div className="flex justify-end">
-          {canConfirm && (
-            <UiButton type="button" variant="primary" onClick={onConfirm} disabled={busy} className="h-8 gap-1.5 px-3 text-xs">
-              <Check className="h-3.5 w-3.5" />
-              {t('batchCrop.confirmCurrent')}
-            </UiButton>
-          )}
-        </div>
-      </footer>
+            <div className="flex justify-end">
+              {canConfirm && (
+                <UiButton type="button" variant="primary" onClick={onConfirm} disabled={busy} className="h-8 gap-1.5 px-3 text-xs">
+                  <Check className="h-3.5 w-3.5" />
+                  {t('batchCrop.confirmCurrent')}
+                </UiButton>
+              )}
+            </div>
+          </footer>
+        </>
+      )}
     </div>
   );
 }

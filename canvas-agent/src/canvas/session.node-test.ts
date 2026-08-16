@@ -253,11 +253,11 @@ test('waits for target node progress without returning the full canvas', async (
   assert.deepEqual(result.nodes, [{
     nodeId: 'result-1',
     nodeType: 'exportImageNode',
-    displayName: 'Front view',
     status: 'ready',
     generationError: null,
     generationRecoveryState: null,
   }]);
+  assert.equal('displayName' in result.nodes[0], false);
   assert.equal(result.capabilities, undefined);
   assert.equal(result.edges, undefined);
 });

@@ -17,6 +17,64 @@ export interface NormalizedCropRect {
   height: number;
 }
 
+export type BatchCompositionMode = 'crop' | 'fixed';
+export type FixedCanvasStage = 'compose' | 'fill';
+export type FixedCanvasTool = 'stretch' | null;
+export type FixedCanvasStretchDirection = 'left' | 'right' | 'top' | 'bottom';
+export type FixedCanvasAiStatus = 'idle' | 'processing' | 'review' | 'failed' | 'accepted';
+
+export interface NormalizedCanvasRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface FixedCanvasTransform {
+  zoom: number;
+  pan: { x: number; y: number };
+}
+
+export interface FixedCanvasStretchOperation {
+  id: string;
+  source: NormalizedCanvasRect;
+  direction: FixedCanvasStretchDirection;
+  amount: number;
+}
+
+export interface FixedCanvasAiDraft {
+  status: FixedCanvasAiStatus;
+  prompt: string;
+  modelId: string;
+  resolution: string;
+  jobId?: string;
+  resultPath?: string;
+  errorMessage?: string;
+  requiresManualRequery?: boolean;
+}
+
+export interface FixedCanvasCompositionSnapshot {
+  transform: FixedCanvasTransform;
+  stretches: FixedCanvasStretchOperation[];
+  redoStretches: FixedCanvasStretchOperation[];
+  activeStretchId: string | null;
+  ready: boolean;
+  ai: FixedCanvasAiDraft;
+}
+
+export interface FixedCanvasDraft {
+  transform: FixedCanvasTransform;
+  stage: FixedCanvasStage;
+  tool: FixedCanvasTool;
+  selection: NormalizedCanvasRect | null;
+  stretches: FixedCanvasStretchOperation[];
+  redoStretches: FixedCanvasStretchOperation[];
+  activeStretchId: string | null;
+  ready: boolean;
+  ai: FixedCanvasAiDraft;
+  composeUndo: FixedCanvasCompositionSnapshot | null;
+}
+
 export type BatchCropItemStatus =
   | 'pending'
   | 'processing'
@@ -24,6 +82,11 @@ export type BatchCropItemStatus =
   | 'review'
   | 'adjusted'
   | 'confirmed'
+  | 'fixedCompose'
+  | 'fixedFill'
+  | 'fixedReady'
+  | 'aiProcessing'
+  | 'aiReview'
   | 'exporting'
   | 'exported'
   | 'error';
@@ -38,11 +101,14 @@ export interface BatchCropImageItem {
   width: number;
   height: number;
   rotationDegrees: number;
+  compositionMode: BatchCompositionMode;
   status: BatchCropItemStatus;
+  cropStatus: BatchCropItemStatus;
   crop: NormalizedCropRect | null;
   automaticCrop: NormalizedCropRect | null;
   requiresReview: boolean;
   lowResolution: boolean;
+  fixedCanvas: FixedCanvasDraft;
   errorMessage?: string;
   outputPath?: string;
 }
@@ -67,6 +133,257 @@ export function getBatchCropTarget(id: BatchCropTargetId): BatchCropTarget {
 
 export function normalizeRotationDegrees(value: number): number {
   return ((Math.round(value / 90) * 90) % 360 + 360) % 360;
+}
+
+export function createDefaultFixedCanvasDraft(defaultPrompt = ''): FixedCanvasDraft {
+  return {
+    transform: { zoom: 100, pan: { x: 0, y: 0 } },
+    stage: 'compose',
+    tool: null,
+    selection: null,
+    stretches: [],
+    redoStretches: [],
+    activeStretchId: null,
+    ready: false,
+    ai: {
+      status: 'idle',
+      prompt: defaultPrompt,
+      modelId: '',
+      resolution: '',
+    },
+    composeUndo: null,
+  };
+}
+
+export function resolveFixedCanvasImageBox(
+  imageWidth: number,
+  imageHeight: number,
+  targetWidth: number,
+  targetHeight: number,
+  transform: FixedCanvasTransform
+): NormalizedCanvasRect {
+  const sourceRatio = Math.max(1, imageWidth) / Math.max(1, imageHeight);
+  const targetRatio = Math.max(1, targetWidth) / Math.max(1, targetHeight);
+  const base = sourceRatio > targetRatio
+    ? { width: 100, height: (100 * targetRatio) / sourceRatio }
+    : { width: (100 * sourceRatio) / targetRatio, height: 100 };
+  const zoom = Math.min(200, Math.max(20, transform.zoom)) / 100;
+  const width = base.width * zoom;
+  const height = base.height * zoom;
+  return {
+    x: 50 + transform.pan.x - width / 2,
+    y: 50 + transform.pan.y - height / 2,
+    width,
+    height,
+  };
+}
+
+const FIXED_CANVAS_MIN_VISIBLE_AREA = 0.1;
+
+function clampNumber(value: number, minimum: number, maximum: number): number {
+  return Math.min(maximum, Math.max(minimum, value));
+}
+
+function visibleAxisFraction(start: number, length: number): number {
+  const visible = Math.max(0, Math.min(100, start + length) - Math.max(0, start));
+  return visible / Math.max(Number.EPSILON, length);
+}
+
+function clampPanAxisForVisibleFraction(
+  pan: number,
+  imageLength: number,
+  requestedFraction: number
+): number {
+  const maximumFraction = Math.min(1, 100 / Math.max(Number.EPSILON, imageLength));
+  const visibleFraction = clampNumber(requestedFraction, 0, maximumFraction);
+  const minimumPan = -50 + (visibleFraction - 0.5) * imageLength;
+  const maximumPan = 50 + (0.5 - visibleFraction) * imageLength;
+  return clampNumber(pan, Math.max(-80, minimumPan), Math.min(80, maximumPan));
+}
+
+export function clampFixedCanvasTransform(
+  imageWidth: number,
+  imageHeight: number,
+  targetWidth: number,
+  targetHeight: number,
+  transform: FixedCanvasTransform
+): FixedCanvasTransform {
+  const next = {
+    zoom: clampNumber(transform.zoom, 20, 200),
+    pan: {
+      x: clampNumber(transform.pan.x, -80, 80),
+      y: clampNumber(transform.pan.y, -80, 80),
+    },
+  };
+
+  for (let iteration = 0; iteration < 2; iteration += 1) {
+    let imageBox = resolveFixedCanvasImageBox(
+      imageWidth,
+      imageHeight,
+      targetWidth,
+      targetHeight,
+      next
+    );
+    const visibleY = visibleAxisFraction(imageBox.y, imageBox.height);
+    next.pan.x = clampPanAxisForVisibleFraction(
+      next.pan.x,
+      imageBox.width,
+      FIXED_CANVAS_MIN_VISIBLE_AREA / Math.max(Number.EPSILON, visibleY)
+    );
+
+    imageBox = resolveFixedCanvasImageBox(
+      imageWidth,
+      imageHeight,
+      targetWidth,
+      targetHeight,
+      next
+    );
+    const visibleX = visibleAxisFraction(imageBox.x, imageBox.width);
+    next.pan.y = clampPanAxisForVisibleFraction(
+      next.pan.y,
+      imageBox.height,
+      FIXED_CANVAS_MIN_VISIBLE_AREA / Math.max(Number.EPSILON, visibleX)
+    );
+  }
+
+  return next;
+}
+
+export function resolveStretchDestination(
+  operation: Pick<FixedCanvasStretchOperation, 'source' | 'direction' | 'amount'>
+): NormalizedCanvasRect {
+  const { source, direction, amount } = operation;
+  if (direction === 'left') {
+    return { x: source.x - amount, y: source.y, width: source.width + amount, height: source.height };
+  }
+  if (direction === 'right') {
+    return { x: source.x, y: source.y, width: source.width + amount, height: source.height };
+  }
+  if (direction === 'top') {
+    return { x: source.x, y: source.y - amount, width: source.width, height: source.height + amount };
+  }
+  return { x: source.x, y: source.y, width: source.width, height: source.height + amount };
+}
+
+function pointInsideRect(x: number, y: number, rect: NormalizedCanvasRect): boolean {
+  return x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height;
+}
+
+function rectHasBlankArea(
+  area: NormalizedCanvasRect,
+  filledRects: NormalizedCanvasRect[]
+): boolean {
+  if (area.width <= 0 || area.height <= 0) return false;
+  const areaRight = area.x + area.width;
+  const areaBottom = area.y + area.height;
+  const xBoundaries = new Set([area.x, areaRight]);
+  const yBoundaries = new Set([area.y, areaBottom]);
+
+  filledRects.forEach((rect) => {
+    const left = clampNumber(rect.x, area.x, areaRight);
+    const right = clampNumber(rect.x + rect.width, area.x, areaRight);
+    const top = clampNumber(rect.y, area.y, areaBottom);
+    const bottom = clampNumber(rect.y + rect.height, area.y, areaBottom);
+    if (right > left) {
+      xBoundaries.add(left);
+      xBoundaries.add(right);
+    }
+    if (bottom > top) {
+      yBoundaries.add(top);
+      yBoundaries.add(bottom);
+    }
+  });
+
+  const xs = [...xBoundaries].sort((left, right) => left - right);
+  const ys = [...yBoundaries].sort((top, bottom) => top - bottom);
+  for (let xIndex = 0; xIndex < xs.length - 1; xIndex += 1) {
+    for (let yIndex = 0; yIndex < ys.length - 1; yIndex += 1) {
+      const x = (xs[xIndex] + xs[xIndex + 1]) / 2;
+      const y = (ys[yIndex] + ys[yIndex + 1]) / 2;
+      if (!filledRects.some((rect) => pointInsideRect(x, y, rect))) return true;
+    }
+  }
+  return false;
+}
+
+export function resolveAvailableStretchDirections(
+  selection: NormalizedCanvasRect,
+  imageBox: NormalizedCanvasRect,
+  stretches: FixedCanvasStretchOperation[]
+): Record<FixedCanvasStretchDirection, boolean> {
+  const filledRects = [imageBox, ...stretches.map(resolveStretchDestination)];
+  return {
+    left: rectHasBlankArea(
+      { x: 0, y: selection.y, width: selection.x, height: selection.height },
+      filledRects
+    ),
+    right: rectHasBlankArea(
+      {
+        x: selection.x + selection.width,
+        y: selection.y,
+        width: 100 - selection.x - selection.width,
+        height: selection.height,
+      },
+      filledRects
+    ),
+    top: rectHasBlankArea(
+      { x: selection.x, y: 0, width: selection.width, height: selection.y },
+      filledRects
+    ),
+    bottom: rectHasBlankArea(
+      {
+        x: selection.x,
+        y: selection.y + selection.height,
+        width: selection.width,
+        height: 100 - selection.y - selection.height,
+      },
+      filledRects
+    ),
+  };
+}
+
+export function fixedCanvasHasBlank(
+  item: Pick<BatchCropImageItem, 'width' | 'height' | 'fixedCanvas'>,
+  target: { width: number; height: number }
+): boolean {
+  if (item.fixedCanvas.ai.status === 'accepted' && item.fixedCanvas.ai.resultPath) return false;
+  const imageBox = resolveFixedCanvasImageBox(
+    item.width,
+    item.height,
+    target.width,
+    target.height,
+    item.fixedCanvas.transform
+  );
+  const filledRects = [
+    imageBox,
+    ...item.fixedCanvas.stretches.map(resolveStretchDestination),
+  ];
+  return rectHasBlankArea({ x: 0, y: 0, width: 100, height: 100 }, filledRects);
+}
+
+export function resolveFixedCanvasStatus(draft: FixedCanvasDraft): BatchCropItemStatus {
+  if (draft.ai.status === 'processing') return 'aiProcessing';
+  if (draft.ai.status === 'review') return 'aiReview';
+  if (draft.ready) return 'fixedReady';
+  return draft.stage === 'compose' ? 'fixedCompose' : 'fixedFill';
+}
+
+export function isBatchCompositionModeLocked(
+  item: BatchCropImageItem | null,
+  busy: boolean
+): boolean {
+  return busy
+    || item?.status === 'aiProcessing'
+    || item?.status === 'aiReview'
+    || item?.fixedCanvas.ai.status === 'processing'
+    || item?.fixedCanvas.ai.status === 'review';
+}
+
+export function isBatchCropItemReadyForExport(item: BatchCropImageItem): boolean {
+  if (item.compositionMode === 'fixed') {
+    return item.fixedCanvas.ready && item.fixedCanvas.ai.status !== 'processing' && item.fixedCanvas.ai.status !== 'review';
+  }
+  return Boolean(item.crop) && !['pending', 'processing', 'review', 'error'].includes(item.cropStatus);
 }
 
 export function fitImageWithinBounds(
@@ -124,7 +441,8 @@ export function createBatchCropItemFromPreparedImage(
   target: BatchCropTarget,
   id: string,
   rotationDegrees: number,
-  fallbackErrorMessage: string
+  fallbackErrorMessage: string,
+  defaultAiPrompt = ''
 ): BatchCropImageItem {
   const crop = prepared.suggestion?.crop
     ?? createCenteredCrop(prepared.width, prepared.height, target.width, target.height);
@@ -140,7 +458,9 @@ export function createBatchCropItemFromPreparedImage(
     width: prepared.width,
     height: prepared.height,
     rotationDegrees,
+    compositionMode: 'crop',
     status: requiresReview ? 'review' : 'auto',
+    cropStatus: requiresReview ? 'review' : 'auto',
     crop,
     automaticCrop: crop,
     requiresReview,
@@ -151,6 +471,7 @@ export function createBatchCropItemFromPreparedImage(
       target.width,
       target.height
     ),
+    fixedCanvas: createDefaultFixedCanvasDraft(defaultAiPrompt),
     errorMessage: prepared.suggestion ? undefined : fallbackErrorMessage,
   };
 }

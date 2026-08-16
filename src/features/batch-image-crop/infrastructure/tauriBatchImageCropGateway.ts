@@ -1,5 +1,9 @@
 import { convertFileSrc, invoke, isTauri } from '@tauri-apps/api/core';
-import type { NormalizedCropRect } from '../domain';
+import type {
+  FixedCanvasStretchOperation,
+  FixedCanvasTransform,
+  NormalizedCropRect,
+} from '../domain';
 
 export interface PreparedBatchCropImage {
   sourcePath: string;
@@ -24,6 +28,21 @@ export interface ExportBatchCropImagePayload {
 
 export interface ExportedBatchCropImage {
   outputPath: string;
+}
+
+export interface FixedCanvasCompositionPayload {
+  sourcePath: string;
+  fileName: string;
+  targetWidth: number;
+  targetHeight: number;
+  rotationDegrees: number;
+  transform: FixedCanvasTransform;
+  stretches: FixedCanvasStretchOperation[];
+  resultSourcePath?: string;
+}
+
+export interface RenderedBatchFixedCanvas {
+  renderedPath: string;
 }
 
 export interface BatchCropSuggestion {
@@ -54,6 +73,23 @@ export async function exportBatchCropImage(
   payload: ExportBatchCropImagePayload
 ): Promise<ExportedBatchCropImage> {
   return await invoke<ExportedBatchCropImage>('export_batch_crop_image', { payload });
+}
+
+export async function renderBatchFixedCanvas(
+  batchId: string,
+  payload: FixedCanvasCompositionPayload
+): Promise<RenderedBatchFixedCanvas> {
+  return await invoke<RenderedBatchFixedCanvas>('render_batch_fixed_canvas', { batchId, payload });
+}
+
+export async function exportBatchFixedCanvas(
+  outputDirectory: string,
+  payload: FixedCanvasCompositionPayload
+): Promise<ExportedBatchCropImage> {
+  return await invoke<ExportedBatchCropImage>('export_batch_fixed_canvas', {
+    outputDirectory,
+    payload,
+  });
 }
 
 export async function suggestBatchCrop(
