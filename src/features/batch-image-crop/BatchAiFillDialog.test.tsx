@@ -75,6 +75,7 @@ describe('BatchAiFillDialog', () => {
         target={{ id: '1440x1440', width: 1440, height: 1440 }}
         models={[model]}
         defaultModelId={model.id}
+        defaultResolution="1K"
         submitting={false}
         onClose={() => undefined}
         onSubmit={onSubmit}
@@ -85,7 +86,7 @@ describe('BatchAiFillDialog', () => {
     expect(modelTrigger?.getAttribute('aria-haspopup')).toBe('listbox');
     expect(container.textContent).not.toContain('1440×1440');
     const prompt = document.querySelector('textarea') as HTMLTextAreaElement | null;
-    expect(prompt?.value).toBe(defaultPrompt);
+    expect(prompt?.value).toBe(i18n.t('batchCrop.fixed.ai.defaultPrompt'));
 
     await act(async () => {
       if (!prompt) return;
@@ -99,7 +100,7 @@ describe('BatchAiFillDialog', () => {
 
     expect(onSubmit).toHaveBeenCalledWith({
       modelId: model.id,
-      resolution: '2K',
+      resolution: '1K',
       prompt: '继续补全街道背景',
     });
   });
@@ -113,6 +114,7 @@ describe('BatchAiFillDialog', () => {
         target={{ id: '1440x1440', width: 1440, height: 1440 }}
         models={[model]}
         defaultModelId={model.id}
+        defaultResolution="2K"
         submitting={false}
         onClose={onClose}
         onSubmit={() => undefined}
@@ -126,5 +128,63 @@ describe('BatchAiFillDialog', () => {
     });
 
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('resets the prompt to the localized default every time it opens', async () => {
+    const renderDialog = async (isOpen: boolean) => act(async () => root.render(
+      <BatchAiFillDialog
+        isOpen={isOpen}
+        item={{
+          ...item,
+          fixedCanvas: {
+            ...item.fixedCanvas,
+            ai: { ...item.fixedCanvas.ai, prompt: 'previous submitted prompt' },
+          },
+        }}
+        target={{ id: '1440x1440', width: 1440, height: 1440 }}
+        models={[model]}
+        defaultModelId={model.id}
+        defaultResolution="2K"
+        submitting={false}
+        onClose={() => undefined}
+        onSubmit={() => undefined}
+      />
+    ));
+
+    await renderDialog(true);
+    const prompt = document.querySelector('textarea') as HTMLTextAreaElement;
+    const setValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
+    await act(async () => {
+      setValue?.call(prompt, 'temporary edit');
+      prompt.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await renderDialog(false);
+    await renderDialog(true);
+
+    expect((document.querySelector('textarea') as HTMLTextAreaElement).value)
+      .toBe(i18n.t('batchCrop.fixed.ai.defaultPrompt'));
+  });
+
+  it('keeps cancel available while a submission is in flight', async () => {
+    const onClose = vi.fn();
+    await act(async () => root.render(
+      <BatchAiFillDialog
+        isOpen
+        item={item}
+        target={{ id: '1440x1440', width: 1440, height: 1440 }}
+        models={[model]}
+        defaultModelId={model.id}
+        defaultResolution="2K"
+        submitting
+        onClose={onClose}
+        onSubmit={() => undefined}
+      />
+    ));
+
+    const cancel = Array.from(document.querySelectorAll('button'))
+      .find((button) => button.textContent?.trim() === '取消') as HTMLButtonElement | undefined;
+    expect(cancel?.disabled).toBe(false);
+    await act(async () => cancel?.click());
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

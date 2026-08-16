@@ -33,8 +33,8 @@ const fixedCanvasProps = {
   onModeChange: () => undefined,
   onFixedCanvasChange: () => undefined,
   onOpenAi: () => undefined,
-  onRetryAi: () => undefined,
   onRequeryAi: () => undefined,
+  onCancelAi: () => undefined,
   onToast: () => undefined,
 };
 
@@ -136,12 +136,20 @@ describe('BatchCropEditor preview lifecycle', () => {
     expect(onModeChange).toHaveBeenCalledWith('fixed');
   });
 
-  it('disables composition mode changes while an AI result is awaiting review', async () => {
+  it('disables composition mode changes while AI fill is processing', async () => {
     const onModeChange = vi.fn();
     await act(async () => root.render(
       <BatchCropEditor
         {...fixedCanvasProps}
-        item={{ ...item, status: 'aiReview', crop: { x: 0, y: 0, width: 1, height: 1 } }}
+        item={{
+          ...item,
+          status: 'aiProcessing',
+          crop: { x: 0, y: 0, width: 1, height: 1 },
+          fixedCanvas: {
+            ...item.fixedCanvas,
+            ai: { ...item.fixedCanvas.ai, status: 'processing' },
+          },
+        }}
         target={target}
         index={0}
         total={1}

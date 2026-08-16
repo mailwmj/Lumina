@@ -104,6 +104,11 @@ export interface ImageModelSelection {
   modelId: string;
 }
 
+export interface BatchAiFillSelection {
+  modelId: string;
+  resolution: string;
+}
+
 export type ImageGenerationExtraParamValue = boolean | number | string;
 
 /**
@@ -485,12 +490,14 @@ interface SettingsState {
   videoApis: VideoApiConfig[];
   activeVideoApiId: string | null;
   lastImageModelSelection: ImageModelSelection | null;
+  lastBatchAiFillSelection: BatchAiFillSelection | null;
   lastImageGenerationOptions: LastImageGenerationOptions;
   lastTextGenerationModelSelection: TextGenerationModelSelection | null;
   setOpenAiImageApi: (config: OpenAiImageApiConfig) => void;
   setChaomoImageApi: (config: ChaomoImageApiConfig) => void;
   setCustomImageApis: (configs: CustomImageApiConfig[]) => void;
   setLastImageModelSelection: (selection: ImageModelSelection | null) => void;
+  setLastBatchAiFillSelection: (selection: BatchAiFillSelection | null) => void;
   updateLastImageGenerationOptions: (options: LastImageGenerationOptionsPatch) => void;
   setLastTextGenerationModelSelection: (
     selection: TextGenerationModelSelection | null
@@ -705,6 +712,14 @@ function normalizeImageModelSelection(input: unknown): ImageModelSelection | nul
   return { providerId, modelId };
 }
 
+export function normalizeBatchAiFillSelection(input: unknown): BatchAiFillSelection | null {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return null;
+  const record = input as Record<string, unknown>;
+  const modelId = typeof record.modelId === 'string' ? record.modelId.trim() : '';
+  const resolution = typeof record.resolution === 'string' ? record.resolution.trim() : '';
+  return modelId && resolution ? { modelId, resolution } : null;
+}
+
 function normalizeImageGenerationExtraParams(
   input: unknown
 ): Record<string, ImageGenerationExtraParamValue> | undefined {
@@ -867,6 +882,7 @@ export function migrateSettingsState(persistedState: unknown, persistedVersion: 
     videoApis?: VideoApiConfig[];
     activeVideoApiId?: string | null;
     lastImageModelSelection?: ImageModelSelection | null;
+    lastBatchAiFillSelection?: BatchAiFillSelection | null;
     lastImageGenerationOptions?: LastImageGenerationOptions;
     lastTextGenerationModelSelection?: TextGenerationModelSelection | null;
     accentColor?: unknown;
@@ -931,6 +947,7 @@ export function migrateSettingsState(persistedState: unknown, persistedVersion: 
     videoApis: mergeVideoApis(state.videoApis),
     activeVideoApiId: state.activeVideoApiId ?? null,
     lastImageModelSelection: normalizeImageModelSelection(state.lastImageModelSelection),
+    lastBatchAiFillSelection: normalizeBatchAiFillSelection(state.lastBatchAiFillSelection),
     lastImageGenerationOptions: normalizeLastImageGenerationOptions(
       state.lastImageGenerationOptions
     ),
@@ -1039,6 +1056,9 @@ export const useSettingsStore = create<SettingsState>()(
       lastImageModelSelection: null,
       setLastImageModelSelection: (selection) =>
         set({ lastImageModelSelection: normalizeImageModelSelection(selection) }),
+      lastBatchAiFillSelection: null,
+      setLastBatchAiFillSelection: (selection) =>
+        set({ lastBatchAiFillSelection: normalizeBatchAiFillSelection(selection) }),
       lastImageGenerationOptions: {},
       updateLastImageGenerationOptions: (options) =>
         set((state) => ({
@@ -1059,7 +1079,7 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: 'settings-storage',
-      version: 29,
+      version: 30,
       onRehydrateStorage: () => {
         return (_state, error) => {
           if (error) {

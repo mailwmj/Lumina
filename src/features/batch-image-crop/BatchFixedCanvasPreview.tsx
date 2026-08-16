@@ -18,18 +18,23 @@ const HANDLE_POSITION: Record<FixedCanvasCorner, string> = {
 
 export function BatchFixedCanvasTransformFrame({
   imageBox,
+  active,
   label,
   onMoveStart,
   onScaleStart,
 }: {
   imageBox: NormalizedCanvasRect;
+  active: boolean;
   label: string;
   onMoveStart: (event: ReactPointerEvent) => void;
   onScaleStart: (event: ReactPointerEvent, corner: FixedCanvasCorner) => void;
 }) {
   return (
     <div
-      className="absolute z-[6] border border-accent shadow-[0_0_0_1px_rgba(9,9,11,0.72)]"
+      data-testid="fixed-canvas-transform-frame"
+      className={`group absolute z-[6] border shadow-[0_0_0_1px_rgba(255,255,255,0.58)] transition-colors ${
+        active ? 'border-accent' : 'border-zinc-950/75 hover:border-accent'
+      }`}
       style={{
         left: `${imageBox.x}%`,
         top: `${imageBox.y}%`,
@@ -45,7 +50,7 @@ export function BatchFixedCanvasTransformFrame({
           type="button"
           aria-label={label}
           title={label}
-          className={`absolute z-[7] h-3 w-3 rounded-[2px] border border-zinc-950 bg-accent shadow-[0_0_0_1px_rgba(255,255,255,0.75)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/55 ${HANDLE_POSITION[corner]}`}
+          className={`absolute z-[7] h-3 w-3 rounded-[2px] border border-zinc-950 bg-white shadow-[0_0_0_1px_rgba(255,255,255,0.75)] transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/55 ${HANDLE_POSITION[corner]}`}
           onPointerDown={(event) => onScaleStart(event, corner)}
         />
       ))}

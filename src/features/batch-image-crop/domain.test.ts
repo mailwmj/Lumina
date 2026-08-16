@@ -10,6 +10,7 @@ import {
   normalizeRotationDegrees,
   resolveFixedCanvasImageBox,
   resolveAvailableStretchDirections,
+  resolveAxisSnappedSelection,
   resolveStretchDestination,
 } from './domain';
 
@@ -128,6 +129,39 @@ describe('batch image crop geometry', () => {
     expect(destination).toEqual({ x: 0, y: 5, width: 40, height: 90 });
   });
 
+  it('snaps a rough tall selection to a full-height vertical strip', () => {
+    expect(resolveAxisSnappedSelection(
+      { x: 30, y: 12 },
+      { x: 42, y: 88 },
+      null
+    )).toEqual({
+      axis: 'vertical',
+      selection: { x: 30, y: 0, width: 12, height: 100 },
+    });
+  });
+
+  it('snaps a rough wide selection to a full-width horizontal strip', () => {
+    expect(resolveAxisSnappedSelection(
+      { x: 12, y: 38 },
+      { x: 88, y: 48 },
+      null
+    )).toEqual({
+      axis: 'horizontal',
+      selection: { x: 0, y: 38, width: 100, height: 10 },
+    });
+  });
+
+  it('keeps the first selection axis after the drag direction changes', () => {
+    expect(resolveAxisSnappedSelection(
+      { x: 30, y: 10 },
+      { x: 90, y: 20 },
+      'vertical'
+    )).toEqual({
+      axis: 'vertical',
+      selection: { x: 30, y: 0, width: 60, height: 100 },
+    });
+  });
+
   it('detects when fixed-canvas stretches cover the remaining blank columns', () => {
     const fixedCanvas = createDefaultFixedCanvasDraft();
     fixedCanvas.stretches = [
@@ -190,7 +224,7 @@ describe('batch image crop geometry', () => {
     expect(directions).toEqual({ left: false, right: false, top: false, bottom: false });
   });
 
-  it('locks composition mode while an AI result is awaiting review', () => {
+  it('locks composition mode while AI fill is processing', () => {
     const fixedCanvas = createDefaultFixedCanvasDraft();
     const item = {
       ...createBatchCropItemFromPreparedImage(
@@ -208,8 +242,11 @@ describe('batch image crop geometry', () => {
         0,
         'fallback'
       ),
-      status: 'aiReview' as const,
-      fixedCanvas,
+      status: 'aiProcessing' as const,
+      fixedCanvas: {
+        ...fixedCanvas,
+        ai: { ...fixedCanvas.ai, status: 'processing' as const },
+      },
     };
 
     expect(isBatchCompositionModeLocked(item, false)).toBe(true);

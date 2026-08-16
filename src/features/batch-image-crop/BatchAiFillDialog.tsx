@@ -18,6 +18,7 @@ interface BatchAiFillDialogProps {
   target: BatchCropTarget;
   models: ImageModelDefinition[];
   defaultModelId: string;
+  defaultResolution: string;
   submitting: boolean;
   onClose: () => void;
   onSubmit: (submission: BatchAiFillSubmission) => void;
@@ -29,6 +30,7 @@ export function BatchAiFillDialog({
   target,
   models,
   defaultModelId,
+  defaultResolution,
   submitting,
   onClose,
   onSubmit,
@@ -40,17 +42,17 @@ export function BatchAiFillDialog({
 
   useEffect(() => {
     if (!isOpen || !item) return;
-    const requestedModel = item.fixedCanvas.ai.modelId || defaultModelId;
-    const model = models.find((candidate) => candidate.id === requestedModel) ?? models[0] ?? null;
+    const model = models.find((candidate) => candidate.id === defaultModelId) ?? models[0] ?? null;
+    const modelResolutions = model?.resolutions.map((option) => option.value) ?? [];
     setModelId(model?.id ?? '');
     setResolution(
-      item.fixedCanvas.ai.resolution
+      (modelResolutions.includes(defaultResolution) ? defaultResolution : '')
       || model?.defaultResolution
       || model?.resolutions[0]?.value
       || ''
     );
-    setPrompt(item.fixedCanvas.ai.prompt || t('batchCrop.fixed.ai.defaultPrompt'));
-  }, [defaultModelId, isOpen, item, models, t]);
+    setPrompt(t('batchCrop.fixed.ai.defaultPrompt'));
+  }, [defaultModelId, defaultResolution, isOpen, item?.id, models, t]);
 
   const selectedModel = useMemo(
     () => models.find((model) => model.id === modelId) ?? null,
@@ -81,7 +83,7 @@ export function BatchAiFillDialog({
       widthClassName="w-[720px] max-w-[calc(100vw-24px)]"
       footer={(
         <>
-          <UiButton type="button" onClick={onClose} disabled={submitting}>{t('common.cancel')}</UiButton>
+          <UiButton type="button" onClick={onClose}>{t('common.cancel')}</UiButton>
           <UiButton
             type="button"
             variant="primary"

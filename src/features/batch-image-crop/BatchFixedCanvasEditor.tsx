@@ -19,10 +19,12 @@ import {
   fitImageWithinBounds,
   fixedCanvasHasBlank,
   resolveAvailableStretchDirections,
+  resolveAxisSnappedSelection,
   resolveFixedCanvasImageBox,
   type BatchCropImageItem,
   type BatchCropTarget,
   type FixedCanvasDraft,
+  type FixedCanvasSelectionAxis,
   type FixedCanvasStretchDirection,
   type FixedCanvasStretchOperation,
   type FixedCanvasTransform,
@@ -49,13 +51,15 @@ type Gesture =
       transform: FixedCanvasTransform;
       distance: number;
     }
-  | { type: 'select'; start: Point }
+  | { type: 'select'; start: Point; axis: FixedCanvasSelectionAxis | null }
   | { type: 'selection-move'; start: Point; selection: NormalizedCanvasRect }
   | { type: 'selection-resize'; anchor: Point; selection: NormalizedCanvasRect }
   | { type: 'stretch'; source: NormalizedCanvasRect; direction: FixedCanvasStretchDirection };
 
 type Corner = FixedCanvasCorner;
 interface Point { x: number; y: number }
+
+const SELECTION_AXIS_LOCK_THRESHOLD = 3;
 
 interface BatchFixedCanvasEditorProps {
   item: BatchCropImageItem;
@@ -65,8 +69,8 @@ interface BatchFixedCanvasEditorProps {
   busy: boolean;
   onChange: (draft: FixedCanvasDraft) => void;
   onOpenAi: () => void;
-  onRetryAi: () => void;
   onRequeryAi: () => void;
+  onCancelAi: () => void;
   onToast: (message: string) => void;
   onPrevious: () => void;
   onNext: () => void;
@@ -81,15 +85,6 @@ function pointInCanvas(event: ReactPointerEvent, element: HTMLElement): Point {
   return {
     x: clamp(((event.clientX - rect.left) / Math.max(1, rect.width)) * 100, 0, 100),
     y: clamp(((event.clientY - rect.top) / Math.max(1, rect.height)) * 100, 0, 100),
-  };
-}
-
-function rectFromPoints(start: Point, end: Point): NormalizedCanvasRect {
-  return {
-    x: Math.min(start.x, end.x),
-    y: Math.min(start.y, end.y),
-    width: Math.abs(end.x - start.x),
-    height: Math.abs(end.y - start.y),
   };
 }
 
@@ -127,8 +122,8 @@ export function BatchFixedCanvasEditor({
   busy,
   onChange,
   onOpenAi,
-  onRetryAi,
   onRequeryAi,
+  onCancelAi,
   onToast,
   onPrevious,
   onNext,
@@ -142,7 +137,7 @@ export function BatchFixedCanvasEditor({
   const [liveSelection, setLiveSelection] = useState<NormalizedCanvasRect | null>(null);
   const [liveStretch, setLiveStretch] = useState<FixedCanvasStretchOperation | null>(null);
   const draft = item.fixedCanvas;
-  const locked = busy || draft.ai.status === 'processing' || draft.ai.status === 'review';
+  const locked = busy || draft.ai.status === 'processing';
   const transform = liveTransform ?? draft.transform;
   const selection = liveSelection ?? draft.selection;
   const imageBox = useMemo(
@@ -152,7 +147,7 @@ export function BatchFixedCanvasEditor({
   const hasBlank = fixedCanvasHasBlank(item, target);
   const showingAiResult = draft.stage === 'fill'
     && Boolean(draft.ai.resultPath)
-    && (draft.ai.status === 'review' || draft.ai.status === 'accepted');
+    && draft.ai.status === 'accepted';
   const imageSource = resolveBatchCropDisplayUrl(
     showingAiResult && draft.ai.resultPath ? draft.ai.resultPath : item.previewPath
   );
@@ -180,8 +175,8 @@ export function BatchFixedCanvasEditor({
   const canvasSize = useMemo(() => fitImageWithinBounds(
     target.width,
     target.height,
-    Math.max(1, viewportSize.width - 32),
-    Math.max(1, viewportSize.height - 32)
+    Math.max(1, viewportSize.width - 48),
+    Math.max(1, viewportSize.height - 48)
   ), [target.height, target.width, viewportSize.height, viewportSize.width]);
 
   const commitTransform = (nextTransform: FixedCanvasTransform) => {
@@ -273,8 +268,8 @@ export function BatchFixedCanvasEditor({
     if (locked || draft.stage !== 'fill' || draft.tool !== 'stretch' || !canvasRef.current) return;
     const point = pointInCanvas(event, canvasRef.current);
     canvasRef.current.setPointerCapture?.(event.pointerId);
-    setGesture({ type: 'select', start: point });
-    setLiveSelection({ ...point, width: 0, height: 0 });
+    setGesture({ type: 'select', start: point, axis: null });
+    setLiveSelection(null);
   };
 
   const handlePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -320,17 +315,29 @@ export function BatchFixedCanvasEditor({
       return;
     }
     if (gesture.type === 'select') {
-      setLiveSelection(rectFromPoints(gesture.start, point));
+      const distance = Math.max(
+        Math.abs(point.x - gesture.start.x),
+        Math.abs(point.y - gesture.start.y)
+      );
+      if (!gesture.axis && distance < SELECTION_AXIS_LOCK_THRESHOLD) return;
+      const resolved = resolveAxisSnappedSelection(gesture.start, point, gesture.axis);
+      if (!gesture.axis) setGesture({ ...gesture, axis: resolved.axis });
+      setLiveSelection(resolved.selection);
       return;
     }
     if (gesture.type === 'selection-move') {
-      setLiveSelection({
+      const vertical = gesture.selection.height >= 99.9;
+      setLiveSelection(vertical ? {
         ...gesture.selection,
         x: clamp(
           gesture.selection.x + point.x - gesture.start.x,
           0,
           100 - gesture.selection.width
         ),
+        y: 0,
+      } : {
+        ...gesture.selection,
+        x: 0,
         y: clamp(
           gesture.selection.y + point.y - gesture.start.y,
           0,
@@ -340,7 +347,10 @@ export function BatchFixedCanvasEditor({
       return;
     }
     if (gesture.type === 'selection-resize') {
-      setLiveSelection(rectFromPoints(gesture.anchor, point));
+      const axis: FixedCanvasSelectionAxis = gesture.selection.height >= 99.9
+        ? 'vertical'
+        : 'horizontal';
+      setLiveSelection(resolveAxisSnappedSelection(gesture.anchor, point, axis).selection);
       return;
     }
     const source = gesture.source;
@@ -376,10 +386,10 @@ export function BatchFixedCanvasEditor({
         ...draft,
         stretches: [...draft.stretches, operation],
         redoStretches: [],
-        activeStretchId: operation.id,
+        activeStretchId: null,
         selection: null,
         tool: null,
-        ready: false,
+        ready: true,
         ai: resetAiDraft(draft),
       });
       onToast(t('batchCrop.fixed.stretchAdded', { count: draft.stretches.length + 1 }));
@@ -436,11 +446,11 @@ export function BatchFixedCanvasEditor({
 
   return (
     <>
-      <div ref={viewportRef} className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-black/55 p-4">
+      <div ref={viewportRef} className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-black/55 p-6">
         <div
           ref={canvasRef}
           data-testid="fixed-canvas"
-          className={`relative overflow-hidden bg-white shadow-[0_16px_42px_rgba(0,0,0,0.38)] ring-1 ring-white/15 ${
+          className={`relative bg-white shadow-[0_16px_42px_rgba(0,0,0,0.38)] ring-1 ring-white/15 ${
             draft.stage === 'compose' ? 'cursor-move' : draft.tool === 'stretch' ? 'cursor-crosshair' : 'cursor-default'
           }`}
           style={{ width: canvasSize.width, height: canvasSize.height, touchAction: 'none' }}
@@ -449,40 +459,43 @@ export function BatchFixedCanvasEditor({
           onPointerUp={handlePointerUp}
           onPointerCancel={handlePointerUp}
         >
-          {showingAiResult ? (
-            <img src={imageSource} alt={item.fileName} draggable={false} className="absolute inset-0 h-full w-full select-none object-fill" />
-          ) : (
-            <>
-              <img
-                src={imageSource}
-                alt={item.fileName}
-                draggable={false}
-                className="pointer-events-none absolute z-[1] select-none object-fill outline outline-1 outline-black/15"
-                style={{
-                  left: `${imageBox.x}%`,
-                  top: `${imageBox.y}%`,
-                  width: `${imageBox.width}%`,
-                  height: `${imageBox.height}%`,
-                }}
-              />
-              {operations.map((operation) => (
-                <BatchFixedCanvasStretchPatch
-                  key={operation.id}
-                  operation={operation}
-                  imageSource={imageSource}
-                  imageBox={imageBox}
-                  active={operation.id !== 'live' && operation.id === draft.activeStretchId}
-                  live={operation.id === 'live'}
-                  label={t('batchCrop.fixed.selectStretch')}
-                  onSelect={operation.id === 'live' ? undefined : () => onChange({ ...draft, activeStretchId: operation.id })}
+          <div className="absolute inset-0 overflow-hidden">
+            {showingAiResult ? (
+              <img src={imageSource} alt={item.fileName} draggable={false} className="absolute inset-0 h-full w-full select-none object-fill" />
+            ) : (
+              <>
+                <img
+                  src={imageSource}
+                  alt={item.fileName}
+                  draggable={false}
+                  className="pointer-events-none absolute z-[1] select-none object-fill outline outline-1 outline-black/15"
+                  style={{
+                    left: `${imageBox.x}%`,
+                    top: `${imageBox.y}%`,
+                    width: `${imageBox.width}%`,
+                    height: `${imageBox.height}%`,
+                  }}
                 />
-              ))}
-            </>
-          )}
+                {operations.map((operation) => (
+                  <BatchFixedCanvasStretchPatch
+                    key={operation.id}
+                    operation={operation}
+                    imageSource={imageSource}
+                    imageBox={imageBox}
+                    active={operation.id !== 'live' && operation.id === draft.activeStretchId}
+                    live={operation.id === 'live'}
+                    label={t('batchCrop.fixed.selectStretch')}
+                    onSelect={operation.id === 'live' ? undefined : () => onChange({ ...draft, activeStretchId: operation.id })}
+                  />
+                ))}
+              </>
+            )}
+          </div>
 
           {draft.stage === 'compose' && !showingAiResult && (
             <BatchFixedCanvasTransformFrame
               imageBox={imageBox}
+              active={gesture?.type === 'move' || gesture?.type === 'scale'}
               label={t('batchCrop.fixed.scaleImage')}
               onMoveStart={startMove}
               onScaleStart={startScale}
@@ -500,16 +513,13 @@ export function BatchFixedCanvasEditor({
           )}
 
           {draft.ai.status === 'processing' && (
-            <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 bg-zinc-950/75 text-white backdrop-blur-[2px]">
+            <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2.5 overflow-hidden bg-zinc-950/75 text-white backdrop-blur-[2px]">
               <Loader2 className="h-6 w-6 animate-spin" />
               <strong className="text-sm font-medium">{t('batchCrop.fixed.ai.processing')}</strong>
               <span className="text-[11px] text-zinc-300">{t('batchCrop.fixed.ai.processingHint')}</span>
-            </div>
-          )}
-          {draft.ai.status === 'review' && (
-            <div className="absolute right-2 top-2 z-20 flex items-center gap-1.5 rounded-md bg-cyan-200 px-2 py-1 text-[11px] font-medium text-cyan-950">
-              <Sparkles className="h-3.5 w-3.5" />
-              {t('batchCrop.fixed.ai.result')}
+              <UiButton type="button" size="sm" variant="ghost" onClick={onCancelAi} className="mt-1 border border-white/20 text-white hover:bg-white/10">
+                {t('batchCrop.fixed.ai.cancel')}
+              </UiButton>
             </div>
           )}
         </div>
@@ -599,8 +609,8 @@ export function BatchFixedCanvasEditor({
                       ...draft,
                       stretches: draft.stretches.slice(0, -1),
                       redoStretches: [operation, ...draft.redoStretches],
-                      activeStretchId: draft.stretches[draft.stretches.length - 2]?.id ?? null,
-                      ready: false,
+                      activeStretchId: null,
+                      ready: true,
                       ai: resetAiDraft(draft),
                     });
                   }}
@@ -621,8 +631,8 @@ export function BatchFixedCanvasEditor({
                       ...draft,
                       stretches: [...draft.stretches, operation],
                       redoStretches: remaining,
-                      activeStretchId: operation.id,
-                      ready: false,
+                      activeStretchId: null,
+                      ready: true,
                       ai: resetAiDraft(draft),
                     });
                   }}
@@ -641,7 +651,7 @@ export function BatchFixedCanvasEditor({
                     stretches: draft.stretches.filter((operation) => operation.id !== draft.activeStretchId),
                     redoStretches: [],
                     activeStretchId: null,
-                    ready: false,
+                    ready: true,
                     ai: resetAiDraft(draft),
                   })}
                   className="flex h-8 w-8 items-center justify-center rounded-md text-text-muted hover:bg-red-500/10 hover:text-red-500 disabled:opacity-35"
@@ -657,36 +667,40 @@ export function BatchFixedCanvasEditor({
         </div>
 
         <div className="flex items-center justify-center">
-          {draft.stage === 'fill' && draft.ai.status !== 'review' ? (
-            <div className="flex items-center gap-1 rounded-lg border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] p-1">
-              <button
-                type="button"
-                disabled={locked}
-                onClick={() => onChange({
-                  ...draft,
-                  tool: draft.tool === 'stretch' ? null : 'stretch',
-                  selection: null,
-                  activeStretchId: null,
-                })}
-                className={`flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs transition-colors ${
-                  draft.tool === 'stretch' ? 'bg-[var(--ui-hover)] text-accent' : 'text-text-muted hover:bg-[var(--ui-hover)] hover:text-text-dark'
-                } disabled:opacity-40`}
-              >
-                <Square className="h-3.5 w-3.5" />
-                {t('batchCrop.fixed.regionStretch')}
-              </button>
-              <button
-                type="button"
-                disabled={locked || !hasBlank}
-                onClick={onOpenAi}
-                title={!hasBlank ? t('batchCrop.fixed.ai.noBlank') : undefined}
-                className="flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs text-cyan-500 transition-colors hover:bg-[var(--ui-hover)] disabled:opacity-40"
-              >
-                <Sparkles className="h-3.5 w-3.5" />
-                {t('batchCrop.fixed.ai.action')}
-              </button>
+          {draft.stage === 'fill' ? (
+            <div className="flex items-center gap-1 rounded-md border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] p-0.5">
+              <UiTooltip content={t('batchCrop.fixed.regionStretch')}>
+                <button
+                  type="button"
+                  aria-label={t('batchCrop.fixed.regionStretch')}
+                  aria-pressed={draft.tool === 'stretch'}
+                  disabled={locked}
+                  onClick={() => onChange({
+                    ...draft,
+                    tool: draft.tool === 'stretch' ? null : 'stretch',
+                    selection: null,
+                    activeStretchId: null,
+                  })}
+                  className={`flex h-8 w-8 items-center justify-center rounded-md transition-colors ${
+                    draft.tool === 'stretch' ? 'bg-[var(--ui-hover)] text-accent' : 'text-text-muted hover:bg-[var(--ui-hover)] hover:text-text-dark'
+                  } disabled:opacity-40`}
+                >
+                  <Square className="h-4 w-4" />
+                </button>
+              </UiTooltip>
+              <UiTooltip content={hasBlank ? t('batchCrop.fixed.ai.action') : t('batchCrop.fixed.ai.noBlank')}>
+                <button
+                  type="button"
+                  aria-label={t('batchCrop.fixed.ai.action')}
+                  disabled={locked || !hasBlank}
+                  onClick={onOpenAi}
+                  className="flex h-8 w-8 items-center justify-center rounded-md text-cyan-500 transition-colors hover:bg-[var(--ui-hover)] disabled:opacity-40"
+                >
+                  <Sparkles className="h-4 w-4" />
+                </button>
+              </UiTooltip>
             </div>
-          ) : draft.ai.status === 'review' ? null : (
+          ) : (
             <BatchFixedCanvasNavigation
               index={index}
               total={total}
@@ -697,32 +711,7 @@ export function BatchFixedCanvasEditor({
         </div>
 
         <div className="flex min-w-0 items-center justify-end gap-2">
-          {draft.ai.status === 'review' ? (
-            <>
-              <UiButton
-                type="button"
-                size="sm"
-                variant="ghost"
-                onClick={() => onChange({ ...draft, ai: resetAiDraft(draft), ready: false })}
-              >
-                {t('batchCrop.fixed.ai.discard')}
-              </UiButton>
-              <UiButton type="button" size="sm" onClick={onRetryAi} className="gap-1.5">
-                <RefreshCw className="h-3.5 w-3.5" />
-                {t('batchCrop.fixed.ai.regenerate')}
-              </UiButton>
-              <UiButton
-                type="button"
-                size="sm"
-                variant="primary"
-                className="gap-1.5"
-                onClick={() => onChange({ ...draft, ai: { ...draft.ai, status: 'accepted' }, ready: true })}
-              >
-                <Check className="h-3.5 w-3.5" />
-                {t('batchCrop.fixed.ai.accept')}
-              </UiButton>
-            </>
-          ) : draft.stage === 'compose' ? (
+          {draft.stage === 'compose' ? (
             <>
               <UiButton
                 type="button"
@@ -744,7 +733,7 @@ export function BatchFixedCanvasEditor({
                   stage: 'fill',
                   tool: null,
                   selection: null,
-                  ready: false,
+                  ready: true,
                   composeUndo: null,
                 })}
                 className="gap-1.5"
@@ -754,31 +743,15 @@ export function BatchFixedCanvasEditor({
               </UiButton>
             </>
           ) : (
-            <>
-              <UiButton
-                type="button"
-                size="sm"
-                variant="ghost"
-                disabled={locked}
-                onClick={() => onChange({ ...draft, stage: 'compose', tool: null, selection: null })}
-              >
-                {t('batchCrop.fixed.returnToCompose')}
-              </UiButton>
-              <UiButton
-                type="button"
-                size="sm"
-                variant="primary"
-                disabled={locked}
-                onClick={() => {
-                  onChange({ ...draft, tool: null, selection: null, ready: true });
-                  onToast(t('batchCrop.fixed.saved'));
-                }}
-                className="gap-1.5"
-              >
-                <Check className="h-3.5 w-3.5" />
-                {t('batchCrop.fixed.completeFill')}
-              </UiButton>
-            </>
+            <UiButton
+              type="button"
+              size="sm"
+              variant="ghost"
+              disabled={locked}
+              onClick={() => onChange({ ...draft, stage: 'compose', tool: null, selection: null })}
+            >
+              {t('batchCrop.fixed.returnToCompose')}
+            </UiButton>
           )}
         </div>
       </footer>

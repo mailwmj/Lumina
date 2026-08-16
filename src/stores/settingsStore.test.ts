@@ -184,6 +184,23 @@ describe('prompt polishing settings', () => {
       storyboardRatioControlMode: 'overall',
     });
   });
+
+  it('persists only the batch AI model and resolution selection', () => {
+    const migrated = migrateSettingsState({
+      lastBatchAiFillSelection: {
+        modelId: '  provider/edit-model  ',
+        resolution: '  2K  ',
+        prompt: 'must not be persisted',
+      },
+    }, 29) as {
+      lastBatchAiFillSelection: unknown;
+    };
+
+    expect(migrated.lastBatchAiFillSelection).toEqual({
+      modelId: 'provider/edit-model',
+      resolution: '2K',
+    });
+  });
 });
 
 describe('external Agent connection settings', () => {

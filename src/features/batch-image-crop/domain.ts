@@ -21,13 +21,19 @@ export type BatchCompositionMode = 'crop' | 'fixed';
 export type FixedCanvasStage = 'compose' | 'fill';
 export type FixedCanvasTool = 'stretch' | null;
 export type FixedCanvasStretchDirection = 'left' | 'right' | 'top' | 'bottom';
-export type FixedCanvasAiStatus = 'idle' | 'processing' | 'review' | 'failed' | 'accepted';
+export type FixedCanvasSelectionAxis = 'horizontal' | 'vertical';
+export type FixedCanvasAiStatus = 'idle' | 'processing' | 'failed' | 'accepted';
 
 export interface NormalizedCanvasRect {
   x: number;
   y: number;
   width: number;
   height: number;
+}
+
+export interface NormalizedCanvasPoint {
+  x: number;
+  y: number;
 }
 
 export interface FixedCanvasTransform {
@@ -86,7 +92,6 @@ export type BatchCropItemStatus =
   | 'fixedFill'
   | 'fixedReady'
   | 'aiProcessing'
-  | 'aiReview'
   | 'exporting'
   | 'exported'
   | 'error';
@@ -265,6 +270,38 @@ export function resolveStretchDestination(
   return { x: source.x, y: source.y, width: source.width, height: source.height + amount };
 }
 
+export function resolveAxisSnappedSelection(
+  start: NormalizedCanvasPoint,
+  end: NormalizedCanvasPoint,
+  lockedAxis: FixedCanvasSelectionAxis | null
+): { axis: FixedCanvasSelectionAxis; selection: NormalizedCanvasRect } {
+  const horizontalDistance = Math.abs(end.x - start.x);
+  const verticalDistance = Math.abs(end.y - start.y);
+  const axis = lockedAxis ?? (verticalDistance > horizontalDistance ? 'vertical' : 'horizontal');
+
+  if (axis === 'vertical') {
+    return {
+      axis,
+      selection: {
+        x: Math.min(start.x, end.x),
+        y: 0,
+        width: horizontalDistance,
+        height: 100,
+      },
+    };
+  }
+
+  return {
+    axis,
+    selection: {
+      x: 0,
+      y: Math.min(start.y, end.y),
+      width: 100,
+      height: verticalDistance,
+    },
+  };
+}
+
 function pointInsideRect(x: number, y: number, rect: NormalizedCanvasRect): boolean {
   return x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height;
 }
@@ -363,7 +400,6 @@ export function fixedCanvasHasBlank(
 
 export function resolveFixedCanvasStatus(draft: FixedCanvasDraft): BatchCropItemStatus {
   if (draft.ai.status === 'processing') return 'aiProcessing';
-  if (draft.ai.status === 'review') return 'aiReview';
   if (draft.ready) return 'fixedReady';
   return draft.stage === 'compose' ? 'fixedCompose' : 'fixedFill';
 }
@@ -374,14 +410,12 @@ export function isBatchCompositionModeLocked(
 ): boolean {
   return busy
     || item?.status === 'aiProcessing'
-    || item?.status === 'aiReview'
-    || item?.fixedCanvas.ai.status === 'processing'
-    || item?.fixedCanvas.ai.status === 'review';
+    || item?.fixedCanvas.ai.status === 'processing';
 }
 
 export function isBatchCropItemReadyForExport(item: BatchCropImageItem): boolean {
   if (item.compositionMode === 'fixed') {
-    return item.fixedCanvas.ready && item.fixedCanvas.ai.status !== 'processing' && item.fixedCanvas.ai.status !== 'review';
+    return item.fixedCanvas.ready && item.fixedCanvas.ai.status !== 'processing';
   }
   return Boolean(item.crop) && !['pending', 'processing', 'review', 'error'].includes(item.cropStatus);
 }

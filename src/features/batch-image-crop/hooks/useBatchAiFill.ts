@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type Dispatch,
   type SetStateAction,
@@ -41,6 +42,16 @@ interface UseBatchAiFillOptions {
 
 type ImageJobStatus = Awaited<ReturnType<typeof canvasAiGateway.getGenerateImageJob>>;
 
+interface ActiveSubmission {
+  itemId: string;
+  token: symbol;
+}
+
+interface ProcessingSnapshot {
+  jobId: string;
+  draft: FixedCanvasDraft;
+}
+
 function parseAspectRatio(value: string): number | null {
   const [width, height] = value.split(':').map(Number);
   if (!Number.isFinite(width) || !Number.isFinite(height) || height <= 0) return null;
@@ -75,10 +86,14 @@ export function useBatchAiFill({
   const { t } = useTranslation();
   const [submitting, setSubmitting] = useState(false);
   const [pollTick, setPollTick] = useState(0);
+  const activeSubmissionRef = useRef<ActiveSubmission | null>(null);
+  const processingSnapshotsRef = useRef(new Map<string, ProcessingSnapshot>());
   const openAiImageApi = useSettingsStore((state) => state.openAiImageApi);
   const chaomoImageApi = useSettingsStore((state) => state.chaomoImageApi);
   const customImageApis = useSettingsStore((state) => state.customImageApis);
   const lastImageModelSelection = useSettingsStore((state) => state.lastImageModelSelection);
+  const lastBatchAiFillSelection = useSettingsStore((state) => state.lastBatchAiFillSelection);
+  const setLastBatchAiFillSelection = useSettingsStore((state) => state.setLastBatchAiFillSelection);
 
   const imageModelSettings = useMemo(() => ({
     openAiImageApi,
@@ -91,8 +106,8 @@ export function useBatchAiFill({
     [imageModelSettings]
   );
   const defaultModel = useMemo(
-    () => resolveConfiguredImageModel(imageModelSettings, selectedItem?.fixedCanvas.ai.modelId),
-    [imageModelSettings, selectedItem?.fixedCanvas.ai.modelId]
+    () => resolveConfiguredImageModel(imageModelSettings, lastBatchAiFillSelection?.modelId),
+    [imageModelSettings, lastBatchAiFillSelection?.modelId]
   );
 
   const applyJobStatus = useCallback(async (
@@ -125,10 +140,10 @@ export function useBatchAiFill({
           if (item.id !== itemId || item.fixedCanvas.ai.jobId !== jobId) return item;
           const fixedCanvas: FixedCanvasDraft = {
             ...item.fixedCanvas,
-            ready: false,
+            ready: true,
             ai: {
               ...item.fixedCanvas.ai,
-              status: 'review',
+              status: 'accepted',
               resultPath,
               errorMessage: undefined,
               requiresManualRequery: false,
@@ -141,6 +156,9 @@ export function useBatchAiFill({
             errorMessage: undefined,
           };
         }));
+        if (processingSnapshotsRef.current.get(itemId)?.jobId === jobId) {
+          processingSnapshotsRef.current.delete(itemId);
+        }
       } catch (error) {
         setItems((current) => current.map((item) => {
           if (item.id !== itemId || item.fixedCanvas.ai.jobId !== jobId) return item;
@@ -227,6 +245,9 @@ export function useBatchAiFill({
     }
 
     const itemId = selectedItem.id;
+    const originalDraft = selectedItem.fixedCanvas;
+    const token = Symbol(itemId);
+    activeSubmissionRef.current = { itemId, token };
     setSubmitting(true);
     try {
       const rendered = await renderBatchFixedCanvas(batchId, {
@@ -238,7 +259,9 @@ export function useBatchAiFill({
         transform: selectedItem.fixedCanvas.transform,
         stretches: selectedItem.fixedCanvas.stretches,
       });
+      if (activeSubmissionRef.current?.token !== token) return;
       await canvasAiGateway.setApiKey(providerRuntime.backendProviderId, providerRuntime.apiKey);
+      if (activeSubmissionRef.current?.token !== token) return;
       const request = model.resolveRequest({ referenceImageCount: 1 });
       const jobId = await canvasAiGateway.submitGenerateImageJob({
         prompt: submission.prompt,
@@ -249,11 +272,17 @@ export function useBatchAiFill({
         extraParams: model.defaultExtraParams,
         providerConfig: providerRuntime.providerConfig,
       });
+      if (activeSubmissionRef.current?.token !== token) return;
+      setLastBatchAiFillSelection({
+        modelId: submission.modelId,
+        resolution: submission.resolution,
+      });
+      processingSnapshotsRef.current.set(itemId, { jobId, draft: originalDraft });
       setItems((current) => current.map((item) => {
         if (item.id !== itemId) return item;
         const fixedCanvas: FixedCanvasDraft = {
           ...item.fixedCanvas,
-          ready: false,
+          ready: true,
           tool: null,
           selection: null,
           ai: {
@@ -275,6 +304,7 @@ export function useBatchAiFill({
       onDialogClose();
       setPollTick((current) => current + 1);
     } catch (error) {
+      if (activeSubmissionRef.current?.token !== token) return;
       const message = errorMessage(error);
       setItems((current) => current.map((item) => {
         if (item.id !== itemId) return item;
@@ -294,9 +324,51 @@ export function useBatchAiFill({
       onDialogClose();
       onToast(t('batchCrop.fixed.ai.submitFailed'));
     } finally {
-      setSubmitting(false);
+      if (activeSubmissionRef.current?.token === token) {
+        activeSubmissionRef.current = null;
+        setSubmitting(false);
+      }
     }
-  }, [batchId, imageModelSettings, models, onDialogClose, onToast, selectedItem, setItems, submitting, t, target]);
+  }, [batchId, imageModelSettings, models, onDialogClose, onToast, selectedItem, setItems, setLastBatchAiFillSelection, submitting, t, target]);
+
+  const cancelSelectedAi = useCallback(() => {
+    const activeSubmission = activeSubmissionRef.current;
+    if (activeSubmission) {
+      activeSubmissionRef.current = null;
+      setSubmitting(false);
+      onDialogClose();
+      onToast(t('batchCrop.fixed.ai.cancelledNotice'));
+      return;
+    }
+
+    const item = selectedItem;
+    const jobId = item?.fixedCanvas.ai.jobId;
+    if (!item || item.fixedCanvas.ai.status !== 'processing' || !jobId) return;
+    const snapshot = processingSnapshotsRef.current.get(item.id);
+    processingSnapshotsRef.current.delete(item.id);
+    setItems((current) => current.map((candidate) => {
+      if (candidate.id !== item.id || candidate.fixedCanvas.ai.jobId !== jobId) return candidate;
+      const fixedCanvas: FixedCanvasDraft = snapshot?.jobId === jobId
+        ? snapshot.draft
+        : {
+            ...candidate.fixedCanvas,
+            ready: true,
+            ai: {
+              status: 'idle',
+              prompt: '',
+              modelId: '',
+              resolution: '',
+            },
+          };
+      return {
+        ...candidate,
+        fixedCanvas,
+        status: resolveFixedCanvasStatus(fixedCanvas),
+        errorMessage: undefined,
+      };
+    }));
+    onToast(t('batchCrop.fixed.ai.cancelledNotice'));
+  }, [onDialogClose, onToast, selectedItem, setItems, t]);
 
   const requerySelected = useCallback(async () => {
     const item = selectedItem;
@@ -311,6 +383,9 @@ export function useBatchAiFill({
         requiresManualRequery: false,
       },
     };
+    if (!processingSnapshotsRef.current.has(item.id)) {
+      processingSnapshotsRef.current.set(item.id, { jobId, draft: item.fixedCanvas });
+    }
     setItems((current) => current.map((candidate) => candidate.id === item.id
       ? { ...candidate, fixedCanvas: processingDraft, status: resolveFixedCanvasStatus(processingDraft) }
       : candidate));
@@ -329,6 +404,7 @@ export function useBatchAiFill({
         },
       };
       setItems((current) => current.map((candidate) => candidate.id === item.id
+        && candidate.fixedCanvas.ai.jobId === jobId
         ? { ...candidate, fixedCanvas: failedDraft, status: resolveFixedCanvasStatus(failedDraft) }
         : candidate));
     }
@@ -337,8 +413,13 @@ export function useBatchAiFill({
   return {
     models,
     defaultModelId: defaultModel?.id ?? '',
+    defaultResolution: lastBatchAiFillSelection
+      && defaultModel?.id === lastBatchAiFillSelection.modelId
+      ? lastBatchAiFillSelection.resolution
+      : defaultModel?.defaultResolution ?? '',
     submitting,
     submit,
+    cancelSelectedAi,
     requerySelected,
   };
 }

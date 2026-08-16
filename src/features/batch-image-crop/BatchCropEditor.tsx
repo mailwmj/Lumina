@@ -36,8 +36,8 @@ interface BatchCropEditorProps {
   onRotate: (degrees: -90 | 90) => void;
   onFixedCanvasChange: (draft: FixedCanvasDraft) => void;
   onOpenAi: () => void;
-  onRetryAi: () => void;
   onRequeryAi: () => void;
+  onCancelAi: () => void;
   onToast: (message: string) => void;
   onPrevious: () => void;
   onNext: () => void;
@@ -76,8 +76,8 @@ export function BatchCropEditor({
   onRotate,
   onFixedCanvasChange,
   onOpenAi,
-  onRetryAi,
   onRequeryAi,
+  onCancelAi,
   onToast,
   onPrevious,
   onNext,
@@ -153,7 +153,7 @@ export function BatchCropEditor({
         <div
           role="group"
           aria-label={t('batchCrop.compositionMode')}
-          className="grid w-[224px] grid-cols-2 gap-1 rounded-lg border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] p-1"
+          className="grid w-[184px] grid-cols-2 gap-0.5 rounded-md border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] p-0.5"
         >
           {(['crop', 'fixed'] as const).map((mode) => (
             <button
@@ -162,7 +162,7 @@ export function BatchCropEditor({
               disabled={modeLocked}
               aria-pressed={item.compositionMode === mode}
               onClick={() => onModeChange(mode)}
-              className={`h-8 min-w-0 rounded-md px-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/45 ${
+              className={`h-7 min-w-0 rounded-[4px] px-1.5 text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/45 ${
                 item.compositionMode === mode
                   ? 'bg-[var(--ui-surface-elevated)] text-text-dark shadow-[0_0_0_1px_var(--ui-border-strong)]'
                   : 'text-text-muted hover:bg-[var(--ui-hover)] hover:text-text-dark'
@@ -177,7 +177,7 @@ export function BatchCropEditor({
             ? 'bg-amber-500/12 text-amber-500'
             : item.status === 'error'
               ? 'bg-red-500/12 text-red-500'
-              : item.status === 'aiProcessing' || item.status === 'aiReview'
+              : item.status === 'aiProcessing'
                 ? 'bg-cyan-500/12 text-cyan-500'
                 : item.status === 'fixedReady' || item.status === 'exported'
                   ? 'bg-emerald-500/12 text-emerald-500'
@@ -196,8 +196,8 @@ export function BatchCropEditor({
           busy={busy}
           onChange={onFixedCanvasChange}
           onOpenAi={onOpenAi}
-          onRetryAi={onRetryAi}
           onRequeryAi={onRequeryAi}
+          onCancelAi={onCancelAi}
           onToast={onToast}
           onPrevious={onPrevious}
           onNext={onNext}

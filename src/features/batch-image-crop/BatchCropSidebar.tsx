@@ -45,7 +45,6 @@ const STATUS_KEYS: Record<BatchCropItemStatus, string> = {
   fixedFill: 'batchCrop.status.fixedFill',
   fixedReady: 'batchCrop.status.fixedReady',
   aiProcessing: 'batchCrop.status.aiProcessing',
-  aiReview: 'batchCrop.status.aiReview',
   exporting: 'batchCrop.status.exporting',
   exported: 'batchCrop.status.exported',
   error: 'batchCrop.status.error',
@@ -190,8 +189,6 @@ export function BatchCropSidebar({
                       ? 'bg-red-500'
                     : item.status === 'exported'
                       ? 'bg-emerald-500'
-                      : item.status === 'aiReview'
-                        ? 'bg-cyan-400'
                       : item.status === 'processing' || item.status === 'exporting' || item.status === 'aiProcessing'
                           ? 'animate-pulse bg-accent'
                           : item.status === 'pending'

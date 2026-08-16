@@ -101,8 +101,10 @@ export function BatchImageCropWorkbench({ onExit, backHandlerRef }: BatchImageCr
   const {
     models: imageModels,
     defaultModelId,
+    defaultResolution,
     submitting: aiSubmitting,
     submit: submitAiFill,
+    cancelSelectedAi,
     requerySelected: requerySelectedAi,
   } = useBatchAiFill({
     batchId: batchIdRef.current,
@@ -644,8 +646,8 @@ export function BatchImageCropWorkbench({ onExit, backHandlerRef }: BatchImageCr
         onRotate={(degrees) => void rotateSelected(degrees)}
         onFixedCanvasChange={applyFixedCanvas}
         onOpenAi={() => setAiDialogOpen(true)}
-        onRetryAi={() => setAiDialogOpen(true)}
         onRequeryAi={() => void requerySelectedAi()}
+        onCancelAi={cancelSelectedAi}
         onToast={showToast}
         onPrevious={() => setSelectedId(items[Math.max(0, selectedIndex - 1)]?.id ?? null)}
         onNext={() => setSelectedId(items[Math.min(items.length - 1, selectedIndex + 1)]?.id ?? null)}
@@ -657,10 +659,9 @@ export function BatchImageCropWorkbench({ onExit, backHandlerRef }: BatchImageCr
         target={editorTarget}
         models={imageModels}
         defaultModelId={defaultModelId}
+        defaultResolution={defaultResolution}
         submitting={aiSubmitting}
-        onClose={() => {
-          if (!aiSubmitting) setAiDialogOpen(false);
-        }}
+        onClose={aiSubmitting ? cancelSelectedAi : closeAiDialog}
         onSubmit={(submission) => void submitAiFill(submission)}
       />
 

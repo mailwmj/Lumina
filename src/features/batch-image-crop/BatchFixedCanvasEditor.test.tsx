@@ -76,8 +76,8 @@ describe('BatchFixedCanvasEditor interactions', () => {
         busy={false}
         onChange={onChange}
         onOpenAi={() => undefined}
-        onRetryAi={() => undefined}
         onRequeryAi={() => undefined}
+        onCancelAi={() => undefined}
         onToast={() => undefined}
         onPrevious={() => undefined}
         onNext={() => undefined}
@@ -115,7 +115,7 @@ describe('BatchFixedCanvasEditor interactions', () => {
     });
 
     const selectedDraft = onChange.mock.calls[onChange.mock.calls.length - 1]?.[0] as FixedCanvasDraft;
-    expect(selectedDraft.selection).toMatchObject({ x: 30, y: 10, width: 10, height: 80 });
+    expect(selectedDraft.selection).toEqual({ x: 30, y: 0, width: 10, height: 100 });
 
     onChange.mockClear();
     await renderEditor({ ...selectedDraft, tool: 'stretch' }, onChange);
@@ -137,6 +137,8 @@ describe('BatchFixedCanvasEditor interactions', () => {
     expect(stretchedDraft.stretches).toHaveLength(1);
     expect(stretchedDraft.stretches[0]).toMatchObject({ direction: 'left', amount: 30 });
     expect(stretchedDraft.selection).toBeNull();
+    expect(stretchedDraft.activeStretchId).toBeNull();
+    expect(stretchedDraft.ready).toBe(true);
   });
 
   it('moves and resizes the source selection directly on the canvas', async () => {
@@ -145,7 +147,7 @@ describe('BatchFixedCanvasEditor interactions', () => {
       ...createDefaultFixedCanvasDraft('prompt'),
       stage: 'fill' as const,
       tool: 'stretch' as const,
-      selection: { x: 30, y: 10, width: 10, height: 80 },
+      selection: { x: 30, y: 0, width: 10, height: 100 },
     };
     await renderEditor(fillDraft, onChange);
     const selection = container.querySelector('[data-testid="fixed-canvas-selection"]');
@@ -177,7 +179,7 @@ describe('BatchFixedCanvasEditor interactions', () => {
     });
 
     const movedDraft = onChange.mock.calls[onChange.mock.calls.length - 1]?.[0] as FixedCanvasDraft;
-    expect(movedDraft.selection).toMatchObject({ x: 40, y: 10, width: 10, height: 80 });
+    expect(movedDraft.selection).toEqual({ x: 40, y: 0, width: 10, height: 100 });
 
     onChange.mockClear();
     await renderEditor(movedDraft, onChange);
@@ -209,7 +211,21 @@ describe('BatchFixedCanvasEditor interactions', () => {
     });
 
     const resizedDraft = onChange.mock.calls[onChange.mock.calls.length - 1]?.[0] as FixedCanvasDraft;
-    expect(resizedDraft.selection).toMatchObject({ x: 30, y: 5, width: 20, height: 85 });
+    expect(resizedDraft.selection).toEqual({ x: 30, y: 0, width: 20, height: 100 });
+  });
+
+  it('makes the fixed canvas export-ready as soon as composition is confirmed', async () => {
+    const onChange = vi.fn();
+    await renderEditor(createDefaultFixedCanvasDraft('prompt'), onChange);
+
+    const confirm = Array.from(container.querySelectorAll('button'))
+      .find((button) => button.textContent?.trim() === '确认构图');
+    await act(async () => confirm?.click());
+
+    const confirmedDraft = onChange.mock.calls[onChange.mock.calls.length - 1]?.[0] as FixedCanvasDraft;
+    expect(confirmedDraft.stage).toBe('fill');
+    expect(confirmedDraft.ready).toBe(true);
+    expect(container.textContent).not.toContain('完成填充');
   });
 
   it('cancels an unfinished selection when Escape is pressed', async () => {
@@ -228,6 +244,8 @@ describe('BatchFixedCanvasEditor interactions', () => {
         clientY: 20,
         pointerId: 5,
       }));
+    });
+    await act(async () => {
       canvas?.dispatchEvent(new PointerEvent('pointermove', {
         bubbles: true,
         clientX: 80,

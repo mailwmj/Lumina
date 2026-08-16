@@ -197,7 +197,6 @@ describe('BatchImageCropWorkbench completed export', () => {
     await act(async () => findButton(container, '添加图片').click());
     await act(async () => findButton(container, '固定画布').click());
     await act(async () => findButton(container, '确认构图').click());
-    await act(async () => findButton(container, '完成填充').click());
     await act(async () => findButton(container, '批量导出 1 张').click());
 
     expect(exportBatchFixedCanvas).toHaveBeenCalledWith('/exports', expect.objectContaining({
