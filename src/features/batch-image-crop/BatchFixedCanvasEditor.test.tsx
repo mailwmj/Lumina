@@ -5,11 +5,19 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import i18n from '@/i18n';
 import { BatchFixedCanvasEditor } from './BatchFixedCanvasEditor';
-import { createDefaultFixedCanvasDraft, type BatchCropImageItem, type FixedCanvasDraft } from './domain';
+import {
+  createDefaultFixedCanvasDraft,
+  type BatchCropImageItem,
+  type BatchCropTarget,
+  type FixedCanvasDraft,
+} from './domain';
 
 const target = { id: '1440x1440', width: 1440, height: 1440 } as const;
 
-function createItem(draft: FixedCanvasDraft): BatchCropImageItem {
+function createItem(
+  draft: FixedCanvasDraft,
+  dimensions: { width: number; height: number } = { width: 100, height: 200 }
+): BatchCropImageItem {
   return {
     id: 'image-1',
     sourcePath: '/fixtures/source.jpg',
@@ -17,8 +25,8 @@ function createItem(draft: FixedCanvasDraft): BatchCropImageItem {
     fileSize: 1024,
     previewPath: '/fixtures/preview.jpg',
     thumbnailPath: '/fixtures/thumbnail.jpg',
-    width: 100,
-    height: 200,
+    width: dimensions.width,
+    height: dimensions.height,
     rotationDegrees: 0,
     compositionMode: 'fixed',
     status: draft.stage === 'compose' ? 'fixedCompose' : 'fixedFill',
@@ -74,12 +82,14 @@ describe('BatchFixedCanvasEditor interactions', () => {
       total?: number;
       onPrevious?: () => void;
       onNext?: () => void;
+      target?: BatchCropTarget;
+      dimensions?: { width: number; height: number };
     } = {}
   ) => {
     await act(async () => root.render(
       <BatchFixedCanvasEditor
-        item={createItem(draft)}
-        target={target}
+        item={createItem(draft, options.dimensions)}
+        target={options.target ?? target}
         index={options.index ?? 0}
         total={options.total ?? 1}
         busy={false}
@@ -101,6 +111,29 @@ describe('BatchFixedCanvasEditor interactions', () => {
     expect(container.querySelectorAll('button[aria-label="拖动等比缩放图片"]')).toHaveLength(4);
     expect(container.querySelector('input[aria-label="整图缩放"]')).not.toBeNull();
   });
+
+  it.each([
+    { overflowTarget: { id: '1440x1440', width: 1440, height: 1440 }, zoom: 200 },
+    { overflowTarget: { id: '1440x1920', width: 1440, height: 1920 }, zoom: 125 },
+    { overflowTarget: { id: '1440x2200', width: 1440, height: 2200 }, zoom: 110 },
+  ] as const)(
+    'lets an enlarged image exceed the $overflowTarget.id canvas without browser width clamping',
+    async ({ overflowTarget, zoom }) => {
+      await renderEditor({
+        ...createDefaultFixedCanvasDraft('prompt'),
+        transform: { zoom, pan: { x: 0, y: 0 } },
+      }, vi.fn(), {
+        target: overflowTarget,
+        dimensions: { width: 100, height: 150 },
+      });
+
+      const image = container.querySelector('img[alt="source.jpg"]');
+      expect(image).toBeInstanceOf(HTMLImageElement);
+      expect(Number.parseFloat((image as HTMLImageElement).style.width)).toBeGreaterThan(100);
+      expect(image?.className).toContain('max-w-none');
+      expect(image?.className).toContain('max-h-none');
+    }
+  );
 
   it('draws a source selection and stretches it toward the adjacent blank area', async () => {
     const onChange = vi.fn();

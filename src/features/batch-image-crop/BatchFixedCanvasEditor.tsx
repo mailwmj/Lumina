@@ -468,7 +468,7 @@ export function BatchFixedCanvasEditor({
                   src={imageSource}
                   alt={item.fileName}
                   draggable={false}
-                  className="pointer-events-none absolute z-[1] select-none object-fill outline outline-1 outline-black/15"
+                  className="pointer-events-none absolute z-[1] max-h-none max-w-none select-none object-fill outline outline-1 outline-black/15"
                   style={{
                     left: `${imageBox.x}%`,
                     top: `${imageBox.y}%`,
