@@ -32,12 +32,16 @@ describe('shared image generation execution', () => {
     gateway.submitGenerateImageJobs.mockImplementation(async (
       _payload: unknown,
       outputCount: number,
-      onSettled: (result: { status: 'fulfilled'; jobId: string }, index: number) => void
-    ) => Array.from({ length: outputCount }, (_, index) => {
-      const result = { status: 'fulfilled' as const, jobId: `job-${index + 1}` };
-      onSettled(result, index);
-      return result;
-    }));
+      onSettled: (result: { status: 'fulfilled'; jobId: string }, index: number) => void,
+      beforeSubmit?: () => void
+    ) => {
+      beforeSubmit?.();
+      return Array.from({ length: outputCount }, (_, index) => {
+        const result = { status: 'fulfilled' as const, jobId: `job-${index + 1}` };
+        onSettled(result, index);
+        return result;
+      });
+    });
   });
 
   afterEach(() => {
@@ -108,5 +112,212 @@ describe('shared image generation execution', () => {
 
     expect(resultNode?.data.displayName).toBe('Sweater front full-body · 结果');
     expect(resultNode?.data.displayName).not.toContain('production prompt');
+  });
+
+  it('registers its result nodes before revalidating the authorized canvas', async () => {
+    const source = canvasNodeFactory.createNode(CANVAS_NODE_TYPES.imageEdit, { x: 0, y: 0 }, {
+      prompt: 'Create one product image.',
+      model: 'ai-media/gpt-image-2',
+      requestAspectRatio: '1:1',
+      outputCount: 1,
+    });
+    useCanvasStore.getState().setCanvasData([source], []);
+    useSettingsStore.setState({
+      openAiImageApi: {
+        apiKey: 'test-key',
+        baseUrl: 'https://example.test/v1',
+        modelCatalog: {
+          models: [{ id: 'ai-media/gpt-image-2' }],
+          refreshedAt: 1,
+        },
+        selectedModelIds: ['ai-media/gpt-image-2'],
+      },
+      lastImageModelSelection: {
+        providerId: 'ai-media',
+        modelId: 'ai-media/gpt-image-2',
+      },
+    });
+    const ownedResultNodeIds = new Set<string>();
+
+    const result = await runImageGenerationNode(source.id, {
+      assertCurrent: (newResultNodeIds = []) => {
+        newResultNodeIds.forEach((nodeId) => ownedResultNodeIds.add(nodeId));
+        const unexpectedNode = useCanvasStore.getState().nodes.find(
+          (node) => node.id !== source.id && !ownedResultNodeIds.has(node.id)
+        );
+        if (unexpectedNode) {
+          throw new Error(`Unregistered canvas mutation: ${unexpectedNode.id}`);
+        }
+      },
+    });
+
+    expect(result.submissions).toEqual([
+      expect.objectContaining({ status: 'submitted', resultNodeId: result.resultNodeIds[0] }),
+    ]);
+  });
+
+  it('revalidates after asynchronous request preparation before creating jobs or result nodes', async () => {
+    const source = canvasNodeFactory.createNode(CANVAS_NODE_TYPES.imageEdit, { x: 0, y: 0 }, {
+      prompt: 'Authorized prompt',
+      model: 'ai-media/gpt-image-2',
+      requestAspectRatio: '1:1',
+      outputCount: 1,
+    });
+    useCanvasStore.getState().setCanvasData([source], []);
+    useSettingsStore.setState({
+      openAiImageApi: {
+        apiKey: 'test-key',
+        baseUrl: 'https://example.test/v1',
+        modelCatalog: {
+          models: [{ id: 'ai-media/gpt-image-2' }],
+          refreshedAt: 1,
+        },
+        selectedModelIds: ['ai-media/gpt-image-2'],
+      },
+      lastImageModelSelection: {
+        providerId: 'ai-media',
+        modelId: 'ai-media/gpt-image-2',
+      },
+    });
+    let finishPreparation: (() => void) | undefined;
+    const preparation = new Promise<void>((resolve) => {
+      finishPreparation = resolve;
+    });
+    let providerSubmitted = false;
+    gateway.submitGenerateImageJobs.mockImplementation(async (
+      _payload: unknown,
+      _outputCount: number,
+      _onSettled: unknown,
+      beforeSubmit?: () => void
+    ) => {
+      await preparation;
+      beforeSubmit?.();
+      providerSubmitted = true;
+      return [];
+    });
+    const staleError = new Error('canvas_changed');
+    let stale = false;
+    const run = runImageGenerationNodes([source.id], {
+      assertCurrent: () => {
+        if (stale) {
+          throw staleError;
+        }
+      },
+    });
+    await vi.waitFor(() => expect(gateway.submitGenerateImageJobs).toHaveBeenCalled());
+
+    stale = true;
+    finishPreparation?.();
+
+    await expect(run).rejects.toBe(staleError);
+    expect(providerSubmitted).toBe(false);
+    expect(useCanvasStore.getState().nodes).toEqual([source]);
+  });
+
+  it('does not downgrade an already submitted batch to stale', async () => {
+    const source = canvasNodeFactory.createNode(CANVAS_NODE_TYPES.imageEdit, { x: 0, y: 0 }, {
+      prompt: 'Authorized prompt',
+      model: 'ai-media/gpt-image-2',
+      requestAspectRatio: '1:1',
+      outputCount: 1,
+    });
+    useCanvasStore.getState().setCanvasData([source], []);
+    useSettingsStore.setState({
+      openAiImageApi: {
+        apiKey: 'test-key',
+        baseUrl: 'https://example.test/v1',
+        modelCatalog: {
+          models: [{ id: 'ai-media/gpt-image-2' }],
+          refreshedAt: 1,
+        },
+        selectedModelIds: ['ai-media/gpt-image-2'],
+      },
+      lastImageModelSelection: {
+        providerId: 'ai-media',
+        modelId: 'ai-media/gpt-image-2',
+      },
+    });
+    let providerSubmitted = false;
+    gateway.submitGenerateImageJobs.mockImplementation(async (
+      _payload: unknown,
+      _outputCount: number,
+      onSettled: (result: { status: 'fulfilled'; jobId: string }, index: number) => void,
+      beforeSubmit?: () => void
+    ) => {
+      beforeSubmit?.();
+      providerSubmitted = true;
+      const submission = { status: 'fulfilled' as const, jobId: 'job-submitted' };
+      onSettled(submission, 0);
+      return [submission];
+    });
+
+    const result = await runImageGenerationNodes([source.id], {
+      assertCurrent: () => {
+        if (providerSubmitted) {
+          throw new Error('canvas_changed_after_submission');
+        }
+      },
+    });
+
+    expect(result.runs).toEqual([
+      expect.objectContaining({
+        status: 'started',
+        submissions: [expect.objectContaining({ jobId: 'job-submitted' })],
+      }),
+    ]);
+  });
+
+  it('initializes each custom Gemini configuration independently in one batch', async () => {
+    const firstProviderId = 'custom-openai:gemini-first' as const;
+    const secondProviderId = 'custom-openai:gemini-second' as const;
+    const firstModelId = `${firstProviderId}/gemini-3-pro-image-preview`;
+    const secondModelId = `${secondProviderId}/gemini-3-pro-image-preview`;
+    const firstSource = canvasNodeFactory.createNode(CANVAS_NODE_TYPES.imageEdit, { x: 0, y: 0 }, {
+      prompt: 'First image',
+      model: firstModelId,
+      requestAspectRatio: '1:1',
+      outputCount: 1,
+    });
+    const secondSource = canvasNodeFactory.createNode(CANVAS_NODE_TYPES.imageEdit, { x: 400, y: 0 }, {
+      prompt: 'Second image',
+      model: secondModelId,
+      requestAspectRatio: '1:1',
+      outputCount: 1,
+    });
+    useCanvasStore.getState().setCanvasData([firstSource, secondSource], []);
+    useSettingsStore.setState({
+      customImageApis: [
+        {
+          id: firstProviderId,
+          name: 'Gemini First',
+          protocol: 'gemini-native',
+          apiKey: 'first-key',
+          baseUrl: 'https://first.example/v1beta',
+          modelCatalog: {
+            models: [{ id: firstModelId }],
+            refreshedAt: 1,
+          },
+          selectedModelIds: [firstModelId],
+        },
+        {
+          id: secondProviderId,
+          name: 'Gemini Second',
+          protocol: 'gemini-native',
+          apiKey: 'second-key',
+          baseUrl: 'https://second.example/v1beta',
+          modelCatalog: {
+            models: [{ id: secondModelId }],
+            refreshedAt: 1,
+          },
+          selectedModelIds: [secondModelId],
+        },
+      ],
+    });
+
+    await runImageGenerationNodes([firstSource.id, secondSource.id]);
+
+    expect(gateway.setApiKey).toHaveBeenCalledTimes(2);
+    expect(gateway.setApiKey).toHaveBeenCalledWith('gemini', 'first-key');
+    expect(gateway.setApiKey).toHaveBeenCalledWith('gemini', 'second-key');
   });
 });

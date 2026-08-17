@@ -98,7 +98,10 @@ describe('BatchImageCropWorkbench completed export', () => {
     root = createRoot(container);
     vi.mocked(cleanupBatchCropCache).mockResolvedValue(undefined);
     vi.mocked(exportBatchFixedCanvas).mockResolvedValue({ outputPath: '/exports/fixed.jpg' });
-    vi.mocked(renderBatchFixedCanvas).mockResolvedValue({ renderedPath: '/cache/fixed.jpg' });
+    vi.mocked(renderBatchFixedCanvas).mockResolvedValue({
+      renderedPath: '/cache/fixed.jpg',
+      blankMaskPath: '/cache/fixed-blank-mask.png',
+    });
   });
 
   afterEach(async () => {

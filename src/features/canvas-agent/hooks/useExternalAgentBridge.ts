@@ -369,11 +369,10 @@ export function useExternalAgentBridge({
         } else if (action.request.type === 'run_nodes') {
           const runRequest = action.request;
           result = await runImageGenerationNodes(runRequest.nodeIds, {
-            assertCurrent: () => {
-              if (useProjectStore.getState().getCurrentProject()?.id !== runRequest.projectId) {
-                throw new CanvasActionStaleError('project_changed');
-              }
-            },
+            assertCurrent: createCanvasActionRevisionGuard(
+              runRequest.projectId,
+              runRequest.baseRevision
+            ),
           });
         } else {
           result = await buildCanvasAgentNodeImages({
@@ -455,20 +454,44 @@ function readActionId(value: unknown): string {
   return typeof actionId === 'string' ? actionId : '';
 }
 
-function readCurrentCanvasSnapshot(): CanvasAgentSnapshot | null {
+function readCurrentCanvasSnapshot(
+  excludedNodeIds: ReadonlySet<string> = new Set()
+): CanvasAgentSnapshot | null {
   const project = useProjectStore.getState().getCurrentProject();
   if (!project) {
     return null;
   }
   const canvas = useCanvasStore.getState();
+  const nodes = excludedNodeIds.size === 0
+    ? canvas.nodes
+    : canvas.nodes.filter((node) => !excludedNodeIds.has(node.id));
+  const edges = excludedNodeIds.size === 0
+    ? canvas.edges
+    : canvas.edges.filter((edge) => (
+      !excludedNodeIds.has(edge.source) && !excludedNodeIds.has(edge.target)
+    ));
   return buildCanvasAgentSnapshot({
     projectId: project.id,
     projectName: project.name,
-    nodes: canvas.nodes,
-    edges: canvas.edges,
-    selectedNodeIds: canvas.nodes.filter((node) => node.selected).map((node) => node.id),
+    nodes,
+    edges,
+    selectedNodeIds: nodes.filter((node) => node.selected).map((node) => node.id),
     viewport: canvas.currentViewport,
   });
+}
+
+function createCanvasActionRevisionGuard(projectId: string, baseRevision: string) {
+  const ownedResultNodeIds = new Set<string>();
+  return (newResultNodeIds: readonly string[] = []) => {
+    newResultNodeIds.forEach((nodeId) => ownedResultNodeIds.add(nodeId));
+    const latest = readCurrentCanvasSnapshot(ownedResultNodeIds);
+    if (!latest || latest.projectId !== projectId) {
+      throw new CanvasActionStaleError('project_changed');
+    }
+    if (latest.revision !== baseRevision) {
+      throw new CanvasActionStaleError();
+    }
+  };
 }
 
 class CanvasActionStaleError extends Error {

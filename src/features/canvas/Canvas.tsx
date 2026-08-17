@@ -664,8 +664,8 @@ export function Canvas() {
             const shouldRetryAfterManualIntervention = currentData.generationRecoveryState === 'retry_requested';
             const status = await (
               shouldRetryAfterManualIntervention
-                ? canvasAiGateway.retryGenerateImageJob(jobId)
-                : canvasAiGateway.getGenerateImageJob(jobId)
+                ? canvasAiGateway.retryGenerateImageJob(jobId, providerRuntime.providerConfig)
+                : canvasAiGateway.getGenerateImageJob(jobId, providerRuntime.providerConfig)
             ).catch((error) => {
               logger.warn('[GenerationJob] poll failed', {
                 nodeId: pendingNode.id,

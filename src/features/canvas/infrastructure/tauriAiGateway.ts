@@ -102,8 +102,9 @@ export const tauriAiGateway: AiGateway = {
     }
     return await submitNormalizedGenerateImageJob(payload, normalizedReferenceImages);
   },
-  submitGenerateImageJobs: async (payload, outputCount, onSettled) => {
+  submitGenerateImageJobs: async (payload, outputCount, onSettled, beforeSubmit) => {
     const normalizedReferenceImages = await normalizeReferenceImages(payload);
+    beforeSubmit();
     const safeOutputCount = Math.max(1, Math.min(4, Math.floor(outputCount)));
     return submitGenerationJobBatch({
       outputCount: safeOutputCount,

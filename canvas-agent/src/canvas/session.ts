@@ -421,8 +421,14 @@ export class CanvasSession {
         reject,
         timeout: setTimeout(() => {
           this.nodeWaiters.delete(waiter);
-          const current = this.canvasStates.get(clientId)?.snapshot;
-          if (!current || current.projectId !== input.projectId) {
+          const state = this.canvasStates.get(clientId);
+          const current = state?.snapshot;
+          if (
+            !this.clients.has(clientId)
+            || !state
+            || Date.now() - state.updatedAt > ACTIVE_CANVAS_TTL_MS
+            || current?.projectId !== input.projectId
+          ) {
             reject(new CanvasAgentError(
               'NO_ACTIVE_CANVAS',
               'The Lumina canvas became unavailable while waiting for node progress.'

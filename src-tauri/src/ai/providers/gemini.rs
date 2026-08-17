@@ -1,6 +1,8 @@
 use base64::{engine::general_purpose::STANDARD, Engine};
 use reqwest::{Client, StatusCode};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio::time::{sleep, Duration};
@@ -21,6 +23,7 @@ const MAX_SYNC_POLL_ATTEMPTS: usize = 180;
 pub struct GeminiNativeImageProvider {
     client: Client,
     api_key: Arc<RwLock<Option<String>>>,
+    task_api_keys: Arc<RwLock<HashMap<(String, String, String), String>>>,
 }
 
 impl GeminiNativeImageProvider {
@@ -28,6 +31,7 @@ impl GeminiNativeImageProvider {
         Self {
             client: Client::new(),
             api_key: Arc::new(RwLock::new(None)),
+            task_api_keys: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -35,6 +39,18 @@ impl GeminiNativeImageProvider {
         request
             .provider_config
             .as_ref()
+            .and_then(|config| config.get(key))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+    }
+
+    fn provider_config_value(
+        provider_config: Option<&HashMap<String, Value>>,
+        key: &str,
+    ) -> Option<String> {
+        provider_config
             .and_then(|config| config.get(key))
             .and_then(Value::as_str)
             .map(str::trim)
@@ -153,7 +169,11 @@ impl GeminiNativeImageProvider {
             .and_then(Value::as_array)
             .into_iter()
             .flatten()
-            .filter_map(|candidate| candidate.pointer("/content/parts").and_then(Value::as_array))
+            .filter_map(|candidate| {
+                candidate
+                    .pointer("/content/parts")
+                    .and_then(Value::as_array)
+            })
             .flatten()
             .find_map(|part| {
                 let inline_data = part.get("inlineData").or_else(|| part.get("inline_data"))?;
@@ -209,6 +229,97 @@ impl GeminiNativeImageProvider {
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(str::to_string)
+    }
+
+    fn api_key_fingerprint(api_key: &str) -> String {
+        hex::encode(Sha256::digest(api_key.as_bytes()))
+    }
+
+    fn task_credential_key(handle: &ProviderTaskHandle) -> (String, String, String) {
+        (
+            Self::metadata_base_url(handle).unwrap_or_default(),
+            handle.task_id.clone(),
+            Self::metadata_credential_fingerprint(handle).unwrap_or_default(),
+        )
+    }
+
+    fn requires_bound_api_key(handle: &ProviderTaskHandle) -> bool {
+        handle
+            .metadata
+            .as_ref()
+            .and_then(|metadata| metadata.get("requires_bound_api_key"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    }
+
+    fn metadata_credential_fingerprint(handle: &ProviderTaskHandle) -> Option<String> {
+        handle
+            .metadata
+            .as_ref()
+            .and_then(|metadata| metadata.get("credential_fingerprint"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+    }
+
+    async fn api_key_for_task(
+        &self,
+        handle: &ProviderTaskHandle,
+        provider_config: Option<&HashMap<String, Value>>,
+    ) -> Result<String, AIError> {
+        let credential_key = Self::task_credential_key(handle);
+        if let Some(api_key) = self
+            .task_api_keys
+            .read()
+            .await
+            .get(&credential_key)
+            .cloned()
+        {
+            return Ok(api_key);
+        }
+
+        let configured_api_key = Self::provider_config_value(provider_config, "api_key");
+        if let Some(expected_fingerprint) = Self::metadata_credential_fingerprint(handle) {
+            let matches_submitted_credential = configured_api_key
+                .as_deref()
+                .map(Self::api_key_fingerprint)
+                .as_deref()
+                == Some(expected_fingerprint.as_str());
+            if !matches_submitted_credential {
+                return Err(AIError::InvalidRequest(
+                    "Gemini Native poll credential does not match the submitted task".to_string(),
+                ));
+            }
+        }
+
+        if let Some(api_key) = configured_api_key {
+            return Ok(api_key);
+        }
+
+        if Self::requires_bound_api_key(handle) {
+            return Err(AIError::InvalidRequest(
+                "Gemini Native task provider API key is required for polling".to_string(),
+            ));
+        }
+
+        self.configured_api_key().await
+    }
+
+    async fn poll_task_with_provider_config(
+        &self,
+        handle: ProviderTaskHandle,
+        provider_config: Option<&HashMap<String, Value>>,
+    ) -> Result<ProviderTaskPollResult, AIError> {
+        let credential_key = Self::task_credential_key(&handle);
+        let api_key = self.api_key_for_task(&handle, provider_config).await?;
+        let result = self
+            .poll_task_with_api_key(handle, api_key.as_str())
+            .await?;
+        if !matches!(result, ProviderTaskPollResult::Running) {
+            self.task_api_keys.write().await.remove(&credential_key);
+        }
+        Ok(result)
     }
 
     fn resolve_endpoint(base_url: &str, endpoint: &str) -> String {
@@ -417,10 +528,12 @@ impl GeminiNativeImageProvider {
             "succeeded" | "success" | "completed" | "finished" => {
                 Self::response_image_source(&body)
                     .map(ProviderTaskPollResult::Succeeded)
-                    .ok_or_else(|| AIError::Provider(
-                        "Completed Gemini Native image task did not include an image asset"
-                            .to_string(),
-                    ))
+                    .ok_or_else(|| {
+                        AIError::Provider(
+                            "Completed Gemini Native image task did not include an image asset"
+                                .to_string(),
+                        )
+                    })
             }
             _ => Ok(ProviderTaskPollResult::Running),
         }
@@ -460,6 +573,10 @@ impl AIProvider for GeminiNativeImageProvider {
         &self,
         request: GenerateRequest,
     ) -> Result<ProviderTaskSubmission, AIError> {
+        let requires_bound_api_key = Self::config_value(&request, "api_key").is_some();
+        let task_api_key = self.api_key_for_request(&request).await?;
+        let credential_fingerprint =
+            requires_bound_api_key.then(|| Self::api_key_fingerprint(task_api_key.as_str()));
         let (base_url, status, body) = self.submit_request(&request).await?;
 
         if let Some(image_source) = Self::response_image_source(&body) {
@@ -470,13 +587,20 @@ impl AIProvider for GeminiNativeImageProvider {
             let task_id = Self::response_task_id(&body).ok_or_else(|| {
                 AIError::Provider("Gemini Native image task receipt is missing task_id".to_string())
             })?;
-            return Ok(ProviderTaskSubmission::Queued(ProviderTaskHandle {
+            let handle = ProviderTaskHandle {
                 task_id,
                 metadata: Some(json!({
                     "base_url": base_url,
                     "status_url": Self::task_status_url(&body),
+                    "requires_bound_api_key": requires_bound_api_key,
+                    "credential_fingerprint": credential_fingerprint,
                 })),
-            }));
+            };
+            self.task_api_keys
+                .write()
+                .await
+                .insert(Self::task_credential_key(&handle), task_api_key);
+            return Ok(ProviderTaskSubmission::Queued(handle));
         }
 
         Err(AIError::Provider(
@@ -489,18 +613,25 @@ impl AIProvider for GeminiNativeImageProvider {
         &self,
         handle: ProviderTaskHandle,
     ) -> Result<ProviderTaskPollResult, AIError> {
-        let api_key = self.configured_api_key().await?;
-        self.poll_task_with_api_key(handle, api_key.as_str()).await
+        self.poll_task_with_provider_config(handle, None).await
+    }
+
+    async fn poll_task_with_config(
+        &self,
+        handle: ProviderTaskHandle,
+        provider_config: Option<HashMap<String, Value>>,
+    ) -> Result<ProviderTaskPollResult, AIError> {
+        self.poll_task_with_provider_config(handle, provider_config.as_ref())
+            .await
     }
 
     async fn generate(&self, request: GenerateRequest) -> Result<String, AIError> {
-        let api_key = self.api_key_for_request(&request).await?;
         match self.submit_task(request).await? {
             ProviderTaskSubmission::Succeeded(image_source) => Ok(image_source),
             ProviderTaskSubmission::Queued(handle) => {
                 for _ in 0..MAX_SYNC_POLL_ATTEMPTS {
                     sleep(Duration::from_millis(POLL_INTERVAL_MS)).await;
-                    match self.poll_task_with_api_key(handle.clone(), api_key.as_str()).await? {
+                    match self.poll_task(handle.clone()).await? {
                         ProviderTaskPollResult::Running => continue,
                         ProviderTaskPollResult::Succeeded(image_source) => return Ok(image_source),
                         ProviderTaskPollResult::SucceededWithMeta { url, .. } => return Ok(url),
@@ -518,6 +649,9 @@ impl AIProvider for GeminiNativeImageProvider {
 }
 
 #[cfg(test)]
+mod credential_tests;
+
+#[cfg(test)]
 mod tests {
     use super::GeminiNativeImageProvider;
     use crate::ai::{
@@ -528,6 +662,8 @@ mod tests {
     use std::collections::HashMap;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::{TcpListener, TcpStream};
+
+    mod endpoint_tests;
 
     fn generate_request(base_url: &str, references: Option<Vec<String>>) -> GenerateRequest {
         GenerateRequest {
@@ -611,39 +747,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn builds_native_request_with_inline_reference_images() {
-        let provider = GeminiNativeImageProvider::new();
-        let request = generate_request(
-            "https://gateway.example/v1beta",
-            Some(vec!["data:image/png;base64,iVBORw0KGgo=".to_string()]),
-        );
-
-        let body = provider.build_request_body(&request).await.unwrap();
-        let parts = body
-            .pointer("/contents/0/parts")
-            .and_then(Value::as_array)
-            .unwrap();
-
-        assert_eq!(parts[0], json!({ "text": "design a character" }));
-        assert_eq!(parts[1], json!({
-            "inlineData": {
-                "mimeType": "image/png",
-                "data": "iVBORw0KGgo=",
-            }
-        }));
-        assert_eq!(
-            body.pointer("/generationConfig/imageConfig/aspectRatio")
-                .and_then(Value::as_str),
-            Some("4:3")
-        );
-        assert_eq!(
-            body.pointer("/generationConfig/imageConfig/imageSize")
-                .and_then(Value::as_str),
-            Some("4K")
-        );
-    }
-
-    #[tokio::test]
     async fn uses_gemini_endpoint_and_header_then_reads_inline_image_data() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
@@ -714,63 +817,6 @@ mod tests {
         assert!(normalized_headers.contains("x-goog-api-key: test-key"));
         assert!(!normalized_headers.contains("authorization:"));
         assert!(request.contains("\"responseModalities\":[\"TEXT\",\"IMAGE\"]"));
-    }
-
-    #[tokio::test]
-    async fn retries_a_missing_html_v1_route_at_v1beta() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let address = listener.local_addr().unwrap();
-        let server = tokio::spawn(async move {
-            let (mut first_socket, _) = listener.accept().await.unwrap();
-            let first_request = read_http_request(&mut first_socket).await;
-            write_html_response(
-                &mut first_socket,
-                "404 Not Found",
-                "<html><body>not found</body></html>",
-            )
-            .await;
-            drop(first_socket);
-
-            let (mut second_socket, _) = listener.accept().await.unwrap();
-            let second_request = read_http_request(&mut second_socket).await;
-            let receipt = r#"{"object":"media_task","id":"imgtask-456","task_id":"imgtask-456","status":"queued","execution_mode":"async","status_url":"/v1/images/tasks/imgtask-456?view=summary"}"#;
-            write_json_response(&mut second_socket, "202 Accepted", receipt).await;
-
-            (first_request, second_request)
-        });
-
-        let provider = GeminiNativeImageProvider::new();
-        let submission = provider
-            .submit_task(generate_request(
-                format!("http://{address}/v1").as_str(),
-                None,
-            ))
-            .await
-            .unwrap();
-
-        let handle = match submission {
-            ProviderTaskSubmission::Queued(handle) => handle,
-            ProviderTaskSubmission::Succeeded(_) => panic!("expected queued task receipt"),
-        };
-        let expected_base_url = format!("http://{address}/v1beta");
-        assert_eq!(
-            handle
-                .metadata
-                .as_ref()
-                .and_then(|metadata| metadata.get("base_url"))
-                .and_then(Value::as_str),
-            Some(expected_base_url.as_str())
-        );
-
-        let (first_request, second_request) = server.await.unwrap();
-        let first_request = String::from_utf8_lossy(&first_request);
-        let second_request = String::from_utf8_lossy(&second_request);
-        assert!(first_request.starts_with(
-            "POST /v1/models/gemini-3-pro-image-preview:generateContent HTTP/1.1"
-        ));
-        assert!(second_request.starts_with(
-            "POST /v1beta/models/gemini-3-pro-image-preview:generateContent HTTP/1.1"
-        ));
     }
 
     #[tokio::test]
@@ -864,6 +910,10 @@ mod tests {
             Some("/v1/images/tasks/imgtask-123?view=summary")
         );
         assert!(metadata.get("api_key").is_none());
+        assert!(metadata
+            .get("credential_fingerprint")
+            .and_then(Value::as_str)
+            .is_some_and(|fingerprint| fingerprint != "test-key"));
 
         assert!(matches!(
             provider.poll_task(handle.clone()).await.unwrap(),
@@ -888,12 +938,10 @@ mod tests {
         assert!(submit_request.starts_with(
             "POST /v1beta/models/gemini-3-pro-image-preview:generateContent HTTP/1.1"
         ));
-        assert!(pending_poll_request.starts_with(
-            "GET /v1/images/tasks/imgtask-123?view=summary HTTP/1.1"
-        ));
-        assert!(completed_poll_request.starts_with(
-            "GET /v1/images/tasks/imgtask-123?view=summary HTTP/1.1"
-        ));
+        assert!(pending_poll_request
+            .starts_with("GET /v1/images/tasks/imgtask-123?view=summary HTTP/1.1"));
+        assert!(completed_poll_request
+            .starts_with("GET /v1/images/tasks/imgtask-123?view=summary HTTP/1.1"));
         assert!(submit_headers.contains("x-goog-api-key: test-key"));
         assert!(pending_poll_headers.contains("x-goog-api-key: test-key"));
         assert!(completed_poll_headers.contains("x-goog-api-key: test-key"));

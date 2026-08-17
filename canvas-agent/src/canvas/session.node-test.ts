@@ -262,6 +262,40 @@ test('waits for target node progress without returning the full canvas', async (
   assert.equal(result.edges, undefined);
 });
 
+test('rejects a node wait timeout when the connected canvas heartbeat is stale', async () => {
+  const session = new CanvasSession();
+  const response = new TestResponse();
+  const realDateNow = Date.now;
+  let now = realDateNow();
+  Date.now = () => now;
+
+  try {
+    session.openEvents('client-1', response as unknown as ServerResponse);
+    session.updateState('client-1', snapshot('revision-1', [], [{
+      id: 'result-1',
+      type: 'exportImageNode',
+      data: { isGenerating: true },
+    }]));
+
+    const resultPromise = session.callTool('canvas_wait_for_nodes', {
+      projectId: 'project-1',
+      nodeIds: ['result-1'],
+      timeoutMs: 5,
+    });
+    now += 16_000;
+
+    await assert.rejects(resultPromise, (error: unknown) => Boolean(
+      error
+      && typeof error === 'object'
+      && 'code' in error
+      && error.code === 'NO_ACTIVE_CANVAS'
+    ));
+  } finally {
+    Date.now = realDateNow;
+    response.end();
+  }
+});
+
 test('preserves selected previews across lightweight snapshot heartbeats', async () => {
   const session = new CanvasSession();
   const response = new TestResponse();

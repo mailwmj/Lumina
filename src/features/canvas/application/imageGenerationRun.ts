@@ -83,10 +83,29 @@ interface RunImageGenerationNodeOptions {
   fallbackErrorMessage?: string;
   diagnostics?: ReturnType<typeof getRuntimeDiagnostics>;
   providerSetup?: Map<string, Promise<void>>;
-  assertCurrent?: () => void;
+  assertCurrent?: (ownedResultNodeIds?: readonly string[]) => void;
+  onSubmissionStarting?: () => void;
 }
 
 const inFlightSourceNodeIds = new Set<string>();
+
+class ImageGenerationAuthorizationError extends Error {
+  constructor(readonly cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause));
+    this.name = 'ImageGenerationAuthorizationError';
+  }
+}
+
+function assertAuthorized(
+  assertCurrent: RunImageGenerationNodeOptions['assertCurrent'],
+  ownedResultNodeIds?: readonly string[]
+): void {
+  try {
+    assertCurrent?.(ownedResultNodeIds);
+  } catch (error) {
+    throw new ImageGenerationAuthorizationError(error);
+  }
+}
 
 export async function runImageGenerationNodes(
   nodeIds: string[],
@@ -96,6 +115,7 @@ export async function runImageGenerationNodes(
   const uniqueNodeIds = [...new Set(nodeIds)];
   const diagnostics = getRuntimeDiagnostics();
   const providerSetup = new Map<string, Promise<void>>();
+  let submissionStarted = false;
   const runs = await Promise.all(uniqueNodeIds.map(async (sourceNodeId) => {
     try {
       return {
@@ -104,9 +124,22 @@ export async function runImageGenerationNodes(
           diagnostics,
           providerSetup,
           assertCurrent: options.assertCurrent,
+          onSubmissionStarting: () => {
+            submissionStarted = true;
+          },
         }),
       };
     } catch (error) {
+      if (error instanceof ImageGenerationAuthorizationError) {
+        if (!submissionStarted) {
+          throw error.cause;
+        }
+        return {
+          status: 'failed' as const,
+          sourceNodeId,
+          error: error.message,
+        };
+      }
       return {
         status: 'failed' as const,
         sourceNodeId,
@@ -114,7 +147,6 @@ export async function runImageGenerationNodes(
       };
     }
   }));
-  options.assertCurrent?.();
   return { runs };
 }
 
@@ -131,7 +163,7 @@ export async function runImageGenerationNode(
   inFlightSourceNodeIds.add(sourceNodeId);
 
   try {
-    options.assertCurrent?.();
+    assertAuthorized(options.assertCurrent);
     const canvas = useCanvasStore.getState();
     const sourceNode = canvas.nodes.find((node) => node.id === sourceNodeId);
     if (!sourceNode || !isImageEditNode(sourceNode)) {
@@ -208,23 +240,7 @@ export async function runImageGenerationNode(
     const generationStartedAt = Date.now();
     const generationDurationMs = configuredModel.expectedDurationMs ?? 60_000;
     const diagnostics = await (options.diagnostics ?? getRuntimeDiagnostics());
-    options.assertCurrent?.();
-    const latestCanvas = useCanvasStore.getState();
-    const resultNodes = createImageOutputBatchNodes({
-      sourceNodeId,
-      outputCount,
-      aspectRatio: resolvedRequestAspectRatio,
-      resultNodeTitle: buildAiResultNodeTitle(
-        resolveNodeDisplayName(sourceNode.type, sourceNode.data),
-        options.fallbackResultTitle ?? 'AI image result'
-      ),
-      generationStartedAt,
-      generationDurationMs,
-      existingNodes: latestCanvas.nodes,
-      existingEdges: latestCanvas.edges,
-      addNodeBatch: latestCanvas.addNodeBatch,
-      addEdge: latestCanvas.addEdge,
-    });
+    assertAuthorized(options.assertCurrent);
 
     const buildDebugContext = (outputIndex: number): GenerationDebugContext => ({
       sourceType: 'imageEdit',
@@ -245,7 +261,52 @@ export async function runImageGenerationNode(
       userAgent: diagnostics.userAgent,
     });
     const submissions: ImageGenerationSubmissionResult[] = [];
-    const setupKey = providerRuntime.backendProviderId;
+    let resultNodes: ReturnType<typeof createImageOutputBatchNodes> = [];
+    const ensureResultNodes = () => {
+      if (resultNodes.length > 0) {
+        return;
+      }
+      assertAuthorized(options.assertCurrent);
+      const latestCanvas = useCanvasStore.getState();
+      resultNodes = createImageOutputBatchNodes({
+        sourceNodeId,
+        outputCount,
+        aspectRatio: resolvedRequestAspectRatio,
+        resultNodeTitle: buildAiResultNodeTitle(
+          resolveNodeDisplayName(sourceNode.type, sourceNode.data),
+          options.fallbackResultTitle ?? 'AI image result'
+        ),
+        generationStartedAt,
+        generationDurationMs,
+        existingNodes: latestCanvas.nodes,
+        existingEdges: latestCanvas.edges,
+        addNodeBatch: latestCanvas.addNodeBatch,
+        addEdge: latestCanvas.addEdge,
+      });
+      assertAuthorized(
+        options.assertCurrent,
+        resultNodes.map((resultNode) => resultNode.nodeId)
+      );
+    };
+    const prepareProviderSubmission = () => {
+      ensureResultNodes();
+      options.onSubmissionStarting?.();
+    };
+    const markPendingSubmissionsFailed = (error: unknown) => {
+      resultNodes.forEach(({ nodeId, outputIndex }) => {
+        if (submissions.some((submission) => submission.resultNodeId === nodeId)) {
+          return;
+        }
+        submissions.push(markFailedSubmission(
+          nodeId,
+          outputIndex,
+          error,
+          buildDebugContext(outputIndex),
+          options.fallbackErrorMessage
+        ));
+      });
+    };
+    const setupKey = configuredModel.providerId;
     let setup = options.providerSetup?.get(setupKey);
     if (!setup) {
       setup = canvasAiGateway.setApiKey(
@@ -257,7 +318,17 @@ export async function runImageGenerationNode(
 
     try {
       await setup;
-      options.assertCurrent?.();
+    } catch (error) {
+      ensureResultNodes();
+      markPendingSubmissionsFailed(error);
+      return {
+        sourceNodeId,
+        resultNodeIds: resultNodes.map((resultNode) => resultNode.nodeId),
+        submissions,
+      };
+    }
+
+    try {
       const projectId = useProjectStore.getState().getCurrentProject()?.id;
       await canvasAiGateway.submitGenerateImageJobs({
         prompt,
@@ -302,20 +373,13 @@ export async function runImageGenerationNode(
           buildDebugContext(outputIndex),
           options.fallbackErrorMessage
         ));
-      });
+      }, prepareProviderSubmission);
     } catch (error) {
-      resultNodes.forEach(({ nodeId, outputIndex }) => {
-        if (submissions.some((submission) => submission.resultNodeId === nodeId)) {
-          return;
-        }
-        submissions.push(markFailedSubmission(
-          nodeId,
-          outputIndex,
-          error,
-          buildDebugContext(outputIndex),
-          options.fallbackErrorMessage
-        ));
-      });
+      if (error instanceof ImageGenerationAuthorizationError) {
+        throw error;
+      }
+      ensureResultNodes();
+      markPendingSubmissionsFailed(error);
     }
 
     return {
