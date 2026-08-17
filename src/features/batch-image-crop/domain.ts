@@ -92,6 +92,8 @@ export type BatchCropItemStatus =
   | 'fixedFill'
   | 'fixedReady'
   | 'aiProcessing'
+  | 'aiGenerated'
+  | 'aiFailed'
   | 'exporting'
   | 'exported'
   | 'error';
@@ -400,6 +402,8 @@ export function fixedCanvasHasBlank(
 
 export function resolveFixedCanvasStatus(draft: FixedCanvasDraft): BatchCropItemStatus {
   if (draft.ai.status === 'processing') return 'aiProcessing';
+  if (draft.ai.status === 'accepted') return 'aiGenerated';
+  if (draft.ai.status === 'failed') return 'aiFailed';
   if (draft.ready) return 'fixedReady';
   return draft.stage === 'compose' ? 'fixedCompose' : 'fixedFill';
 }
@@ -481,6 +485,9 @@ export function createBatchCropItemFromPreparedImage(
   const crop = prepared.suggestion?.crop
     ?? createCenteredCrop(prepared.width, prepared.height, target.width, target.height);
   const requiresReview = prepared.suggestion?.requiresReview ?? true;
+  const compositionMode: BatchCompositionMode = target.id === '1440x1440' ? 'fixed' : 'crop';
+  const cropStatus: BatchCropItemStatus = requiresReview ? 'review' : 'auto';
+  const fixedCanvas = createDefaultFixedCanvasDraft(defaultAiPrompt);
 
   return {
     id,
@@ -492,9 +499,9 @@ export function createBatchCropItemFromPreparedImage(
     width: prepared.width,
     height: prepared.height,
     rotationDegrees,
-    compositionMode: 'crop',
-    status: requiresReview ? 'review' : 'auto',
-    cropStatus: requiresReview ? 'review' : 'auto',
+    compositionMode,
+    status: compositionMode === 'fixed' ? resolveFixedCanvasStatus(fixedCanvas) : cropStatus,
+    cropStatus,
     crop,
     automaticCrop: crop,
     requiresReview,
@@ -505,7 +512,7 @@ export function createBatchCropItemFromPreparedImage(
       target.width,
       target.height
     ),
-    fixedCanvas: createDefaultFixedCanvasDraft(defaultAiPrompt),
+    fixedCanvas,
     errorMessage: prepared.suggestion ? undefined : fallbackErrorMessage,
   };
 }

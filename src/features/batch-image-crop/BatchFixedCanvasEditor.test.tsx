@@ -66,21 +66,30 @@ describe('BatchFixedCanvasEditor interactions', () => {
     vi.unstubAllGlobals();
   });
 
-  const renderEditor = async (draft: FixedCanvasDraft, onChange = vi.fn()) => {
+  const renderEditor = async (
+    draft: FixedCanvasDraft,
+    onChange = vi.fn(),
+    options: {
+      index?: number;
+      total?: number;
+      onPrevious?: () => void;
+      onNext?: () => void;
+    } = {}
+  ) => {
     await act(async () => root.render(
       <BatchFixedCanvasEditor
         item={createItem(draft)}
         target={target}
-        index={0}
-        total={1}
+        index={options.index ?? 0}
+        total={options.total ?? 1}
         busy={false}
         onChange={onChange}
         onOpenAi={() => undefined}
         onRequeryAi={() => undefined}
         onCancelAi={() => undefined}
         onToast={() => undefined}
-        onPrevious={() => undefined}
-        onNext={() => undefined}
+        onPrevious={options.onPrevious ?? (() => undefined)}
+        onNext={options.onNext ?? (() => undefined)}
       />
     ));
     return onChange;
@@ -138,7 +147,59 @@ describe('BatchFixedCanvasEditor interactions', () => {
     expect(stretchedDraft.stretches[0]).toMatchObject({ direction: 'left', amount: 30 });
     expect(stretchedDraft.selection).toBeNull();
     expect(stretchedDraft.activeStretchId).toBeNull();
+    expect(stretchedDraft.tool).toBe('stretch');
     expect(stretchedDraft.ready).toBe(true);
+  });
+
+  it('keeps completed stretch patches passive while drawing another selection', async () => {
+    const onChange = vi.fn();
+    await renderEditor({
+      ...createDefaultFixedCanvasDraft('prompt'),
+      stage: 'fill',
+      tool: 'stretch',
+      activeStretchId: 'left',
+      stretches: [
+        {
+          id: 'left',
+          source: { x: 25, y: 0, width: 10, height: 100 },
+          direction: 'left',
+          amount: 25,
+        },
+      ],
+    }, onChange);
+    const patch = container.querySelector('button[aria-label="选择拉伸区域"]');
+    const canvas = container.querySelector('[data-testid="fixed-canvas"]');
+    expect(patch).toBeInstanceOf(HTMLButtonElement);
+    expect(patch?.className).not.toContain('outline-accent');
+
+    await act(async () => {
+      patch?.dispatchEvent(new PointerEvent('pointerdown', {
+        bubbles: true,
+        clientX: 60,
+        clientY: 20,
+        pointerId: 6,
+      }));
+    });
+    await act(async () => {
+      canvas?.dispatchEvent(new PointerEvent('pointermove', {
+        bubbles: true,
+        clientX: 80,
+        clientY: 180,
+        pointerId: 6,
+      }));
+    });
+    await act(async () => {
+      canvas?.dispatchEvent(new PointerEvent('pointerup', {
+        bubbles: true,
+        clientX: 80,
+        clientY: 180,
+        pointerId: 6,
+      }));
+    });
+
+    const selectedDraft = onChange.mock.calls[onChange.mock.calls.length - 1]?.[0] as FixedCanvasDraft;
+    expect(selectedDraft.selection).toEqual({ x: 30, y: 0, width: 10, height: 100 });
+    expect(selectedDraft.activeStretchId).toBeNull();
   });
 
   it('moves and resizes the source selection directly on the canvas', async () => {
@@ -226,6 +287,54 @@ describe('BatchFixedCanvasEditor interactions', () => {
     expect(confirmedDraft.stage).toBe('fill');
     expect(confirmedDraft.ready).toBe(true);
     expect(container.textContent).not.toContain('完成填充');
+  });
+
+  it('shows navigation in fill mode without a stretch-region count', async () => {
+    await renderEditor({
+      ...createDefaultFixedCanvasDraft('prompt'),
+      stage: 'fill',
+      ready: true,
+      stretches: [
+        {
+          id: 'left',
+          source: { x: 25, y: 0, width: 10, height: 100 },
+          direction: 'left',
+          amount: 25,
+        },
+      ],
+    }, vi.fn(), { index: 1, total: 3 });
+
+    expect(container.textContent).toContain('2/3');
+    expect(container.textContent).not.toContain('个拉伸区域');
+  });
+
+  it('moves to the strict next item from the AI processing overlay', async () => {
+    const onNext = vi.fn();
+    const processingDraft: FixedCanvasDraft = {
+      ...createDefaultFixedCanvasDraft('prompt'),
+      stage: 'fill',
+      ready: true,
+      ai: {
+        status: 'processing',
+        prompt: 'prompt',
+        modelId: 'provider/model',
+        resolution: '2K',
+        jobId: 'job-1',
+      },
+    };
+    await renderEditor(processingDraft, vi.fn(), { index: 0, total: 2, onNext });
+    const processNext = Array.from(container.querySelectorAll('button'))
+      .find((button) => button.textContent?.trim() === '处理下一张');
+
+    expect(processNext).toBeInstanceOf(HTMLButtonElement);
+    expect((processNext as HTMLButtonElement).disabled).toBe(false);
+    await act(async () => processNext?.click());
+    expect(onNext).toHaveBeenCalledTimes(1);
+
+    await renderEditor(processingDraft, vi.fn(), { index: 1, total: 2, onNext });
+    const lastProcessNext = Array.from(container.querySelectorAll('button'))
+      .find((button) => button.textContent?.trim() === '处理下一张');
+    expect((lastProcessNext as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('cancels an unfinished selection when Escape is pressed', async () => {

@@ -175,11 +175,11 @@ export function BatchCropEditor({
         <span className={`justify-self-end rounded-md px-2 py-1 text-[11px] ${
           item.status === 'review'
             ? 'bg-amber-500/12 text-amber-500'
-            : item.status === 'error'
+            : item.status === 'error' || item.status === 'aiFailed'
               ? 'bg-red-500/12 text-red-500'
               : item.status === 'aiProcessing'
                 ? 'bg-cyan-500/12 text-cyan-500'
-                : item.status === 'fixedReady' || item.status === 'exported'
+                : item.status === 'fixedReady' || item.status === 'aiGenerated' || item.status === 'exported'
                   ? 'bg-emerald-500/12 text-emerald-500'
                   : 'bg-[var(--ui-hover)] text-text-muted'
         }`}>

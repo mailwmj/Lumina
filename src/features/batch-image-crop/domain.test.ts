@@ -11,6 +11,7 @@ import {
   resolveFixedCanvasImageBox,
   resolveAvailableStretchDirections,
   resolveAxisSnappedSelection,
+  resolveFixedCanvasStatus,
   resolveStretchDestination,
 } from './domain';
 
@@ -69,8 +70,48 @@ describe('batch image crop geometry', () => {
     );
 
     expect(item.status).toBe('auto');
+    expect(item.compositionMode).toBe('crop');
     expect(item.crop).toEqual(item.automaticCrop);
     expect(item.errorMessage).toBeUndefined();
+  });
+
+  it('defaults newly prepared square outputs to fixed canvas while preserving the crop draft', () => {
+    const item = createBatchCropItemFromPreparedImage(
+      {
+        sourcePath: '/fixtures/source.jpg',
+        fileName: 'source.jpg',
+        fileSize: 1024,
+        previewPath: '/fixtures/preview.jpg',
+        thumbnailPath: '/fixtures/thumbnail.jpg',
+        width: 3574,
+        height: 5361,
+        suggestion: {
+          crop: { x: 0, y: 1 / 6, width: 1, height: 2 / 3 },
+          requiresReview: false,
+        },
+      },
+      { id: '1440x1440', width: 1440, height: 1440 },
+      'image-1',
+      0,
+      'fallback'
+    );
+
+    expect(item.compositionMode).toBe('fixed');
+    expect(item.status).toBe('fixedCompose');
+    expect(item.cropStatus).toBe('auto');
+    expect(item.crop).toEqual(item.automaticCrop);
+  });
+
+  it('exposes accepted and failed AI results as distinct item states', () => {
+    const accepted = createDefaultFixedCanvasDraft();
+    accepted.ready = true;
+    accepted.ai = { ...accepted.ai, status: 'accepted', resultPath: '/fixtures/filled.jpg' };
+    const failed = createDefaultFixedCanvasDraft();
+    failed.ready = true;
+    failed.ai = { ...failed.ai, status: 'failed', errorMessage: 'provider failed' };
+
+    expect(resolveFixedCanvasStatus(accepted)).toBe('aiGenerated');
+    expect(resolveFixedCanvasStatus(failed)).toBe('aiFailed');
   });
 
   it('keeps the image reviewable when a prepared preview has no suggestion', () => {

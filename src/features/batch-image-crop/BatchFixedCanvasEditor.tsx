@@ -388,7 +388,7 @@ export function BatchFixedCanvasEditor({
         redoStretches: [],
         activeStretchId: null,
         selection: null,
-        tool: null,
+        tool: 'stretch',
         ready: true,
         ai: resetAiDraft(draft),
       });
@@ -482,10 +482,12 @@ export function BatchFixedCanvasEditor({
                     operation={operation}
                     imageSource={imageSource}
                     imageBox={imageBox}
-                    active={operation.id !== 'live' && operation.id === draft.activeStretchId}
+                    active={draft.tool !== 'stretch' && operation.id !== 'live' && operation.id === draft.activeStretchId}
                     live={operation.id === 'live'}
                     label={t('batchCrop.fixed.selectStretch')}
-                    onSelect={operation.id === 'live' ? undefined : () => onChange({ ...draft, activeStretchId: operation.id })}
+                    onSelect={operation.id === 'live' || draft.tool === 'stretch'
+                      ? undefined
+                      : () => onChange({ ...draft, activeStretchId: operation.id })}
                   />
                 ))}
               </>
@@ -517,9 +519,21 @@ export function BatchFixedCanvasEditor({
               <Loader2 className="h-6 w-6 animate-spin" />
               <strong className="text-sm font-medium">{t('batchCrop.fixed.ai.processing')}</strong>
               <span className="text-[11px] text-zinc-300">{t('batchCrop.fixed.ai.processingHint')}</span>
-              <UiButton type="button" size="sm" variant="ghost" onClick={onCancelAi} className="mt-1 border border-white/20 text-white hover:bg-white/10">
-                {t('batchCrop.fixed.ai.cancel')}
-              </UiButton>
+              <div className="mt-1 flex items-center gap-2">
+                <UiButton type="button" size="sm" variant="ghost" onClick={onCancelAi} className="border border-white/20 text-white hover:bg-white/10">
+                  {t('batchCrop.fixed.ai.cancel')}
+                </UiButton>
+                <UiButton
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  disabled={index >= total - 1}
+                  onClick={onNext}
+                  className="border border-white/20 text-white hover:bg-white/10 disabled:text-zinc-400"
+                >
+                  {t('batchCrop.fixed.ai.processNext')}
+                </UiButton>
+              </div>
             </div>
           )}
         </div>
@@ -659,15 +673,18 @@ export function BatchFixedCanvasEditor({
                   <Trash2 className="h-4 w-4" />
                 </button>
               </UiTooltip>
-              <span className="ml-1 text-[11px] text-text-muted">
-                {t('batchCrop.fixed.stretchCount', { count: draft.stretches.length })}
-              </span>
             </>
           )}
         </div>
 
-        <div className="flex items-center justify-center">
-          {draft.stage === 'fill' ? (
+        <div className="flex items-center justify-center gap-2">
+          <BatchFixedCanvasNavigation
+            index={index}
+            total={total}
+            onPrevious={onPrevious}
+            onNext={onNext}
+          />
+          {draft.stage === 'fill' && (
             <div className="flex items-center gap-1 rounded-md border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] p-0.5">
               <UiTooltip content={t('batchCrop.fixed.regionStretch')}>
                 <button
@@ -700,13 +717,6 @@ export function BatchFixedCanvasEditor({
                 </button>
               </UiTooltip>
             </div>
-          ) : (
-            <BatchFixedCanvasNavigation
-              index={index}
-              total={total}
-              onPrevious={onPrevious}
-              onNext={onNext}
-            />
           )}
         </div>
 

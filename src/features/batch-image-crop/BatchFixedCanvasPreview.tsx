@@ -81,8 +81,8 @@ export function BatchFixedCanvasStretchPatch({
     <button
       type="button"
       aria-label={label}
-      tabIndex={live ? -1 : 0}
-      className={`absolute z-[2] overflow-hidden p-0 ${live ? 'pointer-events-none' : ''} ${
+      tabIndex={live || !onSelect ? -1 : 0}
+      className={`absolute z-[2] overflow-hidden p-0 ${live || !onSelect ? 'pointer-events-none' : ''} ${
         active ? 'outline outline-1 outline-accent' : live ? 'outline outline-1 outline-accent/75' : ''
       }`}
       style={{
@@ -91,7 +91,7 @@ export function BatchFixedCanvasStretchPatch({
         width: `${destination.width}%`,
         height: `${destination.height}%`,
       }}
-      onPointerDown={(event) => event.stopPropagation()}
+      onPointerDown={onSelect ? (event) => event.stopPropagation() : undefined}
       onClick={onSelect}
     >
       <img

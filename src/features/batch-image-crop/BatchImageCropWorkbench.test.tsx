@@ -231,4 +231,23 @@ describe('BatchImageCropWorkbench completed export', () => {
 
     expect((container.querySelector('input[aria-label="整图缩放"]') as HTMLInputElement | null)?.value).toBe('75');
   });
+
+  it('resets every image to fixed canvas for a square target while keeping crop mode usable', async () => {
+    vi.mocked(open).mockResolvedValueOnce(['/fixtures/source.jpg']);
+    vi.mocked(prepareBatchCropImage).mockResolvedValue(preparedImage);
+
+    await act(async () => {
+      root.render(<BatchImageCropWorkbench onExit={() => undefined} backHandlerRef={{ current: () => undefined }} />);
+    });
+    await act(async () => findButton(container, '1440×1920').click());
+    await act(async () => findButton(container, '添加图片').click());
+    await act(async () => findButton(container, '1440×1440').click());
+    await act(async () => findButton(container, '更换并重新生成').click());
+
+    const fixedMode = findButton(container, '固定画布');
+    expect(fixedMode.getAttribute('aria-pressed')).toBe('true');
+
+    await act(async () => findButton(container, '裁剪填满').click());
+    expect(findButton(container, '恢复自动裁剪').disabled).toBe(false);
+  });
 });

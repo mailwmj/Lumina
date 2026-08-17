@@ -79,6 +79,24 @@ function createItem(): BatchCropImageItem {
   };
 }
 
+function createProcessingItem(id: string, jobId: string): BatchCropImageItem {
+  const item = createItem();
+  return {
+    ...item,
+    id,
+    fileName: `${id}.jpg`,
+    status: 'aiProcessing',
+    fixedCanvas: {
+      ...item.fixedCanvas,
+      ai: {
+        ...item.fixedCanvas.ai,
+        status: 'processing',
+        jobId,
+      },
+    },
+  };
+}
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((next) => { resolve = next; });
@@ -95,6 +113,24 @@ describe('useBatchAiFill', () => {
 
   function Harness() {
     const [items, setItems] = useState([createItem()]);
+    latestItems = items;
+    latest = useBatchAiFill({
+      batchId: 'batch-1',
+      items,
+      selectedItem: items[0] ?? null,
+      target: { id: '1440x1440', width: 1440, height: 1440 },
+      setItems,
+      onDialogClose,
+      onToast,
+    });
+    return null;
+  }
+
+  function MultiJobHarness() {
+    const [items, setItems] = useState([
+      createProcessingItem('image-1', 'job-1'),
+      createProcessingItem('image-2', 'job-2'),
+    ]);
     latestItems = items;
     latest = useBatchAiFill({
       batchId: 'batch-1',
@@ -157,6 +193,26 @@ describe('useBatchAiFill', () => {
       modelId: testModel.id,
       resolution: '1K',
     });
+  });
+
+  it('polls and completes multiple AI jobs independently after navigation', async () => {
+    vi.mocked(canvasAiGateway.getGenerateImageJob).mockImplementation(async (jobId) => ({
+      job_id: jobId,
+      status: 'succeeded',
+      result: `data:image/jpeg;base64,${jobId}`,
+    }));
+    vi.mocked(persistImageSource).mockImplementation(async (source) => (
+      String(source).includes('job-1') ? '/outputs/filled-1.jpg' : '/outputs/filled-2.jpg'
+    ));
+    await act(async () => root.render(<MultiJobHarness />));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1800);
+    });
+
+    expect(canvasAiGateway.getGenerateImageJob).toHaveBeenCalledTimes(2);
+    expect(latestItems.map((item) => item.fixedCanvas.ai.status)).toEqual(['accepted', 'accepted']);
+    expect(latestItems.map((item) => item.status)).toEqual(['aiGenerated', 'aiGenerated']);
   });
 
   it('cancels an in-flight submission and ignores its late task id', async () => {

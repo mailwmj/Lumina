@@ -1,4 +1,4 @@
-import type { DragEvent } from 'react';
+import { useRef, type DragEvent, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Crop, Loader2, Plus, Trash2 } from '@/components/ui/icons';
 import { UiButton, UiTooltip } from '@/components/ui';
@@ -45,6 +45,8 @@ const STATUS_KEYS: Record<BatchCropItemStatus, string> = {
   fixedFill: 'batchCrop.status.fixedFill',
   fixedReady: 'batchCrop.status.fixedReady',
   aiProcessing: 'batchCrop.status.aiProcessing',
+  aiGenerated: 'batchCrop.status.aiGenerated',
+  aiFailed: 'batchCrop.status.aiFailed',
   exporting: 'batchCrop.status.exporting',
   exported: 'batchCrop.status.exported',
   error: 'batchCrop.status.error',
@@ -76,6 +78,7 @@ export function BatchCropSidebar({
   onPrimaryAction,
 }: BatchCropSidebarProps) {
   const { t } = useTranslation();
+  const itemRefs = useRef(new Map<string, HTMLDivElement>());
   const busy = phase !== 'idle';
   const reviewCount = items.filter((item) => item.compositionMode === 'crop' && item.cropStatus === 'review').length;
   const visibleItems = filter === 'review'
@@ -87,6 +90,25 @@ export function BatchCropSidebar({
     if (busy) return;
     const paths = resolveDroppedPaths(event);
     if (paths.length > 0) onAddPaths(paths);
+  };
+
+  const handleItemKeyDown = (event: KeyboardEvent<HTMLDivElement>, itemId: string) => {
+    if (event.target !== event.currentTarget) return;
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      onSelectItem(itemId);
+      return;
+    }
+    if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+    event.preventDefault();
+    const currentIndex = visibleItems.findIndex((item) => item.id === itemId);
+    const nextIndex = event.key === 'ArrowUp' ? currentIndex - 1 : currentIndex + 1;
+    const nextItem = visibleItems[nextIndex];
+    if (!nextItem) return;
+    onSelectItem(nextItem.id);
+    const nextRow = itemRefs.current.get(nextItem.id);
+    nextRow?.focus();
+    nextRow?.scrollIntoView?.({ block: 'nearest' });
   };
 
   return (
@@ -152,16 +174,15 @@ export function BatchCropSidebar({
         {visibleItems.map((item) => (
           <div
             key={item.id}
+            ref={(element) => {
+              if (element) itemRefs.current.set(item.id, element);
+              else itemRefs.current.delete(item.id);
+            }}
             role="button"
             tabIndex={0}
             onClick={() => onSelectItem(item.id)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' || event.key === ' ') {
-                event.preventDefault();
-                onSelectItem(item.id);
-              }
-            }}
-            className={`group flex h-[66px] w-full items-center gap-2 border-l-2 px-2 text-left transition-colors ${
+            onKeyDown={(event) => handleItemKeyDown(event, item.id)}
+            className={`group flex h-[66px] w-full items-center gap-2 border-l-2 px-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/45 ${
               selectedId === item.id
                 ? 'border-l-accent bg-[var(--ui-hover)]'
                 : 'border-l-transparent hover:bg-[var(--ui-hover)]'
@@ -179,25 +200,39 @@ export function BatchCropSidebar({
                 {t(`batchCrop.mode.${item.compositionMode}`)} · {formatBatchCropFileSize(item.fileSize)}
               </span>
             </span>
-            <UiTooltip content={item.errorMessage || t(STATUS_KEYS[item.status])}>
+            {item.status === 'aiProcessing' || item.status === 'aiGenerated' || item.status === 'aiFailed' ? (
               <span
-                aria-label={t(STATUS_KEYS[item.status])}
-                className={`h-2 w-2 shrink-0 rounded-full ${
-                  item.status === 'review'
-                    ? 'bg-amber-500'
-                    : item.status === 'error'
-                      ? 'bg-red-500'
-                    : item.status === 'exported'
-                      ? 'bg-emerald-500'
-                      : item.status === 'processing' || item.status === 'exporting' || item.status === 'aiProcessing'
-                          ? 'animate-pulse bg-accent'
-                          : item.status === 'pending'
-                            ? 'bg-zinc-500'
-                            : 'bg-accent'
+                className={`shrink-0 whitespace-nowrap rounded px-1.5 py-1 text-[10px] font-medium leading-none ${
+                  item.status === 'aiProcessing'
+                    ? 'bg-cyan-500/12 text-cyan-500'
+                    : item.status === 'aiGenerated'
+                      ? 'bg-emerald-500/12 text-emerald-500'
+                      : 'bg-red-500/12 text-red-500'
                 }`}
               >
+                {t(STATUS_KEYS[item.status])}
               </span>
-            </UiTooltip>
+            ) : (
+              <UiTooltip content={item.errorMessage || t(STATUS_KEYS[item.status])}>
+                <span
+                  aria-label={t(STATUS_KEYS[item.status])}
+                  className={`h-2 w-2 shrink-0 rounded-full ${
+                    item.status === 'review'
+                      ? 'bg-amber-500'
+                      : item.status === 'error'
+                        ? 'bg-red-500'
+                        : item.status === 'exported'
+                          ? 'bg-emerald-500'
+                          : item.status === 'processing' || item.status === 'exporting'
+                            ? 'animate-pulse bg-accent'
+                            : item.status === 'pending'
+                              ? 'bg-zinc-500'
+                              : 'bg-accent'
+                  }`}
+                >
+                </span>
+              </UiTooltip>
+            )}
             {!busy && item.status !== 'aiProcessing' && item.status !== 'exporting' && (
               <UiTooltip content={t('batchCrop.removeImage')}>
                 <span

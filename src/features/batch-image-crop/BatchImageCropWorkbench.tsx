@@ -417,20 +417,34 @@ export function BatchImageCropWorkbench({ onExit, backHandlerRef }: BatchImageCr
   const confirmTargetChange = useCallback(() => {
     const nextTarget = pendingTargetRef.current;
     if (!nextTarget) return;
+    const nextTargetValue = getBatchCropTarget(nextTarget);
+    const defaultsToFixedCanvas = nextTarget === '1440x1440';
     setTargetId(nextTarget);
-    setItems((current) => current.map((item) => ({
-      ...item,
-      status: 'pending',
-      cropStatus: 'pending',
-      compositionMode: 'crop',
-      crop: null,
-      automaticCrop: null,
-      requiresReview: false,
-      lowResolution: false,
-      fixedCanvas: createDefaultFixedCanvasDraft(t('batchCrop.fixed.ai.defaultPrompt')),
-      outputPath: undefined,
-      errorMessage: undefined,
-    })));
+    setItems((current) => current.map((item) => {
+      const crop = defaultsToFixedCanvas
+        ? createCenteredCrop(item.width, item.height, nextTargetValue.width, nextTargetValue.height)
+        : null;
+      const fixedCanvas = createDefaultFixedCanvasDraft(t('batchCrop.fixed.ai.defaultPrompt'));
+      return {
+        ...item,
+        status: defaultsToFixedCanvas ? resolveFixedCanvasStatus(fixedCanvas) : 'pending',
+        cropStatus: 'pending',
+        compositionMode: defaultsToFixedCanvas ? 'fixed' : 'crop',
+        crop,
+        automaticCrop: crop,
+        requiresReview: false,
+        lowResolution: crop ? isLowResolutionCrop(
+          item.width,
+          item.height,
+          crop,
+          nextTargetValue.width,
+          nextTargetValue.height
+        ) : false,
+        fixedCanvas,
+        outputPath: undefined,
+        errorMessage: undefined,
+      };
+    }));
     setFilter('all');
     pendingTargetRef.current = null;
     setDialog(null);
@@ -459,8 +473,16 @@ export function BatchImageCropWorkbench({ onExit, backHandlerRef }: BatchImageCr
         t('batchCrop.fallbackNotice'),
         t('batchCrop.fixed.ai.defaultPrompt')
       );
-      updateItem(selectedItem.id, { ...updatedItem, outputPath: undefined });
-      if (updatedItem.status === 'review') {
+      const rotatedItem: BatchCropImageItem = {
+        ...updatedItem,
+        compositionMode: selectedItem.compositionMode,
+        status: selectedItem.compositionMode === 'fixed'
+          ? resolveFixedCanvasStatus(updatedItem.fixedCanvas)
+          : updatedItem.cropStatus,
+        outputPath: undefined,
+      };
+      updateItem(selectedItem.id, rotatedItem);
+      if (rotatedItem.compositionMode === 'crop' && rotatedItem.status === 'review') {
         setSelectedId(updatedItem.id);
         setFilter('review');
       } else {
