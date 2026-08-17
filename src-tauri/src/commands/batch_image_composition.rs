@@ -1,4 +1,4 @@
-use image::{DynamicImage, GenericImageView, RgbImage, Rgba, RgbaImage};
+use image::{DynamicImage, GenericImageView, GrayImage, Luma, RgbImage, Rgba, RgbaImage};
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::path::{Path, PathBuf};
@@ -66,6 +66,7 @@ struct FixedCanvasStretchOperation {
 #[serde(rename_all = "camelCase")]
 pub struct RenderedBatchFixedCanvas {
     rendered_path: String,
+    blank_mask_path: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -238,6 +239,66 @@ fn render_composition(
     Ok(flatten_to_white(&DynamicImage::ImageRgba8(base)))
 }
 
+fn fill_mask_rect(mask: &mut GrayImage, left: i64, top: i64, width: u32, height: u32) {
+    let mask_width = i64::from(mask.width());
+    let mask_height = i64::from(mask.height());
+    let start_x = left.clamp(0, mask_width) as u32;
+    let start_y = top.clamp(0, mask_height) as u32;
+    let end_x = left.saturating_add(i64::from(width)).clamp(0, mask_width) as u32;
+    let end_y = top.saturating_add(i64::from(height)).clamp(0, mask_height) as u32;
+
+    for y in start_y..end_y {
+        for x in start_x..end_x {
+            mask.put_pixel(x, y, Luma([0]));
+        }
+    }
+}
+
+fn render_blank_mask(
+    source: &DynamicImage,
+    payload: &FixedCanvasCompositionPayload,
+) -> Result<GrayImage, String> {
+    validate_payload(payload)?;
+    let mut mask = GrayImage::from_pixel(payload.target_width, payload.target_height, Luma([255]));
+    let (left, top, placed_width, placed_height) = placed_image_rect(
+        source.width(),
+        source.height(),
+        payload.target_width,
+        payload.target_height,
+        &payload.transform,
+    );
+    fill_mask_rect(&mut mask, left, top, placed_width, placed_height);
+
+    for operation in &payload.stretches {
+        let destination = stretch_destination(operation);
+        if let Some((x, y, width, height)) =
+            normalized_rect_to_pixels(&destination, payload.target_width, payload.target_height)
+        {
+            fill_mask_rect(&mut mask, i64::from(x), i64::from(y), width, height);
+        }
+    }
+
+    Ok(mask)
+}
+
+fn compose_ai_fill_result(
+    base: &RgbImage,
+    generated: &RgbImage,
+    blank_mask: &GrayImage,
+) -> Result<RgbImage, String> {
+    if base.dimensions() != generated.dimensions() || base.dimensions() != blank_mask.dimensions() {
+        return Err("AI_FILL_DIMENSIONS_MISMATCH".to_string());
+    }
+
+    let mut protected = base.clone();
+    for (x, y, mask_pixel) in blank_mask.enumerate_pixels() {
+        if mask_pixel[0] == 255 {
+            protected.put_pixel(x, y, *generated.get_pixel(x, y));
+        }
+    }
+    Ok(protected)
+}
+
 fn render_payload(payload: &FixedCanvasCompositionPayload) -> Result<RgbImage, String> {
     validate_payload(payload)?;
     if let Some(result_source_path) = payload
@@ -269,17 +330,51 @@ fn write_jpeg(image: RgbImage, output_path: &Path) -> Result<(), String> {
         .map_err(|_| "OUTPUT_WRITE_FAILED".to_string())
 }
 
+fn write_png(image: GrayImage, output_path: &Path) -> Result<(), String> {
+    let output = File::create(output_path).map_err(|_| "OUTPUT_WRITE_FAILED".to_string())?;
+    let encoder = image::codecs::png::PngEncoder::new(output);
+    DynamicImage::ImageLuma8(image)
+        .write_with_encoder(encoder)
+        .map_err(|_| "OUTPUT_WRITE_FAILED".to_string())
+}
+
 fn render_batch_fixed_canvas_sync(
     app: AppHandle,
     batch_id: String,
     payload: FixedCanvasCompositionPayload,
 ) -> Result<RenderedBatchFixedCanvas, String> {
-    let image = render_payload(&payload)?;
+    validate_payload(&payload)?;
+    let (source_path, _, _) = validate_source_path(&payload.source_path)?;
+    let source = apply_rotation(load_oriented_image(&source_path)?, payload.rotation_degrees);
+    let base = render_composition(&source, &payload)?;
+    let blank_mask = render_blank_mask(&source, &payload)?;
+    let image = if let Some(result_source_path) = payload
+        .result_source_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        let (result_path, _, _) = validate_source_path(result_source_path)?;
+        let generated = load_oriented_image(&result_path)?;
+        let generated = DynamicImage::ImageRgba8(resize_rgba_lanczos3(
+            &generated,
+            payload.target_width,
+            payload.target_height,
+        )?);
+        let generated = flatten_to_white(&generated);
+        compose_ai_fill_result(&base, &generated, &blank_mask)?
+    } else {
+        base
+    };
     let cache = batch_cache_dir(&app, &batch_id)?;
-    let rendered_path = cache.join(format!("{}-fixed-canvas.jpg", Uuid::new_v4().simple()));
+    let render_id = Uuid::new_v4().simple();
+    let rendered_path = cache.join(format!("{render_id}-fixed-canvas.jpg"));
+    let blank_mask_path = cache.join(format!("{render_id}-fixed-canvas-blank-mask.png"));
     write_jpeg(image, &rendered_path)?;
+    write_png(blank_mask, &blank_mask_path)?;
     Ok(RenderedBatchFixedCanvas {
         rendered_path: rendered_path.to_string_lossy().to_string(),
+        blank_mask_path: blank_mask_path.to_string_lossy().to_string(),
     })
 }
 
@@ -387,6 +482,44 @@ mod tests {
         let rendered = render_composition(&source, &input).unwrap();
         assert_ne!(rendered.get_pixel(5, 100), &Rgb([255, 255, 255]));
         assert_eq!(rendered.dimensions(), (200, 200));
+    }
+
+    #[test]
+    fn blank_mask_uses_composition_geometry_after_pan_and_stretch() {
+        let source = DynamicImage::ImageRgb8(RgbImage::from_pixel(100, 200, Rgb([20, 40, 60])));
+        let mut input = payload(200, 200);
+        input.transform.pan.x = 10.0;
+        input.stretches.push(FixedCanvasStretchOperation {
+            source: NormalizedCanvasRect {
+                x: 35.0,
+                y: 0.0,
+                width: 5.0,
+                height: 100.0,
+            },
+            direction: FixedCanvasStretchDirection::Left,
+            amount: 35.0,
+        });
+
+        let mask = render_blank_mask(&source, &input).unwrap();
+
+        assert_eq!(mask.dimensions(), (200, 200));
+        assert_eq!(mask.get_pixel(5, 100), &Luma([0]));
+        assert_eq!(mask.get_pixel(100, 100), &Luma([0]));
+        assert_eq!(mask.get_pixel(190, 100), &Luma([255]));
+    }
+
+    #[test]
+    fn ai_result_cannot_replace_pixels_outside_the_blank_mask() {
+        let source = DynamicImage::ImageRgb8(RgbImage::from_pixel(100, 200, Rgb([20, 40, 60])));
+        let input = payload(200, 200);
+        let base = render_composition(&source, &input).unwrap();
+        let mask = render_blank_mask(&source, &input).unwrap();
+        let generated = RgbImage::from_pixel(200, 200, Rgb([220, 10, 30]));
+
+        let protected = compose_ai_fill_result(&base, &generated, &mask).unwrap();
+
+        assert_eq!(protected.get_pixel(100, 100), &Rgb([20, 40, 60]));
+        assert_eq!(protected.get_pixel(10, 100), &Rgb([220, 10, 30]));
     }
 
     #[test]

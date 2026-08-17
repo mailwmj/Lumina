@@ -275,24 +275,36 @@ export async function submitGenerateImageJob(request: GenerateRequest): Promise<
   return jobId.trim();
 }
 
-export async function getGenerateImageJob(jobId: string): Promise<GenerationJobStatus> {
+export async function getGenerateImageJob(
+  jobId: string,
+  providerConfig?: Record<string, string>
+): Promise<GenerationJobStatus> {
   if (!isTauri()) {
     throw new Error('当前不是 Tauri 容器环境，请使用 `npm run tauri dev` 启动');
   }
 
-  const result = await invoke<GenerationJobStatus>('get_generate_image_job', { jobId });
+  const result = await invoke<GenerationJobStatus>('get_generate_image_job', {
+    jobId,
+    providerConfig,
+  });
   if (!result || typeof result !== 'object' || typeof result.status !== 'string') {
     throw new Error('get_generate_image_job returned invalid payload');
   }
   return result;
 }
 
-export async function retryGenerateImageJob(jobId: string): Promise<GenerationJobStatus> {
+export async function retryGenerateImageJob(
+  jobId: string,
+  providerConfig?: Record<string, string>
+): Promise<GenerationJobStatus> {
   if (!isTauri()) {
     throw new Error('当前不是 Tauri 容器环境，请使用 `npm run tauri dev` 启动');
   }
 
-  const result = await invoke<GenerationJobStatus>('retry_generate_image_job', { jobId });
+  const result = await invoke<GenerationJobStatus>('retry_generate_image_job', {
+    jobId,
+    providerConfig,
+  });
   if (!result || typeof result !== 'object' || typeof result.status !== 'string') {
     throw new Error('retry_generate_image_job returned invalid payload');
   }

@@ -81,6 +81,14 @@ pub trait AIProvider: Send + Sync {
         )))
     }
 
+    async fn poll_task_with_config(
+        &self,
+        handle: ProviderTaskHandle,
+        _provider_config: Option<HashMap<String, serde_json::Value>>,
+    ) -> Result<ProviderTaskPollResult, AIError> {
+        self.poll_task(handle).await
+    }
+
     async fn generate(&self, request: GenerateRequest) -> Result<String, AIError>;
 }
 

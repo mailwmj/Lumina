@@ -1623,14 +1623,16 @@ pub async fn cancel_video_generation_task(
 pub async fn get_generate_image_job(
     app: AppHandle,
     job_id: String,
+    provider_config: Option<HashMap<String, Value>>,
 ) -> Result<GenerationJobStatusDto, String> {
-    get_generate_image_job_inner(app, job_id, false).await
+    get_generate_image_job_inner(app, job_id, provider_config, false).await
 }
 
 #[tauri::command]
 pub async fn retry_generate_image_job(
     app: AppHandle,
     job_id: String,
+    provider_config: Option<HashMap<String, Value>>,
 ) -> Result<GenerationJobStatusDto, String> {
     let maybe_record = get_generation_job(&app, job_id.as_str())?;
     let Some(record) = maybe_record else {
@@ -1655,12 +1657,13 @@ pub async fn retry_generate_image_job(
         return Ok(dto_from_record(&record));
     }
 
-    get_generate_image_job_inner(app, job_id, true).await
+    get_generate_image_job_inner(app, job_id, provider_config, true).await
 }
 
 async fn get_generate_image_job_inner(
     app: AppHandle,
     job_id: String,
+    provider_config: Option<HashMap<String, Value>>,
     force_poll_after_manual_requery: bool,
 ) -> Result<GenerationJobStatusDto, String> {
     info!("[get_generate_image_job] called with job_id: {}", job_id);
@@ -1747,10 +1750,13 @@ async fn get_generate_image_job_inner(
 
     info!("[get_generate_image_job] calling provider.poll_task for job: {}, task_id: {}", job_id, task_id);
     match provider
-        .poll_task(ProviderTaskHandle {
-            task_id,
-            metadata: task_meta,
-        })
+        .poll_task_with_config(
+            ProviderTaskHandle {
+                task_id,
+                metadata: task_meta,
+            },
+            provider_config,
+        )
         .await
     {
         Ok(ProviderTaskPollResult::Running) => {

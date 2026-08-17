@@ -68,9 +68,10 @@ export interface AiGateway {
   submitGenerateImageJobs: (
     payload: GenerateImagePayload,
     outputCount: number,
-    onSettled: GenerationJobSubmissionListener
+    onSettled: GenerationJobSubmissionListener,
+    beforeSubmit: () => void
   ) => Promise<GenerationJobSubmissionResult[]>;
-  getGenerateImageJob: (jobId: string) => Promise<{
+  getGenerateImageJob: (jobId: string, providerConfig?: Record<string, string>) => Promise<{
     job_id: string;
     status: 'queued' | 'running' | 'succeeded' | 'failed' | 'not_found' | 'cancelled';
     result?: string | null;
@@ -84,7 +85,7 @@ export interface AiGateway {
       last_error?: string | null;
     } | null;
   }>;
-  retryGenerateImageJob: (jobId: string) => Promise<{
+  retryGenerateImageJob: (jobId: string, providerConfig?: Record<string, string>) => Promise<{
     job_id: string;
     status: 'queued' | 'running' | 'succeeded' | 'failed' | 'not_found' | 'cancelled';
     result?: string | null;

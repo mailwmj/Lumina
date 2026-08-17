@@ -15,6 +15,7 @@ import {
   listConfiguredImageModels,
   resolveConfiguredImageModel,
 } from '@/features/canvas/models/availableModels';
+import type { ImageModelDefinition } from '@/features/canvas/models/types';
 import { useSettingsStore } from '@/stores/settingsStore';
 import {
   resolveFixedCanvasStatus,
@@ -50,7 +51,16 @@ interface ActiveSubmission {
 interface ProcessingSnapshot {
   jobId: string;
   draft: FixedCanvasDraft;
+  providerConfig?: Record<string, string>;
 }
+
+const BATCH_AI_FILL_REFERENCE_COUNT = 2;
+const BATCH_AI_FILL_MASK_INSTRUCTION = [
+  'Reference image 1 is the complete fixed canvas and must be preserved as scene context.',
+  'Reference image 2 is a binary range mask aligned pixel-for-pixel with image 1.',
+  'Only white pixels in the range mask may be generated. Black pixels are protected content and must remain unchanged.',
+  'Return the complete canvas at the requested aspect ratio, not a cropped region.',
+].join(' ');
 
 function parseAspectRatio(value: string): number | null {
   const [width, height] = value.split(':').map(Number);
@@ -74,6 +84,34 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function resolveBatchAiFillRequest(model: ImageModelDefinition) {
+  const generationRequest = model.resolveRequest({ referenceImageCount: 0 });
+  const editRequest = model.resolveRequest({
+    referenceImageCount: BATCH_AI_FILL_REFERENCE_COUNT,
+  });
+  const declaresReferenceEditing = editRequest.requestModel !== generationRequest.requestModel
+    || editRequest.modeLabel !== generationRequest.modeLabel;
+  return declaresReferenceEditing && editRequest.requestModel.trim() ? editRequest : null;
+}
+
+function fixedCanvasRenderPayload(
+  item: BatchCropImageItem,
+  draft: FixedCanvasDraft,
+  target: BatchCropTarget,
+  resultSourcePath?: string
+) {
+  return {
+    sourcePath: item.sourcePath,
+    fileName: item.fileName,
+    targetWidth: target.width,
+    targetHeight: target.height,
+    rotationDegrees: item.rotationDegrees,
+    transform: draft.transform,
+    stretches: draft.stretches,
+    ...(resultSourcePath ? { resultSourcePath } : {}),
+  };
+}
+
 export function useBatchAiFill({
   batchId,
   items,
@@ -88,6 +126,8 @@ export function useBatchAiFill({
   const [pollTick, setPollTick] = useState(0);
   const activeSubmissionRef = useRef<ActiveSubmission | null>(null);
   const processingSnapshotsRef = useRef(new Map<string, ProcessingSnapshot>());
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
   const openAiImageApi = useSettingsStore((state) => state.openAiImageApi);
   const chaomoImageApi = useSettingsStore((state) => state.chaomoImageApi);
   const customImageApis = useSettingsStore((state) => state.customImageApis);
@@ -109,6 +149,13 @@ export function useBatchAiFill({
     () => resolveConfiguredImageModel(imageModelSettings, lastBatchAiFillSelection?.modelId),
     [imageModelSettings, lastBatchAiFillSelection?.modelId]
   );
+
+  const resolveJobProviderConfig = useCallback((modelId: string) => {
+    const model = models.find((candidate) => candidate.id === modelId);
+    return model
+      ? resolveImageProviderRuntime(model.providerId, imageModelSettings).providerConfig
+      : undefined;
+  }, [imageModelSettings, models]);
 
   const applyJobStatus = useCallback(async (
     itemId: string,
@@ -135,7 +182,21 @@ export function useBatchAiFill({
 
     if (job.status === 'succeeded' && job.result) {
       try {
-        const resultPath = await persistImageSource(job.result);
+        const candidatePath = await persistImageSource(job.result);
+        const currentItem = itemsRef.current.find((item) => (
+          item.id === itemId && item.fixedCanvas.ai.jobId === jobId
+        ));
+        if (!currentItem || !target) return;
+        const snapshot = processingSnapshotsRef.current.get(itemId);
+        const submittedDraft = snapshot?.jobId === jobId ? snapshot.draft : currentItem.fixedCanvas;
+        const protectedResult = await renderBatchFixedCanvas(
+          batchId,
+          fixedCanvasRenderPayload(currentItem, submittedDraft, target, candidatePath)
+        );
+        if (!itemsRef.current.some((item) => (
+          item.id === itemId && item.fixedCanvas.ai.jobId === jobId
+        ))) return;
+        const resultPath = protectedResult.renderedPath;
         setItems((current) => current.map((item) => {
           if (item.id !== itemId || item.fixedCanvas.ai.jobId !== jobId) return item;
           const fixedCanvas: FixedCanvasDraft = {
@@ -192,7 +253,7 @@ export function useBatchAiFill({
       };
       return { ...item, fixedCanvas, status: resolveFixedCanvasStatus(fixedCanvas) };
     }));
-  }, [setItems, t]);
+  }, [batchId, setItems, t, target]);
 
   useEffect(() => {
     const jobs = items.flatMap((item) => item.fixedCanvas.ai.status === 'processing' && item.fixedCanvas.ai.jobId
@@ -203,7 +264,12 @@ export function useBatchAiFill({
     const timer = window.setTimeout(() => {
       void Promise.all(jobs.map(async ({ itemId, jobId }) => {
         try {
-          const job = await canvasAiGateway.getGenerateImageJob(jobId);
+          const snapshot = processingSnapshotsRef.current.get(itemId);
+          const modelId = itemsRef.current.find((item) => item.id === itemId)?.fixedCanvas.ai.modelId ?? '';
+          const providerConfig = snapshot?.jobId === jobId
+            ? snapshot.providerConfig
+            : resolveJobProviderConfig(modelId);
+          const job = await canvasAiGateway.getGenerateImageJob(jobId, providerConfig);
           if (!cancelled) await applyJobStatus(itemId, jobId, job);
         } catch (error) {
           if (cancelled) return;
@@ -229,7 +295,7 @@ export function useBatchAiFill({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [applyJobStatus, items, pollTick, setItems]);
+  }, [applyJobStatus, items, pollTick, resolveJobProviderConfig, setItems]);
 
   const submit = useCallback(async (submission: BatchAiFillSubmission) => {
     if (!selectedItem || !target || submitting) return;
@@ -243,6 +309,11 @@ export function useBatchAiFill({
       onToast(t('batchCrop.fixed.ai.noModel'));
       return;
     }
+    const request = resolveBatchAiFillRequest(model);
+    if (!request) {
+      onToast(t('batchCrop.fixed.ai.rangeInputUnsupported'));
+      return;
+    }
 
     const itemId = selectedItem.id;
     const originalDraft = selectedItem.fixedCanvas;
@@ -250,25 +321,19 @@ export function useBatchAiFill({
     activeSubmissionRef.current = { itemId, token };
     setSubmitting(true);
     try {
-      const rendered = await renderBatchFixedCanvas(batchId, {
-        sourcePath: selectedItem.sourcePath,
-        fileName: selectedItem.fileName,
-        targetWidth: target.width,
-        targetHeight: target.height,
-        rotationDegrees: selectedItem.rotationDegrees,
-        transform: selectedItem.fixedCanvas.transform,
-        stretches: selectedItem.fixedCanvas.stretches,
-      });
+      const rendered = await renderBatchFixedCanvas(
+        batchId,
+        fixedCanvasRenderPayload(selectedItem, selectedItem.fixedCanvas, target)
+      );
       if (activeSubmissionRef.current?.token !== token) return;
       await canvasAiGateway.setApiKey(providerRuntime.backendProviderId, providerRuntime.apiKey);
       if (activeSubmissionRef.current?.token !== token) return;
-      const request = model.resolveRequest({ referenceImageCount: 1 });
       const jobId = await canvasAiGateway.submitGenerateImageJob({
-        prompt: submission.prompt,
+        prompt: `${BATCH_AI_FILL_MASK_INSTRUCTION}\n\nUser instruction:\n${submission.prompt}`,
         model: request.requestModel,
         size: submission.resolution,
         aspectRatio: resolveTargetAspectRatio(target, model.aspectRatios),
-        referenceImages: [rendered.renderedPath],
+        referenceImages: [rendered.renderedPath, rendered.blankMaskPath],
         extraParams: model.defaultExtraParams,
         providerConfig: providerRuntime.providerConfig,
       });
@@ -277,7 +342,11 @@ export function useBatchAiFill({
         modelId: submission.modelId,
         resolution: submission.resolution,
       });
-      processingSnapshotsRef.current.set(itemId, { jobId, draft: originalDraft });
+      processingSnapshotsRef.current.set(itemId, {
+        jobId,
+        draft: originalDraft,
+        providerConfig: providerRuntime.providerConfig,
+      });
       setItems((current) => current.map((item) => {
         if (item.id !== itemId) return item;
         const fixedCanvas: FixedCanvasDraft = {
@@ -384,13 +453,19 @@ export function useBatchAiFill({
       },
     };
     if (!processingSnapshotsRef.current.has(item.id)) {
-      processingSnapshotsRef.current.set(item.id, { jobId, draft: item.fixedCanvas });
+      processingSnapshotsRef.current.set(item.id, {
+        jobId,
+        draft: item.fixedCanvas,
+        providerConfig: resolveJobProviderConfig(item.fixedCanvas.ai.modelId),
+      });
     }
     setItems((current) => current.map((candidate) => candidate.id === item.id
       ? { ...candidate, fixedCanvas: processingDraft, status: resolveFixedCanvasStatus(processingDraft) }
       : candidate));
     try {
-      const job = await canvasAiGateway.retryGenerateImageJob(jobId);
+      const providerConfig = processingSnapshotsRef.current.get(item.id)?.providerConfig
+        ?? resolveJobProviderConfig(item.fixedCanvas.ai.modelId);
+      const job = await canvasAiGateway.retryGenerateImageJob(jobId, providerConfig);
       await applyJobStatus(item.id, jobId, job);
       setPollTick((current) => current + 1);
     } catch (error) {
@@ -408,7 +483,7 @@ export function useBatchAiFill({
         ? { ...candidate, fixedCanvas: failedDraft, status: resolveFixedCanvasStatus(failedDraft) }
         : candidate));
     }
-  }, [applyJobStatus, selectedItem, setItems]);
+  }, [applyJobStatus, resolveJobProviderConfig, selectedItem, setItems]);
 
   return {
     models,

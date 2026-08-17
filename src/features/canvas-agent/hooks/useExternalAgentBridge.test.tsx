@@ -221,6 +221,70 @@ describe('useExternalAgentBridge direct apply', () => {
     ));
   });
 
+  it('rejects a run when the authorized canvas changes before submission', async () => {
+    let continueRun: (() => void) | undefined;
+    const runGate = new Promise<void>((resolve) => {
+      continueRun = resolve;
+    });
+    bridgeMocks.runNodes.mockImplementation(async (
+      _nodeIds: string[],
+      options: { assertCurrent?: (ownedResultNodeIds?: readonly string[]) => void }
+    ) => {
+      await runGate;
+      options.assertCurrent?.();
+      return { runs: [] };
+    });
+    const source = canvasNodeFactory.createNode(CANVAS_NODE_TYPES.imageEdit, { x: 0, y: 0 }, {
+      prompt: 'Authorized prompt',
+    });
+    useCanvasStore.getState().setCanvasData([source], []);
+    await act(async () => {
+      root.render(<BridgeHarness />);
+    });
+    await vi.waitFor(() => expect(bridgeMocks.callbacks).not.toBeNull());
+    const canvas = useCanvasStore.getState();
+    const snapshot = buildCanvasAgentSnapshot({
+      projectId: 'project-1',
+      projectName: 'Project',
+      nodes: canvas.nodes,
+      edges: canvas.edges,
+      selectedNodeIds: [],
+      viewport: canvas.currentViewport,
+    });
+
+    await act(async () => {
+      bridgeMocks.callbacks?.onEvent({
+        type: 'action_request',
+        payload: {
+          actionId: 'action-concurrent-change',
+          createdAt: Date.now(),
+          request: {
+            type: 'run_nodes',
+            projectId: 'project-1',
+            baseRevision: snapshot.revision,
+            nodeIds: [source.id],
+          },
+        },
+      });
+    });
+    await vi.waitFor(() => expect(bridgeMocks.runNodes).toHaveBeenCalled());
+
+    act(() => {
+      useCanvasStore.getState().updateNodeData(source.id, { prompt: 'Changed after authorization' });
+    });
+    continueRun?.();
+
+    await vi.waitFor(() => expect(bridgeMocks.postActionResult).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.any(String),
+      expect.objectContaining({
+        actionId: 'action-concurrent-change',
+        status: 'stale',
+        error: 'canvas_changed',
+      })
+    ));
+  });
+
   it('rejects an action whose canvas revision is already stale', async () => {
     await act(async () => {
       root.render(<BridgeHarness />);

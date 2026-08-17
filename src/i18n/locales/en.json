@@ -520,6 +520,7 @@
         "uploadNotice": "The complete current canvas will be sent to the selected model provider. Existing content is used as scene context and AI fills the blank areas.",
         "feeNotice": "This operation may incur model provider charges. Actual cost depends on the selected provider.",
         "noModel": "Configure an available image editing model in Settings first",
+        "rangeInputUnsupported": "The selected model cannot edit with a blank-area range. Choose another model.",
         "noBlank": "The current canvas has no blank area to fill",
         "start": "Start AI Fill",
         "submitting": "Submitting",

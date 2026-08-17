@@ -43,6 +43,7 @@ export interface FixedCanvasCompositionPayload {
 
 export interface RenderedBatchFixedCanvas {
   renderedPath: string;
+  blankMaskPath: string;
 }
 
 export interface BatchCropSuggestion {
