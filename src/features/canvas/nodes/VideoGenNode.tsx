@@ -21,7 +21,6 @@ import { NodeResizeHandle } from '@/features/canvas/ui/NodeResizeHandle';
 import { resolveNodeSurfaceStateClass } from '@/features/canvas/ui/nodeSurfaceStyles';
 import {
   canvasAiGateway,
-  graphImageResolver,
 } from '@/features/canvas/application/canvasServices';
 import {
   resolveAudioDisplayUrl,
@@ -55,13 +54,13 @@ import {
   NODE_CONTROL_ICON_CLASS,
   NODE_CONTROL_PRIMARY_BUTTON_CLASS,
 } from '@/features/canvas/ui/nodeControlStyles';
-import { UiButton, UiTooltip } from '@/components/ui';
+import { UiButton, UiSelect, UiTooltip } from '@/components/ui';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { logger } from '@/lib/logger';
-import { VideoAdvancedOptionsPopover } from '@/features/canvas/ui/VideoAdvancedOptionsPopover';
 import { usePreserveNodeCenterOnAutoResize } from '@/features/canvas/ui/usePreserveNodeCenterOnAutoResize';
+import { getVideoApiControlLabel } from '@/features/canvas/ui/videoApiLabel';
 
 type VideoGenNodeProps = NodeProps & {
   id: string;
@@ -69,33 +68,9 @@ type VideoGenNodeProps = NodeProps & {
   selected?: boolean;
 };
 
-const LEGACY_RESOLUTIONS: VideoResolution[] = ['480p', '720p', '1080p'];
-const LEGACY_DURATIONS = [3, 4, 5, 6, 7, 8, 9, 10];
-// SD 1.5 Pro 模型 ID
-const SD_1_5_PRO_MODEL = 'doubao-seedance-1-5-pro-251215';
-
-function isSD15ProModel(modelId: string): boolean {
-  return modelId.toLowerCase().includes(SD_1_5_PRO_MODEL.toLowerCase());
-}
-
-function getModelCapabilities(modelId: string) {
-  const is2_0 = isSeedance20Model(modelId);
-  const is1_5pro = isSD15ProModel(modelId);
-
-  return {
-    isSD2: is2_0,
-    supportsGenerateAudio: is2_0 || is1_5pro,
-    supportsDraft: is1_5pro,
-    supportsServiceTier: false,
-    supportsWebSearch: is2_0,
-    supportsMultiModalRef: is2_0,
-    supportsReferenceVideo: is2_0,
-    supportsReferenceAudio: is2_0,
-    supports1080p: is2_0 && getSeedance20ModelCapabilities(modelId)?.resolutions.includes('1080p'),
-    supportsVideoExtending: is2_0,
-    supportsVideoEditing: is2_0,
-  };
-}
+const DEFAULT_SEEDANCE_2_RESOLUTIONS: VideoResolution[] = ['480p', '720p', '1080p', '4k'];
+const DEFAULT_SEEDANCE_2_DURATIONS = Array.from({ length: 12 }, (_, index) => index + 4);
+const VIDEO_GENERATION_MIN_WIDTH = 520;
 
 function getVideoControlOptions(modelId: string): {
   resolutions: VideoResolution[];
@@ -104,8 +79,8 @@ function getVideoControlOptions(modelId: string): {
   const capabilities = getSeedance20ModelCapabilities(modelId);
   if (!capabilities) {
     return {
-      resolutions: LEGACY_RESOLUTIONS,
-      durations: LEGACY_DURATIONS,
+      resolutions: DEFAULT_SEEDANCE_2_RESOLUTIONS,
+      durations: DEFAULT_SEEDANCE_2_DURATIONS,
     };
   }
 
@@ -153,14 +128,11 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
   );
   const nodeType = workflowNodes.find((node) => node.id === id)?.type;
   const isVideoFrame = nodeType === CANVAS_NODE_TYPES.videoFrame;
-  const isAutomaticSeedance = nodeType === CANVAS_NODE_TYPES.seedanceAutoVideo;
-  const isLegacySingle = nodeType === CANVAS_NODE_TYPES.videoSingle;
   const videoApiOptions = useMemo(() => {
-    const configuredApis = videoApis.filter((api) => api.modelId.trim().length > 0);
-    return isAutomaticSeedance
-      ? configuredApis.filter((api) => isSeedance20Model(api.modelId))
-      : configuredApis;
-  }, [isAutomaticSeedance, videoApis]);
+    return videoApis.filter((api) => (
+      api.modelId.trim().length > 0 && isSeedance20Model(api.modelId)
+    ));
+  }, [videoApis]);
   const selectedVideoApi = useMemo(
     () => resolveVideoApiConfig(videoApis, data.videoApiId, data.model),
     [data.model, data.videoApiId, videoApis]
@@ -178,16 +150,6 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
   const promptHighlightRef = useRef<HTMLDivElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
 
-  // Compute model capabilities based on selected model
-  const modelCapabilities = useMemo(
-    () => getModelCapabilities(selectedModel || ''),
-    [selectedModel]
-  );
-
-  const legacyIncomingImages = useMemo(
-    () => graphImageResolver.collectInputImages(id, workflowNodes, edges),
-    [id, workflowNodes, edges]
-  );
   const seedanceGraphInputs = useMemo(
     () => resolveSeedanceVideoGraphInputs(id, workflowNodes, edges),
     [id, workflowNodes, edges]
@@ -207,9 +169,6 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
     ? data.duration ?? 5
     : videoControlOptions.durations[0];
   const seedanceRequestPlan = useMemo(() => {
-    if (isLegacySingle) {
-      return null;
-    }
     return buildSeedanceVideoRequestPlan({
       kind: isVideoFrame ? 'strict-frame' : 'automatic',
       model: selectedModel,
@@ -220,7 +179,6 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
     });
   }, [
     effectivePrompt,
-    isLegacySingle,
     isVideoFrame,
     seedanceGraphInputs,
     selectedDuration,
@@ -228,9 +186,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
     selectedResolution,
   ]);
 
-  const canGenerate = isLegacySingle
-    ? legacyIncomingImages.length <= 1
-    : Boolean(seedanceRequestPlan?.ok);
+  const canGenerate = seedanceRequestPlan.ok;
 
   // Validate model and API key for generating
   const hasSelectedApiKey = Boolean(selectedVideoApi?.apiKey.trim());
@@ -242,9 +198,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
       return t('node.videoGen.apiRequired');
     }
     if (!isSelectedVideoApiSelectable) {
-      return isAutomaticSeedance
-        ? t(getPlanValidationMessageKey('automatic_model_requires_seedance_2'))
-        : t('node.videoGen.apiRequired');
+      return t(getPlanValidationMessageKey('seedance_2_model_required'));
     }
     if (!selectedVideoApi.enabled) {
       return t('node.videoGen.apiDisabled');
@@ -255,10 +209,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
     if (!hasSelectedApiBaseUrl) {
       return t('node.videoGen.apiBaseUrlRequired');
     }
-    if (isLegacySingle && legacyIncomingImages.length > 1) {
-      return t('node.videoGen.singleModeImageLimit', { count: legacyIncomingImages.length });
-    }
-    if (seedanceRequestPlan && !seedanceRequestPlan.ok) {
+    if (!seedanceRequestPlan.ok) {
       return t(getPlanValidationMessageKey(seedanceRequestPlan.error.code));
     }
     return undefined;
@@ -272,16 +223,6 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
     || !hasSelectedApiBaseUrl;
 
   const referencePreviews = useMemo<ReferencePreview[]>(() => {
-    if (isLegacySingle) {
-      return legacyIncomingImages.slice(0, 1).map((url, index) => ({
-        type: 'image',
-        url,
-        label: t('node.videoGen.referenceImage', { index: index + 1 }),
-        sourceNodeId: `legacy-${index}`,
-        referenceIndex: index + 1,
-      }));
-    }
-
     const nextIndexes: Record<SeedanceMediaType, number> = {
       image: 0,
       video: 0,
@@ -311,7 +252,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
         referenceIndex,
       }];
     });
-  }, [isLegacySingle, isVideoFrame, legacyIncomingImages, seedanceGraphInputs, t]);
+  }, [isVideoFrame, seedanceGraphInputs, t]);
 
   const layout = resolveTextGenerationLayout({
     width,
@@ -320,7 +261,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
     hasResult: false,
     isSizeManuallyAdjusted: data.isSizeManuallyAdjusted,
   });
-  const resolvedWidth = layout.width;
+  const resolvedWidth = Math.max(layout.width, VIDEO_GENERATION_MIN_WIDTH);
   const resolvedHeight = layout.height;
 
   usePreserveNodeCenterOnAutoResize({
@@ -355,23 +296,15 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
     promptHighlightRef.current.scrollLeft = promptRef.current.scrollLeft;
   }, []);
 
-  const appendMetadataToPrompt = useCallback((value: string) => {
-    if (!value) return;
-    const current = promptDraftRef.current.trim();
-    const next = current ? `${value}，${current}` : value;
-    setPromptDraft(next);
-    commitPromptDraft(next);
-  }, [commitPromptDraft]);
-
   const handlePolish = useCallback(async () => {
     if (!selectedPolishModel) {
       void showErrorDialog(t('node.textModel.required'), t('settings.polishPrompt'));
       return;
     }
 
-    const connectedImages = isLegacySingle
-      ? legacyIncomingImages.slice(0, 1)
-      : seedanceGraphInputs.flatMap((input) => input.type === 'image' && input.url ? [input.url] : []);
+    const connectedImages = seedanceGraphInputs.flatMap(
+      (input) => input.type === 'image' && input.url ? [input.url] : []
+    );
     if (isVideoFrame && connectedImages.length === 0) {
       void showErrorDialog(t('node.videoGen.polishImageRequired'), t('node.videoGen.polishTitle'));
       return;
@@ -413,11 +346,6 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
         videoDuration: selectedDuration.toString(),
         videoResolution: selectedResolution,
         videoAspectRatio: data.aspectRatio,
-        videoShotType: data.shotType,
-        videoShotSize: data.shotSize,
-        videoAngle: data.angle,
-        videoCameraMovement: data.cameraMovement,
-        videoCameraSpeed: data.cameraSpeed,
         isVideoFrame,
         customPrompt: effectivePolishPrompt,
         promptType: 'video',
@@ -447,9 +375,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
     data,
     id,
     imagePolishConfig.reasoningEffort,
-    isLegacySingle,
     isVideoFrame,
-    legacyIncomingImages,
     promptDraft,
     seedanceGraphInputs,
     selectedDuration,
@@ -469,38 +395,21 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
     }
 
     if (!isSelectedVideoApiSelectable) {
-      const msg = isAutomaticSeedance
-        ? t(getPlanValidationMessageKey('automatic_model_requires_seedance_2'))
-        : t('node.videoGen.apiRequired');
+      const msg = t(getPlanValidationMessageKey('seedance_2_model_required'));
       setError(msg);
       return;
     }
 
-    let prompt: string;
-    let videoContent: SeedanceVideoContent[] | undefined;
-    let referenceImages: string[] | undefined;
-    if (isLegacySingle) {
-      prompt = effectivePrompt.replace(/@(?=图\d+)/g, '').trim();
-      if (legacyIncomingImages.length > 1) {
-        const msg = t('node.videoGen.singleModeImageLimit', { count: legacyIncomingImages.length });
-        setError(msg);
-        return;
-      }
-      referenceImages = legacyIncomingImages.slice(0, 1);
-    } else {
-      if (!seedanceRequestPlan || !seedanceRequestPlan.ok) {
-        const msg = seedanceRequestPlan
-          ? t(getPlanValidationMessageKey(seedanceRequestPlan.error.code))
-          : t('node.videoGen.generationFailed');
-        setError(msg);
-        return;
-      }
-      const textContent = seedanceRequestPlan.plan.content.find(
-        (content): content is Extract<SeedanceVideoContent, { type: 'text' }> => content.type === 'text'
-      );
-      prompt = textContent?.text ?? '';
-      videoContent = seedanceRequestPlan.plan.content;
+    if (!seedanceRequestPlan.ok) {
+      const msg = t(getPlanValidationMessageKey(seedanceRequestPlan.error.code));
+      setError(msg);
+      return;
     }
+    const textContent = seedanceRequestPlan.plan.content.find(
+      (content): content is Extract<SeedanceVideoContent, { type: 'text' }> => content.type === 'text'
+    );
+    const prompt = textContent?.text ?? '';
+    const videoContent = seedanceRequestPlan.plan.content;
 
     if (!prompt) {
       void showErrorDialog(t('node.imageEdit.promptRequired'), t('common.error'));
@@ -556,26 +465,19 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
         videoApiId: selectedVideoApi.id,
         resolution: selectedResolution,
         duration: selectedDuration,
-        hasAudio: data.hasAudio ?? false,
-        seed: data.seed ?? -1,
-        camerafixed: data.camerafixed ?? false,
-        watermark: data.watermark ?? false,
+        hasAudio: true,
+        watermark: false,
         prompt,
-        draft: data.draft,
       }
     );
     addEdge(id, newNodeId);
 
     try {
-      const extraParams: Record<string, unknown> = {};
-      extraParams.duration = selectedDuration;
-      if (data.seed !== undefined) extraParams.seed = data.seed;
-      extraParams.hasaudio = data.hasAudio ?? false;
-      extraParams.camerafixed = data.camerafixed ?? false;
-      extraParams.watermark = data.watermark ?? false;
-
-      if (data.draft !== undefined) extraParams.draft = data.draft;
-      if (data.enableWebSearch !== undefined) extraParams.enable_web_search = data.enableWebSearch;
+      const extraParams = {
+        duration: selectedDuration,
+        hasaudio: true,
+        watermark: false,
+      };
 
       const providerId = 'volcvideo';
 
@@ -586,7 +488,6 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
         providerId,
         size: selectedResolution,
         aspectRatio: data.aspectRatio || '16:9',
-        referenceImages,
         videoContent,
         extraParams,
         providerConfig: {
@@ -595,7 +496,6 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
           config_id: selectedVideoApi.id,
           protocol: selectedVideoApi.protocol ?? 'volcengine-seedance',
         },
-        draftTaskId: data.draftTaskId,
         projectId,
       });
 
@@ -624,13 +524,9 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
     addEdge,
     addNode,
     data,
-    effectivePrompt,
     findNodePosition,
     id,
-    isAutomaticSeedance,
-    isLegacySingle,
     isSelectedVideoApiSelectable,
-    legacyIncomingImages,
     seedanceRequestPlan,
     selectedDuration,
     selectedModel,
@@ -654,7 +550,6 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
   const handleVideoApiChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
     const api = videoApiOptions.find((candidate) => candidate.id === e.target.value);
     const newModel = api?.modelId ?? '';
-    const caps = getModelCapabilities(newModel);
     const controlOptions = getVideoControlOptions(newModel);
     const updates: Partial<VideoGenNodeData> = {
       model: newModel,
@@ -666,21 +561,11 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
     if (!controlOptions.durations.includes(data.duration ?? 5)) {
       updates.duration = controlOptions.durations[0];
     }
-    if (!caps.supportsDraft) {
-      updates.draft = undefined;
-    }
-    if (!caps.supportsWebSearch) {
-      updates.enableWebSearch = undefined;
-    }
     updateNodeData(id, updates);
   }, [data.duration, data.resolution, id, updateNodeData, videoApiOptions]);
 
   const handleDurationChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
     updateNodeData(id, { duration: parseInt(e.target.value, 10) });
-  }, [id, updateNodeData]);
-
-  const handleAdvancedChange = useCallback((partial: Partial<VideoGenNodeData>) => {
-    updateNodeData(id, partial);
   }, [id, updateNodeData]);
 
   return (
@@ -797,25 +682,6 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
               className="ui-scrollbar nodrag nowheel relative z-10 h-full w-full resize-none overflow-y-auto overflow-x-hidden border-none bg-transparent px-1 py-0.5 text-sm leading-6 text-text-dark outline-none placeholder:text-text-muted/80 focus:border-transparent whitespace-pre-wrap break-words"
               style={{ scrollbarGutter: 'stable' }}
             />
-            {/* Polish Button */}
-            <UiTooltip content={t('node.imageEdit.polishPrompt')}>
-              <button
-                type="button"
-                aria-label={t('node.imageEdit.polishPrompt')}
-                className="absolute bottom-2 right-2 z-20 rounded p-1 text-text-muted hover:bg-accent/20 hover:text-accent disabled:opacity-50"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  void handlePolish();
-                }}
-                disabled={isPolishing}
-              >
-                {isPolishing ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Wand2 className="h-4 w-4" />
-                )}
-              </button>
-            </UiTooltip>
           </div>
         </div>
       </section>
@@ -829,72 +695,52 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
 
       {/* Footer (32px) */}
       <div className={`${NODE_CONTROL_FOOTER_CLASS} gap-1`}>
-        <select
-          className={`nodrag nowheel shrink-0 ${NODE_CONTROL_CHIP_CLASS} border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] font-mono text-text-dark`}
-          value={isSelectedVideoApiSelectable ? selectedVideoApi?.id ?? '' : ''}
-          onChange={handleVideoApiChange}
-          title={t('node.videoGen.model')}
-        >
-          <option value="">{t('node.videoGen.model')}</option>
-          {videoApiOptions.map((api) => (
-            <option key={api.id} value={api.id}>
-              {api.name ? `${api.name} (${api.modelId})` : api.modelId}
-            </option>
-          ))}
-        </select>
+        <div className="w-[13rem] shrink-0">
+          <UiSelect
+            className={`nodrag nowheel ${NODE_CONTROL_CHIP_CLASS} !h-6 !w-full !min-w-0 !justify-between font-mono text-text-dark`}
+            value={isSelectedVideoApiSelectable ? selectedVideoApi?.id ?? '' : ''}
+            onChange={handleVideoApiChange}
+            aria-label={t('node.videoGen.model')}
+            menuMinWidth={272}
+          >
+            <option value="">{t('node.videoGen.model')}</option>
+            {videoApiOptions.map((api) => (
+              <option key={api.id} value={api.id}>
+                {getVideoApiControlLabel(api)}
+              </option>
+            ))}
+          </UiSelect>
+        </div>
 
-        <select
-          className={`nodrag nowheel shrink-0 ${NODE_CONTROL_CHIP_CLASS} border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] font-mono text-text-dark`}
-          value={selectedResolution}
-          onChange={handleResolutionChange}
-          title={t('node.videoGen.resolution')}
-        >
-          {videoControlOptions.resolutions.map((resolution) => (
-            <option key={resolution} value={resolution}>
-              {resolution}
-            </option>
-          ))}
-        </select>
+        <div className="w-[5.25rem] shrink-0">
+          <UiSelect
+            className={`nodrag nowheel ${NODE_CONTROL_CHIP_CLASS} !h-6 !w-full !min-w-0 !justify-between font-mono text-text-dark`}
+            value={selectedResolution}
+            onChange={handleResolutionChange}
+            aria-label={t('node.videoGen.resolution')}
+          >
+            {videoControlOptions.resolutions.map((resolution) => (
+              <option key={resolution} value={resolution}>
+                {resolution}
+              </option>
+            ))}
+          </UiSelect>
+        </div>
 
-        <select
-          className={`nodrag nowheel shrink-0 ${NODE_CONTROL_CHIP_CLASS} border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] font-mono text-text-dark`}
-          value={selectedDuration}
-          onChange={handleDurationChange}
-          title={t('node.videoGen.duration')}
-        >
-          {videoControlOptions.durations.map((d) => (
-            <option key={d} value={d}>
-              {d}{t('node.videoGen.durationUnit')}
-            </option>
-          ))}
-        </select>
-
-        <VideoAdvancedOptionsPopover
-          value={{
-            shotType: data.shotType,
-            shotSize: data.shotSize,
-            angle: data.angle,
-            cameraMovement: data.cameraMovement,
-            cameraSpeed: data.cameraSpeed,
-            hasAudio: data.hasAudio,
-            camerafixed: data.camerafixed,
-            watermark: data.watermark,
-            draft: data.draft,
-            enableWebSearch: data.enableWebSearch,
-            seed: data.seed,
-          }}
-          capabilities={{
-            supportsGenerateAudio: modelCapabilities.supportsGenerateAudio,
-            supportsDraft: modelCapabilities.supportsDraft,
-            supportsWebSearch: modelCapabilities.supportsWebSearch,
-            isSD2: modelCapabilities.isSD2,
-          }}
-          showShotPresets
-          onChange={handleAdvancedChange}
-          onAppendToPrompt={appendMetadataToPrompt}
-          chipClassName={NODE_CONTROL_CHIP_CLASS}
-          triggerClassName="shrink-0"
-        />
+        <div className="w-[4.5rem] shrink-0">
+          <UiSelect
+            className={`nodrag nowheel ${NODE_CONTROL_CHIP_CLASS} !h-6 !w-full !min-w-0 !justify-between font-mono text-text-dark`}
+            value={selectedDuration}
+            onChange={handleDurationChange}
+            aria-label={t('node.videoGen.duration')}
+          >
+            {videoControlOptions.durations.map((d) => (
+              <option key={d} value={d}>
+                {d}{t('node.videoGen.durationUnit')}
+              </option>
+            ))}
+          </UiSelect>
+        </div>
 
         <UiTooltip content={t('node.imageEdit.polishPrompt')}>
           <UiButton
@@ -936,7 +782,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
       <Handle type="source" id="source" position={Position.Right} />
 
       <NodeResizeHandle
-        minWidth={layout.minWidth}
+        minWidth={VIDEO_GENERATION_MIN_WIDTH}
         minHeight={layout.minHeight}
         maxWidth={TEXT_GENERATION_MAX_WIDTH}
         maxHeight={TEXT_GENERATION_MAX_HEIGHT}

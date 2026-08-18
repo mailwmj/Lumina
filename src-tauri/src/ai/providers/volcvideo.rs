@@ -587,8 +587,8 @@ impl VolcVideoProvider {
                 if let Some(v) = extra.get("hasaudio").and_then(|v| v.as_bool()) {
                     generate_audio = Some(v);
                 } else {
-                    // Default: no audio
-                    generate_audio = Some(false);
+                    // Seedance 2.0 default: generate synchronized audio.
+                    generate_audio = Some(true);
                 }
             }
             // SD 2.0: draft mode
@@ -602,8 +602,8 @@ impl VolcVideoProvider {
                 }
             }
         } else if draft_task_id.is_none() {
-            // Default: no audio (only for non-draft mode)
-            generate_audio = Some(false);
+            // Seedance 2.0 default: generate synchronized audio.
+            generate_audio = Some(true);
         }
 
         // Add text content (text content should NOT have role field)
@@ -1135,6 +1135,7 @@ mod tests {
         ]));
         assert_eq!(submit_body["resolution"], json!("720p"));
         assert_eq!(submit_body["ratio"], json!("16:9"));
+        assert_eq!(submit_body["generate_audio"], json!(true));
         assert!(poll_request.starts_with(
             "GET /hub/volcengine/api/v3/contents/generations/tasks/tsk_yunxin_123 HTTP/1.1"
         ));

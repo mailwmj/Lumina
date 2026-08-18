@@ -425,16 +425,6 @@ export const PRESET_VIDEO_APIS: VideoApiConfig[] = [
     protocol: 'volcengine-seedance',
     defaultPolishPrompt: DEFAULT_VIDEO_SD10_POLISH_PROMPT,
   },
-  {
-    id: 'volc-seedance-1-5-pro',
-    name: 'Seedance 1.5 Pro',
-    apiKey: '',
-    baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
-    modelId: 'doubao-seedance-1-5-pro-251215',
-    enabled: true,
-    protocol: 'volcengine-seedance',
-    defaultPolishPrompt: DEFAULT_VIDEO_SD15_PROMPT,
-  },
 ];
 
 /**

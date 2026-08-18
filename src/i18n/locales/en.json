@@ -327,7 +327,7 @@
       "validation": {
         "prompt_required": "Enter a prompt or connect an upstream text node",
         "model_required": "Select a video model first",
-        "automatic_model_requires_seedance_2": "The automatic Seedance video node only supports Seedance 2.0, 2.0 Fast, or 2.0 Mini",
+        "seedance_2_model_required": "Video generation requires a Seedance 2.0 series model",
         "unsupported_resolution": "The selected resolution is not supported by this model",
         "unsupported_duration": "The selected duration is not supported by this model",
         "first_frame_required": "The first-last-frame video node requires a first-frame image",

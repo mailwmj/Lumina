@@ -321,6 +321,13 @@ export function SettingsDialog({
               </button>
 
               <button
+                onClick={() => setActiveCategory('videoApis')}
+                className={categoryButtonClass('videoApis')}
+              >
+                <span className="text-sm">{t('settings.videoApis')}</span>
+              </button>
+
+              <button
                 onClick={() => setActiveCategory('promptPolish')}
                 className={categoryButtonClass('promptPolish')}
               >
@@ -339,13 +346,6 @@ export function SettingsDialog({
                 className={categoryButtonClass('experimental')}
               >
                 <span className="text-sm">{t('settings.experimental')}</span>
-              </button>
-
-              <button
-                onClick={() => setActiveCategory('videoApis')}
-                className={categoryButtonClass('videoApis')}
-              >
-                <span className="text-sm">{t('settings.videoApis')}</span>
               </button>
 
               <button

@@ -20,6 +20,13 @@ describe('resolveSelectMenuHorizontalGeometry', () => {
     });
   });
 
+  it('uses a caller-provided minimum width while preserving the viewport inset', () => {
+    expect(resolveSelectMenuHorizontalGeometry(1390, 76, 1442, 272)).toEqual({
+      left: 1162,
+      width: 272,
+    });
+  });
+
   it('shrinks to the available width on a very narrow viewport', () => {
     expect(resolveSelectMenuHorizontalGeometry(20, 76, 100)).toEqual({
       left: 8,

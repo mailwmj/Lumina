@@ -13,10 +13,11 @@ interface SelectMenuHorizontalGeometry {
 export function resolveSelectMenuHorizontalGeometry(
   triggerLeft: number,
   triggerWidth: number,
-  viewportWidth: number
+  viewportWidth: number,
+  menuMinWidth = SELECT_MENU_MIN_WIDTH
 ): SelectMenuHorizontalGeometry {
   const availableWidth = Math.max(0, viewportWidth - SELECT_MENU_VIEWPORT_INSET * 2);
-  const width = Math.min(Math.max(triggerWidth, SELECT_MENU_MIN_WIDTH), availableWidth);
+  const width = Math.min(Math.max(triggerWidth, menuMinWidth), availableWidth);
   const maximumLeft = Math.max(
     SELECT_MENU_VIEWPORT_INSET,
     viewportWidth - SELECT_MENU_VIEWPORT_INSET - width

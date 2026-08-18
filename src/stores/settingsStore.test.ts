@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_EXTERNAL_AGENT_URL,
   DEFAULT_TEXT_POLISH_PROMPT,
+  PRESET_VIDEO_APIS,
   createPromptPolishConfig,
   migrateSettingsState,
   normalizePromptPolishConfig,
@@ -10,6 +11,11 @@ import {
 } from './settingsStore';
 
 describe('prompt polishing settings', () => {
+  it('ships only Seedance 2.0 series video API presets', () => {
+    expect(PRESET_VIDEO_APIS).not.toHaveLength(0);
+    expect(PRESET_VIDEO_APIS.every((api) => api.modelId.includes('seedance-2-0'))).toBe(true);
+  });
+
   it('creates an independent empty selection for a new profile', () => {
     expect(createPromptPolishConfig('template')).toEqual({
       textApiId: null,

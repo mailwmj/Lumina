@@ -64,7 +64,7 @@ export interface SeedanceVideoRequestPlan {
 export type SeedanceVideoValidationCode =
   | 'prompt_required'
   | 'model_required'
-  | 'automatic_model_requires_seedance_2'
+  | 'seedance_2_model_required'
   | 'unsupported_resolution'
   | 'unsupported_duration'
   | 'first_frame_required'
@@ -111,10 +111,6 @@ const MINI_CAPABILITIES: SeedanceVideoModelCapabilities = {
   maxDuration: 15,
 };
 
-const LEGACY_RESOLUTIONS = ['480p', '720p', '1080p'] as const;
-const LEGACY_MIN_DURATION = 3;
-const LEGACY_MAX_DURATION = 10;
-
 function normalizedModelId(model: string): string {
   const segments = model.trim().toLowerCase().split('/');
   return segments[segments.length - 1] ?? '';
@@ -150,26 +146,14 @@ function validationError(code: SeedanceVideoValidationCode): SeedanceVideoPlanRe
 
 function validateResolutionAndDuration(
   input: BuildSeedanceVideoRequestPlanInput,
-  capabilities: SeedanceVideoModelCapabilities | null
+  capabilities: SeedanceVideoModelCapabilities
 ): SeedanceVideoPlanResult | null {
-  if (capabilities) {
-    if (!capabilities.resolutions.includes(input.resolution as '480p' | '720p' | '1080p' | '4k')) {
-      return validationError('unsupported_resolution');
-    }
-    if (!Number.isInteger(input.duration)
-      || input.duration < capabilities.minDuration
-      || input.duration > capabilities.maxDuration) {
-      return validationError('unsupported_duration');
-    }
-    return null;
-  }
-
-  if (!LEGACY_RESOLUTIONS.includes(input.resolution as (typeof LEGACY_RESOLUTIONS)[number])) {
+  if (!capabilities.resolutions.includes(input.resolution as '480p' | '720p' | '1080p' | '4k')) {
     return validationError('unsupported_resolution');
   }
   if (!Number.isInteger(input.duration)
-    || input.duration < LEGACY_MIN_DURATION
-    || input.duration > LEGACY_MAX_DURATION) {
+    || input.duration < capabilities.minDuration
+    || input.duration > capabilities.maxDuration) {
     return validationError('unsupported_duration');
   }
   return null;
@@ -307,8 +291,8 @@ export function buildSeedanceVideoRequestPlan(
   }
 
   const seedance20Capabilities = getSeedance20ModelCapabilities(model);
-  if (input.kind === 'automatic' && !seedance20Capabilities) {
-    return validationError('automatic_model_requires_seedance_2');
+  if (!seedance20Capabilities) {
+    return validationError('seedance_2_model_required');
   }
 
   const settingsError = validateResolutionAndDuration(

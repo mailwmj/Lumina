@@ -54,7 +54,9 @@ interface UiCheckboxProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 
   onCheckedChange?: (checked: boolean) => void;
 }
 
-interface UiSelectProps extends SelectHTMLAttributes<HTMLSelectElement> {}
+interface UiSelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
+  menuMinWidth?: number;
+}
 
 interface UiSelectOption {
   value: string;
@@ -209,7 +211,7 @@ export const UiCheckbox = forwardRef<HTMLButtonElement, UiCheckboxProps>(
 
 UiCheckbox.displayName = 'UiCheckbox';
 
-export function UiSelect({ className = '', children, ...props }: UiSelectProps) {
+export function UiSelect({ className = '', children, menuMinWidth, ...props }: UiSelectProps) {
   const {
     value,
     defaultValue,
@@ -296,7 +298,8 @@ export function UiSelect({ className = '', children, ...props }: UiSelectProps) 
       const horizontalGeometry = resolveSelectMenuHorizontalGeometry(
         rect.left,
         rect.width,
-        window.innerWidth
+        window.innerWidth,
+        menuMinWidth
       );
       const verticalGeometry = resolveSelectMenuVerticalGeometry(
         rect.top,
@@ -319,7 +322,7 @@ export function UiSelect({ className = '', children, ...props }: UiSelectProps) 
       window.removeEventListener('resize', updatePosition);
       window.removeEventListener('scroll', updatePosition, true);
     };
-  }, [isOpen, parsedOptions.length]);
+  }, [isOpen, menuMinWidth, parsedOptions.length]);
 
   useEffect(() => {
     if (!isOpen) {

@@ -34,7 +34,7 @@ describe('Seedance video request plan', () => {
   it('assigns first and last frame roles in strict port order, including a valid first-frame-only request', () => {
     const oneFrame = buildSeedanceVideoRequestPlan({
       kind: 'strict-frame',
-      model: 'doubao-seedance-1-5-pro-251215',
+      model: 'doubao-seedance-2-0-260128',
       prompt: 'The character waves',
       resolution: '720p',
       duration: 5,
@@ -150,7 +150,7 @@ describe('Seedance video request plan', () => {
     });
   });
 
-  it('rejects Seedance 1.5 from the automatic path while retaining it for strict frames', () => {
+  it('rejects non-Seedance-2.0 models for automatic and strict-frame requests', () => {
     const auto = automaticPlan([], { model: 'doubao-seedance-1-5-pro-251215' });
     const strict = buildSeedanceVideoRequestPlan({
       kind: 'strict-frame',
@@ -161,7 +161,7 @@ describe('Seedance video request plan', () => {
       media: [media('image', 'https://media.example/first.png', 'target-first')],
     });
 
-    expect(auto).toMatchObject({ ok: false, error: { code: 'automatic_model_requires_seedance_2' } });
-    expect(strict).toMatchObject({ ok: true });
+    expect(auto).toMatchObject({ ok: false, error: { code: 'seedance_2_model_required' } });
+    expect(strict).toMatchObject({ ok: false, error: { code: 'seedance_2_model_required' } });
   });
 });

@@ -327,7 +327,7 @@
       "validation": {
         "prompt_required": "请填写提示词或连接包含文本的上游节点",
         "model_required": "请选择视频模型",
-        "automatic_model_requires_seedance_2": "自动 Seedance 视频节点仅支持 Seedance 2.0、2.0 Fast 或 2.0 Mini",
+        "seedance_2_model_required": "视频生成仅支持 Seedance 2.0 系列模型",
         "unsupported_resolution": "当前模型不支持所选分辨率",
         "unsupported_duration": "当前模型不支持所选时长",
         "first_frame_required": "首尾帧视频节点需要连接首帧图片",
