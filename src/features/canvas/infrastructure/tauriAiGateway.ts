@@ -7,6 +7,7 @@ import {
 } from '@/commands/ai';
 import { persistImageLocally, isLikelyLocalImagePath } from '@/features/canvas/application/imageData';
 import { uploadImageToVolcVod } from '@/commands/image';
+import { uploadMediaToPublicUrl } from '@/commands/media';
 
 import type {
   AiGateway,
@@ -62,9 +63,30 @@ async function normalizeReferenceImages(payload: GenerateImagePayload): Promise<
     : undefined;
 }
 
+function isPublicHttpUrl(value: string): boolean {
+  return value.startsWith('http://') || value.startsWith('https://');
+}
+
+async function normalizeVideoContent(payload: GenerateImagePayload) {
+  if (!payload.videoContent) {
+    return undefined;
+  }
+
+  return await Promise.all(payload.videoContent.map(async (item) => {
+    if (item.type === 'text' || isPublicHttpUrl(item.url)) {
+      return item;
+    }
+    return {
+      ...item,
+      url: await uploadMediaToPublicUrl(item.url),
+    };
+  }));
+}
+
 function submitNormalizedGenerateImageJob(
   payload: GenerateImagePayload,
-  normalizedReferenceImages: string[] | undefined
+  normalizedReferenceImages: string[] | undefined,
+  normalizedVideoContent = payload.videoContent
 ): Promise<string> {
   return submitGenerateImageJob({
     prompt: payload.prompt,
@@ -73,6 +95,7 @@ function submitNormalizedGenerateImageJob(
     size: payload.size,
     aspect_ratio: payload.aspectRatio,
     reference_images: normalizedReferenceImages,
+    video_content: normalizedVideoContent,
     extra_params: payload.extraParams,
     provider_config: payload.providerConfig,
     draftTaskId: payload.draftTaskId,
@@ -84,6 +107,7 @@ export const tauriAiGateway: AiGateway = {
   setApiKey,
   generateImage: async (payload: GenerateImagePayload) => {
     const normalizedReferenceImages = await normalizeReferenceImages(payload);
+    const normalizedVideoContent = await normalizeVideoContent(payload);
 
     return await generateImage({
       prompt: payload.prompt,
@@ -92,6 +116,7 @@ export const tauriAiGateway: AiGateway = {
       size: payload.size,
       aspect_ratio: payload.aspectRatio,
       reference_images: normalizedReferenceImages,
+      video_content: normalizedVideoContent,
       extra_params: payload.extraParams,
       provider_config: payload.providerConfig,
       draftTaskId: payload.draftTaskId,
@@ -99,20 +124,30 @@ export const tauriAiGateway: AiGateway = {
   },
   submitGenerateImageJob: async (payload: GenerateImagePayload) => {
     const normalizedReferenceImages = await normalizeReferenceImages(payload);
+    const normalizedVideoContent = await normalizeVideoContent(payload);
     if (normalizedReferenceImages) {
       normalizedReferenceImages.forEach((img, i) => {
         logger.info('[submitGenerateImageJob] normalized image[{}]: {}...', i, img.substring(0, 100));
       });
     }
-    return await submitNormalizedGenerateImageJob(payload, normalizedReferenceImages);
+    return await submitNormalizedGenerateImageJob(
+      payload,
+      normalizedReferenceImages,
+      normalizedVideoContent
+    );
   },
   submitGenerateImageJobs: async (payload, outputCount, onSettled, beforeSubmit) => {
     const normalizedReferenceImages = await normalizeReferenceImages(payload);
+    const normalizedVideoContent = await normalizeVideoContent(payload);
     beforeSubmit();
     const safeOutputCount = Math.max(1, Math.min(4, Math.floor(outputCount)));
     return submitGenerationJobBatch({
       outputCount: safeOutputCount,
-      submit: () => submitNormalizedGenerateImageJob(payload, normalizedReferenceImages),
+      submit: () => submitNormalizedGenerateImageJob(
+        payload,
+        normalizedReferenceImages,
+        normalizedVideoContent
+      ),
       onSettled,
     });
   },

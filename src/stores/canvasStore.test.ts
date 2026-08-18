@@ -298,6 +298,47 @@ describe('canvas store typed input ordering', () => {
   });
 });
 
+describe('canvas store legacy video compatibility', () => {
+  afterEach(() => {
+    useCanvasStore.getState().setCanvasData([], []);
+  });
+
+  it('loads a persisted videoSingle node without changing its legacy data', () => {
+    const legacyNode = createNode(CANVAS_NODE_TYPES.videoSingle, 'legacy-video-single');
+    legacyNode.data = {
+      ...legacyNode.data,
+      displayName: '已保存的单图视频',
+      prompt: '让人物缓慢转身',
+      model: 'doubao-seedance-1-5-pro-251215',
+      resolution: '1080p',
+      duration: 8,
+      referenceImagePrompt: true,
+      referenceImages: ['/project/uploads/reference.png'],
+      videoApiId: 'legacy-seedance-api',
+      legacyCustomValue: 'preserve-me',
+    };
+
+    useCanvasStore.getState().setCanvasData([legacyNode], []);
+
+    expect(useCanvasStore.getState().nodes).toHaveLength(1);
+    expect(useCanvasStore.getState().nodes[0]).toMatchObject({
+      id: legacyNode.id,
+      type: CANVAS_NODE_TYPES.videoSingle,
+      data: {
+        displayName: '已保存的单图视频',
+        prompt: '让人物缓慢转身',
+        model: 'doubao-seedance-1-5-pro-251215',
+        resolution: '1080p',
+        duration: 8,
+        referenceImagePrompt: true,
+        referenceImages: ['/project/uploads/reference.png'],
+        videoApiId: 'legacy-seedance-api',
+        legacyCustomValue: 'preserve-me',
+      },
+    });
+  });
+});
+
 describe('canvas store text editing history', () => {
   afterEach(() => {
     useCanvasStore.getState().setCanvasData([], []);

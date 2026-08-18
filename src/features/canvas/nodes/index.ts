@@ -31,6 +31,7 @@ export const nodeTypes: NodeTypes = {
   uploadNode: UploadNode,
   videoFrameNode: VideoGenNode,
   videoSingleNode: VideoGenNode,
+  seedanceAutoVideoNode: VideoGenNode,
 };
 
 export { AudioUploadNode, GroupNode, ImageEditNode, ImageNode, SD2VideoGenNode, StoryboardGenNode, StoryboardNode, TextAnnotationNode, TextGenerationNode, UploadNode, VideoGenNode, VideoResultNode, VideoUploadNode };

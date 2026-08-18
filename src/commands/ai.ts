@@ -1,5 +1,6 @@
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { logger } from '@/lib/logger';
+import type { SeedanceVideoContent } from '@/features/canvas/application/seedanceVideoRequestPlan';
 
 export interface GenerateRequest {
   prompt: string;
@@ -8,6 +9,7 @@ export interface GenerateRequest {
   size: string;
   aspect_ratio: string;
   reference_images?: string[];
+  video_content?: SeedanceVideoContent[];
   extra_params?: Record<string, unknown>;
   provider_config?: Record<string, string>;
   /** Draft task ID - when set, generates final video from this draft */
@@ -110,6 +112,7 @@ function sanitizeGenerateRequestForLog(request: GenerateRequest): Record<string,
     reference_images_preview: (request.reference_images ?? []).map((item) =>
       truncateBase64Like(item)
     ),
+    video_content_count: request.video_content?.length ?? 0,
     extra_params: request.extra_params ?? {},
     provider_config: providerConfig,
   };

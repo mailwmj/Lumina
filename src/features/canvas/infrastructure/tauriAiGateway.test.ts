@@ -14,12 +14,17 @@ const imageData = vi.hoisted(() => ({
   persistImageLocally: vi.fn(),
 }));
 
+const media = vi.hoisted(() => ({
+  uploadMediaToPublicUrl: vi.fn(),
+}));
+
 vi.mock('@/commands/ai', () => commands);
 vi.mock('@/commands/image', () => ({ uploadImageToVolcVod: vi.fn() }));
 vi.mock('@/features/canvas/application/imageData', () => ({
   isLikelyLocalImagePath: () => true,
   persistImageLocally: imageData.persistImageLocally,
 }));
+vi.mock('@/commands/media', () => media);
 
 describe('tauriAiGateway batch submission boundary', () => {
   beforeEach(() => {
@@ -86,5 +91,83 @@ describe('tauriAiGateway batch submission boundary', () => {
       draftTaskId: undefined,
       project_id: undefined,
     });
+  });
+
+  it('forwards ordered typed Seedance content without encoding roles into the prompt', async () => {
+    commands.submitGenerateImageJob.mockResolvedValue('video-job-2');
+    const providerConfig = {
+      api_key: 'seedance-key',
+      base_url: 'https://ark.example/api/v3',
+      config_id: 'seedance-2',
+      protocol: 'volcengine-seedance',
+    };
+
+    await tauriAiGateway.submitGenerateImageJob({
+      prompt: 'The provider receives its typed content separately',
+      model: 'doubao-seedance-2-0-260128',
+      providerId: 'volcvideo',
+      size: '720p',
+      aspectRatio: '16:9',
+      videoContent: [
+        { type: 'image_url', role: 'reference_image', url: 'https://media.example/ref.png' },
+        { type: 'video_url', role: 'reference_video', url: 'https://media.example/source.mp4' },
+        { type: 'audio_url', role: 'reference_audio', url: 'https://media.example/music.mp3' },
+        { type: 'text', text: 'The provider receives its typed content separately' },
+      ],
+      providerConfig,
+    });
+
+    expect(commands.submitGenerateImageJob).toHaveBeenCalledWith({
+      prompt: 'The provider receives its typed content separately',
+      model: 'doubao-seedance-2-0-260128',
+      provider_id: 'volcvideo',
+      size: '720p',
+      aspect_ratio: '16:9',
+      reference_images: undefined,
+      video_content: [
+        { type: 'image_url', role: 'reference_image', url: 'https://media.example/ref.png' },
+        { type: 'video_url', role: 'reference_video', url: 'https://media.example/source.mp4' },
+        { type: 'audio_url', role: 'reference_audio', url: 'https://media.example/music.mp3' },
+        { type: 'text', text: 'The provider receives its typed content separately' },
+      ],
+      extra_params: undefined,
+      provider_config: providerConfig,
+      draftTaskId: undefined,
+      project_id: undefined,
+    });
+  });
+
+  it('normalizes local typed image, video, and audio media without changing public URLs or content order', async () => {
+    commands.submitGenerateImageJob.mockResolvedValue('video-job-3');
+    media.uploadMediaToPublicUrl
+      .mockResolvedValueOnce('https://public.example/reference.png')
+      .mockResolvedValueOnce('https://public.example/source.mp4')
+      .mockResolvedValueOnce('https://public.example/music.mp3');
+
+    await tauriAiGateway.submitGenerateImageJob({
+      prompt: 'Typed content remains ordered after upload',
+      model: 'doubao-seedance-2-0-260128',
+      providerId: 'volcvideo',
+      size: '720p',
+      aspectRatio: '16:9',
+      videoContent: [
+        { type: 'image_url', role: 'reference_image', url: '/project/reference.png' },
+        { type: 'video_url', role: 'reference_video', url: 'file:///project/source.mp4' },
+        { type: 'audio_url', role: 'reference_audio', url: 'data:audio/mpeg;base64,AAAA' },
+        { type: 'image_url', role: 'reference_image', url: 'https://media.example/remote.png' },
+        { type: 'text', text: 'Typed content remains ordered after upload' },
+      ],
+    });
+
+    expect(media.uploadMediaToPublicUrl).toHaveBeenCalledTimes(3);
+    expect(commands.submitGenerateImageJob).toHaveBeenCalledWith(expect.objectContaining({
+      video_content: [
+        { type: 'image_url', role: 'reference_image', url: 'https://public.example/reference.png' },
+        { type: 'video_url', role: 'reference_video', url: 'https://public.example/source.mp4' },
+        { type: 'audio_url', role: 'reference_audio', url: 'https://public.example/music.mp3' },
+        { type: 'image_url', role: 'reference_image', url: 'https://media.example/remote.png' },
+        { type: 'text', text: 'Typed content remains ordered after upload' },
+      ],
+    }));
   });
 });

@@ -1,5 +1,7 @@
 import type { XYPosition } from '@xyflow/react';
 
+import type { SeedanceVideoContent } from './seedanceVideoRequestPlan';
+
 import type {
   CanvasEdge,
   CanvasNode,
@@ -44,6 +46,8 @@ export interface GenerateImagePayload {
   size: string;
   aspectRatio: string;
   referenceImages?: string[];
+  /** Ordered Seedance content for the video provider. */
+  videoContent?: SeedanceVideoContent[];
   extraParams?: Record<string, unknown>;
   /** Provider-specific runtime settings that must not be stored on the canvas node. */
   providerConfig?: Record<string, string>;

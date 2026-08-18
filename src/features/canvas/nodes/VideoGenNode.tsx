@@ -7,7 +7,7 @@ import {
   useState,
 } from 'react';
 import { Handle, Position, useUpdateNodeInternals, type NodeProps } from '@xyflow/react';
-import { Loader2, Video, Wand2 } from '@/components/ui/icons';
+import { Loader2, Music, Video, Wand2 } from '@/components/ui/icons';
 import { useTranslation } from 'react-i18next';
 
 import {
@@ -23,13 +23,26 @@ import {
   canvasAiGateway,
   graphImageResolver,
 } from '@/features/canvas/application/canvasServices';
-import { resolveImageDisplayUrl } from '@/features/canvas/application/imageData';
+import {
+  resolveAudioDisplayUrl,
+  resolveImageDisplayUrl,
+  resolveVideoDisplayUrl,
+} from '@/features/canvas/application/imageData';
 import { showErrorDialog } from '@/features/canvas/application/errorDialog';
 import { polishText } from '@/features/canvas/infrastructure/textPolishService';
 import { resolveTextModelSelection } from '@/features/canvas/application/textModelSelection';
 import { resolveVideoApiConfig } from '@/features/canvas/application/videoApiSelection';
-import { isVideoGenerationImageCountValid } from '@/features/canvas/application/videoGenerationInputRules';
 import { selectWorkflowNodes } from '@/features/canvas/application/canvasNodeSelectors';
+import {
+  buildSeedanceVideoRequestPlan,
+  getSeedance20ModelCapabilities,
+  isSeedance20Model,
+  type SeedanceMediaType,
+  type SeedanceVideoContent,
+  type SeedanceVideoValidationCode,
+} from '@/features/canvas/application/seedanceVideoRequestPlan';
+import { resolveSeedanceVideoGraphInputs } from '@/features/canvas/application/seedanceVideoGraphInputs';
+import { resolveEffectivePromptForNode } from '@/features/canvas/application/textGenerationInputs';
 import {
   TEXT_GENERATION_MAX_HEIGHT,
   TEXT_GENERATION_MAX_WIDTH,
@@ -56,54 +69,21 @@ type VideoGenNodeProps = NodeProps & {
   selected?: boolean;
 };
 
-const RESOLUTION_OPTIONS: { value: VideoResolution; label: string }[] = [
-  { value: '480p', label: '480p' },
-  { value: '720p', label: '720p' },
-  { value: '1080p', label: '1080p' },
-];
-
-const DURATION_OPTIONS: number[] = [3, 4, 5, 6, 7, 8, 9, 10];
-
-// SD 2.0 模型 ID 前缀
-const SD_2_0_MODEL_PREFIXES = ['doubao-seedance-2-0', 'seedance-2-0'];
-// SD 2.0 Fast 模型 ID
-const SD_2_0_FAST_MODEL = 'doubao-seedance-2-0-fast-260128';
+const LEGACY_RESOLUTIONS: VideoResolution[] = ['480p', '720p', '1080p'];
+const LEGACY_DURATIONS = [3, 4, 5, 6, 7, 8, 9, 10];
 // SD 1.5 Pro 模型 ID
 const SD_1_5_PRO_MODEL = 'doubao-seedance-1-5-pro-251215';
 
-/**
- * 判断是否为 SD 2.0 系列模型
- */
-function isSD2Model(modelId: string): boolean {
-  return SD_2_0_MODEL_PREFIXES.some(prefix => modelId.toLowerCase().includes(prefix));
-}
-
-/**
- * 判断是否为 SD 2.0 Fast 模型
- */
-function isSD2FastModel(modelId: string): boolean {
-  return modelId === SD_2_0_FAST_MODEL;
-}
-
-/**
- * 判断是否为 SD 1.5 Pro 模型
- */
 function isSD15ProModel(modelId: string): boolean {
   return modelId.toLowerCase().includes(SD_1_5_PRO_MODEL.toLowerCase());
 }
 
-/**
- * 获取模型支持的功能
- */
 function getModelCapabilities(modelId: string) {
-  const is2_0 = isSD2Model(modelId);
-  const is2_0Fast = isSD2FastModel(modelId);
+  const is2_0 = isSeedance20Model(modelId);
   const is1_5pro = isSD15ProModel(modelId);
 
   return {
     isSD2: is2_0,
-    isSD2Fast: is2_0Fast,
-    isSD15Pro: is1_5pro,
     supportsGenerateAudio: is2_0 || is1_5pro,
     supportsDraft: is1_5pro,
     supportsServiceTier: false,
@@ -111,10 +91,43 @@ function getModelCapabilities(modelId: string) {
     supportsMultiModalRef: is2_0,
     supportsReferenceVideo: is2_0,
     supportsReferenceAudio: is2_0,
-    supports1080p: is2_0 && !is2_0Fast,
+    supports1080p: is2_0 && getSeedance20ModelCapabilities(modelId)?.resolutions.includes('1080p'),
     supportsVideoExtending: is2_0,
     supportsVideoEditing: is2_0,
   };
+}
+
+function getVideoControlOptions(modelId: string): {
+  resolutions: VideoResolution[];
+  durations: number[];
+} {
+  const capabilities = getSeedance20ModelCapabilities(modelId);
+  if (!capabilities) {
+    return {
+      resolutions: LEGACY_RESOLUTIONS,
+      durations: LEGACY_DURATIONS,
+    };
+  }
+
+  return {
+    resolutions: [...capabilities.resolutions],
+    durations: Array.from(
+      { length: capabilities.maxDuration - capabilities.minDuration + 1 },
+      (_, index) => capabilities.minDuration + index
+    ),
+  };
+}
+
+function getPlanValidationMessageKey(code: SeedanceVideoValidationCode): string {
+  return `node.videoGen.validation.${code}`;
+}
+
+interface ReferencePreview {
+  type: SeedanceMediaType;
+  url: string;
+  label: string;
+  sourceNodeId: string;
+  referenceIndex: number;
 }
 
 export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGenNodeProps) => {
@@ -138,13 +151,22 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
     ),
     [imagePolishConfig.textApiId, imagePolishConfig.textModelId, textApis]
   );
-  const videoApiOptions = useMemo(
-    () => videoApis.filter((api) => api.modelId.trim().length > 0),
-    [videoApis]
-  );
+  const nodeType = workflowNodes.find((node) => node.id === id)?.type;
+  const isVideoFrame = nodeType === CANVAS_NODE_TYPES.videoFrame;
+  const isAutomaticSeedance = nodeType === CANVAS_NODE_TYPES.seedanceAutoVideo;
+  const isLegacySingle = nodeType === CANVAS_NODE_TYPES.videoSingle;
+  const videoApiOptions = useMemo(() => {
+    const configuredApis = videoApis.filter((api) => api.modelId.trim().length > 0);
+    return isAutomaticSeedance
+      ? configuredApis.filter((api) => isSeedance20Model(api.modelId))
+      : configuredApis;
+  }, [isAutomaticSeedance, videoApis]);
   const selectedVideoApi = useMemo(
     () => resolveVideoApiConfig(videoApis, data.videoApiId, data.model),
     [data.model, data.videoApiId, videoApis]
+  );
+  const isSelectedVideoApiSelectable = Boolean(
+    selectedVideoApi && videoApiOptions.some((api) => api.id === selectedVideoApi.id)
   );
   const selectedModel = selectedVideoApi?.modelId ?? data.model;
 
@@ -156,25 +178,59 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
   const promptHighlightRef = useRef<HTMLDivElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
 
-  // Determine if this is a videoFrame node (max 2 images) or videoSingle node (max 1 image)
-  const nodeType = workflowNodes.find((node) => node.id === id)?.type;
-  const isVideoFrame = nodeType === CANVAS_NODE_TYPES.videoFrame;
-  const maxImages = isVideoFrame ? 2 : 1;
-
   // Compute model capabilities based on selected model
   const modelCapabilities = useMemo(
     () => getModelCapabilities(selectedModel || ''),
     [selectedModel]
   );
 
-  const incomingImages = useMemo(
+  const legacyIncomingImages = useMemo(
     () => graphImageResolver.collectInputImages(id, workflowNodes, edges),
     [id, workflowNodes, edges]
   );
+  const seedanceGraphInputs = useMemo(
+    () => resolveSeedanceVideoGraphInputs(id, workflowNodes, edges),
+    [id, workflowNodes, edges]
+  );
+  const effectivePrompt = useMemo(
+    () => resolveEffectivePromptForNode(id, promptDraft, workflowNodes, edges),
+    [edges, id, promptDraft, workflowNodes]
+  );
+  const videoControlOptions = useMemo(
+    () => getVideoControlOptions(selectedModel),
+    [selectedModel]
+  );
+  const selectedResolution = videoControlOptions.resolutions.includes(data.resolution ?? '720p')
+    ? data.resolution ?? '720p'
+    : videoControlOptions.resolutions[0];
+  const selectedDuration = videoControlOptions.durations.includes(data.duration ?? 5)
+    ? data.duration ?? 5
+    : videoControlOptions.durations[0];
+  const seedanceRequestPlan = useMemo(() => {
+    if (isLegacySingle) {
+      return null;
+    }
+    return buildSeedanceVideoRequestPlan({
+      kind: isVideoFrame ? 'strict-frame' : 'automatic',
+      model: selectedModel,
+      prompt: effectivePrompt,
+      resolution: selectedResolution,
+      duration: selectedDuration,
+      media: seedanceGraphInputs,
+    });
+  }, [
+    effectivePrompt,
+    isLegacySingle,
+    isVideoFrame,
+    seedanceGraphInputs,
+    selectedDuration,
+    selectedModel,
+    selectedResolution,
+  ]);
 
-  // Seedance supports text-to-video. The first/last-frame node is the only mode
-  // that requires a fixed image count.
-  const canGenerate = isVideoGenerationImageCountValid(nodeType, incomingImages.length);
+  const canGenerate = isLegacySingle
+    ? legacyIncomingImages.length <= 1
+    : Boolean(seedanceRequestPlan?.ok);
 
   // Validate model and API key for generating
   const hasSelectedApiKey = Boolean(selectedVideoApi?.apiKey.trim());
@@ -182,14 +238,13 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
 
   // Compute why generation is disabled (for button tooltip)
   const getGenerationDisabledReason = (): string | undefined => {
-    if (isVideoFrame && incomingImages.length !== 2) {
-      return t('node.videoGen.imageRequired', { count: maxImages });
-    }
-    if (!isVideoFrame && incomingImages.length > 1) {
-      return t('node.videoGen.singleModeImageLimit', { count: incomingImages.length });
-    }
     if (!selectedVideoApi) {
       return t('node.videoGen.apiRequired');
+    }
+    if (!isSelectedVideoApiSelectable) {
+      return isAutomaticSeedance
+        ? t(getPlanValidationMessageKey('automatic_model_requires_seedance_2'))
+        : t('node.videoGen.apiRequired');
     }
     if (!selectedVideoApi.enabled) {
       return t('node.videoGen.apiDisabled');
@@ -200,25 +255,68 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
     if (!hasSelectedApiBaseUrl) {
       return t('node.videoGen.apiBaseUrlRequired');
     }
+    if (isLegacySingle && legacyIncomingImages.length > 1) {
+      return t('node.videoGen.singleModeImageLimit', { count: legacyIncomingImages.length });
+    }
+    if (seedanceRequestPlan && !seedanceRequestPlan.ok) {
+      return t(getPlanValidationMessageKey(seedanceRequestPlan.error.code));
+    }
     return undefined;
   };
   const generationDisabledReason = getGenerationDisabledReason();
   const isGenerationDisabled = !canGenerate
     || !selectedVideoApi
+    || !isSelectedVideoApiSelectable
     || !selectedVideoApi.enabled
     || !hasSelectedApiKey
     || !hasSelectedApiBaseUrl;
 
-  // For display, limit to maxImages
-  const displayImages = useMemo(
-    () => incomingImages.slice(0, maxImages).map((url) => resolveImageDisplayUrl(url)),
-    [incomingImages, maxImages]
-  );
+  const referencePreviews = useMemo<ReferencePreview[]>(() => {
+    if (isLegacySingle) {
+      return legacyIncomingImages.slice(0, 1).map((url, index) => ({
+        type: 'image',
+        url,
+        label: t('node.videoGen.referenceImage', { index: index + 1 }),
+        sourceNodeId: `legacy-${index}`,
+        referenceIndex: index + 1,
+      }));
+    }
+
+    const nextIndexes: Record<SeedanceMediaType, number> = {
+      image: 0,
+      video: 0,
+      audio: 0,
+    };
+    return seedanceGraphInputs.flatMap((input) => {
+      const url = input.url?.trim();
+      if (!url) {
+        return [];
+      }
+      nextIndexes[input.type] += 1;
+      const referenceIndex = nextIndexes[input.type];
+      const label = isVideoFrame
+        ? input.targetHandle === 'target-first'
+          ? t('node.videoGen.firstFrame')
+          : input.targetHandle === 'target-last'
+            ? t('node.videoGen.lastFrame')
+            : t('node.videoGen.referenceImage', { index: referenceIndex })
+        : t(`node.videoGen.reference${input.type[0].toUpperCase()}${input.type.slice(1)}`, {
+          index: referenceIndex,
+        });
+      return [{
+        type: input.type,
+        url,
+        label,
+        sourceNodeId: input.sourceNodeId,
+        referenceIndex,
+      }];
+    });
+  }, [isLegacySingle, isVideoFrame, legacyIncomingImages, seedanceGraphInputs, t]);
 
   const layout = resolveTextGenerationLayout({
     width,
     height,
-    hasImageContext: displayImages.length > 0,
+    hasImageContext: referencePreviews.length > 0,
     hasResult: false,
     isSizeManuallyAdjusted: data.isSizeManuallyAdjusted,
   });
@@ -271,28 +369,37 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
       return;
     }
 
-    if (incomingImages.length === 0) {
+    const connectedImages = isLegacySingle
+      ? legacyIncomingImages.slice(0, 1)
+      : seedanceGraphInputs.flatMap((input) => input.type === 'image' && input.url ? [input.url] : []);
+    if (isVideoFrame && connectedImages.length === 0) {
       void showErrorDialog(t('node.videoGen.polishImageRequired'), t('node.videoGen.polishTitle'));
       return;
     }
 
-    const imagesToUse = incomingImages.slice(0, maxImages);
     const prompt = promptDraft.trim();
-
-    let imageRefText = '';
-    if (isVideoFrame && imagesToUse.length >= 2) {
-      imageRefText = '图1（首帧）、图2（尾帧）';
-    } else if (!isVideoFrame && imagesToUse.length >= 1) {
-      imageRefText = '参考图片';
-    }
+    const referenceKinds = [
+      connectedImages.length > 0 ? '参考图片' : null,
+      seedanceGraphInputs.some((input) => input.type === 'video' && input.url) ? '参考视频' : null,
+      seedanceGraphInputs.some((input) => input.type === 'audio' && input.url) ? '参考音频' : null,
+    ].filter((value): value is string => Boolean(value));
+    const referenceText = isVideoFrame
+      ? connectedImages.length > 1
+        ? '图1（首帧）、图2（尾帧）'
+        : '图1（首帧）'
+      : referenceKinds.join('、');
 
     let textToPolish: string;
     if (prompt) {
-      textToPolish = `${imageRefText}\n\n请根据以上图片优化这个视频提示词：${prompt}`;
+      textToPolish = referenceText
+        ? `${referenceText}\n\n请根据以上参考内容优化这个视频提示词：${prompt}`
+        : `请优化这个视频提示词：${prompt}`;
     } else if (isVideoFrame) {
-      textToPolish = `请根据以下首帧和尾帧图片生成一个适合AI视频的提示词：\n${imageRefText}`;
+      textToPolish = `请根据以下首尾帧图片生成一个适合AI视频的提示词：\n${referenceText}`;
+    } else if (referenceText) {
+      textToPolish = `请根据以下参考内容生成一个适合AI视频的提示词：\n${referenceText}`;
     } else {
-      textToPolish = `请根据以下参考图片生成一个适合AI视频的提示词：\n${imageRefText}`;
+      textToPolish = '请生成一个适合AI视频的提示词。';
     }
 
     setIsPolishing(true);
@@ -302,9 +409,9 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
 
       const result = await polishText({
         text: textToPolish,
-        referenceImages: imagesToUse,
-        videoDuration: data.duration?.toString(),
-        videoResolution: data.resolution,
+        referenceImages: connectedImages,
+        videoDuration: selectedDuration.toString(),
+        videoResolution: selectedResolution,
         videoAspectRatio: data.aspectRatio,
         videoShotType: data.shotType,
         videoShotSize: data.shotSize,
@@ -336,15 +443,24 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
     } finally {
       setIsPolishing(false);
     }
-  }, [promptDraft, incomingImages, isVideoFrame, maxImages, id, updateNodeData, data, selectedVideoApi, selectedPolishModel, t, imagePolishConfig.reasoningEffort]);
+  }, [
+    data,
+    id,
+    imagePolishConfig.reasoningEffort,
+    isLegacySingle,
+    isVideoFrame,
+    legacyIncomingImages,
+    promptDraft,
+    seedanceGraphInputs,
+    selectedDuration,
+    selectedPolishModel,
+    selectedResolution,
+    selectedVideoApi,
+    t,
+    updateNodeData,
+  ]);
 
   const handleGenerate = useCallback(async () => {
-    const prompt = promptDraft.replace(/@(?=图\d+)/g, '').trim();
-    if (!prompt) {
-      void showErrorDialog(t('node.imageEdit.promptRequired'), t('common.error'));
-      return;
-    }
-
     if (!selectedVideoApi) {
       const msg = t('node.videoGen.apiRequired');
       setError(msg);
@@ -352,15 +468,42 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
       return;
     }
 
-    if (isVideoFrame) {
-      if (incomingImages.length !== 2) {
-        const msg = t('node.videoGen.frameModeImageCount', { count: incomingImages.length });
+    if (!isSelectedVideoApiSelectable) {
+      const msg = isAutomaticSeedance
+        ? t(getPlanValidationMessageKey('automatic_model_requires_seedance_2'))
+        : t('node.videoGen.apiRequired');
+      setError(msg);
+      return;
+    }
+
+    let prompt: string;
+    let videoContent: SeedanceVideoContent[] | undefined;
+    let referenceImages: string[] | undefined;
+    if (isLegacySingle) {
+      prompt = effectivePrompt.replace(/@(?=图\d+)/g, '').trim();
+      if (legacyIncomingImages.length > 1) {
+        const msg = t('node.videoGen.singleModeImageLimit', { count: legacyIncomingImages.length });
         setError(msg);
         return;
       }
-    } else if (incomingImages.length > 1) {
-      const msg = t('node.videoGen.singleModeImageLimit', { count: incomingImages.length });
-      setError(msg);
+      referenceImages = legacyIncomingImages.slice(0, 1);
+    } else {
+      if (!seedanceRequestPlan || !seedanceRequestPlan.ok) {
+        const msg = seedanceRequestPlan
+          ? t(getPlanValidationMessageKey(seedanceRequestPlan.error.code))
+          : t('node.videoGen.generationFailed');
+        setError(msg);
+        return;
+      }
+      const textContent = seedanceRequestPlan.plan.content.find(
+        (content): content is Extract<SeedanceVideoContent, { type: 'text' }> => content.type === 'text'
+      );
+      prompt = textContent?.text ?? '';
+      videoContent = seedanceRequestPlan.plan.content;
+    }
+
+    if (!prompt) {
+      void showErrorDialog(t('node.imageEdit.promptRequired'), t('common.error'));
       return;
     }
 
@@ -411,13 +554,13 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
         aspectRatio: data.aspectRatio || '16:9',
         model: selectedModel,
         videoApiId: selectedVideoApi.id,
-        resolution: data.resolution || '720p',
-        duration: data.duration || 5,
-        hasAudio: data.hasAudio ?? true,
+        resolution: selectedResolution,
+        duration: selectedDuration,
+        hasAudio: data.hasAudio ?? false,
         seed: data.seed ?? -1,
         camerafixed: data.camerafixed ?? false,
         watermark: data.watermark ?? false,
-        prompt: promptDraft,
+        prompt,
         draft: data.draft,
       }
     );
@@ -425,7 +568,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
 
     try {
       const extraParams: Record<string, unknown> = {};
-      if (data.duration) extraParams.duration = data.duration;
+      extraParams.duration = selectedDuration;
       if (data.seed !== undefined) extraParams.seed = data.seed;
       extraParams.hasaudio = data.hasAudio ?? false;
       extraParams.camerafixed = data.camerafixed ?? false;
@@ -441,9 +584,10 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
         prompt,
         model: selectedModel,
         providerId,
-        size: data.resolution || '720p',
+        size: selectedResolution,
         aspectRatio: data.aspectRatio || '16:9',
-        referenceImages: incomingImages.slice(0, maxImages),
+        referenceImages,
+        videoContent,
         extraParams,
         providerConfig: {
           api_key: providerApiKey,
@@ -476,7 +620,25 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
       });
       setError(guidance);
     }
-  }, [promptDraft, data, id, updateNodeData, t, incomingImages, findNodePosition, addNode, addEdge, isVideoFrame, maxImages, selectedModel, selectedVideoApi]);
+  }, [
+    addEdge,
+    addNode,
+    data,
+    effectivePrompt,
+    findNodePosition,
+    id,
+    isAutomaticSeedance,
+    isLegacySingle,
+    isSelectedVideoApiSelectable,
+    legacyIncomingImages,
+    seedanceRequestPlan,
+    selectedDuration,
+    selectedModel,
+    selectedResolution,
+    selectedVideoApi,
+    t,
+    updateNodeData,
+  ]);
 
   const handlePromptKeyDown = useCallback((event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
@@ -490,13 +652,20 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
   }, [id, updateNodeData]);
 
   const handleVideoApiChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
-    const api = videoApis.find((candidate) => candidate.id === e.target.value);
+    const api = videoApiOptions.find((candidate) => candidate.id === e.target.value);
     const newModel = api?.modelId ?? '';
     const caps = getModelCapabilities(newModel);
+    const controlOptions = getVideoControlOptions(newModel);
     const updates: Partial<VideoGenNodeData> = {
       model: newModel,
       videoApiId: api?.id ?? null,
     };
+    if (!controlOptions.resolutions.includes(data.resolution ?? '720p')) {
+      updates.resolution = controlOptions.resolutions[0];
+    }
+    if (!controlOptions.durations.includes(data.duration ?? 5)) {
+      updates.duration = controlOptions.durations[0];
+    }
     if (!caps.supportsDraft) {
       updates.draft = undefined;
     }
@@ -504,7 +673,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
       updates.enableWebSearch = undefined;
     }
     updateNodeData(id, updates);
-  }, [id, updateNodeData, videoApis]);
+  }, [data.duration, data.resolution, id, updateNodeData, videoApiOptions]);
 
   const handleDurationChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
     updateNodeData(id, { duration: parseInt(e.target.value, 10) });
@@ -523,44 +692,69 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
     >
       {isVideoFrame ? (
         <>
+          <span className="pointer-events-none absolute left-3 top-[35%] z-10 -translate-y-1/2 text-[10px] font-medium text-text-muted">
+            {t('node.videoGen.firstFrame')}
+          </span>
           <Handle type="target" id="target-first" position={Position.Left} style={{ top: '35%' }} />
+          <span className="pointer-events-none absolute left-3 top-[65%] z-10 -translate-y-1/2 text-[10px] font-medium text-text-muted">
+            {t('node.videoGen.lastFrame')}
+          </span>
           <Handle type="target" id="target-last" position={Position.Left} style={{ top: '65%' }} />
         </>
       ) : (
         <Handle type="target" id="target" position={Position.Left} />
       )}
 
-      {/* Connected Reference Images (labeled section, shrink-0) */}
-      {displayImages.length > 0 && (
-        <section className="min-w-0 shrink-0" aria-label={t('node.videoGen.referenceImages')}>
+      {referencePreviews.length > 0 && (
+        <section className="min-w-0 shrink-0" aria-label={t('node.videoGen.referenceInputs')}>
           <div className="mb-1 text-[10px] font-medium text-text-muted">
-            {t('node.videoGen.referenceImages')}
+            {t('node.videoGen.referenceInputs')}
           </div>
           <div
             className="no-scrollbar nowheel flex min-w-0 gap-1.5 overflow-x-auto overflow-y-hidden rounded-lg border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)]/70 p-2"
             style={{ height: layout.referenceImagesHeight }}
           >
-            {displayImages.map((imgUrl, idx) => {
-              const label = isVideoFrame
-                ? (idx === 0 ? t('node.videoGen.firstFrame') : t('node.videoGen.lastFrame'))
-                : t('node.imageReference.label', { index: idx + 1 });
+            {referencePreviews.map((reference) => {
+              const isAudio = reference.type === 'audio';
               return (
                 <div
-                  key={idx}
-                  className="nodrag nowheel relative h-16 w-16 shrink-0 overflow-hidden rounded-md border border-[var(--ui-border-soft)] bg-bg-dark"
-                  title={label}
+                  key={`${reference.sourceNodeId}-${reference.type}-${reference.referenceIndex}`}
+                  className={`nodrag nowheel relative h-16 shrink-0 overflow-hidden rounded-md border border-[var(--ui-border-soft)] bg-bg-dark ${
+                    isAudio ? 'w-40' : 'w-16'
+                  }`}
+                  title={reference.label}
                 >
-                  <img
-                    src={imgUrl}
-                    alt={label}
-                    className="h-full w-full rounded-[inherit] object-cover"
-                    draggable={false}
-                  />
-                  {isVideoFrame && (
-                    <span className="pointer-events-none absolute bottom-0.5 right-0.5 z-10 flex h-5 min-w-5 items-center justify-center rounded-full border border-white/25 bg-black/70 px-1 text-[10px] font-semibold leading-none text-white shadow-md backdrop-blur-sm">
-                      {label}
-                    </span>
+                  {reference.type === 'image' ? (
+                    <img
+                      src={resolveImageDisplayUrl(reference.url)}
+                      alt={reference.label}
+                      className="h-full w-full rounded-[inherit] object-cover"
+                      draggable={false}
+                    />
+                  ) : reference.type === 'video' ? (
+                    <video
+                      src={resolveVideoDisplayUrl(reference.url)}
+                      aria-label={reference.label}
+                      className="h-full w-full rounded-[inherit] object-cover"
+                      muted
+                      playsInline
+                      preload="metadata"
+                    />
+                  ) : (
+                    <div className="flex h-full items-center gap-1.5 px-2">
+                      <Music className="h-4 w-4 shrink-0 text-text-muted" aria-hidden="true" />
+                      <audio
+                        controls
+                        src={resolveAudioDisplayUrl(reference.url)}
+                        aria-label={reference.label}
+                        className="h-7 min-w-0 flex-1"
+                        preload="metadata"
+                      />
+                    </div>
                   )}
+                  <span className="pointer-events-none absolute bottom-0.5 right-0.5 z-10 max-w-[calc(100%-4px)] truncate rounded border border-white/25 bg-black/70 px-1 text-[10px] font-semibold leading-4 text-white shadow-md backdrop-blur-sm">
+                    {reference.label}
+                  </span>
                 </div>
               );
             })}
@@ -637,7 +831,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
       <div className={`${NODE_CONTROL_FOOTER_CLASS} gap-1`}>
         <select
           className={`nodrag nowheel shrink-0 ${NODE_CONTROL_CHIP_CLASS} border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] font-mono text-text-dark`}
-          value={selectedVideoApi?.id ?? ''}
+          value={isSelectedVideoApiSelectable ? selectedVideoApi?.id ?? '' : ''}
           onChange={handleVideoApiChange}
           title={t('node.videoGen.model')}
         >
@@ -651,24 +845,24 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
 
         <select
           className={`nodrag nowheel shrink-0 ${NODE_CONTROL_CHIP_CLASS} border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] font-mono text-text-dark`}
-          value={data.resolution}
+          value={selectedResolution}
           onChange={handleResolutionChange}
           title={t('node.videoGen.resolution')}
         >
-          {RESOLUTION_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
+          {videoControlOptions.resolutions.map((resolution) => (
+            <option key={resolution} value={resolution}>
+              {resolution}
             </option>
           ))}
         </select>
 
         <select
           className={`nodrag nowheel shrink-0 ${NODE_CONTROL_CHIP_CLASS} border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] font-mono text-text-dark`}
-          value={data.duration}
+          value={selectedDuration}
           onChange={handleDurationChange}
           title={t('node.videoGen.duration')}
         >
-          {DURATION_OPTIONS.map((d) => (
+          {videoControlOptions.durations.map((d) => (
             <option key={d} value={d}>
               {d}{t('node.videoGen.durationUnit')}
             </option>

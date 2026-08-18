@@ -511,6 +511,7 @@ function isContextAwareGenerationNode(type: CanvasNodeType): boolean {
     || type === CANVAS_NODE_TYPES.imageEdit
     || type === CANVAS_NODE_TYPES.videoFrame
     || type === CANVAS_NODE_TYPES.videoSingle
+    || type === CANVAS_NODE_TYPES.seedanceAutoVideo
     || type === CANVAS_NODE_TYPES.sd2VideoGen;
 }
 

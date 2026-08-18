@@ -38,6 +38,12 @@ export interface CanvasNodeConnectivity {
   targetHandleIds?: readonly string[];
   sourceDataTypes: CanvasDataType[];
   targetDataTypes: CanvasDataType[];
+  /** Limits incoming values of each type for nodes with a shared input surface. */
+  targetInputLimits?: Partial<Record<CanvasDataType, number>>;
+  /** Per-handle capacity when a node gives semantic meaning to individual ports. */
+  targetHandleInputLimits?: Partial<Record<string, number>>;
+  /** Default handle used when a connection creates a node from the canvas menu. */
+  defaultTargetHandleByDataType?: Partial<Record<CanvasDataType, string>>;
   connectMenu: {
     fromSource: boolean;
     fromTarget: boolean;
@@ -470,6 +476,11 @@ const videoFrameNodeDefinition: CanvasNodeDefinition<VideoGenNodeData> = {
     sourceHandle: true,
     targetHandle: true,
     targetHandleIds: ['target-first', 'target-last'],
+    targetHandleInputLimits: {
+      'target-first': 1,
+      'target-last': 1,
+    },
+    defaultTargetHandleByDataType: { image: 'target-first' },
     sourceDataTypes: ['video'],
     targetDataTypes: ['image'],
     connectMenu: {
@@ -503,7 +514,7 @@ const videoSingleNodeDefinition: CanvasNodeDefinition<VideoGenNodeData> = {
   type: CANVAS_NODE_TYPES.videoSingle,
   menuLabelKey: 'node.menu.videoSingle',
   menuIcon: 'video',
-  visibleInMenu: true,
+  visibleInMenu: false,
   capabilities: {
     toolbar: false,
     promptInput: false,
@@ -545,8 +556,8 @@ const videoSingleNodeDefinition: CanvasNodeDefinition<VideoGenNodeData> = {
     sourceDataTypes: ['video'],
     targetDataTypes: ['image'],
     connectMenu: {
-      fromSource: true,
-      fromTarget: true,
+      fromSource: false,
+      fromTarget: false,
     },
   },
   createDefaultData: () => ({
@@ -561,6 +572,83 @@ const videoSingleNodeDefinition: CanvasNodeDefinition<VideoGenNodeData> = {
     referenceImagePrompt: false,
     referenceImages: [],
     hasAudio: false,
+    returnLastFrame: false,
+    seed: undefined,
+    extraParams: {},
+    isSizeManuallyAdjusted: false,
+    isGenerating: false,
+    generationStartedAt: null,
+    generationDurationMs: 120000,
+  }),
+};
+
+const seedanceAutoVideoNodeDefinition: CanvasNodeDefinition<VideoGenNodeData> = {
+  type: CANVAS_NODE_TYPES.seedanceAutoVideo,
+  menuLabelKey: 'node.menu.seedanceAutoVideo',
+  menuIcon: 'video',
+  visibleInMenu: true,
+  capabilities: {
+    toolbar: false,
+    promptInput: false,
+  },
+  agent: {
+    creatable: true,
+    readableFields: [
+      'displayName',
+      'aspectRatio',
+      'prompt',
+      'model',
+      'resolution',
+      'duration',
+      'hasAudio',
+      'returnLastFrame',
+      'seed',
+      'camerafixed',
+      'watermark',
+      'extraParams',
+    ],
+    writableFields: [
+      'displayName',
+      'aspectRatio',
+      'prompt',
+      'model',
+      'resolution',
+      'duration',
+      'hasAudio',
+      'returnLastFrame',
+      'seed',
+      'camerafixed',
+      'watermark',
+      'extraParams',
+    ],
+  },
+  connectivity: {
+    sourceHandle: true,
+    targetHandle: true,
+    sourceDataTypes: ['video'],
+    targetDataTypes: ['text', 'image', 'audio', 'video'],
+    targetInputLimits: {
+      image: 9,
+      video: 3,
+      audio: 3,
+    },
+    connectMenu: {
+      fromSource: true,
+      fromTarget: true,
+    },
+  },
+  createDefaultData: () => ({
+    displayName: DEFAULT_NODE_DISPLAY_NAME[CANVAS_NODE_TYPES.seedanceAutoVideo],
+    videoUrl: null,
+    previewImageUrl: null,
+    aspectRatio: '16:9',
+    prompt: '',
+    model: 'doubao-seedance-2-0-260128',
+    resolution: '720p',
+    duration: 5,
+    referenceImagePrompt: false,
+    referenceImages: [],
+    hasAudio: true,
     returnLastFrame: false,
     seed: undefined,
     extraParams: {},
@@ -738,6 +826,11 @@ const sd2VideoGenNodeDefinition: CanvasNodeDefinition<SD2VideoGenNodeData> = {
     sourceHandle: true,
     targetHandle: true,
     targetHandleIds: ['target-images', 'target-audios', 'target-videos'],
+    defaultTargetHandleByDataType: {
+      image: 'target-images',
+      audio: 'target-audios',
+      video: 'target-videos',
+    },
     sourceDataTypes: ['video'],
     targetDataTypes: ['image', 'audio', 'video'],
     connectMenu: {
@@ -777,6 +870,7 @@ export const canvasNodeDefinitions: Record<CanvasNodeType, CanvasNodeDefinition>
   [CANVAS_NODE_TYPES.storyboardGen]: storyboardGenNodeDefinition,
   [CANVAS_NODE_TYPES.videoFrame]: videoFrameNodeDefinition,
   [CANVAS_NODE_TYPES.videoSingle]: videoSingleNodeDefinition,
+  [CANVAS_NODE_TYPES.seedanceAutoVideo]: seedanceAutoVideoNodeDefinition,
   [CANVAS_NODE_TYPES.exportVideo]: exportVideoNodeDefinition,
   [CANVAS_NODE_TYPES.audioUpload]: audioUploadNodeDefinition,
   [CANVAS_NODE_TYPES.videoUpload]: videoUploadNodeDefinition,

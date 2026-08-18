@@ -92,7 +92,7 @@ describe('batch canvas connections', () => {
     expect(plan.invalidSourceIds).toEqual(['source-9']);
   });
 
-  it('offers only new targets that can accept every selected source', () => {
+  it('offers new targets that can accept every selected source', () => {
     const sourceA = createNode(CANVAS_NODE_TYPES.upload, 'source-a');
     const sourceB = createNode(CANVAS_NODE_TYPES.upload, 'source-b');
 
@@ -102,7 +102,36 @@ describe('batch canvas connections', () => {
     );
 
     expect(targetTypes).toContain(CANVAS_NODE_TYPES.imageEdit);
-    expect(targetTypes).not.toContain(CANVAS_NODE_TYPES.videoFrame);
+    expect(targetTypes).toContain(CANVAS_NODE_TYPES.videoFrame);
+  });
+
+  it('assigns one or two strict-frame inputs to their visible semantic ports', () => {
+    const first = createNode(CANVAS_NODE_TYPES.upload, 'first');
+    const last = createNode(CANVAS_NODE_TYPES.upload, 'last');
+    const strictFrame = createNode(CANVAS_NODE_TYPES.videoFrame, 'strict-frame');
+
+    const plan = buildBatchConnectionPlan(
+      [first.id, last.id],
+      strictFrame.id,
+      [first, last, strictFrame],
+      []
+    );
+
+    expect(plan.invalidSourceIds).toEqual([]);
+    expect(plan.connections).toEqual([
+      {
+        source: first.id,
+        target: strictFrame.id,
+        sourceHandle: 'source',
+        targetHandle: 'target-first',
+      },
+      {
+        source: last.id,
+        target: strictFrame.id,
+        sourceHandle: 'source',
+        targetHandle: 'target-last',
+      },
+    ]);
   });
 
   it('does not offer the unfinished SD2 advanced node as a new target', () => {
@@ -110,7 +139,8 @@ describe('batch canvas connections', () => {
 
     const targetTypes = getBatchConnectMenuNodeTypes([source.id], [source]);
 
-    expect(targetTypes).toContain(CANVAS_NODE_TYPES.videoSingle);
+    expect(targetTypes).toContain(CANVAS_NODE_TYPES.seedanceAutoVideo);
+    expect(targetTypes).not.toContain(CANVAS_NODE_TYPES.videoSingle);
     expect(targetTypes).not.toContain(CANVAS_NODE_TYPES.sd2VideoGen);
   });
 
@@ -125,11 +155,46 @@ describe('batch canvas connections', () => {
     );
 
     expect(targetTypes).toContain(CANVAS_NODE_TYPES.imageEdit);
-    expect(targetTypes).not.toContain(CANVAS_NODE_TYPES.sd2VideoGen);
+    expect(targetTypes).not.toContain(CANVAS_NODE_TYPES.seedanceAutoVideo);
   });
 });
 
 describe('typed canvas connections', () => {
+  it('routes text, image, video, and audio sources through the visible Seedance automatic node', () => {
+    const text = createNode(CANVAS_NODE_TYPES.textGeneration, 'text');
+    const image = createNode(CANVAS_NODE_TYPES.upload, 'image');
+    const video = createNode(CANVAS_NODE_TYPES.videoUpload, 'video');
+    const audio = createNode(CANVAS_NODE_TYPES.audioUpload, 'audio');
+    const automatic = createNode(CANVAS_NODE_TYPES.seedanceAutoVideo, 'automatic');
+    const nodes = [text, image, video, audio, automatic];
+
+    expect(isCanvasConnectionValid({ source: text.id, target: automatic.id }, nodes, [])).toBe(true);
+    expect(isCanvasConnectionValid({ source: image.id, target: automatic.id }, nodes, [])).toBe(true);
+    expect(isCanvasConnectionValid({ source: video.id, target: automatic.id }, nodes, [])).toBe(true);
+    expect(isCanvasConnectionValid({ source: audio.id, target: automatic.id }, nodes, [])).toBe(true);
+  });
+
+  it('uses registry input limits for automatic Seedance media references', () => {
+    const images = Array.from({ length: 10 }, (_, index) =>
+      createNode(CANVAS_NODE_TYPES.upload, `image-${index}`)
+    );
+    const automatic = createNode(CANVAS_NODE_TYPES.seedanceAutoVideo, 'automatic');
+    const edges: CanvasEdge[] = images.slice(0, 9).map((image, index) => ({
+      id: `edge-${index}`,
+      source: image.id,
+      target: automatic.id,
+      sourceHandle: 'source',
+      targetHandle: 'target',
+      data: { valueType: 'image', inputOrder: index },
+    }));
+
+    expect(isCanvasConnectionValid(
+      { source: images[9].id, target: automatic.id, targetHandle: 'target' },
+      [...images, automatic],
+      edges
+    )).toBe(false);
+  });
+
   it('accepts text and image inputs for a text generation node and rejects video', () => {
     const text = createNode(CANVAS_NODE_TYPES.textGeneration, 'text');
     const image = createNode(CANVAS_NODE_TYPES.upload, 'image');

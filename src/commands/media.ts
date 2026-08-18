@@ -15,3 +15,8 @@ export async function convertAudioToMp3(sourcePath: string, projectId: string): 
   ensureTauriRuntime();
   return await invoke('convert_audio_to_mp3', { sourcePath, projectId });
 }
+
+export async function uploadMediaToPublicUrl(source: string): Promise<string> {
+  ensureTauriRuntime();
+  return await invoke('upload_media_to_public_url', { source });
+}

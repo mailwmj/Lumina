@@ -30,18 +30,8 @@ type CanvasConnectionLike = {
 };
 
 export function canNodeTypeBeManualConnectionSource(type: CanvasNodeType): boolean {
-  return (
-    type === CANVAS_NODE_TYPES.upload ||
-    type === CANVAS_NODE_TYPES.audioUpload ||
-    type === CANVAS_NODE_TYPES.videoUpload ||
-    type === CANVAS_NODE_TYPES.audioUploadRef ||
-    type === CANVAS_NODE_TYPES.videoUploadRef ||
-    type === CANVAS_NODE_TYPES.exportImage ||
-    type === CANVAS_NODE_TYPES.textGeneration ||
-    type === CANVAS_NODE_TYPES.imageEdit ||
-    type === CANVAS_NODE_TYPES.videoFrame ||
-    type === CANVAS_NODE_TYPES.videoSingle
-  );
+  const connectivity = getNodeDefinition(type).connectivity;
+  return connectivity.sourceHandle && connectivity.sourceDataTypes.length > 0;
 }
 
 export function inferCanvasConnectionValueType(sourceNode: CanvasNode): CanvasDataType | null {
@@ -151,30 +141,48 @@ function isVideoSource(node: CanvasNode): boolean {
   );
 }
 
+export function getDefaultCanvasTargetHandle(
+  sourceType: CanvasNodeType,
+  targetType: CanvasNodeType
+): string {
+  const sourceDataType = getNodeSourceDataTypes(sourceType)[0];
+  const connectivity = getNodeDefinition(targetType).connectivity;
+  if (sourceDataType) {
+    const configuredHandle = connectivity.defaultTargetHandleByDataType?.[sourceDataType];
+    if (configuredHandle) {
+      return configuredHandle;
+    }
+  }
+  return connectivity.targetHandleIds?.[0] ?? 'target';
+}
+
 function resolveBatchTargetHandle(
   sourceNode: CanvasNode,
   targetNode: CanvasNode,
+  edges: CanvasEdge[],
   explicitTargetHandle?: string
 ): string | null {
   if (explicitTargetHandle) {
     return explicitTargetHandle;
   }
 
-  if (targetNode.type === CANVAS_NODE_TYPES.videoFrame) {
-    return null;
-  }
+  const targetConnectivity = getNodeDefinition(targetNode.type).connectivity;
+  const defaultHandle = getDefaultCanvasTargetHandle(sourceNode.type, targetNode.type);
+  const candidates = [
+    defaultHandle,
+    ...(targetConnectivity.targetHandleIds ?? []),
+  ].filter((handle, index, values) => values.indexOf(handle) === index);
 
-  if (targetNode.type === CANVAS_NODE_TYPES.sd2VideoGen) {
-    if (isAudioSource(sourceNode)) {
-      return 'target-audios';
+  return candidates.find((handle) => {
+    const limit = targetConnectivity.targetHandleInputLimits?.[handle];
+    if (typeof limit !== 'number') {
+      return true;
     }
-    if (isVideoSource(sourceNode)) {
-      return 'target-videos';
-    }
-    return 'target-images';
-  }
-
-  return 'target';
+    const existingCount = edges.filter(
+      (edge) => edge.target === targetNode.id && (edge.targetHandle ?? 'target') === handle
+    ).length;
+    return existingCount < limit;
+  }) ?? null;
 }
 
 function isCanvasConnectionValidWithPolicy(
@@ -219,27 +227,38 @@ function isCanvasConnectionValidWithPolicy(
     return false;
   }
 
-  if (targetNode.type === CANVAS_NODE_TYPES.videoFrame) {
-    const targetHandle = connection.targetHandle;
-    if (targetHandle !== 'target-first' && targetHandle !== 'target-last') {
-      return false;
-    }
+  const targetConnectivity = getNodeDefinition(targetNode.type).connectivity;
+  const targetHandle = connection.targetHandle
+    ?? getDefaultCanvasTargetHandle(sourceNode.type, targetNode.type);
+  if (targetConnectivity.targetHandleIds && !targetConnectivity.targetHandleIds.includes(targetHandle)) {
+    return false;
   }
 
   const sourceIsAudioUpload = isAudioSource(sourceNode);
   const sourceIsVideoUpload = isVideoSource(sourceNode);
-  if ((sourceIsAudioUpload || sourceIsVideoUpload)
-    && targetNode.type !== CANVAS_NODE_TYPES.sd2VideoGen) {
-    return false;
+
+  const targetInputLimit = targetConnectivity.targetInputLimits?.[valueType];
+  if (typeof targetInputLimit === 'number') {
+    const existingInputCount = edges.filter((edge) => {
+      if (edge.target !== targetId) {
+        return false;
+      }
+      if (edge.data?.valueType) {
+        return edge.data.valueType === valueType;
+      }
+      const existingSource = nodes.find((node) => node.id === edge.source);
+      return existingSource
+        ? inferCanvasConnectionValueType(existingSource) === valueType
+        : false;
+    }).length;
+    if (existingInputCount >= targetInputLimit) {
+      return false;
+    }
   }
 
   if (targetNode.type === CANVAS_NODE_TYPES.sd2VideoGen) {
-    const expectedHandle = valueType === 'audio'
-      ? 'target-audios'
-      : valueType === 'video'
-        ? 'target-videos'
-        : 'target-images';
-    if ((connection.targetHandle ?? 'target-images') !== expectedHandle) {
+    const expectedHandle = targetConnectivity.defaultTargetHandleByDataType?.[valueType];
+    if (expectedHandle && targetHandle !== expectedHandle) {
       return false;
     }
   }
@@ -267,7 +286,6 @@ function isCanvasConnectionValidWithPolicy(
   if (targetNode.type === CANVAS_NODE_TYPES.sd2VideoGen) {
     const mode = ((targetNode.data as { generationMode?: string }).generationMode ?? 'multimodal') as
       'multimodal' | 'edit' | 'extend' | 'websearch';
-    const targetHandle = connection.targetHandle ?? 'target-images';
     const limits: Record<
       'multimodal' | 'edit' | 'extend' | 'websearch',
       { images: number; audios: number; videos: number }
@@ -369,14 +387,6 @@ export function buildBatchConnectionPlan(
   }
 
   const uniqueSourceIds = [...new Set(sourceNodeIds)].filter((sourceId) => sourceId !== targetNodeId);
-  if (targetNode.type === CANVAS_NODE_TYPES.videoFrame && uniqueSourceIds.length > 1) {
-    return {
-      connections: [],
-      skippedDuplicateCount: 0,
-      invalidSourceIds: uniqueSourceIds,
-    };
-  }
-
   const connections: Connection[] = [];
   const invalidSourceIds: string[] = [];
   let skippedDuplicateCount = 0;
@@ -392,6 +402,7 @@ export function buildBatchConnectionPlan(
     const targetHandle = resolveBatchTargetHandle(
       sourceNode,
       targetNode,
+      simulatedEdges,
       explicitTargetHandle
     );
     if (!targetHandle) {

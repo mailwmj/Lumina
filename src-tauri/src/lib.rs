@@ -197,6 +197,7 @@ pub fn run() {
             image::save_image_source_to_app_debug_dir,
             image::copy_image_source_to_clipboard,
             image::upload_image_to_volc_vod,
+            image::upload_media_to_public_url,
             image::convert_image_to_data_url,
             image::auto_save_video_to_project,
             image::auto_save_image_to_project,

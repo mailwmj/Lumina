@@ -12,6 +12,7 @@ export const CANVAS_NODE_TYPES = {
   storyboardGen: 'storyboardGenNode',
   videoFrame: 'videoFrameNode',
   videoSingle: 'videoSingleNode',
+  seedanceAutoVideo: 'seedanceAutoVideoNode',
   exportVideo: 'exportVideoNode',
   // SD 2.0 参考节点
   audioUpload: 'audioUploadNode',
@@ -197,7 +198,7 @@ export interface StoryboardGenNodeData {
   [key: string]: unknown;
 }
 
-export type VideoResolution = '480p' | '720p' | '1080p';
+export type VideoResolution = '480p' | '720p' | '1080p' | '4k';
 
 export interface VideoGenNodeData extends NodeDisplayData {
   videoUrl: string | null;
@@ -426,9 +427,13 @@ export function isVideoGenNode<TNode extends CanvasWorkflowNode>(
 ): node is CanvasNodeWithData<
   TNode,
   VideoGenNodeData,
-  typeof CANVAS_NODE_TYPES.videoFrame | typeof CANVAS_NODE_TYPES.videoSingle
+  | typeof CANVAS_NODE_TYPES.videoFrame
+  | typeof CANVAS_NODE_TYPES.videoSingle
+  | typeof CANVAS_NODE_TYPES.seedanceAutoVideo
 > {
-  return node?.type === CANVAS_NODE_TYPES.videoFrame || node?.type === CANVAS_NODE_TYPES.videoSingle;
+  return node?.type === CANVAS_NODE_TYPES.videoFrame
+    || node?.type === CANVAS_NODE_TYPES.videoSingle
+    || node?.type === CANVAS_NODE_TYPES.seedanceAutoVideo;
 }
 
 export function isExportVideoNode<TNode extends CanvasWorkflowNode>(

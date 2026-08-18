@@ -11,6 +11,7 @@ use crate::ai::error::AIError;
 use crate::ai::generation_recovery::is_retryable_poll_status;
 use crate::ai::{
     AIProvider, GenerateRequest, ProviderTaskHandle, ProviderTaskPollResult, ProviderTaskSubmission,
+    VideoContentInput,
 };
 
 const DEFAULT_API_BASE_URL: &str = "https://ark.cn-beijing.volces.com";
@@ -85,6 +86,10 @@ struct VideoSubmitContent {
     text: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     image_url: Option<ImageUrl>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    video_url: Option<VideoUrl>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    audio_url: Option<AudioUrl>,
     /// Draft task reference - used when generating final video from a draft
     #[serde(skip_serializing_if = "Option::is_none")]
     draft_task: Option<DraftTaskRef>,
@@ -97,6 +102,16 @@ struct DraftTaskRef {
 
 #[derive(Debug, Serialize)]
 struct ImageUrl {
+    url: String,
+}
+
+#[derive(Debug, Serialize)]
+struct VideoUrl {
+    url: String,
+}
+
+#[derive(Debug, Serialize)]
+struct AudioUrl {
     url: String,
 }
 
@@ -302,17 +317,143 @@ impl VolcVideoProvider {
         Err(format!("unsupported protocol: {}", trimmed))
     }
 
+    fn typed_source_to_public_url(source: &str) -> Result<String, AIError> {
+        let url = source.trim();
+        if url.starts_with("http://") || url.starts_with("https://") {
+            return Ok(url.to_string());
+        }
+
+        Err(AIError::InvalidRequest(
+            "Seedance typed media requires a public HTTP(S) URL".to_string(),
+        ))
+    }
+
+    fn build_typed_video_content(
+        inputs: &[VideoContentInput],
+    ) -> Result<Vec<VideoSubmitContent>, AIError> {
+        if inputs.is_empty() {
+            return Err(AIError::InvalidRequest(
+                "Seedance typed content cannot be empty".to_string(),
+            ));
+        }
+
+        let mut has_text = false;
+        let mut content = Vec::with_capacity(inputs.len());
+        for input in inputs {
+            let part_type = input.content_type.trim();
+            let role = input.role.as_deref();
+            let next = match part_type {
+                "text" => {
+                    let text = input.text.as_deref().map(str::trim).filter(|value| !value.is_empty())
+                        .ok_or_else(|| AIError::InvalidRequest(
+                            "Seedance text content requires non-empty text".to_string(),
+                        ))?;
+                    if role.is_some() || input.url.is_some() {
+                        return Err(AIError::InvalidRequest(
+                            "Seedance text content must not include a role or URL".to_string(),
+                        ));
+                    }
+                    has_text = true;
+                    VideoSubmitContent {
+                        part_type: "text".to_string(),
+                        role: None,
+                        text: Some(text.to_string()),
+                        image_url: None,
+                        video_url: None,
+                        audio_url: None,
+                        draft_task: None,
+                    }
+                }
+                "image_url" => {
+                    let role = match role {
+                        Some("first_frame") | Some("last_frame") | Some("reference_image") => {
+                            role.unwrap().to_string()
+                        }
+                        _ => return Err(AIError::InvalidRequest(
+                            "Seedance image content has an unsupported role".to_string(),
+                        )),
+                    };
+                    let url = input.url.as_deref().ok_or_else(|| AIError::InvalidRequest(
+                        "Seedance image content requires a URL".to_string(),
+                    ))?;
+                    VideoSubmitContent {
+                        part_type: "image_url".to_string(),
+                        role: Some(role),
+                        text: None,
+                        image_url: Some(ImageUrl { url: Self::typed_source_to_public_url(url)? }),
+                        video_url: None,
+                        audio_url: None,
+                        draft_task: None,
+                    }
+                }
+                "video_url" => {
+                    if role != Some("reference_video") {
+                        return Err(AIError::InvalidRequest(
+                            "Seedance video content must use the reference_video role".to_string(),
+                        ));
+                    }
+                    let url = input.url.as_deref().ok_or_else(|| AIError::InvalidRequest(
+                        "Seedance video content requires a URL".to_string(),
+                    ))?;
+                    VideoSubmitContent {
+                        part_type: "video_url".to_string(),
+                        role: Some("reference_video".to_string()),
+                        text: None,
+                        image_url: None,
+                        video_url: Some(VideoUrl { url: Self::typed_source_to_public_url(url)? }),
+                        audio_url: None,
+                        draft_task: None,
+                    }
+                }
+                "audio_url" => {
+                    if role != Some("reference_audio") {
+                        return Err(AIError::InvalidRequest(
+                            "Seedance audio content must use the reference_audio role".to_string(),
+                        ));
+                    }
+                    let url = input.url.as_deref().ok_or_else(|| AIError::InvalidRequest(
+                        "Seedance audio content requires a URL".to_string(),
+                    ))?;
+                    VideoSubmitContent {
+                        part_type: "audio_url".to_string(),
+                        role: Some("reference_audio".to_string()),
+                        text: None,
+                        image_url: None,
+                        video_url: None,
+                        audio_url: Some(AudioUrl { url: Self::typed_source_to_public_url(url)? }),
+                        draft_task: None,
+                    }
+                }
+                _ => return Err(AIError::InvalidRequest(format!(
+                    "Seedance typed content has an unsupported type: {}",
+                    input.content_type
+                ))),
+            };
+            content.push(next);
+        }
+
+        if !has_text {
+            return Err(AIError::InvalidRequest(
+                "Seedance typed content requires a text entry".to_string(),
+            ));
+        }
+        Ok(content)
+    }
+
     async fn submit_task_internal(
         &self,
         runtime: &VolcVideoRuntimeConfig,
         request: &GenerateRequest,
     ) -> Result<String, AIError> {
         let model = sanitize_model(&request.model);
-        let has_reference = request
+        let has_legacy_reference = request
             .reference_images
             .as_deref()
             .map(|r| !r.is_empty())
             .unwrap_or(false);
+        let typed_video_content = request.video_content.as_deref();
+        let has_typed_content = typed_video_content.map(|items| !items.is_empty()).unwrap_or(false);
+        let has_reference = has_legacy_reference || has_typed_content;
         let draft_task_id = request.draft_task_id.clone();
 
         // Build content array
@@ -327,9 +468,13 @@ impl VolcVideoProvider {
                 role: None,
                 text: None,
                 image_url: None,
+                video_url: None,
+                audio_url: None,
                 draft_task: Some(DraftTaskRef { id: draft_id.clone() }),
             });
-        } else if has_reference {
+        } else if let Some(typed_content) = typed_video_content {
+            content = Self::build_typed_video_content(typed_content)?;
+        } else if has_legacy_reference {
             let images_count = request.reference_images.as_deref().unwrap_or(&[]).len();
             info!("[VolcVideo] processing {} reference images", images_count);
             // Log all received reference images with their full content for debugging
@@ -372,6 +517,8 @@ impl VolcVideoProvider {
                             role,
                             text: None,
                             image_url: Some(ImageUrl { url }),
+                            video_url: None,
+                            audio_url: None,
                             draft_task: None,
                         });
                         valid_images_count += 1;
@@ -461,12 +608,14 @@ impl VolcVideoProvider {
 
         // Add text content (text content should NOT have role field)
         // Skip text for draft_task mode - the draft already has all the prompt info
-        if draft_task_id.is_none() {
+        if draft_task_id.is_none() && typed_video_content.is_none() {
             content.push(VideoSubmitContent {
                 part_type: "text".to_string(),
                 role: None,
                 text: Some(text_prompt),
                 image_url: None,
+                video_url: None,
+                audio_url: None,
                 draft_task: None,
             });
         }
@@ -800,7 +949,7 @@ mod tests {
     };
     use crate::ai::{
         error::AIError, AIProvider, GenerateRequest, ProviderTaskHandle, ProviderTaskPollResult,
-        ProviderTaskSubmission,
+        ProviderTaskSubmission, VideoContentInput,
     };
     use reqwest::Client;
     use serde_json::json;
@@ -946,6 +1095,7 @@ mod tests {
                 size: "720p".to_string(),
                 aspect_ratio: "16:9".to_string(),
                 reference_images: None,
+                video_content: None,
                 extra_params: None,
                 provider_config: Some(provider_config.clone()),
                 draft_task_id: None,
@@ -994,6 +1144,150 @@ mod tests {
             ProviderTaskPollResult::SucceededWithMeta { url, seed: None }
                 if url == "https://example.com/result.mp4"
         ));
+    }
+
+    #[tokio::test]
+    async fn serializes_typed_seedance_content_without_omni_reference_task_type() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let request = read_http_request(&mut socket).await;
+            write_json_response(&mut socket, r#"{"id":"tsk_typed_123"}"#).await;
+            request
+        });
+        let provider = VolcVideoProvider::new();
+        let provider_config = HashMap::from([
+            ("base_url".to_string(), json!(format!("http://{address}"))),
+            ("api_key".to_string(), json!("typed-key")),
+        ]);
+
+        provider
+            .submit_task(GenerateRequest {
+                prompt: "legacy prompt field is not serialized as duplicate content".to_string(),
+                model: "doubao-seedance-2-0-260128".to_string(),
+                provider_id: Some("volcvideo".to_string()),
+                size: "720p".to_string(),
+                aspect_ratio: "16:9".to_string(),
+                reference_images: None,
+                video_content: Some(vec![
+                    VideoContentInput {
+                        content_type: "image_url".to_string(),
+                        role: Some("first_frame".to_string()),
+                        url: Some("https://media.example/first.png".to_string()),
+                        text: None,
+                    },
+                    VideoContentInput {
+                        content_type: "image_url".to_string(),
+                        role: Some("last_frame".to_string()),
+                        url: Some("https://media.example/last.png".to_string()),
+                        text: None,
+                    },
+                    VideoContentInput {
+                        content_type: "image_url".to_string(),
+                        role: Some("reference_image".to_string()),
+                        url: Some("https://media.example/reference.png".to_string()),
+                        text: None,
+                    },
+                    VideoContentInput {
+                        content_type: "video_url".to_string(),
+                        role: Some("reference_video".to_string()),
+                        url: Some("https://media.example/source.mp4".to_string()),
+                        text: None,
+                    },
+                    VideoContentInput {
+                        content_type: "audio_url".to_string(),
+                        role: Some("reference_audio".to_string()),
+                        url: Some("https://media.example/music.mp3".to_string()),
+                        text: None,
+                    },
+                    VideoContentInput {
+                        content_type: "text".to_string(),
+                        role: None,
+                        url: None,
+                        text: Some("Make the subject dance to the beat".to_string()),
+                    },
+                ]),
+                extra_params: None,
+                provider_config: Some(provider_config),
+                draft_task_id: None,
+            })
+            .await
+            .unwrap();
+
+        let request = String::from_utf8(server.await.unwrap()).unwrap();
+        let body_start = request.find("\r\n\r\n").unwrap() + 4;
+        let body: serde_json::Value = serde_json::from_str(&request[body_start..]).unwrap();
+        assert_eq!(body["content"], json!([
+            {
+                "type": "image_url",
+                "role": "first_frame",
+                "image_url": { "url": "https://media.example/first.png" }
+            },
+            {
+                "type": "image_url",
+                "role": "last_frame",
+                "image_url": { "url": "https://media.example/last.png" }
+            },
+            {
+                "type": "image_url",
+                "role": "reference_image",
+                "image_url": { "url": "https://media.example/reference.png" }
+            },
+            {
+                "type": "video_url",
+                "role": "reference_video",
+                "video_url": { "url": "https://media.example/source.mp4" }
+            },
+            {
+                "type": "audio_url",
+                "role": "reference_audio",
+                "audio_url": { "url": "https://media.example/music.mp3" }
+            },
+            { "type": "text", "text": "Make the subject dance to the beat" }
+        ]));
+        assert!(body.get("omni_reference_task_type").is_none());
+    }
+
+    #[tokio::test]
+    async fn rejects_non_public_typed_seedance_media_urls() {
+        let provider = VolcVideoProvider::new();
+        let provider_config = HashMap::from([
+            ("base_url".to_string(), json!("https://ark.example")),
+            ("api_key".to_string(), json!("typed-key")),
+        ]);
+
+        let error = provider
+            .submit_task(GenerateRequest {
+                prompt: "The typed content is validated before submission".to_string(),
+                model: "doubao-seedance-2-0-260128".to_string(),
+                provider_id: Some("volcvideo".to_string()),
+                size: "720p".to_string(),
+                aspect_ratio: "16:9".to_string(),
+                reference_images: None,
+                video_content: Some(vec![
+                    VideoContentInput {
+                        content_type: "image_url".to_string(),
+                        role: Some("reference_image".to_string()),
+                        url: Some("/project/uploads/reference.png".to_string()),
+                        text: None,
+                    },
+                    VideoContentInput {
+                        content_type: "text".to_string(),
+                        role: None,
+                        url: None,
+                        text: Some("Keep the subject centered".to_string()),
+                    },
+                ]),
+                extra_params: None,
+                provider_config: Some(provider_config),
+                draft_task_id: None,
+            })
+            .await
+            .expect_err("non-public typed media must not reach the provider");
+
+        assert!(matches!(error, AIError::InvalidRequest(message)
+            if message.contains("public HTTP(S) URL")));
     }
 
     #[tokio::test]

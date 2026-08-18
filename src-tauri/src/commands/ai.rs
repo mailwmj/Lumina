@@ -19,7 +19,7 @@ use crate::ai::generation_recovery::{
 use crate::ai::providers::build_default_providers;
 use crate::ai::{
     GenerateRequest, ProviderRegistry, ProviderTaskHandle, ProviderTaskPollResult,
-    ProviderTaskSubmission,
+    ProviderTaskSubmission, VideoContentInput,
 };
 
 static REGISTRY: std::sync::OnceLock<ProviderRegistry> = std::sync::OnceLock::new();
@@ -49,6 +49,8 @@ pub struct GenerateRequestDto {
     pub size: String,
     pub aspect_ratio: String,
     pub reference_images: Option<Vec<String>>,
+    #[serde(default)]
+    pub video_content: Option<Vec<VideoContentInput>>,
     pub extra_params: Option<HashMap<String, Value>>,
     #[serde(default)]
     pub provider_config: Option<HashMap<String, Value>>,
@@ -1470,6 +1472,7 @@ pub async fn submit_generate_image_job(
         size: request.size,
         aspect_ratio: request.aspect_ratio,
         reference_images: request.reference_images,
+        video_content: request.video_content,
         extra_params: request.extra_params,
         provider_config: request.provider_config,
         draft_task_id: request.draft_task_id,
@@ -1908,6 +1911,7 @@ pub async fn generate_image(request: GenerateRequestDto) -> Result<String, Strin
         size: request.size,
         aspect_ratio: request.aspect_ratio,
         reference_images: request.reference_images,
+        video_content: request.video_content,
         extra_params: request.extra_params,
         provider_config: request.provider_config,
         draft_task_id: request.draft_task_id,

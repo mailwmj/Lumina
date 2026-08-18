@@ -66,6 +66,7 @@ import {
   buildBatchConnectionPlan,
   canNodeBeManualConnectionSource,
   canNodeTypeBeManualConnectionSource,
+  getDefaultCanvasTargetHandle,
   getBatchConnectMenuNodeTypes,
   isCanvasConnectionValid,
 } from '@/features/canvas/application/canvasConnection';
@@ -1877,21 +1878,21 @@ export function Canvas() {
           connectNodesBatch(plan.connections);
         }
       } else if (pendingConnectStart) {
-        // Determine the correct target handle based on source node type and target node type
-        let targetHandleId = 'target';
-        if (type === CANVAS_NODE_TYPES.sd2VideoGen) {
-          // sd2VideoGen has multiple target handles: target-images, target-audios, target-videos
-          const sourceNode = nodes.find((n) => n.id === pendingConnectStart.nodeId);
-          if (sourceNode?.type === CANVAS_NODE_TYPES.videoUpload || sourceNode?.type === CANVAS_NODE_TYPES.videoUploadRef) {
-            targetHandleId = 'target-videos';
-          } else if (sourceNode?.type === CANVAS_NODE_TYPES.audioUpload || sourceNode?.type === CANVAS_NODE_TYPES.audioUploadRef) {
-            targetHandleId = 'target-audios';
-          } else {
-            targetHandleId = 'target-images';
-          }
-        } else if (type === CANVAS_NODE_TYPES.videoFrame) {
-          targetHandleId = 'target-first';
-        }
+        const fixedNode = useCanvasStore.getState().nodes.find(
+          (node) => node.id === pendingConnectStart.nodeId
+        );
+        const sourceType = pendingConnectStart.handleType === 'source'
+          ? fixedNode?.type
+          : type;
+        const targetType = pendingConnectStart.handleType === 'source'
+          ? type
+          : fixedNode?.type;
+        const targetHandleId = pendingConnectStart.handleType === 'target'
+          && pendingConnectStart.handleId
+          ? pendingConnectStart.handleId
+          : sourceType && targetType
+            ? getDefaultCanvasTargetHandle(sourceType, targetType)
+            : 'target';
 
         if (pendingConnectStart.handleType === 'source') {
           connectNodes({
@@ -2469,9 +2470,10 @@ export function Canvas() {
           nodeHasSourceHandle(sourceNode.type) &&
           nodeHasTargetHandle(targetNode.type)
         ) {
-          // For videoFrame nodes, use 'target-first' as default targetHandle
-          const isTargetVideoFrame = targetNode.type === CANVAS_NODE_TYPES.videoFrame;
-          const defaultTargetHandle = isTargetVideoFrame ? 'target-first' : 'target';
+          const defaultTargetHandle = getDefaultCanvasTargetHandle(
+            sourceNode.type,
+            targetNode.type
+          );
           const targetHandleId = pendingConnectStart.handleType === 'target' && pendingConnectStart.handleId
             ? pendingConnectStart.handleId
             : defaultTargetHandle;
@@ -2482,7 +2484,7 @@ export function Canvas() {
             targetHandle: targetHandleId,
             pendingHandleType: pendingConnectStart.handleType,
             pendingHandleId: pendingConnectStart.handleId,
-            isTargetVideoFrame,
+            targetNodeType: targetNode.type,
           });
           connectNodes({
             source: sourceNode.id,

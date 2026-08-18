@@ -16,6 +16,7 @@ export const DEFAULT_NODE_DISPLAY_NAME: Record<CanvasNodeType, string> = {
   [CANVAS_NODE_TYPES.storyboardGen]: '分镜生成',
   [CANVAS_NODE_TYPES.videoFrame]: '视频生成（首尾帧）',
   [CANVAS_NODE_TYPES.videoSingle]: '视频生成（单图）',
+  [CANVAS_NODE_TYPES.seedanceAutoVideo]: 'Seedance 视频生成',
   [CANVAS_NODE_TYPES.exportVideo]: '视频结果',
   [CANVAS_NODE_TYPES.audioUpload]: '音频上传',
   [CANVAS_NODE_TYPES.videoUpload]: '视频上传',

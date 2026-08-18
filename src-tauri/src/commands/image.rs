@@ -1315,6 +1315,24 @@ fn decode_file_url_path(value: &str) -> String {
     }
 }
 
+fn decode_asset_url_path(value: &str) -> Result<PathBuf, String> {
+    let path_part = value
+        .strip_prefix("asset://localhost/")
+        .or_else(|| value.strip_prefix("asset:///"))
+        .ok_or_else(|| format!("Invalid asset URL format: {}", value))?;
+    let decoded = urlencoding::decode(path_part)
+        .map_err(|e| format!("URL decode failed: {}", e))?;
+    let path = if cfg!(target_os = "windows") {
+        decoded.trim_start_matches('/').to_string()
+    } else if decoded.starts_with('/') {
+        decoded.into_owned()
+    } else {
+        format!("/{}", decoded)
+    };
+
+    Ok(PathBuf::from(path))
+}
+
 fn parse_data_url(source: &str) -> Result<(Vec<u8>, String), String> {
     let (meta, payload) = source
         .split_once(',')
@@ -2072,12 +2090,15 @@ pub async fn convert_image_to_data_url(source: String) -> Result<String, String>
     Ok(data_url)
 }
 
-#[tauri::command]
-pub async fn upload_image_to_volc_vod(source: String) -> Result<String, String> {
+async fn upload_source_to_public_url(
+    source: String,
+    fallback_file_name: &str,
+    media_label: &str,
+) -> Result<String, String> {
     info!("[upload] starting, source length: {}, source preview: {}", source.len(), &source[..source.len().min(150)]);
 
-    // 提取图片数据
-    let image_bytes = if source.starts_with("data:") {
+    // Extract source bytes before passing them to the existing public upload service.
+    let media_bytes = if source.starts_with("data:") {
         let parts: Vec<&str> = source.splitn(2, ',').collect();
         if parts.len() != 2 {
             return Err("[upload] 无效的 data URL 格式".to_string());
@@ -2085,19 +2106,10 @@ pub async fn upload_image_to_volc_vod(source: String) -> Result<String, String> 
         STANDARD.decode(parts[1])
             .map_err(|e| format!("[upload] Base64 解码失败: {}", e))?
     } else if source.starts_with("asset://") {
-        // asset://localhost/ 后面的部分是 URL 编码的路径
-        // 也可能是 asset:/// 格式
         info!("[upload] processing asset URL: {}", source);
-        let path_part = source
-            .strip_prefix("asset://localhost/")
-            .or_else(|| source.strip_prefix("asset:///"))
-            .ok_or_else(|| format!("[upload] 无效的 asset URL 格式: {}", source))?;
-        // URL decode
-        let decoded = urlencoding::decode(path_part)
-            .map_err(|e| format!("[upload] URL 解码失败: {}", e))?;
-        let file_path = decoded.trim_start_matches('/');
-        info!("[upload] asset decoded file path: {}", file_path);
-        // Try to read the file
+        let file_path = decode_asset_url_path(&source)
+            .map_err(|e| format!("[upload] {}", e))?;
+        info!("[upload] asset decoded file path: {}", file_path.display());
         match std::fs::read(&file_path) {
             Ok(bytes) => {
                 info!("[upload] successfully read {} bytes from asset path", bytes.len());
@@ -2105,24 +2117,18 @@ pub async fn upload_image_to_volc_vod(source: String) -> Result<String, String> 
             }
             Err(e) => {
                 info!("[upload] failed to read asset path, trying with canonicalize: {}", e);
-                // Try to canonicalize the path on Windows
                 let canonical = std::fs::canonicalize(&file_path)
-                    .map_err(|e2| format!("[upload] canonicalize failed: {} - original: {}", e2, file_path))?;
+                    .map_err(|e2| format!("[upload] canonicalize failed: {} - original: {}", e2, file_path.display()))?;
                 let canonical_str = canonical.to_string_lossy().to_string();
                 info!("[upload] canonical path: {}", canonical_str);
-                // Remove \\?\ prefix on Windows extended paths
                 let clean_path = canonical_str.strip_prefix("\\\\?\\").unwrap_or(&canonical_str);
                 std::fs::read(clean_path)
-                    .map_err(|e3| format!("[upload] 读取 asset 文件失败: {} - original: {}, canonical: {}", e3, file_path, canonical_str))?
+                    .map_err(|e3| format!("[upload] 读取 asset 文件失败: {} - original: {}, canonical: {}", e3, file_path.display(), canonical_str))?
             }
         }
     } else if source.starts_with("file://") {
-        // file:///C:/Users/... 格式
         info!("[upload] processing file:// URL: {}", source);
-        let path_part = source.strip_prefix("file://").unwrap_or(&source);
-        let decoded = urlencoding::decode(path_part)
-            .map_err(|e| format!("[upload] file URL 解码失败: {}", e))?;
-        let file_path = decoded.trim_start_matches('/');
+        let file_path = decode_file_url_path(&source);
         info!("[upload] file URL decoded path: {}", file_path);
         std::fs::read(&file_path)
             .map_err(|e| format!("[upload] 读取 file:// 文件失败: {} - path: {}", e, file_path))?
@@ -2131,23 +2137,21 @@ pub async fn upload_image_to_volc_vod(source: String) -> Result<String, String> 
             .map_err(|e| format!("[upload] 读取文件失败 {}: {}", source, e))?
     };
 
-    if image_bytes.is_empty() {
-        return Err("[upload] 图片数据为空".to_string());
+    if media_bytes.is_empty() {
+        return Err(format!("[upload] {}数据为空", media_label));
     }
-    info!("[upload] image bytes: {} KB", image_bytes.len() / 1024);
+    info!("[upload] {} bytes: {} KB", media_label, media_bytes.len() / 1024);
 
-    // Seedance accepts reference images by public URL. Upload the bytes through
-    // reqwest so this path works on macOS and Windows without shelling out.
     let file_name = source
         .rsplit(['/', '\\'])
         .next()
         .filter(|value| value.contains('.'))
-        .unwrap_or("reference-image.png")
+        .unwrap_or(fallback_file_name)
         .to_string();
     let form = reqwest::multipart::Form::new()
         .part(
             "fileToUpload",
-            reqwest::multipart::Part::bytes(image_bytes).file_name(file_name),
+            reqwest::multipart::Part::bytes(media_bytes).file_name(file_name),
         )
         .text("reqtype", "fileupload")
         .text("time", "72h");
@@ -2156,7 +2160,7 @@ pub async fn upload_image_to_volc_vod(source: String) -> Result<String, String> 
         .multipart(form)
         .send()
         .await
-        .map_err(|e| format!("[upload] 公网图片上传请求失败: {}", e))?;
+        .map_err(|e| format!("[upload] 公网{}上传请求失败: {}", media_label, e))?;
     let status = response.status();
     let body = response
         .text()
@@ -2166,14 +2170,24 @@ pub async fn upload_image_to_volc_vod(source: String) -> Result<String, String> 
     if status.is_success()
         && (public_url.starts_with("http://") || public_url.starts_with("https://"))
     {
-        info!("[upload] public image URL created: {}", public_url);
+        info!("[upload] public {} URL created: {}", media_label, public_url);
         return Ok(public_url.to_string());
     }
 
     Err(format!(
-        "[upload] 公网图片上传失败 [{}]: {}",
-        status, public_url
+        "[upload] 公网{}上传失败 [{}]: {}",
+        media_label, status, public_url
     ))
+}
+
+#[tauri::command]
+pub async fn upload_image_to_volc_vod(source: String) -> Result<String, String> {
+    upload_source_to_public_url(source, "reference-image.png", "图片").await
+}
+
+#[tauri::command]
+pub async fn upload_media_to_public_url(source: String) -> Result<String, String> {
+    upload_source_to_public_url(source, "reference-media.bin", "媒体").await
 }
 
 /// Open a URL in Microsoft Edge browser on Windows
@@ -2288,7 +2302,10 @@ pub async fn delete_project_upload_file(
 
 #[cfg(test)]
 mod tests {
-    use super::{build_generated_image_filename, save_generated_image_bytes};
+    use super::{
+        build_generated_image_filename, decode_asset_url_path, decode_file_url_path,
+        save_generated_image_bytes,
+    };
     use image::{DynamicImage, Rgba, RgbaImage};
     use std::fs;
     use std::io::Cursor;
@@ -2320,6 +2337,23 @@ mod tests {
             ),
             "My_Provider_Model_Preview_20260812_143015_a1b2c3d4.webp"
         );
+    }
+
+    #[test]
+    fn decodes_local_media_urls_without_losing_the_root_path() {
+        if cfg!(target_os = "windows") {
+            assert_eq!(decode_file_url_path("file:///C:/Users/mir/media.mp4"), "C:/Users/mir/media.mp4");
+            assert_eq!(
+                decode_asset_url_path("asset://localhost/C:/Users/mir/media.mp4").unwrap(),
+                std::path::PathBuf::from("C:/Users/mir/media.mp4")
+            );
+        } else {
+            assert_eq!(decode_file_url_path("file:///Users/mir/media.mp4"), "/Users/mir/media.mp4");
+            assert_eq!(
+                decode_asset_url_path("asset://localhost/Users/mir/media.mp4").unwrap(),
+                std::path::PathBuf::from("/Users/mir/media.mp4")
+            );
+        }
     }
 
     #[test]

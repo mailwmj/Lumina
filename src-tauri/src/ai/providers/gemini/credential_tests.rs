@@ -15,6 +15,7 @@ fn generate_request(base_url: &str, api_key: &str) -> GenerateRequest {
         size: "4K".to_string(),
         aspect_ratio: "4:3".to_string(),
         reference_images: None,
+        video_content: None,
         extra_params: None,
         provider_config: Some(HashMap::from([
             ("base_url".to_string(), json!(base_url)),
