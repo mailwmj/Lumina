@@ -48,6 +48,7 @@ import {
   resolveGenerationPollDelay,
   resolveImageGenerationRecoveryState,
 } from '@/features/canvas/application/generationJobRecovery';
+import { resolveVideoApiConfig } from '@/features/canvas/application/videoApiSelection';
 import { showErrorDialog } from '@/features/canvas/application/errorDialog';
 import { shouldSuppressKeyboardCommand } from '@/features/canvas/application/compositionInputState';
 import { snapNodePositionChanges } from '@/features/canvas/application/nodePositionAlignment';
@@ -260,18 +261,6 @@ function resolveAllowedNodeTypes(handleType: HandleType, fixedNodeType?: CanvasN
     });
   };
 
-  // videoUpload and audioUpload can only connect to sd2VideoGen
-  if (fixedNodeType === CANVAS_NODE_TYPES.videoUpload || fixedNodeType === CANVAS_NODE_TYPES.audioUpload) {
-    return [CANVAS_NODE_TYPES.sd2VideoGen];
-  }
-  // upload can connect to both existing targets AND sd2VideoGen
-  if (fixedNodeType === CANVAS_NODE_TYPES.upload) {
-    const baseTypes = getConnectMenuNodeTypes(handleType);
-    if (!baseTypes.includes(CANVAS_NODE_TYPES.sd2VideoGen)) {
-      return filterCompatibleTypes([...baseTypes, CANVAS_NODE_TYPES.sd2VideoGen]);
-    }
-    return filterCompatibleTypes(baseTypes);
-  }
   return filterCompatibleTypes(getConnectMenuNodeTypes(handleType));
 }
 
@@ -871,27 +860,30 @@ export function Canvas() {
             const generationProviderId = typeof currentData.generationProviderId === 'string'
               ? currentData.generationProviderId
               : '';
-            if (generationProviderId === 'volcvideo') {
-              const configuredVideoApi = videoApis.find(
-                (api: { apiKey?: string }) => api.apiKey && api.apiKey.length > 0
-              );
-              const providerApiKey = configuredVideoApi?.apiKey ?? '';
-              if (providerApiKey) {
-                await canvasAiGateway.setApiKey(generationProviderId, providerApiKey).catch((error) => {
-                  logger.warn('[VideoJob] set_api_key failed before poll', {
-                    nodeId: pendingNode.id,
-                    generationProviderId,
-                    error,
-                  });
-                });
+            const videoApiId = typeof currentData.videoApiId === 'string'
+              ? currentData.videoApiId
+              : '';
+            const configuredVideoApi = generationProviderId === 'volcvideo'
+              ? resolveVideoApiConfig(
+                videoApis,
+                videoApiId,
+                typeof currentData.model === 'string' ? currentData.model : undefined
+              )
+              : undefined;
+            const videoProviderConfig = configuredVideoApi?.apiKey && configuredVideoApi.baseUrl
+              ? {
+                api_key: configuredVideoApi.apiKey.trim(),
+                base_url: configuredVideoApi.baseUrl.trim(),
+                config_id: configuredVideoApi.id,
+                protocol: configuredVideoApi.protocol ?? 'volcengine-seedance',
               }
-            }
+              : undefined;
 
             const shouldRetryAfterManualIntervention = currentData.generationRecoveryState === 'retry_requested';
             const status = await (
               shouldRetryAfterManualIntervention
-                ? canvasAiGateway.retryGenerateImageJob(jobId)
-                : canvasAiGateway.getGenerateImageJob(jobId)
+                ? canvasAiGateway.retryGenerateImageJob(jobId, videoProviderConfig)
+                : canvasAiGateway.getGenerateImageJob(jobId, videoProviderConfig)
             ).catch((error) => {
               logger.warn('[VideoJob] poll failed', {
                 nodeId: pendingNode.id,

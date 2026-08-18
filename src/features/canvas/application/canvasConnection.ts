@@ -85,22 +85,10 @@ export function canNodeBeManualConnectionSource(
 }
 
 function getConnectMenuTargetTypesForSource(sourceType: CanvasNodeType): CanvasNodeType[] {
-  if (
-    sourceType === CANVAS_NODE_TYPES.audioUpload ||
-    sourceType === CANVAS_NODE_TYPES.audioUploadRef ||
-    sourceType === CANVAS_NODE_TYPES.videoUpload ||
-    sourceType === CANVAS_NODE_TYPES.videoUploadRef
-  ) {
-    return [CANVAS_NODE_TYPES.sd2VideoGen];
-  }
-
   const candidateTypes = getConnectMenuNodeTypes('source');
-  const candidatesWithVideoGeneration = sourceType === CANVAS_NODE_TYPES.upload
-    ? [...new Set([...candidateTypes, CANVAS_NODE_TYPES.sd2VideoGen])]
-    : candidateTypes;
   const sourceDataTypes = getNodeSourceDataTypes(sourceType);
 
-  return candidatesWithVideoGeneration.filter((candidateType) =>
+  return candidateTypes.filter((candidateType) =>
     sourceDataTypes.some((valueType) =>
       getNodeTargetDataTypes(candidateType).includes(valueType)
     )

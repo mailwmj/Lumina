@@ -11,6 +11,7 @@ fn generate_request(base_url: &str, api_key: &str) -> GenerateRequest {
     GenerateRequest {
         prompt: "design a character".to_string(),
         model: "gemini/gemini-3-pro-image-preview".to_string(),
+        provider_id: None,
         size: "4K".to_string(),
         aspect_ratio: "4:3".to_string(),
         reference_images: None,

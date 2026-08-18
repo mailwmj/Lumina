@@ -105,6 +105,15 @@ describe('batch canvas connections', () => {
     expect(targetTypes).not.toContain(CANVAS_NODE_TYPES.videoFrame);
   });
 
+  it('does not offer the unfinished SD2 advanced node as a new target', () => {
+    const source = createNode(CANVAS_NODE_TYPES.upload, 'source');
+
+    const targetTypes = getBatchConnectMenuNodeTypes([source.id], [source]);
+
+    expect(targetTypes).toContain(CANVAS_NODE_TYPES.videoSingle);
+    expect(targetTypes).not.toContain(CANVAS_NODE_TYPES.sd2VideoGen);
+  });
+
   it('omits a new SD2 target when the whole selection exceeds its input capacity', () => {
     const sources = Array.from({ length: 10 }, (_, index) =>
       createNode(CANVAS_NODE_TYPES.upload, `source-${index}`)

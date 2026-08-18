@@ -234,6 +234,8 @@ export interface VideoApiConfig {
   baseUrl: string;
   modelId: string;
   enabled: boolean;
+  /** Runtime protocol used by this video endpoint. */
+  protocol?: 'volcengine-seedance';
   polishPrompt?: string;
   defaultPolishPrompt?: string;
 }
@@ -410,6 +412,7 @@ export const PRESET_VIDEO_APIS: VideoApiConfig[] = [
     baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
     modelId: 'doubao-seedance-2-0-260128',
     enabled: true,
+    protocol: 'volcengine-seedance',
     defaultPolishPrompt: DEFAULT_VIDEO_SD10_POLISH_PROMPT,
   },
   {
@@ -419,6 +422,7 @@ export const PRESET_VIDEO_APIS: VideoApiConfig[] = [
     baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
     modelId: 'doubao-seedance-2-0-fast-260128',
     enabled: false,
+    protocol: 'volcengine-seedance',
     defaultPolishPrompt: DEFAULT_VIDEO_SD10_POLISH_PROMPT,
   },
   {
@@ -428,6 +432,7 @@ export const PRESET_VIDEO_APIS: VideoApiConfig[] = [
     baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
     modelId: 'doubao-seedance-1-5-pro-251215',
     enabled: true,
+    protocol: 'volcengine-seedance',
     defaultPolishPrompt: DEFAULT_VIDEO_SD15_PROMPT,
   },
 ];
@@ -436,6 +441,40 @@ export const PRESET_VIDEO_APIS: VideoApiConfig[] = [
  * 合并视频API配置，确保所有预设模型都存在
  * 保留用户已添加的自定义API，同时添加缺失的预设模型
  */
+export function normalizeVideoApiConfigs(input: unknown): VideoApiConfig[] {
+  if (!Array.isArray(input)) {
+    return [];
+  }
+
+  const seenIds = new Set<string>();
+  return input.flatMap((item) => {
+    if (!item || typeof item !== 'object') {
+      return [];
+    }
+
+    const record = item as Record<string, unknown>;
+    const id = typeof record.id === 'string' ? record.id.trim() : '';
+    if (!id || seenIds.has(id)) {
+      return [];
+    }
+    seenIds.add(id);
+
+    return [{
+      id,
+      name: typeof record.name === 'string' ? record.name.trim() : '',
+      apiKey: normalizeApiKey(typeof record.apiKey === 'string' ? record.apiKey : ''),
+      baseUrl: typeof record.baseUrl === 'string' ? record.baseUrl.trim() : '',
+      modelId: typeof record.modelId === 'string' ? record.modelId.trim() : '',
+      enabled: record.enabled === true,
+      protocol: 'volcengine-seedance',
+      ...(typeof record.polishPrompt === 'string' ? { polishPrompt: record.polishPrompt } : {}),
+      ...(typeof record.defaultPolishPrompt === 'string'
+        ? { defaultPolishPrompt: record.defaultPolishPrompt }
+        : {}),
+    }];
+  });
+}
+
 function mergeVideoApis(existingApis?: VideoApiConfig[]): VideoApiConfig[] {
   // 记录到全局变量供调试
   (globalThis as { __DEBUG_VIDEO_APIS__?: unknown }).__DEBUG_VIDEO_APIS__ = {
@@ -443,12 +482,13 @@ function mergeVideoApis(existingApis?: VideoApiConfig[]): VideoApiConfig[] {
     timestamp: Date.now(),
   };
 
-  if (!existingApis || existingApis.length === 0) {
+  const normalizedApis = normalizeVideoApiConfigs(existingApis);
+  if (normalizedApis.length === 0) {
     return PRESET_VIDEO_APIS;
   }
 
   // 构建现有API的模型ID映射
-  const existingModelIds = new Set(existingApis.map((api) => api.modelId));
+  const existingModelIds = new Set(normalizedApis.map((api) => api.modelId));
 
   // 找出缺失的预设模型
   const missingPresets = PRESET_VIDEO_APIS.filter(
@@ -457,10 +497,10 @@ function mergeVideoApis(existingApis?: VideoApiConfig[]): VideoApiConfig[] {
 
   // 如果有缺失的预设模型，合并它们
   if (missingPresets.length > 0) {
-    return [...existingApis, ...missingPresets];
+    return [...normalizedApis, ...missingPresets];
   }
 
-  return existingApis;
+  return normalizedApis;
 }
 
 interface SettingsState {
@@ -1073,13 +1113,13 @@ export const useSettingsStore = create<SettingsState>()(
       }),
       setVideoApis: (apis) => {
         logger.debug(`[settingsStore] setVideoApis called with: ${JSON.stringify(apis?.map(a => a.modelId))}`);
-        set({ videoApis: apis });
+        set({ videoApis: mergeVideoApis(apis) });
       },
       setActiveVideoApiId: (id) => set({ activeVideoApiId: id }),
     }),
     {
       name: 'settings-storage',
-      version: 30,
+      version: 31,
       onRehydrateStorage: () => {
         return (_state, error) => {
           if (error) {

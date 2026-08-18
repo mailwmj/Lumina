@@ -27,6 +27,8 @@ import { resolveImageDisplayUrl } from '@/features/canvas/application/imageData'
 import { showErrorDialog } from '@/features/canvas/application/errorDialog';
 import { polishText } from '@/features/canvas/infrastructure/textPolishService';
 import { resolveTextModelSelection } from '@/features/canvas/application/textModelSelection';
+import { resolveVideoApiConfig } from '@/features/canvas/application/videoApiSelection';
+import { isVideoGenerationImageCountValid } from '@/features/canvas/application/videoGenerationInputRules';
 import { selectWorkflowNodes } from '@/features/canvas/application/canvasNodeSelectors';
 import {
   TEXT_GENERATION_MAX_HEIGHT,
@@ -44,7 +46,6 @@ import { UiButton, UiTooltip } from '@/components/ui';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { useSettingsStore } from '@/stores/settingsStore';
-import type { VideoApiConfig } from '@/stores/settingsStore';
 import { logger } from '@/lib/logger';
 import { VideoAdvancedOptionsPopover } from '@/features/canvas/ui/VideoAdvancedOptionsPopover';
 import { usePreserveNodeCenterOnAutoResize } from '@/features/canvas/ui/usePreserveNodeCenterOnAutoResize';
@@ -137,6 +138,15 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
     ),
     [imagePolishConfig.textApiId, imagePolishConfig.textModelId, textApis]
   );
+  const videoApiOptions = useMemo(
+    () => videoApis.filter((api) => api.modelId.trim().length > 0),
+    [videoApis]
+  );
+  const selectedVideoApi = useMemo(
+    () => resolveVideoApiConfig(videoApis, data.videoApiId, data.model),
+    [data.model, data.videoApiId, videoApis]
+  );
+  const selectedModel = selectedVideoApi?.modelId ?? data.model;
 
   const [promptDraft, setPromptDraft] = useState(data.prompt || '');
   const [isPolishing, setIsPolishing] = useState(false);
@@ -152,37 +162,52 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
   const maxImages = isVideoFrame ? 2 : 1;
 
   // Compute model capabilities based on selected model
-  const modelCapabilities = useMemo(() => getModelCapabilities(data.model || ''), [data.model]);
+  const modelCapabilities = useMemo(
+    () => getModelCapabilities(selectedModel || ''),
+    [selectedModel]
+  );
 
   const incomingImages = useMemo(
     () => graphImageResolver.collectInputImages(id, workflowNodes, edges),
     [id, workflowNodes, edges]
   );
 
-  // Check if enough images are connected for generation
-  const canGenerate = incomingImages.length >= maxImages;
+  // Seedance supports text-to-video. The first/last-frame node is the only mode
+  // that requires a fixed image count.
+  const canGenerate = isVideoGenerationImageCountValid(nodeType, incomingImages.length);
 
   // Validate model and API key for generating
-  const selectedModel = data.model;
-  const hasConfiguredApi = videoApis.some(
-    (api: VideoApiConfig) => api.enabled && api.apiKey && api.apiKey.length > 0
-  );
+  const hasSelectedApiKey = Boolean(selectedVideoApi?.apiKey.trim());
+  const hasSelectedApiBaseUrl = Boolean(selectedVideoApi?.baseUrl.trim());
 
   // Compute why generation is disabled (for button tooltip)
   const getGenerationDisabledReason = (): string | undefined => {
-    if (incomingImages.length < maxImages) {
+    if (isVideoFrame && incomingImages.length !== 2) {
       return t('node.videoGen.imageRequired', { count: maxImages });
     }
-    if (!selectedModel) {
-      return t('node.videoGen.modelRequired');
+    if (!isVideoFrame && incomingImages.length > 1) {
+      return t('node.videoGen.singleModeImageLimit', { count: incomingImages.length });
     }
-    if (!hasConfiguredApi) {
+    if (!selectedVideoApi) {
+      return t('node.videoGen.apiRequired');
+    }
+    if (!selectedVideoApi.enabled) {
+      return t('node.videoGen.apiDisabled');
+    }
+    if (!hasSelectedApiKey) {
       return t('node.videoGen.apiKeyRequired');
+    }
+    if (!hasSelectedApiBaseUrl) {
+      return t('node.videoGen.apiBaseUrlRequired');
     }
     return undefined;
   };
   const generationDisabledReason = getGenerationDisabledReason();
-  const isGenerationDisabled = !canGenerate || !selectedModel || !hasConfiguredApi;
+  const isGenerationDisabled = !canGenerate
+    || !selectedVideoApi
+    || !selectedVideoApi.enabled
+    || !hasSelectedApiKey
+    || !hasSelectedApiBaseUrl;
 
   // For display, limit to maxImages
   const displayImages = useMemo(
@@ -272,9 +297,8 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
 
     setIsPolishing(true);
     try {
-      const selectedModelId = data.model as string;
-      const videoApiConfig = videoApis.find((api: VideoApiConfig) => api.modelId === selectedModelId);
-      const effectivePolishPrompt = videoApiConfig?.polishPrompt || videoApiConfig?.defaultPolishPrompt;
+      const effectivePolishPrompt = selectedVideoApi?.polishPrompt
+        || selectedVideoApi?.defaultPolishPrompt;
 
       const result = await polishText({
         text: textToPolish,
@@ -312,7 +336,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
     } finally {
       setIsPolishing(false);
     }
-  }, [videoApis, promptDraft, incomingImages, isVideoFrame, maxImages, id, updateNodeData, data, selectedPolishModel, t, imagePolishConfig.reasoningEffort]);
+  }, [promptDraft, incomingImages, isVideoFrame, maxImages, id, updateNodeData, data, selectedVideoApi, selectedPolishModel, t, imagePolishConfig.reasoningEffort]);
 
   const handleGenerate = useCallback(async () => {
     const prompt = promptDraft.replace(/@(?=图\d+)/g, '').trim();
@@ -321,8 +345,8 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
       return;
     }
 
-    if (!data.model) {
-      const msg = t('node.videoGen.modelRequired');
+    if (!selectedVideoApi) {
+      const msg = t('node.videoGen.apiRequired');
       setError(msg);
       void showErrorDialog(msg, t('common.error'));
       return;
@@ -334,27 +358,36 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
         setError(msg);
         return;
       }
-    } else {
-      if (incomingImages.length < 1) {
-        const msg = t('node.videoGen.singleModeImageRequired');
-        setError(msg);
-        return;
-      }
+    } else if (incomingImages.length > 1) {
+      const msg = t('node.videoGen.singleModeImageLimit', { count: incomingImages.length });
+      setError(msg);
+      return;
     }
 
-    const modelStr = (data.model as string) || '';
-    const matchingApi = videoApis.find(
-      (api: VideoApiConfig) => api.modelId === modelStr && api.apiKey && api.apiKey.length > 0
-    );
-    const configuredVideoApi = matchingApi ?? videoApis.find(
-      (api: VideoApiConfig) => api.apiKey && api.apiKey.length > 0
-    );
-    const providerApiKey = configuredVideoApi?.apiKey ?? '';
+    if (!selectedVideoApi.enabled) {
+      const errorMsg = t('node.videoGen.apiDisabled');
+      setError(errorMsg);
+      return;
+    }
+
+    const providerApiKey = selectedVideoApi.apiKey.trim();
 
     if (!providerApiKey) {
       const errorMsg = t('node.videoGen.apiKeyRequired');
       setError(errorMsg);
       return;
+    }
+    if (!selectedVideoApi.baseUrl.trim()) {
+      const errorMsg = t('node.videoGen.apiBaseUrlRequired');
+      setError(errorMsg);
+      return;
+    }
+
+    if (data.videoApiId !== selectedVideoApi.id || data.model !== selectedModel) {
+      updateNodeData(id, {
+        videoApiId: selectedVideoApi.id,
+        model: selectedModel,
+      });
     }
 
     const generationStartedAt = Date.now();
@@ -376,7 +409,8 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
         generationDurationMs,
         displayName: t('node.videoGen.title'),
         aspectRatio: data.aspectRatio || '16:9',
-        model: data.model,
+        model: selectedModel,
+        videoApiId: selectedVideoApi.id,
         resolution: data.resolution || '720p',
         duration: data.duration || 5,
         hasAudio: data.hasAudio ?? true,
@@ -401,16 +435,22 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
       if (data.enableWebSearch !== undefined) extraParams.enable_web_search = data.enableWebSearch;
 
       const providerId = 'volcvideo';
-      await canvasAiGateway.setApiKey(providerId, providerApiKey);
 
       const projectId = useProjectStore.getState().getCurrentProject()?.id;
       const jobId = await canvasAiGateway.submitGenerateImageJob({
         prompt,
-        model: data.model,
+        model: selectedModel,
+        providerId,
         size: data.resolution || '720p',
         aspectRatio: data.aspectRatio || '16:9',
-        referenceImages: incomingImages,
+        referenceImages: incomingImages.slice(0, maxImages),
         extraParams,
+        providerConfig: {
+          api_key: providerApiKey,
+          base_url: selectedVideoApi.baseUrl.trim(),
+          config_id: selectedVideoApi.id,
+          protocol: selectedVideoApi.protocol ?? 'volcengine-seedance',
+        },
         draftTaskId: data.draftTaskId,
         projectId,
       });
@@ -436,7 +476,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
       });
       setError(guidance);
     }
-  }, [promptDraft, data, id, updateNodeData, t, incomingImages, findNodePosition, addNode, addEdge, videoApis]);
+  }, [promptDraft, data, id, updateNodeData, t, incomingImages, findNodePosition, addNode, addEdge, isVideoFrame, maxImages, selectedModel, selectedVideoApi]);
 
   const handlePromptKeyDown = useCallback((event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
@@ -449,10 +489,14 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
     updateNodeData(id, { resolution: e.target.value as VideoResolution });
   }, [id, updateNodeData]);
 
-  const handleModelChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
-    const newModel = e.target.value;
+  const handleVideoApiChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
+    const api = videoApis.find((candidate) => candidate.id === e.target.value);
+    const newModel = api?.modelId ?? '';
     const caps = getModelCapabilities(newModel);
-    const updates: Partial<VideoGenNodeData> = { model: newModel };
+    const updates: Partial<VideoGenNodeData> = {
+      model: newModel,
+      videoApiId: api?.id ?? null,
+    };
     if (!caps.supportsDraft) {
       updates.draft = undefined;
     }
@@ -460,7 +504,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
       updates.enableWebSearch = undefined;
     }
     updateNodeData(id, updates);
-  }, [id, updateNodeData]);
+  }, [id, updateNodeData, videoApis]);
 
   const handleDurationChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
     updateNodeData(id, { duration: parseInt(e.target.value, 10) });
@@ -469,22 +513,6 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
   const handleAdvancedChange = useCallback((partial: Partial<VideoGenNodeData>) => {
     updateNodeData(id, partial);
   }, [id, updateNodeData]);
-
-  const videoModelOptions = useMemo(() => {
-    const configuredApis = videoApis.filter(
-      (api: VideoApiConfig) => api.apiKey && api.apiKey.length > 0
-    );
-    if (configuredApis.length > 0) {
-      return configuredApis.map((api: VideoApiConfig) => ({
-        value: api.modelId,
-        label: api.name,
-      }));
-    }
-    return videoApis.map((api: VideoApiConfig) => ({
-      value: api.modelId,
-      label: api.name,
-    }));
-  }, [videoApis]);
 
   return (
     <div
@@ -609,14 +637,14 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
       <div className={`${NODE_CONTROL_FOOTER_CLASS} gap-1`}>
         <select
           className={`nodrag nowheel shrink-0 ${NODE_CONTROL_CHIP_CLASS} border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] font-mono text-text-dark`}
-          value={data.model}
-          onChange={handleModelChange}
+          value={selectedVideoApi?.id ?? ''}
+          onChange={handleVideoApiChange}
           title={t('node.videoGen.model')}
         >
           <option value="">{t('node.videoGen.model')}</option>
-          {videoModelOptions.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
+          {videoApiOptions.map((api) => (
+            <option key={api.id} value={api.id}>
+              {api.name ? `${api.name} (${api.modelId})` : api.modelId}
             </option>
           ))}
         </select>

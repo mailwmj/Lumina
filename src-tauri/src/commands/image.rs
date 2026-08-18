@@ -2136,82 +2136,44 @@ pub async fn upload_image_to_volc_vod(source: String) -> Result<String, String> 
     }
     info!("[upload] image bytes: {} KB", image_bytes.len() / 1024);
 
-    // 直接转换为 data URL 返回（类似 UploadNode 的 imageUrlToDataUrl）
-    // 用于文本模型润色，可以直接使用 data URL
-    let base64_data = STANDARD.encode(&image_bytes);
-    let mime_type: String = if source.starts_with("data:") {
-        source.splitn(2, ',').next().unwrap_or("image/png").replace("data:", "")
-    } else {
-        // 根据文件扩展名判断 MIME 类型
-        let ext = source.rsplit('.').next().unwrap_or("png").to_lowercase();
-        match ext.as_str() {
-            "jpg" | "jpeg" => "image/jpeg".to_string(),
-            "png" => "image/png".to_string(),
-            "gif" => "image/gif".to_string(),
-            "webp" => "image/webp".to_string(),
-            "bmp" => "image/bmp".to_string(),
-            _ => "image/png".to_string(),
-        }
-    };
-    let data_url = format!("data:{};base64,{}", mime_type, base64_data);
-    info!("[upload] converted to data URL, length: {}", data_url.len());
-
-    // 视频生成需要公开 HTTP URL，上传到图床
-
-    // ---- 大图片，使用 litterbox.catbox.moe 图床上传 ----
-    let temp_dir = std::env::temp_dir();
-    let unique_id = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let temp_file = temp_dir.join(format!("upload_{}_{}.jpg", std::process::id(), unique_id));
-    std::fs::write(&temp_file, &image_bytes)
-        .map_err(|e| format!("[upload] 写临时文件失败: {}", e))?;
-
-    info!("[upload] temp file: {:?}", temp_file);
-    let file_path_str = temp_file.to_str().unwrap_or("");
-
-    info!("[upload] trying litterbox.catbox.moe...");
-    // Use cmd /c curl as specified in the original solution
-    let child = tokio::process::Command::new("cmd")
-        .args([
-            "/c",
-            "curl",
-            "-s",
-            "-F", &format!("fileToUpload=@{}", file_path_str),
-            "-F", "reqtype=fileupload",
-            "-F", "time=72h",
-            "https://litterbox.catbox.moe/resources/internals/api.php",
-        ])
-        .output();
-
-    let output = match child.await {
-        Ok(o) => o,
-        Err(e) => {
-            info!("[upload] litterbox spawn failed: {}", e);
-            let _ = std::fs::remove_file(&temp_file);
-            return Err(format!("[upload] 无法执行 curl: {}", e));
-        }
-    };
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    info!("[upload] litterbox status: {}, stdout: {}, stderr: {}", output.status, stdout, stderr);
-
-    let trimmed = stdout.trim();
-    if output.status.success() && !trimmed.is_empty() && trimmed.starts_with("http") {
-        info!("[upload] litterbox success: {}", trimmed);
-        let _ = std::fs::remove_file(&temp_file);
-        return Ok(trimmed.to_string());
+    // Seedance accepts reference images by public URL. Upload the bytes through
+    // reqwest so this path works on macOS and Windows without shelling out.
+    let file_name = source
+        .rsplit(['/', '\\'])
+        .next()
+        .filter(|value| value.contains('.'))
+        .unwrap_or("reference-image.png")
+        .to_string();
+    let form = reqwest::multipart::Form::new()
+        .part(
+            "fileToUpload",
+            reqwest::multipart::Part::bytes(image_bytes).file_name(file_name),
+        )
+        .text("reqtype", "fileupload")
+        .text("time", "72h");
+    let response = reqwest::Client::new()
+        .post("https://litterbox.catbox.moe/resources/internals/api.php")
+        .multipart(form)
+        .send()
+        .await
+        .map_err(|e| format!("[upload] 公网图片上传请求失败: {}", e))?;
+    let status = response.status();
+    let body = response
+        .text()
+        .await
+        .map_err(|e| format!("[upload] 无法读取上传响应: {}", e))?;
+    let public_url = body.trim();
+    if status.is_success()
+        && (public_url.starts_with("http://") || public_url.starts_with("https://"))
+    {
+        info!("[upload] public image URL created: {}", public_url);
+        return Ok(public_url.to_string());
     }
 
-    let _ = std::fs::remove_file(&temp_file);
-    let err_msg = if !stderr.is_empty() {
-        format!("[upload] litterbox 上传失败 (exit {}): {} | {}", output.status, trimmed, stderr)
-    } else {
-        format!("[upload] litterbox 上传失败 (exit {}): {}", output.status, trimmed)
-    };
-    Err(err_msg)
+    Err(format!(
+        "[upload] 公网图片上传失败 [{}]: {}",
+        status, public_url
+    ))
 }
 
 /// Open a URL in Microsoft Edge browser on Windows

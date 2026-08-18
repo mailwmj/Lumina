@@ -37,7 +37,9 @@ async function normalizeReferenceImages(payload: GenerateImagePayload): Promise<
     || payload.model.startsWith('fhl/');
   // Video models need HTTP public URLs - if local path, upload to VOD
   // Check both volcvideo/ prefix and doubao-seedance model name (for compatibility with stored model values without prefix)
-  const isVideoModel = payload.model.startsWith('volcvideo/') || payload.model.includes('doubao-seedance');
+  const isVideoModel = payload.providerId === 'volcvideo'
+    || payload.model.startsWith('volcvideo/')
+    || payload.model.includes('doubao-seedance');
   logger.info('[normalizeReferenceImages] model:', payload.model, 'isVideoModel:', isVideoModel, 'referenceImages count:', payload.referenceImages?.length ?? 0);
   if (payload.referenceImages) {
     payload.referenceImages.forEach((img, i) => {
@@ -67,6 +69,7 @@ function submitNormalizedGenerateImageJob(
   return submitGenerateImageJob({
     prompt: payload.prompt,
     model: payload.model,
+    provider_id: payload.providerId,
     size: payload.size,
     aspect_ratio: payload.aspectRatio,
     reference_images: normalizedReferenceImages,
@@ -85,6 +88,7 @@ export const tauriAiGateway: AiGateway = {
     return await generateImage({
       prompt: payload.prompt,
       model: payload.model,
+      provider_id: payload.providerId,
       size: payload.size,
       aspect_ratio: payload.aspectRatio,
       reference_images: normalizedReferenceImages,

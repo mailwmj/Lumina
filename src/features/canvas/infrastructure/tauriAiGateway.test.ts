@@ -55,4 +55,36 @@ describe('tauriAiGateway batch submission boundary', () => {
 
     expect(order).toEqual(['guard', 'submit']);
   });
+
+  it('forwards a selected Volcengine-compatible video configuration at submission time', async () => {
+    commands.submitGenerateImageJob.mockResolvedValue('video-job-1');
+    const providerConfig = {
+      api_key: 'yunxin-key',
+      base_url: 'https://ai.yunxinapi.com/hub/volcengine',
+      config_id: 'yunxin-seedance',
+      protocol: 'volcengine-seedance',
+    };
+
+    await tauriAiGateway.submitGenerateImageJob({
+      prompt: 'A rainy city at night',
+      model: 'custom-seedance-model',
+      providerId: 'volcvideo',
+      size: '720p',
+      aspectRatio: '16:9',
+      providerConfig,
+    });
+
+    expect(commands.submitGenerateImageJob).toHaveBeenCalledWith({
+      prompt: 'A rainy city at night',
+      model: 'custom-seedance-model',
+      provider_id: 'volcvideo',
+      size: '720p',
+      aspect_ratio: '16:9',
+      reference_images: undefined,
+      extra_params: undefined,
+      provider_config: providerConfig,
+      draftTaskId: undefined,
+      project_id: undefined,
+    });
+  });
 });

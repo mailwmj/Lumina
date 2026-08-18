@@ -12,6 +12,7 @@ use error::AIError;
 pub struct GenerateRequest {
     pub prompt: String,
     pub model: String,
+    pub provider_id: Option<String>,
     pub size: String,
     pub aspect_ratio: String,
     pub reference_images: Option<Vec<String>>,

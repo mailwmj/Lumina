@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 
+import { UiCheckbox } from '@/components/ui';
 import { ProviderListShell } from '@/features/settings/providers/ProviderListShell';
 import {
   DEFAULT_VIDEO_SD10_POLISH_PROMPT,
@@ -13,12 +14,13 @@ interface VideoApisSettingsProps {
 
 function createCustomVideoApiConfig(): VideoApiConfig {
   return {
-    id: `custom-video-${Date.now()}`,
+    id: `custom-video-${crypto.randomUUID()}`,
     name: '',
     apiKey: '',
     baseUrl: '',
     modelId: 'custom-video-model',
     enabled: false,
+    protocol: 'volcengine-seedance',
     defaultPolishPrompt: DEFAULT_VIDEO_SD10_POLISH_PROMPT,
   };
 }
@@ -78,6 +80,7 @@ export function VideoApisSettings({ apis, onChange }: VideoApisSettingsProps) {
               type="text"
               value={api.baseUrl}
               onChange={(event) => updateApi(api.id, { ...api, baseUrl: event.target.value })}
+              placeholder="https://ai.yunxinapi.com/hub/volcengine"
               className="w-full rounded border border-border-dark bg-surface-dark px-3 py-2 text-sm text-text-dark"
             />
           </label>
@@ -92,6 +95,15 @@ export function VideoApisSettings({ apis, onChange }: VideoApisSettingsProps) {
               onChange={(event) => updateApi(api.id, { ...api, modelId: event.target.value })}
               className="w-full rounded border border-border-dark bg-surface-dark px-3 py-2 text-sm text-text-dark"
             />
+          </label>
+
+          <label className="flex cursor-pointer items-center gap-2 text-sm text-text-dark">
+            <UiCheckbox
+              aria-label={t('settings.videoApiEnabled')}
+              checked={api.enabled}
+              onCheckedChange={(enabled) => updateApi(api.id, { ...api, enabled })}
+            />
+            {t('settings.videoApiEnabled')}
           </label>
         </div>
       )}

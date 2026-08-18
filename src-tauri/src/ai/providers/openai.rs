@@ -992,6 +992,7 @@ mod tests {
         GenerateRequest {
             prompt: "generate an image".to_string(),
             model: model.to_string(),
+            provider_id: None,
             size: size.to_string(),
             aspect_ratio: aspect_ratio.to_string(),
             reference_images: None,
@@ -1465,6 +1466,7 @@ mod tests {
         let request = GenerateRequest {
             prompt: "edit the image".to_string(),
             model: "ai-media/gpt-image-2".to_string(),
+            provider_id: None,
             size: "4K".to_string(),
             aspect_ratio: "3:2".to_string(),
             reference_images: Some(vec!["data:image/png;base64,/9j/4A==".to_string()]),

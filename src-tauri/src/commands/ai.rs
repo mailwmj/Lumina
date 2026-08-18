@@ -44,6 +44,8 @@ fn active_non_resumable_job_ids() -> &'static Arc<RwLock<HashSet<String>>> {
 pub struct GenerateRequestDto {
     pub prompt: String,
     pub model: String,
+    #[serde(default)]
+    pub provider_id: Option<String>,
     pub size: String,
     pub aspect_ratio: String,
     pub reference_images: Option<Vec<String>>,
@@ -1448,15 +1450,23 @@ pub async fn submit_generate_image_job(
         request.reference_images);
 
     let registry = get_registry();
-    let provider = registry
-        .resolve_provider_for_model(&request.model)
-        .or_else(|| registry.get_default_provider())
-        .cloned()
-        .ok_or_else(|| "Provider not found".to_string())?;
+    let provider = if let Some(provider_id) = request.provider_id.as_deref() {
+        registry
+            .get_provider(provider_id)
+            .cloned()
+            .ok_or_else(|| format!("Provider not found: {}", provider_id))?
+    } else {
+        registry
+            .resolve_provider_for_model(&request.model)
+            .or_else(|| registry.get_default_provider())
+            .cloned()
+            .ok_or_else(|| "Provider not found".to_string())?
+    };
 
     let req = GenerateRequest {
         prompt: request.prompt,
         model: request.model,
+        provider_id: request.provider_id,
         size: request.size,
         aspect_ratio: request.aspect_ratio,
         reference_images: request.reference_images,
@@ -1608,13 +1618,14 @@ pub async fn cancel_generate_image_job(
 #[tauri::command]
 pub async fn cancel_video_generation_task(
     api_key: String,
+    base_url: String,
     task_id: String,
 ) -> Result<(), String> {
     info!("[cancel_video_generation_task] cancelling task: {}", task_id);
 
     use crate::ai::providers::volcvideo::cancel_volcvideo_task;
 
-    cancel_volcvideo_task(&api_key, &task_id)
+    cancel_volcvideo_task(&api_key, &base_url, &task_id)
         .await
         .map_err(|e| e.to_string())
 }
@@ -1893,6 +1904,7 @@ pub async fn generate_image(request: GenerateRequestDto) -> Result<String, Strin
     let req = GenerateRequest {
         prompt: request.prompt,
         model: request.model,
+        provider_id: request.provider_id,
         size: request.size,
         aspect_ratio: request.aspect_ratio,
         reference_images: request.reference_images,

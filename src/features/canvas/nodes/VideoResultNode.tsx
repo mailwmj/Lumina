@@ -19,8 +19,9 @@ import { NodeResizeHandle } from '@/features/canvas/ui/NodeResizeHandle';
 import { resolveNodeSurfaceStateClass } from '@/features/canvas/ui/nodeSurfaceStyles';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useSettingsStore } from '@/stores/settingsStore';
-import { submitGenerateImageJob, setApiKey } from '@/commands/ai';
+import { submitGenerateImageJob } from '@/commands/ai';
 import { resolveVideoDisplayUrl } from '@/features/canvas/application/imageData';
+import { resolveVideoApiConfig } from '@/features/canvas/application/videoApiSelection';
 import { logger } from '@/lib/logger';
 import { UiButton, UiTooltip } from '@/components/ui';
 
@@ -121,13 +122,21 @@ export const VideoResultNode = memo(({ id, data, selected, width, height }: Vide
 
     // Find API key for volcvideo
     const videoApis = useSettingsStore.getState().videoApis;
-    log('videoApis.length=' + videoApis.length + ', searching for model=' + data.model);
-    const apiConfig = videoApis.find(
-      (api) => api.modelId === data.model && api.apiKey && api.apiKey.length > 0
-    ) ?? videoApis.find((api) => api.apiKey && api.apiKey.length > 0);
+    log('videoApis.length=' + videoApis.length + ', resolving configuration for model=' + data.model);
+    const apiConfig = resolveVideoApiConfig(videoApis, data.videoApiId, data.model);
     log('apiConfig found: ' + (apiConfig ? 'modelId=' + apiConfig.modelId + ', hasKey=' + !!apiConfig.apiKey : 'null'));
-    const apiKey = apiConfig?.apiKey;
-    if (!apiKey) {
+    if (!apiConfig) {
+      log('ERROR: Selected video API configuration is unavailable');
+      updateNodeData(id, { generationError: t('node.videoGen.apiRequired') });
+      return;
+    }
+    if (!apiConfig.enabled) {
+      log('ERROR: Selected video API configuration is disabled');
+      updateNodeData(id, { generationError: t('node.videoGen.apiDisabled') });
+      return;
+    }
+    const apiKey = apiConfig.apiKey.trim();
+    if (!apiKey || !apiConfig.baseUrl.trim()) {
       log('ERROR: No API key found for final generation');
       updateNodeData(id, { generationError: t('node.videoGen.apiKeyRequired') });
       return;
@@ -155,6 +164,7 @@ export const VideoResultNode = memo(({ id, data, selected, width, height }: Vide
         generationDurationMs: 120000,
         generationJobId: '', // Will be updated after API call
         generationProviderId: 'volcvideo',
+        videoApiId: apiConfig.id,
         displayName: t('node.videoGen.title'),
         aspectRatio: data.aspectRatio || '16:9',
         model: data.model,
@@ -172,15 +182,20 @@ export const VideoResultNode = memo(({ id, data, selected, width, height }: Vide
 
     // Step 2: Submit API
     try {
-      log('Calling setApiKey...');
-      await setApiKey('volcvideo', apiKey);
-      log('setApiKey done. Submitting job with draftTaskId=' + data.draftTaskId);
+      log('Submitting job with draftTaskId=' + data.draftTaskId);
       const jobId = await submitGenerateImageJob({
         prompt: '.',
         model: data.model,
+        provider_id: 'volcvideo',
         size: data.resolution || '720p',
         aspect_ratio: data.aspectRatio || '16:9',
         reference_images: [],
+        provider_config: {
+          api_key: apiKey,
+          base_url: apiConfig.baseUrl.trim(),
+          config_id: apiConfig.id,
+          protocol: apiConfig.protocol ?? 'volcengine-seedance',
+        },
         draftTaskId: data.draftTaskId,
       });
       log('Job submitted successfully. jobId=' + jobId);

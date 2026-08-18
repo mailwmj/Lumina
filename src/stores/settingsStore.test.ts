@@ -201,6 +201,34 @@ describe('prompt polishing settings', () => {
       resolution: '2K',
     });
   });
+
+  it('normalizes persisted video APIs to the Volcengine Seedance-compatible protocol', () => {
+    const migrated = migrateSettingsState({
+      videoApis: [{
+        id: ' yunxin-seedance ',
+        name: ' NetEase Yunxin ',
+        apiKey: ' yunxin-key ',
+        baseUrl: ' https://ai.yunxinapi.com/hub/volcengine ',
+        modelId: ' doubao-seedance-2-0-260128 ',
+        enabled: true,
+      }],
+    }, 30) as {
+      videoApis: Array<{
+        id: string;
+        apiKey: string;
+        baseUrl: string;
+        modelId: string;
+        protocol?: string;
+      }>;
+    };
+
+    expect(migrated.videoApis.find((api) => api.id === 'yunxin-seedance')).toMatchObject({
+      apiKey: 'yunxin-key',
+      baseUrl: 'https://ai.yunxinapi.com/hub/volcengine',
+      modelId: 'doubao-seedance-2-0-260128',
+      protocol: 'volcengine-seedance',
+    });
+  });
 });
 
 describe('external Agent connection settings', () => {

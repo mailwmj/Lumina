@@ -956,16 +956,13 @@ export const SD2VideoGenNode = memo(({ id, data, selected, width, height }: SD2V
         {/* 生成按钮 */}
         <button
           type="button"
-          disabled={!promptDraft.trim() || data.isGenerating}
+          disabled
           className={`
             shrink-0 w-full rounded py-2 text-xs font-medium transition-colors
-            ${data.isGenerating
-              ? 'bg-accent/50 text-[var(--accent-foreground)] cursor-not-allowed'
-              : 'bg-accent text-[var(--accent-foreground)] hover:bg-accent/90'}
-            ${!promptDraft.trim() ? 'opacity-50 cursor-not-allowed' : ''}
+            bg-accent/50 text-[var(--accent-foreground)] cursor-not-allowed opacity-50
           `}
         >
-          {data.isGenerating ? t('node.videoGen.generating') : t('node.sd2VideoGen.generate')}
+          {t('node.sd2VideoGen.unavailable')}
         </button>
       </div>
 

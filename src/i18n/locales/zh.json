@@ -312,9 +312,13 @@
       "imageRequired_one": "需要连接 {{count}} 张图片才能生成",
       "imageRequired_other": "需要连接 {{count}} 张图片才能生成",
       "modelRequired": "请先选择视频模型",
+      "apiRequired": "请选择视频 API 配置",
+      "apiDisabled": "请先在设置中启用所选视频 API",
       "apiKeyRequired": "请先在设置中配置视频 API 密钥",
+      "apiBaseUrlRequired": "请为所选视频 API 配置接口地址",
       "frameModeImageCount": "首尾帧模式需要 2 张参考图片，当前只有 {{count}} 张。请确保首帧和尾帧都已连接有效的图片节点。",
       "singleModeImageRequired": "请先连接至少 1 张参考图片。",
+      "singleModeImageLimit": "单图节点最多连接 1 张参考图片，当前已连接 {{count}} 张。",
       "polishImageRequired": "请先连接图片后再润色",
       "polishFailed": "润色失败",
       "polishTitle": "润色提示",
@@ -371,7 +375,8 @@
       "audioCount": "音频 {{current}}/{{max}}",
       "videoCount": "视频 {{current}}/{{max}}",
       "enableWebSearch": "联网搜索",
-      "generate": "生成视频"
+      "generate": "生成视频",
+      "unavailable": "暂不支持生成"
     }
   },
   "viewer": {

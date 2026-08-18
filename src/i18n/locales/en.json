@@ -312,9 +312,13 @@
       "imageRequired_one": "Connect {{count}} image to generate",
       "imageRequired_other": "Connect {{count}} images to generate",
       "modelRequired": "Select a video model first",
+      "apiRequired": "Select a video API configuration first",
+      "apiDisabled": "Enable the selected video API in Settings first",
       "apiKeyRequired": "Configure a video API key in Settings first",
+      "apiBaseUrlRequired": "Configure an endpoint URL for the selected video API",
       "frameModeImageCount": "First-last frame mode needs 2 reference images; currently {{count}}. Make sure both first and last frames are connected to valid image nodes.",
       "singleModeImageRequired": "Connect at least 1 reference image first.",
+      "singleModeImageLimit": "The single-image node accepts at most 1 reference image; currently {{count}} are connected.",
       "polishImageRequired": "Connect an image before polishing",
       "polishFailed": "Polish failed",
       "polishTitle": "Polish",
@@ -371,7 +375,8 @@
       "audioCount": "Audios {{current}}/{{max}}",
       "videoCount": "Videos {{current}}/{{max}}",
       "enableWebSearch": "Web Search",
-      "generate": "Generate Video"
+      "generate": "Generate Video",
+      "unavailable": "Generation unavailable"
     }
   },
   "viewer": {

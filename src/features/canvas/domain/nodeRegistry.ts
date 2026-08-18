@@ -697,18 +697,18 @@ const exportVideoNodeDefinition: CanvasNodeDefinition<ExportVideoNodeData> = {
   }),
 };
 
-// SD 2.0 视频生成节点 - 占位符，后续实现
+// SD 2.0 高级多模态请求尚未接入提交链路；保留已有项目的节点渲染，禁止新建。
 const sd2VideoGenNodeDefinition: CanvasNodeDefinition<SD2VideoGenNodeData> = {
   type: CANVAS_NODE_TYPES.sd2VideoGen,
   menuLabelKey: 'node.menu.sd2VideoGen',
   menuIcon: 'video',
-  visibleInMenu: true,
+  visibleInMenu: false,
   capabilities: {
     toolbar: false,
     promptInput: true,
   },
   agent: {
-    creatable: true,
+    creatable: false,
     readableFields: [
       'displayName',
       'prompt',
@@ -742,7 +742,7 @@ const sd2VideoGenNodeDefinition: CanvasNodeDefinition<SD2VideoGenNodeData> = {
     targetDataTypes: ['image', 'audio', 'video'],
     connectMenu: {
       fromSource: false,
-      fromTarget: true,
+      fromTarget: false,
     },
   },
   createDefaultData: () => ({

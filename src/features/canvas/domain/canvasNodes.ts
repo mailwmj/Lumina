@@ -232,6 +232,8 @@ export interface VideoGenNodeData extends NodeDisplayData {
   generationDurationMs?: number;
   generationJobId?: string | null;
   generationProviderId?: string | null;
+  /** Stable settings entry used for submit/poll/cancel of this task. */
+  videoApiId?: string | null;
   generationError?: string | null;
   /** Draft task ID - when set, generates final video from this draft */
   draftTaskId?: string;
@@ -261,6 +263,8 @@ export interface ExportVideoNodeData extends NodeDisplayData {
   generationDurationMs?: number;
   generationJobId?: string | null;
   generationProviderId?: string | null;
+  /** Stable settings entry used for submit/poll/cancel of this task. */
+  videoApiId?: string | null;
   generationError?: string | null;
   generationRecoveryState?: GenerationRecoveryState | null;
   generationRetryCount?: number;

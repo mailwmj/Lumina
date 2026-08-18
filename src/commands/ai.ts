@@ -4,6 +4,7 @@ import { logger } from '@/lib/logger';
 export interface GenerateRequest {
   prompt: string;
   model: string;
+  provider_id?: string;
   size: string;
   aspect_ratio: string;
   reference_images?: string[];
@@ -311,11 +312,15 @@ export async function retryGenerateImageJob(
   return result;
 }
 
-export async function cancelVideoGenerationTask(apiKey: string, taskId: string): Promise<void> {
+export async function cancelVideoGenerationTask(
+  apiKey: string,
+  baseUrl: string,
+  taskId: string
+): Promise<void> {
   if (!isTauri()) {
     throw new Error('当前不是 Tauri 容器环境，请使用 `npm run tauri dev` 启动');
   }
-  await invoke('cancel_video_generation_task', { apiKey, taskId });
+  await invoke('cancel_video_generation_task', { apiKey, baseUrl, taskId });
 }
 
 export async function listModels(): Promise<string[]> {

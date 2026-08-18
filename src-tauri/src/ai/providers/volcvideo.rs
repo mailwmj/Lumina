@@ -1,6 +1,7 @@
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio::time::{sleep, Duration};
@@ -12,7 +13,7 @@ use crate::ai::{
     AIProvider, GenerateRequest, ProviderTaskHandle, ProviderTaskPollResult, ProviderTaskSubmission,
 };
 
-const API_BASE_URL: &str = "https://ark.cn-beijing.volces.com";
+const DEFAULT_API_BASE_URL: &str = "https://ark.cn-beijing.volces.com";
 const SUBMIT_PATH: &str = "/api/v3/contents/generations/tasks";
 const QUERY_PATH: &str = "/api/v3/contents/generations/tasks";
 const POLL_INTERVAL_MS: u64 = 5000;
@@ -21,6 +22,57 @@ const MAX_DURATION_SECONDS: u64 = 300; // 5 minutes max
 fn map_poll_network_error(error: reqwest::Error) -> AIError {
     info!("[VolcVideo Poll] HTTP request failed: {}", error);
     AIError::Network(error)
+}
+
+#[derive(Debug, Clone)]
+struct VolcVideoRuntimeConfig {
+    base_url: String,
+    api_key: String,
+}
+
+fn normalize_base_url(raw: &str) -> Result<String, AIError> {
+    let trimmed = raw.trim().trim_end_matches('/');
+    if trimmed.is_empty() {
+        return Err(AIError::InvalidRequest(
+            "VolcVideo base_url is required".to_string(),
+        ));
+    }
+    if !trimmed.starts_with("http://") && !trimmed.starts_with("https://") {
+        return Err(AIError::InvalidRequest(
+            "VolcVideo base_url must start with http:// or https://".to_string(),
+        ));
+    }
+    Ok(trimmed.to_string())
+}
+
+fn build_endpoint(base_url: &str, path: &str) -> Result<String, AIError> {
+    let base = normalize_base_url(base_url)?;
+    if base.ends_with("/api/v3") && path.starts_with("/api/v3") {
+        return Ok(format!("{}{}", base, &path["/api/v3".len()..]));
+    }
+    Ok(format!("{}{}", base, path))
+}
+
+fn runtime_config_from_map(
+    provider_config: Option<&HashMap<String, Value>>,
+    fallback_api_key: Option<String>,
+) -> Result<VolcVideoRuntimeConfig, AIError> {
+    let base_url = provider_config
+        .and_then(|config| config.get("base_url"))
+        .and_then(Value::as_str)
+        .unwrap_or(DEFAULT_API_BASE_URL);
+    let api_key = provider_config
+        .and_then(|config| config.get("api_key"))
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .or(fallback_api_key)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| AIError::InvalidRequest("VolcVideo API key is required".to_string()))?;
+
+    Ok(VolcVideoRuntimeConfig {
+        base_url: normalize_base_url(base_url)?,
+        api_key,
+    })
 }
 
 #[derive(Debug, Serialize)]
@@ -92,6 +144,7 @@ struct VideoSubmitResponse {
 
 #[derive(Debug, Deserialize)]
 struct VideoQueryResponse {
+    id: Option<String>,
     #[serde(rename = "task_id")]
     task_id: Option<String>,
     status: Option<String>,
@@ -104,18 +157,29 @@ struct VideoQueryResponse {
     data: Option<VideoQueryData>,
     // Handle content.video_url structure from Volc engine
     #[serde(skip_serializing_if = "Option::is_none")]
-    content: Option<VideoContent>,
+    content: Option<VideoContentPayload>,
+    #[serde(default)]
+    deleted: bool,
     // Seed returned by the API (if supported)
     #[serde(skip_serializing_if = "Option::is_none")]
     seed: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
-struct VideoContent {
+struct VideoContentItem {
+    #[serde(rename = "type")]
+    content_type: Option<String>,
     #[serde(rename = "video_url")]
     video_url: Option<String>,
     #[serde(rename = "output_url")]
     output_url: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum VideoContentPayload {
+    Items(Vec<VideoContentItem>),
+    Single(VideoContentItem),
 }
 
 #[derive(Debug, Deserialize)]
@@ -138,6 +202,60 @@ fn sanitize_model(model: &str) -> String {
         .split_once('/')
         .map(|(_, bare)| bare.to_string())
         .unwrap_or_else(|| model.to_string())
+}
+
+fn extract_content_video_url(content: Option<&VideoContentPayload>) -> Option<String> {
+    let items = match content? {
+        VideoContentPayload::Items(items) => items,
+        VideoContentPayload::Single(item) => std::slice::from_ref(item),
+    };
+    items.iter().find_map(|item| {
+        let is_video = item
+            .content_type
+            .as_deref()
+            .map(|value| value == "video")
+            .unwrap_or(true);
+        is_video.then(|| item.video_url.clone().or(item.output_url.clone()))?
+    })
+}
+
+fn classify_query_status(
+    status: Option<&str>,
+    deleted: bool,
+    video_url: Option<String>,
+    seed: Option<i64>,
+) -> Result<ProviderTaskPollResult, AIError> {
+    if deleted {
+        return Ok(ProviderTaskPollResult::Failed(
+            "Video task was deleted".to_string(),
+        ));
+    }
+
+    match status {
+        Some("succeeded") | Some("success") => video_url
+            .filter(|url| !url.is_empty())
+            .map(|url| ProviderTaskPollResult::SucceededWithMeta { url, seed })
+            .ok_or_else(|| {
+                AIError::Provider(
+                    "VolcVideo task succeeded but response has no video URL".to_string(),
+                )
+            }),
+        Some("failed") => Ok(ProviderTaskPollResult::Failed(
+            "Video generation failed".to_string(),
+        )),
+        Some("cancelled") | Some("canceled") => Ok(ProviderTaskPollResult::Failed(
+            "Video generation was cancelled".to_string(),
+        )),
+        Some("expired") => Ok(ProviderTaskPollResult::Failed(
+            "Video generation task expired".to_string(),
+        )),
+        Some("creating") | Some("submitted") | Some("queued") | Some("running")
+        | Some("processing") | None => Ok(ProviderTaskPollResult::Running),
+        Some(other) => Err(AIError::Provider(format!(
+            "VolcVideo unexpected status: {}",
+            other
+        ))),
+    }
 }
 
 pub struct VolcVideoProvider {
@@ -186,7 +304,7 @@ impl VolcVideoProvider {
 
     async fn submit_task_internal(
         &self,
-        api_key: &str,
+        runtime: &VolcVideoRuntimeConfig,
         request: &GenerateRequest,
     ) -> Result<String, AIError> {
         let model = sanitize_model(&request.model);
@@ -367,7 +485,7 @@ impl VolcVideoProvider {
             tools,
         };
 
-        let endpoint = format!("{}{}", API_BASE_URL, SUBMIT_PATH);
+        let endpoint = build_endpoint(&runtime.base_url, SUBMIT_PATH)?;
 
         info!(
             "[VolcVideo Submit] model: {}, has_ref: {}, prompt_len: {}, endpoint: {}, request_body: {}",
@@ -381,7 +499,7 @@ impl VolcVideoProvider {
         let response = self
             .client
             .post(&endpoint)
-            .header("Authorization", format!("Bearer {}", api_key))
+            .header("Authorization", format!("Bearer {}", runtime.api_key))
             .header("Content-Type", "application/json")
             .json(&body)
             .send()
@@ -443,17 +561,17 @@ impl VolcVideoProvider {
 
     async fn poll_task_once(
         &self,
-        api_key: &str,
+        runtime: &VolcVideoRuntimeConfig,
         task_id: &str,
     ) -> Result<ProviderTaskPollResult, AIError> {
-        let endpoint = format!("{}{}/{}", API_BASE_URL, QUERY_PATH, task_id);
+        let endpoint = format!("{}/{}", build_endpoint(&runtime.base_url, QUERY_PATH)?, task_id);
         info!("[VolcVideo Poll] querying task: {}, endpoint: {}, api_key present: {}",
-              task_id, endpoint, !api_key.is_empty());
+              task_id, endpoint, !runtime.api_key.is_empty());
 
         let response = self
             .client
             .get(&endpoint)
-            .header("Authorization", format!("Bearer {}", api_key))
+            .header("Authorization", format!("Bearer {}", runtime.api_key))
             .header("Content-Type", "application/json")
             .send()
             .await
@@ -483,10 +601,8 @@ impl VolcVideoProvider {
                 AIError::Provider(format!("VolcVideo parse error: {}", err))
             })?;
 
-        // Check for URL in content.video_url structure
-        let content_video_url = body.content.as_ref().and_then(|c| {
-            c.video_url.clone().or(c.output_url.clone())
-        });
+        // Cloud-compatible Seedance responses use content: [{ type: "video", video_url }].
+        let content_video_url = extract_content_video_url(body.content.as_ref());
 
         // Check for URL in nested data structure if top-level output_url is missing
         let nested_video_url = body.data.as_ref().and_then(|d| {
@@ -501,8 +617,8 @@ impl VolcVideoProvider {
             }
         });
 
-        info!("[VolcVideo Poll] parsed response: task_id={:?}, status={:?}, output_url={:?}, content_video_url={:?}, nested_video_url={:?}, error={:?}",
-              body.task_id, body.status, body.output_url, content_video_url, nested_video_url, body.error);
+        info!("[VolcVideo Poll] parsed response: id={:?}, task_id={:?}, status={:?}, output_url={:?}, content_video_url={:?}, nested_video_url={:?}, deleted={}, error={:?}",
+              body.id, body.task_id, body.status, body.output_url, content_video_url, nested_video_url, body.deleted, body.error);
 
         if let Some(error) = body.error {
             let msg = error
@@ -513,53 +629,17 @@ impl VolcVideoProvider {
             return Err(AIError::Provider(format!("VolcVideo error: {}", msg)));
         }
 
-        match body.status.as_deref() {
-            Some("succeeded") | Some("success") => {
-                // Try top-level output_url first, then content.video_url, then nested URL
-                let video_url = body.output_url.clone()
-                    .or_else(|| content_video_url.clone())
-                    .or_else(|| nested_video_url.clone())
-                    .filter(|url| !url.is_empty());
-
-                match video_url {
-                    Some(url) => {
-                        info!("[VolcVideo Poll] SUCCESS! video_url: {}, seed: {:?}", url, body.seed);
-                        Ok(ProviderTaskPollResult::SucceededWithMeta {
-                            url,
-                            seed: body.seed,
-                        })
-                    }
-                    _ => {
-                        // If output_url is missing, treat as still running and poll again
-                        // This handles cases where API returns success before URL is populated
-                        info!("[VolcVideo Poll] status succeeded but output_url missing/empty");
-                        return Ok(ProviderTaskPollResult::Running);
-                    }
-                }
-            }
-            Some("failed") => {
-                info!("[VolcVideo Poll] status failed");
-                Ok(ProviderTaskPollResult::Failed(
-                    "Video generation failed".to_string(),
-                ))
-            }
-            Some("queued") | Some("running") | Some("processing") | None => {
-                info!("[VolcVideo Poll] status: {:?}, still running", body.status.as_deref());
-                Ok(ProviderTaskPollResult::Running)
-            }
-            Some(other) => {
-                info!("[VolcVideo Poll] unexpected status: {}", other);
-                Err(AIError::Provider(format!(
-                    "VolcVideo unexpected status: {}",
-                    other
-                )))
-            }
-        }
+        let video_url = body
+            .output_url
+            .clone()
+            .or(content_video_url)
+            .or(nested_video_url);
+        classify_query_status(body.status.as_deref(), body.deleted, video_url, body.seed)
     }
 
     async fn poll_task_until_complete(
         &self,
-        api_key: &str,
+        runtime: &VolcVideoRuntimeConfig,
         task_id: &str,
     ) -> Result<String, AIError> {
         let mut elapsed_ms: u64 = 0;
@@ -568,7 +648,7 @@ impl VolcVideoProvider {
                 return Err(AIError::TaskFailed("Video generation timeout".to_string()));
             }
 
-            match self.poll_task_once(api_key, task_id).await? {
+            match self.poll_task_once(runtime, task_id).await? {
                 ProviderTaskPollResult::Running => {
                     sleep(Duration::from_millis(POLL_INTERVAL_MS)).await;
                     elapsed_ms += POLL_INTERVAL_MS;
@@ -627,14 +707,14 @@ impl AIProvider for VolcVideoProvider {
         &self,
         request: GenerateRequest,
     ) -> Result<ProviderTaskSubmission, AIError> {
-        let api_key = self
+        let fallback_api_key = self
             .api_key
             .read()
             .await
-            .clone()
-            .ok_or_else(|| AIError::InvalidRequest("API key not set".to_string()))?;
+            .clone();
+        let runtime = runtime_config_from_map(request.provider_config.as_ref(), fallback_api_key)?;
 
-        let task_id = self.submit_task_internal(&api_key, &request).await?;
+        let task_id = self.submit_task_internal(&runtime, &request).await?;
         info!("[VolcVideo] submit_task succeeded, returning task_id: {}", task_id);
         Ok(ProviderTaskSubmission::Queued(ProviderTaskHandle {
             task_id,
@@ -643,27 +723,37 @@ impl AIProvider for VolcVideoProvider {
     }
 
     async fn poll_task(&self, handle: ProviderTaskHandle) -> Result<ProviderTaskPollResult, AIError> {
-        let api_key = self
+        let fallback_api_key = self
             .api_key
             .read()
             .await
-            .clone()
-            .ok_or_else(|| AIError::InvalidRequest("API key not set".to_string()))?;
+            .clone();
+        let runtime = runtime_config_from_map(None, fallback_api_key)?;
 
-        self.poll_task_once(&api_key, handle.task_id.as_str())
+        self.poll_task_once(&runtime, handle.task_id.as_str())
             .await
     }
 
+    async fn poll_task_with_config(
+        &self,
+        handle: ProviderTaskHandle,
+        provider_config: Option<HashMap<String, Value>>,
+    ) -> Result<ProviderTaskPollResult, AIError> {
+        let fallback_api_key = self.api_key.read().await.clone();
+        let runtime = runtime_config_from_map(provider_config.as_ref(), fallback_api_key)?;
+        self.poll_task_once(&runtime, handle.task_id.as_str()).await
+    }
+
     async fn generate(&self, request: GenerateRequest) -> Result<String, AIError> {
-        let api_key = self
+        let fallback_api_key = self
             .api_key
             .read()
             .await
-            .clone()
-            .ok_or_else(|| AIError::InvalidRequest("API key not set".to_string()))?;
+            .clone();
+        let runtime = runtime_config_from_map(request.provider_config.as_ref(), fallback_api_key)?;
 
-        let task_id = self.submit_task_internal(&api_key, &request).await?;
-        self.poll_task_until_complete(&api_key, &task_id)
+        let task_id = self.submit_task_internal(&runtime, &request).await?;
+        self.poll_task_until_complete(&runtime, &task_id)
             .await
     }
 }
@@ -671,9 +761,10 @@ impl AIProvider for VolcVideoProvider {
 /// Cancel a video generation task by calling DELETE endpoint
 pub async fn cancel_volcvideo_task(
     api_key: &str,
+    base_url: &str,
     task_id: &str,
 ) -> Result<(), AIError> {
-    let endpoint = format!("{}{}/{}", API_BASE_URL, QUERY_PATH, task_id);
+    let endpoint = format!("{}/{}", build_endpoint(base_url, QUERY_PATH)?, task_id);
     info!("[VolcVideo Cancel] cancelling task: {}, endpoint: {}", task_id, endpoint);
 
     let client = Client::new();
@@ -703,10 +794,207 @@ pub async fn cancel_volcvideo_task(
 
 #[cfg(test)]
 mod tests {
-    use super::map_poll_network_error;
-    use crate::ai::error::AIError;
+    use super::{
+        build_endpoint, classify_query_status, extract_content_video_url, map_poll_network_error,
+        VideoQueryResponse, VolcVideoProvider,
+    };
+    use crate::ai::{
+        error::AIError, AIProvider, GenerateRequest, ProviderTaskHandle, ProviderTaskPollResult,
+        ProviderTaskSubmission,
+    };
     use reqwest::Client;
+    use serde_json::json;
+    use std::collections::HashMap;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
+
+    async fn read_http_request(socket: &mut tokio::net::TcpStream) -> Vec<u8> {
+        let mut request = Vec::new();
+        let mut buffer = [0_u8; 4096];
+        let header_end = loop {
+            let size = socket.read(&mut buffer).await.unwrap();
+            assert!(size > 0, "connection closed before request headers");
+            request.extend_from_slice(&buffer[..size]);
+            if let Some(header_end) = request
+                .windows(4)
+                .position(|chunk| chunk == b"\r\n\r\n")
+            {
+                break header_end + 4;
+            }
+        };
+        let headers = std::str::from_utf8(&request[..header_end]).unwrap();
+        let content_length = headers
+            .lines()
+            .find_map(|line| {
+                line.split_once(':').and_then(|(name, value)| {
+                    name.eq_ignore_ascii_case("content-length")
+                        .then(|| value.trim().parse::<usize>().unwrap())
+                })
+            })
+            .unwrap_or(0);
+
+        while request.len() < header_end + content_length {
+            let size = socket.read(&mut buffer).await.unwrap();
+            assert!(size > 0, "connection closed before request body");
+            request.extend_from_slice(&buffer[..size]);
+        }
+        request
+    }
+
+    async fn write_json_response(socket: &mut tokio::net::TcpStream, body: &str) {
+        let response = format!(
+            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+            body.len(),
+            body
+        );
+        socket.write_all(response.as_bytes()).await.unwrap();
+    }
+
+    #[test]
+    fn joins_cloud_compatible_base_urls_without_duplicate_api_versions() {
+        assert_eq!(
+            build_endpoint(
+                "https://ai.yunxinapi.com/hub/volcengine",
+                "/api/v3/contents/generations/tasks"
+            )
+            .unwrap(),
+            "https://ai.yunxinapi.com/hub/volcengine/api/v3/contents/generations/tasks"
+        );
+        assert_eq!(
+            build_endpoint(
+                "https://ark.cn-beijing.volces.com/api/v3/",
+                "/api/v3/contents/generations/tasks"
+            )
+            .unwrap(),
+            "https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks"
+        );
+    }
+
+    #[test]
+    fn extracts_yunxin_video_url_from_content_array() {
+        let response: VideoQueryResponse = serde_json::from_value(json!({
+            "id": "tsk_123",
+            "status": "succeeded",
+            "content": [
+                { "type": "text", "text": "ignored" },
+                { "type": "video", "video_url": "https://example.com/video.mp4" }
+            ]
+        }))
+        .unwrap();
+
+        assert_eq!(
+            extract_content_video_url(response.content.as_ref()),
+            Some("https://example.com/video.mp4".to_string())
+        );
+    }
+
+    #[test]
+    fn treats_yunxin_pending_and_terminal_statuses_correctly() {
+        for status in ["creating", "submitted", "queued", "running", "processing"] {
+            assert!(matches!(
+                classify_query_status(Some(status), false, None, None).unwrap(),
+                ProviderTaskPollResult::Running
+            ));
+        }
+        assert!(matches!(
+            classify_query_status(
+                Some("succeeded"),
+                false,
+                Some("https://example.com/video.mp4".to_string()),
+                Some(42)
+            )
+            .unwrap(),
+            ProviderTaskPollResult::SucceededWithMeta { url, seed: Some(42) }
+                if url == "https://example.com/video.mp4"
+        ));
+        assert!(matches!(
+            classify_query_status(Some("cancelled"), false, None, None).unwrap(),
+            ProviderTaskPollResult::Failed(message) if message.contains("cancelled")
+        ));
+    }
+
+    #[tokio::test]
+    async fn sends_yunxin_compatible_submit_and_poll_requests_with_the_selected_runtime_config() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut submit_socket, _) = listener.accept().await.unwrap();
+            let submit_request = read_http_request(&mut submit_socket).await;
+            write_json_response(&mut submit_socket, r#"{"id":"tsk_yunxin_123"}"#).await;
+
+            let (mut poll_socket, _) = listener.accept().await.unwrap();
+            let poll_request = read_http_request(&mut poll_socket).await;
+            write_json_response(
+                &mut poll_socket,
+                r#"{"id":"tsk_yunxin_123","status":"succeeded","content":[{"type":"video","video_url":"https://example.com/result.mp4"}]}"#,
+            )
+            .await;
+
+            (submit_request, poll_request)
+        });
+        let base_url = format!("http://{address}/hub/volcengine");
+        let provider_config = HashMap::from([
+            ("base_url".to_string(), json!(base_url)),
+            ("api_key".to_string(), json!("yunxin-key")),
+        ]);
+        let provider = VolcVideoProvider::new();
+        let submission = provider
+            .submit_task(GenerateRequest {
+                prompt: "A rainy city at night".to_string(),
+                model: "doubao-seedance-2-0-260128".to_string(),
+                provider_id: Some("volcvideo".to_string()),
+                size: "720p".to_string(),
+                aspect_ratio: "16:9".to_string(),
+                reference_images: None,
+                extra_params: None,
+                provider_config: Some(provider_config.clone()),
+                draft_task_id: None,
+            })
+            .await
+            .unwrap();
+        let task_id = match submission {
+            ProviderTaskSubmission::Queued(handle) => handle.task_id,
+            ProviderTaskSubmission::Succeeded(_) => panic!("Seedance tasks must be polled"),
+        };
+
+        let poll_result = provider
+            .poll_task_with_config(
+                ProviderTaskHandle {
+                    task_id,
+                    metadata: None,
+                },
+                Some(provider_config),
+            )
+            .await
+            .unwrap();
+        let (submit_request, poll_request) = server.await.unwrap();
+        let submit_request = String::from_utf8(submit_request).unwrap();
+        let poll_request = String::from_utf8(poll_request).unwrap();
+
+        assert!(submit_request.starts_with(
+            "POST /hub/volcengine/api/v3/contents/generations/tasks HTTP/1.1"
+        ));
+        assert!(submit_request.to_ascii_lowercase().contains("authorization: bearer yunxin-key"));
+        assert!(submit_request.to_ascii_lowercase().contains("content-type: application/json"));
+        let submit_body_start = submit_request.find("\r\n\r\n").unwrap() + 4;
+        let submit_body: serde_json::Value =
+            serde_json::from_str(&submit_request[submit_body_start..]).unwrap();
+        assert_eq!(submit_body["model"], json!("doubao-seedance-2-0-260128"));
+        assert_eq!(submit_body["content"], json!([
+            { "type": "text", "text": "A rainy city at night" }
+        ]));
+        assert_eq!(submit_body["resolution"], json!("720p"));
+        assert_eq!(submit_body["ratio"], json!("16:9"));
+        assert!(poll_request.starts_with(
+            "GET /hub/volcengine/api/v3/contents/generations/tasks/tsk_yunxin_123 HTTP/1.1"
+        ));
+        assert!(poll_request.to_ascii_lowercase().contains("authorization: bearer yunxin-key"));
+        assert!(matches!(
+            poll_result,
+            ProviderTaskPollResult::SucceededWithMeta { url, seed: None }
+                if url == "https://example.com/result.mp4"
+        ));
+    }
 
     #[tokio::test]
     async fn preserves_transport_failures_as_network_errors_for_task_recovery() {

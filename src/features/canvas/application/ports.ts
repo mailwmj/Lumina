@@ -40,6 +40,7 @@ export interface GraphImageResolver {
 export interface GenerateImagePayload {
   prompt: string;
   model: string;
+  providerId?: string;
   size: string;
   aspectRatio: string;
   referenceImages?: string[];
