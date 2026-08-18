@@ -15,7 +15,7 @@ const imageData = vi.hoisted(() => ({
 }));
 
 const media = vi.hoisted(() => ({
-  uploadMediaToPublicUrl: vi.fn(),
+  uploadMediaToTos: vi.fn(),
 }));
 
 vi.mock('@/commands/ai', () => commands);
@@ -95,6 +95,10 @@ describe('tauriAiGateway batch submission boundary', () => {
 
   it('forwards ordered typed Seedance content without encoding roles into the prompt', async () => {
     commands.submitGenerateImageJob.mockResolvedValue('video-job-2');
+    media.uploadMediaToTos
+      .mockResolvedValueOnce({ key: 'ref', url: 'https://tos.example/ref.png', expiresAt: 1, contentType: 'image/png', sizeBytes: 1 })
+      .mockResolvedValueOnce({ key: 'video', url: 'https://tos.example/source.mp4', expiresAt: 1, contentType: 'video/mp4', sizeBytes: 1 })
+      .mockResolvedValueOnce({ key: 'audio', url: 'https://tos.example/music.mp3', expiresAt: 1, contentType: 'audio/mpeg', sizeBytes: 1 });
     const providerConfig = {
       api_key: 'seedance-key',
       base_url: 'https://ark.example/api/v3',
@@ -125,9 +129,9 @@ describe('tauriAiGateway batch submission boundary', () => {
       aspect_ratio: '16:9',
       reference_images: undefined,
       video_content: [
-        { type: 'image_url', role: 'reference_image', url: 'https://media.example/ref.png' },
-        { type: 'video_url', role: 'reference_video', url: 'https://media.example/source.mp4' },
-        { type: 'audio_url', role: 'reference_audio', url: 'https://media.example/music.mp3' },
+        { type: 'image_url', role: 'reference_image', url: 'https://tos.example/ref.png' },
+        { type: 'video_url', role: 'reference_video', url: 'https://tos.example/source.mp4' },
+        { type: 'audio_url', role: 'reference_audio', url: 'https://tos.example/music.mp3' },
         { type: 'text', text: 'The provider receives its typed content separately' },
       ],
       extra_params: undefined,
@@ -139,10 +143,11 @@ describe('tauriAiGateway batch submission boundary', () => {
 
   it('normalizes local typed image, video, and audio media without changing public URLs or content order', async () => {
     commands.submitGenerateImageJob.mockResolvedValue('video-job-3');
-    media.uploadMediaToPublicUrl
-      .mockResolvedValueOnce('https://public.example/reference.png')
-      .mockResolvedValueOnce('https://public.example/source.mp4')
-      .mockResolvedValueOnce('https://public.example/music.mp3');
+    media.uploadMediaToTos
+      .mockResolvedValueOnce({ key: 'reference', url: 'https://public.example/reference.png', expiresAt: 1, contentType: 'image/png', sizeBytes: 1 })
+      .mockResolvedValueOnce({ key: 'source', url: 'https://public.example/source.mp4', expiresAt: 1, contentType: 'video/mp4', sizeBytes: 1 })
+      .mockResolvedValueOnce({ key: 'music', url: 'https://public.example/music.mp3', expiresAt: 1, contentType: 'audio/mpeg', sizeBytes: 1 })
+      .mockResolvedValueOnce({ key: 'remote', url: 'https://public.example/remote.png', expiresAt: 1, contentType: 'image/png', sizeBytes: 1 });
 
     await tauriAiGateway.submitGenerateImageJob({
       prompt: 'Typed content remains ordered after upload',
@@ -159,13 +164,13 @@ describe('tauriAiGateway batch submission boundary', () => {
       ],
     });
 
-    expect(media.uploadMediaToPublicUrl).toHaveBeenCalledTimes(3);
+    expect(media.uploadMediaToTos).toHaveBeenCalledTimes(4);
     expect(commands.submitGenerateImageJob).toHaveBeenCalledWith(expect.objectContaining({
       video_content: [
         { type: 'image_url', role: 'reference_image', url: 'https://public.example/reference.png' },
         { type: 'video_url', role: 'reference_video', url: 'https://public.example/source.mp4' },
         { type: 'audio_url', role: 'reference_audio', url: 'https://public.example/music.mp3' },
-        { type: 'image_url', role: 'reference_image', url: 'https://media.example/remote.png' },
+        { type: 'image_url', role: 'reference_image', url: 'https://public.example/remote.png' },
         { type: 'text', text: 'Typed content remains ordered after upload' },
       ],
     }));

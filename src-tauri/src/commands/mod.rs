@@ -4,14 +4,18 @@ pub mod batch_image_crop;
 pub mod cleanup;
 pub mod image;
 pub mod logging;
+pub mod media;
 pub mod project_state;
 pub mod system;
+pub mod storage;
 pub mod update;
 
 pub use ai::*;
 pub use cleanup::*;
 pub use image::*;
 pub use logging::*;
+pub use media::*;
 pub use project_state::*;
 pub use system::*;
+pub use storage::*;
 pub use update::*;

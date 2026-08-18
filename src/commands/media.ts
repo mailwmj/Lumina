@@ -16,7 +16,39 @@ export async function convertAudioToMp3(sourcePath: string, projectId: string): 
   return await invoke('convert_audio_to_mp3', { sourcePath, projectId });
 }
 
-export async function uploadMediaToPublicUrl(source: string): Promise<string> {
+export async function persistMediaBytesToProject(
+  bytes: Uint8Array,
+  fileName: string,
+  projectId: string,
+  kind: 'videos' | 'audios',
+): Promise<string> {
   ensureTauriRuntime();
-  return await invoke('upload_media_to_public_url', { source });
+  return await invoke('persist_media_bytes_to_project', {
+    bytes: Array.from(bytes),
+    fileName,
+    projectId,
+    kind,
+  });
+}
+
+export type TosUploadResult = {
+  key: string;
+  url: string;
+  expiresAt: number;
+  contentType: string;
+  sizeBytes: number;
+};
+
+export async function uploadMediaToTos(
+  source: string,
+  projectId?: string,
+): Promise<TosUploadResult> {
+  ensureTauriRuntime();
+  return await invoke('upload_media_to_tos', { source, projectId });
+}
+
+/** @deprecated Use uploadMediaToTos. Kept while old callers are migrated. */
+export async function uploadMediaToPublicUrl(source: string): Promise<string> {
+  const result = await uploadMediaToTos(source);
+  return result.url;
 }

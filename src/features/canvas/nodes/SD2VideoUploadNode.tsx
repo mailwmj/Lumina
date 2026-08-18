@@ -24,7 +24,7 @@ import { useCanvasStore } from '@/stores/canvasStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { resolveVideoDisplayUrl } from '@/features/canvas/application/imageData';
 import { useSettingsStore } from '@/stores/settingsStore';
-import { convertVideoToMp4 } from '@/commands/media';
+import { convertVideoToMp4, persistMediaBytesToProject } from '@/commands/media';
 
 type VideoUploadNodeProps = NodeProps & {
   id: string;
@@ -77,7 +77,9 @@ export const VideoUploadNode = memo(({ id, data, selected, width, height }: Vide
         : URL.createObjectURL(file);
       const videoUrl = projectId && filePath
         ? await convertVideoToMp4(sourcePath, projectId)
-        : sourcePath;
+        : projectId
+          ? await persistMediaBytesToProject(new Uint8Array(await file.arrayBuffer()), file.name, projectId, 'videos')
+          : sourcePath;
       const nextData: Partial<VideoUploadRefNodeData> = {
         videoUrl,
         sourceFileName: file.name,

@@ -23,7 +23,7 @@ import { resolveNodeSurfaceStateClass } from '@/features/canvas/ui/nodeSurfaceSt
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { useSettingsStore } from '@/stores/settingsStore';
-import { convertAudioToMp3 } from '@/commands/media';
+import { convertAudioToMp3, persistMediaBytesToProject } from '@/commands/media';
 
 type AudioUploadNodeProps = NodeProps & {
   id: string;
@@ -78,7 +78,9 @@ export const AudioUploadNode = memo(({ id, data, selected, width, height }: Audi
         : URL.createObjectURL(file);
       const audioUrl = projectId && filePath
         ? await convertAudioToMp3(sourcePath, projectId)
-        : sourcePath;
+        : projectId
+          ? await persistMediaBytesToProject(new Uint8Array(await file.arrayBuffer()), file.name, projectId, 'audios')
+          : sourcePath;
       const nextData: Partial<AudioUploadRefNodeData> = {
         audioUrl,
         sourceFileName: file.name,

@@ -51,6 +51,44 @@ fn build_output_filename(source: &Path, ext: &str) -> String {
     format!("{}_{}.{}", now, stem, ext)
 }
 
+fn normalize_media_extension(file_name: &str, fallback: &str) -> String {
+    Path::new(file_name)
+        .extension()
+        .and_then(|value| value.to_str())
+        .filter(|value| !value.is_empty() && value.len() <= 10)
+        .map(|value| value.to_ascii_lowercase())
+        .unwrap_or_else(|| fallback.to_string())
+}
+
+#[tauri::command]
+pub fn persist_media_bytes_to_project(
+    app: AppHandle,
+    bytes: Vec<u8>,
+    file_name: String,
+    project_id: String,
+    kind: String,
+) -> Result<String, String> {
+    const MAX_IN_MEMORY_BYTES: usize = 512 * 1024 * 1024;
+    if bytes.is_empty() {
+        return Err("媒体数据为空".to_string());
+    }
+    if bytes.len() > MAX_IN_MEMORY_BYTES {
+        return Err("媒体文件过大，无法通过浏览器拖拽通道暂存；请使用本地文件路径上传".to_string());
+    }
+
+    let (directory_kind, fallback_extension) = match kind.as_str() {
+        "videos" => ("videos", "mp4"),
+        "audios" => ("audios", "mp3"),
+        _ => return Err("不支持的媒体类型".to_string()),
+    };
+    let output_dir = resolve_project_upload_dir(&app, &project_id, directory_kind)?;
+    let extension = normalize_media_extension(&file_name, fallback_extension);
+    let output_path = output_dir.join(build_output_filename(Path::new(&file_name), &extension));
+    std::fs::write(&output_path, bytes)
+        .map_err(|error| format!("保存媒体文件失败: {error}"))?;
+    Ok(output_path.to_string_lossy().to_string())
+}
+
 fn run_ffmpeg_convert(source: &Path, target: &Path, args: &[&str]) -> Result<(), String> {
     let mut command = Command::new("ffmpeg");
     command.arg("-y").arg("-i").arg(source);

@@ -54,7 +54,7 @@ async function blobToDataUrl(blobUrl: string): Promise<string> {
 
 /**
  * Convert image URL to data URL for text polishing API
- * Unlike uploadImageToVolcVod (for video generation), this always returns data URL
+ * Unlike Seedance media uploads (which use TOS), this always returns a data URL
  * because text APIs accept inline base64 images directly
  */
 async function convertImageToDataUrl(imageUrl: string): Promise<string> {

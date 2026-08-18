@@ -17,6 +17,7 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager};
 use tracing::info;
 use uuid::Uuid;
+use crate::storage::{source::resolve_media_source, tos};
 
 const STORYBOARD_METADATA_PNG_TEXT_KEY: &str = "StoryboardCopilotMetadata";
 const FAST_PREVIEW_BYPASS_MAX_BYTES: usize = 2_000_000;
@@ -2090,104 +2091,16 @@ pub async fn convert_image_to_data_url(source: String) -> Result<String, String>
     Ok(data_url)
 }
 
-async fn upload_source_to_public_url(
-    source: String,
-    fallback_file_name: &str,
-    media_label: &str,
-) -> Result<String, String> {
-    info!("[upload] starting, source length: {}, source preview: {}", source.len(), &source[..source.len().min(150)]);
-
-    // Extract source bytes before passing them to the existing public upload service.
-    let media_bytes = if source.starts_with("data:") {
-        let parts: Vec<&str> = source.splitn(2, ',').collect();
-        if parts.len() != 2 {
-            return Err("[upload] 无效的 data URL 格式".to_string());
-        }
-        STANDARD.decode(parts[1])
-            .map_err(|e| format!("[upload] Base64 解码失败: {}", e))?
-    } else if source.starts_with("asset://") {
-        info!("[upload] processing asset URL: {}", source);
-        let file_path = decode_asset_url_path(&source)
-            .map_err(|e| format!("[upload] {}", e))?;
-        info!("[upload] asset decoded file path: {}", file_path.display());
-        match std::fs::read(&file_path) {
-            Ok(bytes) => {
-                info!("[upload] successfully read {} bytes from asset path", bytes.len());
-                bytes
-            }
-            Err(e) => {
-                info!("[upload] failed to read asset path, trying with canonicalize: {}", e);
-                let canonical = std::fs::canonicalize(&file_path)
-                    .map_err(|e2| format!("[upload] canonicalize failed: {} - original: {}", e2, file_path.display()))?;
-                let canonical_str = canonical.to_string_lossy().to_string();
-                info!("[upload] canonical path: {}", canonical_str);
-                let clean_path = canonical_str.strip_prefix("\\\\?\\").unwrap_or(&canonical_str);
-                std::fs::read(clean_path)
-                    .map_err(|e3| format!("[upload] 读取 asset 文件失败: {} - original: {}, canonical: {}", e3, file_path.display(), canonical_str))?
-            }
-        }
-    } else if source.starts_with("file://") {
-        info!("[upload] processing file:// URL: {}", source);
-        let file_path = decode_file_url_path(&source);
-        info!("[upload] file URL decoded path: {}", file_path);
-        std::fs::read(&file_path)
-            .map_err(|e| format!("[upload] 读取 file:// 文件失败: {} - path: {}", e, file_path))?
-    } else {
-        std::fs::read(&source)
-            .map_err(|e| format!("[upload] 读取文件失败 {}: {}", source, e))?
-    };
-
-    if media_bytes.is_empty() {
-        return Err(format!("[upload] {}数据为空", media_label));
-    }
-    info!("[upload] {} bytes: {} KB", media_label, media_bytes.len() / 1024);
-
-    let file_name = source
-        .rsplit(['/', '\\'])
-        .next()
-        .filter(|value| value.contains('.'))
-        .unwrap_or(fallback_file_name)
-        .to_string();
-    let form = reqwest::multipart::Form::new()
-        .part(
-            "fileToUpload",
-            reqwest::multipart::Part::bytes(media_bytes).file_name(file_name),
-        )
-        .text("reqtype", "fileupload")
-        .text("time", "72h");
-    let response = reqwest::Client::new()
-        .post("https://litterbox.catbox.moe/resources/internals/api.php")
-        .multipart(form)
-        .send()
-        .await
-        .map_err(|e| format!("[upload] 公网{}上传请求失败: {}", media_label, e))?;
-    let status = response.status();
-    let body = response
-        .text()
-        .await
-        .map_err(|e| format!("[upload] 无法读取上传响应: {}", e))?;
-    let public_url = body.trim();
-    if status.is_success()
-        && (public_url.starts_with("http://") || public_url.starts_with("https://"))
-    {
-        info!("[upload] public {} URL created: {}", media_label, public_url);
-        return Ok(public_url.to_string());
-    }
-
-    Err(format!(
-        "[upload] 公网{}上传失败 [{}]: {}",
-        media_label, status, public_url
-    ))
-}
-
 #[tauri::command]
 pub async fn upload_image_to_volc_vod(source: String) -> Result<String, String> {
-    upload_source_to_public_url(source, "reference-image.png", "图片").await
+    let media = resolve_media_source(&source).await?;
+    Ok(tos::upload_media(media, None).await?.url)
 }
 
 #[tauri::command]
 pub async fn upload_media_to_public_url(source: String) -> Result<String, String> {
-    upload_source_to_public_url(source, "reference-media.bin", "媒体").await
+    let media = resolve_media_source(&source).await?;
+    Ok(tos::upload_media(media, None).await?.url)
 }
 
 /// Open a URL in Microsoft Edge browser on Windows

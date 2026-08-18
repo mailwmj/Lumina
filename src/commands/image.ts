@@ -232,8 +232,12 @@ export async function copyImageSourceToClipboard(source: string): Promise<void> 
   await invoke('copy_image_source_to_clipboard', { source });
 }
 
-export async function uploadImageToVolcVod(source: string): Promise<string> {
-  return await invoke('upload_image_to_volc_vod', { source });
+/** @deprecated Seedance media is stored in private TOS objects now. */
+export async function uploadImageToVolcVod(source: string, projectId?: string): Promise<string> {
+  const result = await invoke<{
+    url: string;
+  }>('upload_media_to_tos', { source, projectId });
+  return result.url;
 }
 
 export async function autoSaveVideoToProject(

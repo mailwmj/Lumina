@@ -18,6 +18,13 @@ on:
 jobs:
   build-windows:
     runs-on: windows-latest
+    env:
+      LUMINA_EMBEDDED_TOS_BUCKET: ${{ vars.LUMINA_TOS_BUCKET }}
+      LUMINA_EMBEDDED_TOS_REGION: ${{ vars.LUMINA_TOS_REGION || 'cn-beijing' }}
+      LUMINA_EMBEDDED_TOS_ENDPOINT: ${{ vars.LUMINA_TOS_ENDPOINT || 'https://tos-cn-beijing.volces.com' }}
+      LUMINA_EMBEDDED_TOS_URL_TTL_SECONDS: ${{ vars.LUMINA_TOS_URL_TTL_SECONDS || '3600' }}
+      LUMINA_EMBEDDED_TOS_ACCESS_KEY: ${{ secrets.LUMINA_TOS_ACCESS_KEY }}
+      LUMINA_EMBEDDED_TOS_SECRET_KEY: ${{ secrets.LUMINA_TOS_SECRET_KEY }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -67,6 +74,20 @@ jobs:
           npm ci
           npm ci --prefix canvas-agent
 
+      - name: Verify embedded TOS configuration
+        shell: pwsh
+        run: |
+          $required = @(
+            'LUMINA_EMBEDDED_TOS_BUCKET',
+            'LUMINA_EMBEDDED_TOS_ACCESS_KEY',
+            'LUMINA_EMBEDDED_TOS_SECRET_KEY'
+          )
+          foreach ($name in $required) {
+            if ([string]::IsNullOrWhiteSpace((Get-Item "Env:$name").Value)) {
+              throw "Missing required GitHub Actions variable or secret: $name"
+            }
+          }
+
       - name: Test Canvas Agent
         run: npm run canvas-agent:test
 
@@ -104,6 +125,13 @@ jobs:
 
   build-macos:
     runs-on: macos-latest
+    env:
+      LUMINA_EMBEDDED_TOS_BUCKET: ${{ vars.LUMINA_TOS_BUCKET }}
+      LUMINA_EMBEDDED_TOS_REGION: ${{ vars.LUMINA_TOS_REGION || 'cn-beijing' }}
+      LUMINA_EMBEDDED_TOS_ENDPOINT: ${{ vars.LUMINA_TOS_ENDPOINT || 'https://tos-cn-beijing.volces.com' }}
+      LUMINA_EMBEDDED_TOS_URL_TTL_SECONDS: ${{ vars.LUMINA_TOS_URL_TTL_SECONDS || '3600' }}
+      LUMINA_EMBEDDED_TOS_ACCESS_KEY: ${{ secrets.LUMINA_TOS_ACCESS_KEY }}
+      LUMINA_EMBEDDED_TOS_SECRET_KEY: ${{ secrets.LUMINA_TOS_SECRET_KEY }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -150,6 +178,16 @@ jobs:
         run: |
           npm ci
           npm ci --prefix canvas-agent
+
+      - name: Verify embedded TOS configuration
+        shell: bash
+        run: |
+          for name in LUMINA_EMBEDDED_TOS_BUCKET LUMINA_EMBEDDED_TOS_ACCESS_KEY LUMINA_EMBEDDED_TOS_SECRET_KEY; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "Missing required GitHub Actions variable or secret: $name"
+              exit 1
+            fi
+          done
 
       - name: Test Canvas Agent
         run: npm run canvas-agent:test

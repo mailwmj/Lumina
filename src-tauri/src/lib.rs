@@ -2,6 +2,7 @@ pub mod ai;
 pub mod canvas_agent;
 pub mod commands;
 pub mod session;
+pub mod storage;
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -13,6 +14,7 @@ use commands::image;
 use commands::logging;
 use commands::project_state;
 use commands::system;
+use commands::storage as storage_commands;
 use commands::update;
 use tauri::Manager;
 use tracing::{info, warn};
@@ -198,6 +200,10 @@ pub fn run() {
             image::copy_image_source_to_clipboard,
             image::upload_image_to_volc_vod,
             image::upload_media_to_public_url,
+            storage_commands::upload_media_to_tos,
+            commands::media::persist_media_bytes_to_project,
+            commands::media::convert_video_to_mp4,
+            commands::media::convert_audio_to_mp3,
             image::convert_image_to_data_url,
             image::auto_save_video_to_project,
             image::auto_save_image_to_project,
