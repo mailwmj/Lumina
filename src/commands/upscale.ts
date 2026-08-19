@@ -18,6 +18,7 @@ export type UpscaleCommandErrorCode =
   | 'UNSUPPORTED_IMAGE'
   | 'IMAGE_TOO_LARGE'
   | 'SIDECAR_UNAVAILABLE'
+  | 'GPU_UNAVAILABLE'
   | 'SIDECAR_FAILED'
   | 'CACHE_FAILED'
   | 'CANCELLED'
@@ -39,6 +40,7 @@ export interface UpscaleJobStatus {
   jobId: string;
   status: UpscaleJobState;
   progress: number | null;
+  phase: string | null;
   resultImageUrl: string | null;
   previewImageUrl: string | null;
   aspectRatio: string | null;
@@ -140,6 +142,9 @@ function normalizeErrorCode(value: unknown): UpscaleCommandErrorCode | null {
   if (normalized === 'SIDECAR_UNAVAILABLE') {
     return 'SIDECAR_UNAVAILABLE';
   }
+  if (normalized === 'GPU_UNAVAILABLE' || normalized === 'VULKAN_INITIALIZATION_FAILED') {
+    return 'GPU_UNAVAILABLE';
+  }
   if (normalized === 'SIDECAR_FAILED') {
     return 'SIDECAR_FAILED';
   }
@@ -238,6 +243,7 @@ function normalizeStatusResult(jobId: string, rawResult: unknown): UpscaleJobSta
     jobId: readString(record, ['jobId', 'job_id']) ?? jobId,
     status: normalizeStatus(record.status),
     progress: readNumber(record, ['progress']),
+    phase: readString(record, ['phase']),
     resultImageUrl,
     previewImageUrl: readString(record, ['previewImageUrl', 'preview_image_url']),
     aspectRatio: readString(record, ['aspectRatio', 'aspect_ratio']),

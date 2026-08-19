@@ -25,6 +25,7 @@ export interface UpscaleNodeRuntime {
   status: UpscaleRuntimeStatus;
   jobId: string | null;
   progress: number | null;
+  phase: string | null;
   errorCode: UpscaleRuntimeErrorCode | null;
   error: string | null;
   resultNodeId: string | null;
@@ -42,6 +43,7 @@ export function createIdleUpscaleRuntime(): UpscaleNodeRuntime {
     status: 'idle',
     jobId: null,
     progress: null,
+    phase: null,
     errorCode: null,
     error: null,
     resultNodeId: null,

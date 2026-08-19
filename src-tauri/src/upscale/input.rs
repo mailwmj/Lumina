@@ -10,11 +10,12 @@ use url::Url;
 use super::{
     JobRequest, StartUpscaleJobRequest, UpscaleFailure, ERROR_CACHE_FAILED, ERROR_IMAGE_TOO_LARGE,
     ERROR_INVALID_INPUT_SOURCE, ERROR_INVALID_SCALE, ERROR_MISSING_INPUT,
-    ERROR_UNSUPPORTED_COLOR_PROFILE, ERROR_UNSUPPORTED_IMAGE, MAX_OUTPUT_PIXELS,
+    ERROR_UNSUPPORTED_COLOR_PROFILE, ERROR_UNSUPPORTED_IMAGE, MAX_OUTPUT_EDGE, MAX_OUTPUT_PIXELS,
 };
 
 const MAX_INPUT_BYTES: u64 = 512 * 1024 * 1024;
 
+#[derive(Debug)]
 pub(super) struct PreparedInput {
     pub(super) normalized_path: PathBuf,
     pub(super) source_sha256: String,
@@ -131,23 +132,8 @@ pub(super) fn preprocess_source(
         )
     })?;
     let mut image = decode_srgb_image(&bytes)?;
-    let expected_width = image
-        .width()
-        .checked_mul(u32::from(scale))
-        .ok_or_else(|| UpscaleFailure::new(ERROR_IMAGE_TOO_LARGE, "scaled width overflows"))?;
-    let expected_height = image
-        .height()
-        .checked_mul(u32::from(scale))
-        .ok_or_else(|| UpscaleFailure::new(ERROR_IMAGE_TOO_LARGE, "scaled height overflows"))?;
-    let output_pixels = u64::from(expected_width)
-        .checked_mul(u64::from(expected_height))
-        .ok_or_else(|| UpscaleFailure::new(ERROR_IMAGE_TOO_LARGE, "scaled dimensions overflow"))?;
-    if output_pixels > MAX_OUTPUT_PIXELS {
-        return Err(UpscaleFailure::new(
-            ERROR_IMAGE_TOO_LARGE,
-            "scaled image exceeds maximum pixel count",
-        ));
-    }
+    let (expected_width, expected_height) =
+        expected_output_dimensions(image.width(), image.height(), scale)?;
 
     let normalized_path = work_dir.join("input.png");
     write_png_atomically(&mut image, &normalized_path)?;
@@ -165,6 +151,35 @@ pub(super) fn preprocess_source(
         expected_width,
         expected_height,
     })
+}
+
+fn expected_output_dimensions(
+    input_width: u32,
+    input_height: u32,
+    scale: u8,
+) -> Result<(u32, u32), UpscaleFailure> {
+    let expected_width = input_width
+        .checked_mul(u32::from(scale))
+        .ok_or_else(|| UpscaleFailure::new(ERROR_IMAGE_TOO_LARGE, "scaled width overflows"))?;
+    let expected_height = input_height
+        .checked_mul(u32::from(scale))
+        .ok_or_else(|| UpscaleFailure::new(ERROR_IMAGE_TOO_LARGE, "scaled height overflows"))?;
+    if expected_width > MAX_OUTPUT_EDGE || expected_height > MAX_OUTPUT_EDGE {
+        return Err(UpscaleFailure::new(
+            ERROR_IMAGE_TOO_LARGE,
+            "scaled image exceeds the maximum edge length",
+        ));
+    }
+    let output_pixels = u64::from(expected_width)
+        .checked_mul(u64::from(expected_height))
+        .ok_or_else(|| UpscaleFailure::new(ERROR_IMAGE_TOO_LARGE, "scaled dimensions overflow"))?;
+    if output_pixels > MAX_OUTPUT_PIXELS {
+        return Err(UpscaleFailure::new(
+            ERROR_IMAGE_TOO_LARGE,
+            "scaled image exceeds maximum pixel count",
+        ));
+    }
+    Ok((expected_width, expected_height))
 }
 
 fn decode_srgb_image(bytes: &[u8]) -> Result<DynamicImage, UpscaleFailure> {
@@ -320,21 +335,88 @@ fn is_supported_color_type(color_type: image::ColorType) -> bool {
 }
 
 fn is_srgb_icc_profile(profile: &[u8]) -> bool {
-    let lowercase = profile
-        .iter()
-        .map(u8::to_ascii_lowercase)
+    let Some(description) = icc_profile_description(profile) else {
+        return false;
+    };
+    let normalized = description
+        .bytes()
+        .filter(u8::is_ascii_alphanumeric)
+        .map(|byte| byte.to_ascii_lowercase())
         .collect::<Vec<_>>();
-    [
-        b"srgb".as_slice(),
-        b"iec61966-2.1".as_slice(),
-        b"iec 61966-2.1".as_slice(),
-    ]
-    .iter()
-    .any(|needle| {
-        lowercase
-            .windows(needle.len())
-            .any(|window| window == *needle)
-    })
+    matches!(
+        normalized.as_slice(),
+        b"srgb" | b"srgbiec6196621" | b"iec6196621"
+    )
+}
+
+fn icc_profile_description(profile: &[u8]) -> Option<String> {
+    if profile.get(16..20)? != b"RGB " || profile.get(36..40)? != b"acsp" {
+        return None;
+    }
+    let tag_count = usize::try_from(read_icc_u32(profile.get(128..132)?)?).ok()?;
+    let table_end = 132_usize.checked_add(tag_count.checked_mul(12)?)?;
+    if table_end > profile.len() {
+        return None;
+    }
+
+    for index in 0..tag_count {
+        let entry_start = 132 + index * 12;
+        let entry = profile.get(entry_start..entry_start + 12)?;
+        if entry.get(0..4)? != b"desc" {
+            continue;
+        }
+        let offset = usize::try_from(read_icc_u32(entry.get(4..8)?)?).ok()?;
+        let length = usize::try_from(read_icc_u32(entry.get(8..12)?)?).ok()?;
+        let tag = profile.get(offset..offset.checked_add(length)?)?;
+        return decode_icc_description_tag(tag);
+    }
+    None
+}
+
+fn decode_icc_description_tag(tag: &[u8]) -> Option<String> {
+    match tag.get(0..4)? {
+        b"desc" => {
+            let length = usize::try_from(read_icc_u32(tag.get(8..12)?)?).ok()?;
+            let value = tag.get(12..12usize.checked_add(length)?)?;
+            std::str::from_utf8(value)
+                .ok()
+                .map(|value| value.trim_end_matches('\0').trim().to_string())
+        }
+        b"text" => std::str::from_utf8(tag.get(8..)?)
+            .ok()
+            .map(|value| value.trim_end_matches('\0').trim().to_string()),
+        b"mluc" => {
+            let record_count = usize::try_from(read_icc_u32(tag.get(8..12)?)?).ok()?;
+            let record_size = usize::try_from(read_icc_u32(tag.get(12..16)?)?).ok()?;
+            if record_size < 12 {
+                return None;
+            }
+            for index in 0..record_count {
+                let start = 16_usize.checked_add(index.checked_mul(record_size)?)?;
+                let record = tag.get(start..start.checked_add(record_size)?)?;
+                let length = usize::try_from(read_icc_u32(record.get(4..8)?)?).ok()?;
+                let offset = usize::try_from(read_icc_u32(record.get(8..12)?)?).ok()?;
+                if length == 0 || length % 2 != 0 {
+                    continue;
+                }
+                let value = tag.get(offset..offset.checked_add(length)?)?;
+                let utf16 = value
+                    .chunks_exact(2)
+                    .map(|pair| u16::from_be_bytes([pair[0], pair[1]]))
+                    .collect::<Vec<_>>();
+                if let Ok(value) = String::from_utf16(&utf16) {
+                    return Some(value.trim_end_matches('\0').trim().to_string());
+                }
+            }
+            None
+        }
+        _ => None,
+    }
+}
+
+fn read_icc_u32(bytes: &[u8]) -> Option<u32> {
+    let array = <[u8; 4]>::try_from(bytes).ok()?;
+    Some(u32::from_be_bytes(array))
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
@@ -357,9 +439,18 @@ mod tests {
 
     #[test]
     fn requires_confirmed_srgb_profiles() {
-        assert!(is_srgb_icc_profile(b"sRGB IEC61966-2.1"));
-        assert!(!is_srgb_icc_profile(b"Display P3"));
-        assert!(!is_srgb_icc_profile(b"Adobe RGB (1998)"));
+        assert!(is_srgb_icc_profile(&icc_profile_with_description(
+            "sRGB IEC61966-2.1"
+        )));
+        assert!(!is_srgb_icc_profile(&icc_profile_with_description(
+            "Display P3"
+        )));
+        assert!(!is_srgb_icc_profile(&icc_profile_with_description(
+            "Adobe RGB (1998)"
+        )));
+        assert!(!is_srgb_icc_profile(
+            b"not a valid profile with sRGB in its bytes"
+        ));
     }
 
     #[test]
@@ -379,6 +470,35 @@ mod tests {
         assert_eq!((image.width(), image.height()), (1, 2));
     }
 
+    #[test]
+    fn rejects_scaled_images_that_exceed_the_maximum_edge_length() {
+        let source_path = std::env::temp_dir().join(format!(
+            "lumina-upscale-edge-source-{}.png",
+            uuid::Uuid::new_v4()
+        ));
+        let work_dir =
+            std::env::temp_dir().join(format!("lumina-upscale-edge-work-{}", uuid::Uuid::new_v4()));
+        image::RgbImage::new(8_193, 1)
+            .save(&source_path)
+            .expect("write source image");
+        fs::create_dir_all(&work_dir).expect("create work directory");
+
+        let error = preprocess_source(&source_path, &work_dir, 4)
+            .expect_err("reject an output wider than the edge limit");
+
+        assert_eq!(error.code, ERROR_IMAGE_TOO_LARGE);
+        let _ = fs::remove_file(source_path);
+        let _ = fs::remove_dir_all(work_dir);
+    }
+
+    #[test]
+    fn rejects_scaled_images_that_exceed_the_maximum_pixel_count() {
+        let error = expected_output_dimensions(4_000, 2_501, 4)
+            .expect_err("reject an output larger than the pixel limit");
+
+        assert_eq!(error.code, ERROR_IMAGE_TOO_LARGE);
+    }
+
     fn insert_exif_orientation(mut jpeg: Vec<u8>, orientation: u16) -> Vec<u8> {
         let mut exif = vec![
             0xff, 0xe1, 0x00, 0x22, b'E', b'x', b'i', b'f', 0, 0, b'I', b'I', 42, 0, 8, 0, 0, 0, 1,
@@ -388,5 +508,23 @@ mod tests {
         exif[29] = (orientation >> 8) as u8;
         jpeg.splice(2..2, exif);
         jpeg
+    }
+
+    fn icc_profile_with_description(description: &str) -> Vec<u8> {
+        let description_bytes = format!("{description}\0").into_bytes();
+        let tag_offset = 144_u32;
+        let tag_length = u32::try_from(12 + description_bytes.len()).expect("tag length");
+        let mut profile = vec![0_u8; tag_offset as usize + tag_length as usize];
+        profile[16..20].copy_from_slice(b"RGB ");
+        profile[36..40].copy_from_slice(b"acsp");
+        profile[128..132].copy_from_slice(&1_u32.to_be_bytes());
+        profile[132..136].copy_from_slice(b"desc");
+        profile[136..140].copy_from_slice(&tag_offset.to_be_bytes());
+        profile[140..144].copy_from_slice(&tag_length.to_be_bytes());
+        profile[tag_offset as usize..tag_offset as usize + 4].copy_from_slice(b"desc");
+        profile[tag_offset as usize + 8..tag_offset as usize + 12]
+            .copy_from_slice(&(description_bytes.len() as u32).to_be_bytes());
+        profile[tag_offset as usize + 12..].copy_from_slice(&description_bytes);
+        profile
     }
 }

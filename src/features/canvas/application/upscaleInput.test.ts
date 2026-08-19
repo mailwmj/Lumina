@@ -7,7 +7,7 @@ import {
   type CanvasWorkflowNode,
 } from '@/features/canvas/domain/canvasNodes';
 
-import { resolveUpscaleInput } from './upscaleInput';
+import { estimateUpscaleDimensions, resolveUpscaleInput } from './upscaleInput';
 
 function imageEdge(source: string, target: string, inputOrder: number): CanvasEdge {
   return {
@@ -68,5 +68,24 @@ describe('upscale input resolution', () => {
       ok: false,
       code: 'INPUT_COUNT_INVALID',
     });
+  });
+});
+
+describe('upscale dimension estimate', () => {
+  it('calculates the displayed 2x and 4x output dimensions', () => {
+    expect(estimateUpscaleDimensions(1200, 800, 2)).toEqual({
+      inputWidth: 1200,
+      inputHeight: 800,
+      outputWidth: 2400,
+      outputHeight: 1600,
+    });
+    expect(estimateUpscaleDimensions(1200, 800, 4)).toMatchObject({
+      outputWidth: 4800,
+      outputHeight: 3200,
+    });
+  });
+
+  it('does not show a size for an unavailable image dimension', () => {
+    expect(estimateUpscaleDimensions(0, 800, 2)).toBeNull();
   });
 });

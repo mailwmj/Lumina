@@ -15,17 +15,20 @@ use tracing::warn;
 use uuid::Uuid;
 
 use self::cache::{
-    build_cache_key, lookup_cache_entry, materialize_project_output, prune_cache_to_limit,
-    publish_cache_output, record_cache_entry, resolve_cache_dir,
+    build_cache_key, discard_cache_entry, lookup_cache_entry, materialize_project_output,
+    prune_cache_to_limit, publish_cache_output, record_cache_entry, resolve_cache_dir,
+    CacheOutputPublication,
 };
 use self::input::{preprocess_source, validate_start_request};
 use self::sidecar::{
-    model_sha256, resolve_model_dir, resolve_sidecar_binary, run_sidecar, validate_sidecar_output,
+    model_sha256, resolve_model_dir, resolve_sidecar_binary, run_sidecar, terminate_and_reap,
+    validate_sidecar_output,
 };
 
 pub(crate) use self::cache::ensure_upscale_cache_schema;
 
-pub(crate) const MAX_OUTPUT_PIXELS: u64 = 268_435_456;
+pub(crate) const MAX_OUTPUT_PIXELS: u64 = 160_000_000;
+pub(crate) const MAX_OUTPUT_EDGE: u32 = 32_768;
 pub(crate) const MAX_OUTPUT_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_UPSCALE_CACHE_BYTES: u64 = 10 * 1024 * 1024 * 1024;
 
@@ -42,6 +45,7 @@ pub(crate) const ERROR_UNSUPPORTED_COLOR_PROFILE: &str = "unsupported_color_prof
 pub(crate) const ERROR_UNSUPPORTED_IMAGE: &str = "unsupported_image";
 pub(crate) const ERROR_IMAGE_TOO_LARGE: &str = "image_too_large";
 pub(crate) const ERROR_SIDECAR_UNAVAILABLE: &str = "sidecar_unavailable";
+pub(crate) const ERROR_GPU_UNAVAILABLE: &str = "gpu_unavailable";
 pub(crate) const ERROR_SIDECAR_FAILED: &str = "sidecar_failed";
 pub(crate) const ERROR_CANCELLED: &str = "cancelled";
 pub(crate) const ERROR_CACHE_FAILED: &str = "cache_failed";
@@ -61,7 +65,7 @@ pub struct StartUpscaleJobRequest {
 pub struct UpscaleJobSnapshot {
     pub job_id: String,
     pub status: String,
-    pub progress: u8,
+    pub progress: Option<u8>,
     pub phase: String,
     pub output_image_url: Option<String>,
     pub result_image_url: Option<String>,
@@ -91,19 +95,15 @@ impl UpscaleCommandError {
 #[derive(Debug)]
 pub(crate) struct UpscaleFailure {
     pub(crate) code: &'static str,
-    pub(crate) detail: String,
 }
 
 impl UpscaleFailure {
-    pub(crate) fn new(code: &'static str, detail: impl Into<String>) -> Self {
-        Self {
-            code,
-            detail: detail.into(),
-        }
+    pub(crate) fn new(code: &'static str, _detail: impl Into<String>) -> Self {
+        Self { code }
     }
 
     fn command_error(self) -> UpscaleCommandError {
-        warn!(error_code = self.code, detail = %self.detail, "upscale request failed");
+        warn!(error_code = self.code, "upscale request failed");
         UpscaleCommandError::new(self.code)
     }
 }
@@ -124,6 +124,16 @@ pub(crate) struct JobRequest {
     pub(crate) project_dir: PathBuf,
     pub(crate) source_path: PathBuf,
     pub(crate) scale: u8,
+}
+
+struct PublishedCacheArtifact {
+    cache_dir: PathBuf,
+    cache_key: String,
+}
+
+struct CompletedUpscaleJob {
+    output_path: String,
+    published_cache: Option<PublishedCacheArtifact>,
 }
 
 struct UpscaleJobManagerInner {
@@ -182,13 +192,15 @@ impl UpscaleJobManager {
         app: AppHandle,
         request: StartUpscaleJobRequest,
     ) -> Result<UpscaleJobSnapshot, UpscaleCommandError> {
+        let scale = request.scale;
         let job_request =
             validate_start_request(&app, request).map_err(UpscaleFailure::command_error)?;
         let job_id = Uuid::new_v4().to_string();
+        tracing::info!(%job_id, scale, "upscale.job.started");
         let snapshot = UpscaleJobSnapshot {
             job_id: job_id.clone(),
             status: STATUS_QUEUED.to_string(),
-            progress: 0,
+            progress: None,
             phase: "queued".to_string(),
             output_image_url: None,
             result_image_url: None,
@@ -268,19 +280,7 @@ impl UpscaleJobManager {
     }
 
     async fn run_job(&self, app: AppHandle, job_id: String, request: JobRequest) {
-        self.update_active_snapshot(&job_id, STATUS_QUEUED, 5, "waiting_for_gpu");
-
-        let permit = match self.inner.gpu_semaphore.clone().acquire_owned().await {
-            Ok(permit) => permit,
-            Err(error) => {
-                self.mark_failed(
-                    &job_id,
-                    ERROR_INTERNAL,
-                    format!("GPU queue unavailable: {error}"),
-                );
-                return;
-            }
-        };
+        self.update_active_snapshot(&job_id, STATUS_QUEUED, "preparing");
 
         let control = match self.job_control(&job_id) {
             Some(control) => control,
@@ -288,14 +288,19 @@ impl UpscaleJobManager {
         };
         if control.cancel_requested.load(Ordering::Acquire) {
             self.mark_cancelled(&job_id);
-            drop(permit);
             return;
         }
 
-        self.update_active_snapshot(&job_id, STATUS_RUNNING, 10, "preprocessing");
         let manager = self.clone();
         let app_for_worker = app.clone();
         let job_id_for_worker = job_id.clone();
+        let gpu_runtime = match tokio::runtime::Handle::try_current() {
+            Ok(runtime) => runtime,
+            Err(_) => {
+                self.mark_failed(&job_id, ERROR_INTERNAL);
+                return;
+            }
+        };
         let worker = tokio::task::spawn_blocking(move || {
             execute_job(
                 &manager,
@@ -303,6 +308,7 @@ impl UpscaleJobManager {
                 &job_id_for_worker,
                 &request,
                 &control,
+                &gpu_runtime,
             )
         });
 
@@ -313,19 +319,30 @@ impl UpscaleJobManager {
                 format!("upscale worker stopped unexpectedly: {error}"),
             )),
         };
-        drop(permit);
 
         match result {
-            Ok(output_path) => {
+            Ok(completed) => {
+                let CompletedUpscaleJob {
+                    output_path,
+                    published_cache,
+                } = completed;
                 let cancelled = self
                     .job_control(&job_id)
                     .is_some_and(|control| control.cancel_requested.load(Ordering::Acquire));
                 if cancelled || !self.mark_succeeded(&job_id, output_path.clone()) {
                     let _ = fs::remove_file(output_path);
+                    if let Some(cache) = published_cache {
+                        discard_published_cache(&app, &cache);
+                    }
                     self.mark_cancelled(&job_id);
+                } else {
+                    tracing::info!(%job_id, "upscale.job.completed");
                 }
             }
-            Err(error) if error.code == ERROR_CANCELLED => self.mark_cancelled(&job_id),
+            Err(error) if error.code == ERROR_CANCELLED => {
+                self.mark_cancelled(&job_id);
+                tracing::info!(%job_id, "upscale.job.cancelled");
+            }
             Err(error) => {
                 if self
                     .job_control(&job_id)
@@ -333,7 +350,7 @@ impl UpscaleJobManager {
                 {
                     self.mark_cancelled(&job_id);
                 } else {
-                    self.mark_failed(&job_id, error.code, error.detail);
+                    self.mark_failed(&job_id, error.code);
                 }
             }
         }
@@ -347,7 +364,7 @@ impl UpscaleJobManager {
             .and_then(|jobs| jobs.get(job_id).map(|entry| entry.control.clone()))
     }
 
-    fn update_active_snapshot(&self, job_id: &str, status: &str, progress: u8, phase: &str) {
+    fn update_active_snapshot(&self, job_id: &str, status: &str, phase: &str) {
         let Ok(mut jobs) = self.inner.jobs.lock() else {
             return;
         };
@@ -360,7 +377,7 @@ impl UpscaleJobManager {
             return;
         }
         entry.snapshot.status = status.to_string();
-        entry.snapshot.progress = progress;
+        entry.snapshot.progress = None;
         entry.snapshot.phase = phase.to_string();
     }
 
@@ -377,7 +394,7 @@ impl UpscaleJobManager {
             return false;
         }
         entry.snapshot.status = STATUS_SUCCEEDED.to_string();
-        entry.snapshot.progress = 100;
+        entry.snapshot.progress = Some(100);
         entry.snapshot.phase = "completed".to_string();
         entry.snapshot.output_image_url = Some(output_path);
         entry.snapshot.result_image_url = entry.snapshot.output_image_url.clone();
@@ -404,8 +421,8 @@ impl UpscaleJobManager {
         entry.snapshot.error_code = Some(ERROR_CANCELLED.to_string());
     }
 
-    fn mark_failed(&self, job_id: &str, error_code: &str, detail: String) {
-        warn!(%job_id, %error_code, %detail, "upscale job failed");
+    fn mark_failed(&self, job_id: &str, error_code: &str) {
+        warn!(%job_id, %error_code, "upscale job failed");
         let Ok(mut jobs) = self.inner.jobs.lock() else {
             return;
         };
@@ -505,7 +522,8 @@ fn execute_job(
     job_id: &str,
     request: &JobRequest,
     control: &JobControl,
-) -> Result<String, UpscaleFailure> {
+    gpu_runtime: &tokio::runtime::Handle,
+) -> Result<CompletedUpscaleJob, UpscaleFailure> {
     let work_dir = request.project_dir.join(".upscale-tmp").join(job_id);
     let result = (|| {
         if control.cancel_requested.load(Ordering::Acquire) {
@@ -527,7 +545,7 @@ fn execute_job(
             )
         })?;
 
-        manager.update_active_snapshot(job_id, STATUS_RUNNING, 20, "preprocessing");
+        manager.update_active_snapshot(job_id, STATUS_RUNNING, "preprocessing");
         let prepared = preprocess_source(&request.source_path, &work_dir, request.scale)?;
         if control.cancel_requested.load(Ordering::Acquire) {
             return Err(UpscaleFailure::new(
@@ -536,7 +554,7 @@ fn execute_job(
             ));
         }
 
-        manager.update_active_snapshot(job_id, STATUS_RUNNING, 30, "resolving_model");
+        manager.update_active_snapshot(job_id, STATUS_RUNNING, "resolving_model");
         let model_dir = resolve_model_dir(app)?;
         let model_sha256 = model_sha256(&model_dir)?;
         let cache_key = build_cache_key(&prepared.source_sha256, request.scale, &model_sha256);
@@ -556,17 +574,24 @@ fn execute_job(
             ));
         }
 
-        manager.update_active_snapshot(job_id, STATUS_RUNNING, 40, "checking_cache");
+        manager.update_active_snapshot(job_id, STATUS_RUNNING, "checking_cache");
         if let Some(cache_path) = lookup_cache_entry(&conn, &cache_dir, &cache_key)? {
+            tracing::info!(%job_id, "upscale.cache.hit");
             if control.cancel_requested.load(Ordering::Acquire) {
                 return Err(UpscaleFailure::new(
                     ERROR_CANCELLED,
                     "cancelled before cache output",
                 ));
             }
-            manager.update_active_snapshot(job_id, STATUS_RUNNING, 90, "materializing_cache");
-            return materialize_project_output(&cache_path, &output_dir, job_id);
+            manager.update_active_snapshot(job_id, STATUS_RUNNING, "materializing_cache");
+            return materialize_project_output(&cache_path, &output_dir, job_id).map(
+                |output_path| CompletedUpscaleJob {
+                    output_path,
+                    published_cache: None,
+                },
+            );
         }
+        tracing::info!(%job_id, "upscale.cache.miss");
 
         if control.cancel_requested.load(Ordering::Acquire) {
             return Err(UpscaleFailure::new(
@@ -574,15 +599,37 @@ fn execute_job(
                 "cancelled before sidecar start",
             ));
         }
+
+        manager.update_active_snapshot(job_id, STATUS_QUEUED, "waiting_for_gpu");
+        let permit = gpu_runtime
+            .block_on(manager.inner.gpu_semaphore.clone().acquire_owned())
+            .map_err(|error| {
+                UpscaleFailure::new(
+                    ERROR_INTERNAL,
+                    format!("upscale GPU queue is unavailable: {error}"),
+                )
+            })?;
+        if control.cancel_requested.load(Ordering::Acquire) {
+            return Err(UpscaleFailure::new(
+                ERROR_CANCELLED,
+                "cancelled while waiting for the GPU",
+            ));
+        }
         let sidecar = resolve_sidecar_binary()?;
         let sidecar_output = work_dir.join("upscaled.png");
-        manager.update_active_snapshot(job_id, STATUS_RUNNING, 50, "upscaling");
+        manager.update_active_snapshot(job_id, STATUS_RUNNING, "upscaling");
         run_sidecar(
+            job_id,
             &sidecar,
             &model_dir,
             &prepared.normalized_path,
             &sidecar_output,
             request.scale,
+            prepared.expected_width / u32::from(request.scale),
+            prepared.expected_height / u32::from(request.scale),
+            prepared.expected_width,
+            prepared.expected_height,
+            &model_sha256,
             control,
         )?;
         if control.cancel_requested.load(Ordering::Acquire) {
@@ -596,27 +643,74 @@ fn execute_job(
             prepared.expected_width,
             prepared.expected_height,
         )?;
+        drop(permit);
 
-        manager.update_active_snapshot(job_id, STATUS_RUNNING, 80, "writing_cache");
+        manager.update_active_snapshot(job_id, STATUS_RUNNING, "writing_cache");
         let cache_path = cache_dir.join(format!("{cache_key}.png"));
-        publish_cache_output(&sidecar_output, &cache_path)?;
-        record_cache_entry(
-            &mut conn,
-            &cache_path,
-            &cache_key,
-            &prepared.source_sha256,
-            request.scale,
-        )?;
-        prune_cache_to_limit(&mut conn, &cache_dir, MAX_UPSCALE_CACHE_BYTES)?;
+        let cache_publication = publish_cache_output(&sidecar_output, &cache_path)?;
+        let owns_cache_entry = cache_publication == CacheOutputPublication::Created;
+        if control.cancel_requested.load(Ordering::Acquire) {
+            if owns_cache_entry {
+                let _ = discard_cache_entry(&conn, &cache_dir, &cache_key);
+            }
+            return Err(UpscaleFailure::new(
+                ERROR_CANCELLED,
+                "cancelled while publishing cache output",
+            ));
+        }
+        if owns_cache_entry {
+            if let Err(error) = record_cache_entry(
+                &mut conn,
+                &cache_path,
+                &cache_key,
+                &prepared.source_sha256,
+                request.scale,
+            ) {
+                let _ = discard_cache_entry(&conn, &cache_dir, &cache_key);
+                return Err(error);
+            }
+        }
+        if control.cancel_requested.load(Ordering::Acquire) {
+            if owns_cache_entry {
+                let _ = discard_cache_entry(&conn, &cache_dir, &cache_key);
+            }
+            return Err(UpscaleFailure::new(
+                ERROR_CANCELLED,
+                "cancelled while recording cache output",
+            ));
+        }
+        if owns_cache_entry {
+            prune_cache_to_limit(&mut conn, &cache_dir, MAX_UPSCALE_CACHE_BYTES)?;
+        }
 
         if control.cancel_requested.load(Ordering::Acquire) {
+            if owns_cache_entry {
+                let _ = discard_cache_entry(&conn, &cache_dir, &cache_key);
+            }
             return Err(UpscaleFailure::new(
                 ERROR_CANCELLED,
                 "cancelled before output publish",
             ));
         }
-        manager.update_active_snapshot(job_id, STATUS_RUNNING, 90, "materializing_output");
-        materialize_project_output(&cache_path, &output_dir, job_id)
+        manager.update_active_snapshot(job_id, STATUS_RUNNING, "materializing_output");
+        let output_path = materialize_project_output(&cache_path, &output_dir, job_id)?;
+        if control.cancel_requested.load(Ordering::Acquire) {
+            let _ = fs::remove_file(&output_path);
+            if owns_cache_entry {
+                let _ = discard_cache_entry(&conn, &cache_dir, &cache_key);
+            }
+            return Err(UpscaleFailure::new(
+                ERROR_CANCELLED,
+                "cancelled while publishing project output",
+            ));
+        }
+        Ok(CompletedUpscaleJob {
+            output_path,
+            published_cache: owns_cache_entry.then(|| PublishedCacheArtifact {
+                cache_dir,
+                cache_key,
+            }),
+        })
     })();
 
     if let Err(error) = fs::remove_dir_all(&work_dir) {
@@ -631,9 +725,20 @@ fn is_terminal_status(status: &str) -> bool {
     matches!(status, STATUS_SUCCEEDED | STATUS_FAILED | STATUS_CANCELLED)
 }
 
-fn terminate_and_reap(child: &mut std::process::Child) {
-    let _ = child.kill();
-    let _ = child.wait();
+fn discard_published_cache(app: &AppHandle, cache: &PublishedCacheArtifact) {
+    let conn = match crate::commands::project_state::open_db(app) {
+        Ok(conn) => conn,
+        Err(error) => {
+            warn!(%error, "failed to open cache database while discarding a cancelled upscale cache entry");
+            return;
+        }
+    };
+    if let Err(error) = discard_cache_entry(&conn, &cache.cache_dir, &cache.cache_key) {
+        warn!(
+            error_code = error.code,
+            "failed to discard a cancelled upscale cache entry"
+        );
+    }
 }
 
 #[cfg(test)]

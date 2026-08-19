@@ -4,6 +4,7 @@ import {
   isImageEditNode,
   isStoryboardGenNode,
   isUploadNode,
+  type UpscaleScale,
   type CanvasEdge,
   type CanvasWorkflowNode,
 } from '@/features/canvas/domain/canvasNodes';
@@ -27,6 +28,43 @@ export type UpscaleInputResolution =
     ok: false;
     code: UpscaleInputErrorCode;
   };
+
+export interface UpscaleDimensionEstimate {
+  inputWidth: number;
+  inputHeight: number;
+  outputWidth: number;
+  outputHeight: number;
+}
+
+export function estimateUpscaleDimensions(
+  inputWidth: number,
+  inputHeight: number,
+  scale: UpscaleScale
+): UpscaleDimensionEstimate | null {
+  if (
+    !Number.isFinite(inputWidth)
+    || !Number.isFinite(inputHeight)
+    || inputWidth <= 0
+    || inputHeight <= 0
+  ) {
+    return null;
+  }
+
+  const normalizedWidth = Math.round(inputWidth);
+  const normalizedHeight = Math.round(inputHeight);
+  const outputWidth = normalizedWidth * scale;
+  const outputHeight = normalizedHeight * scale;
+  if (!Number.isSafeInteger(outputWidth) || !Number.isSafeInteger(outputHeight)) {
+    return null;
+  }
+
+  return {
+    inputWidth: normalizedWidth,
+    inputHeight: normalizedHeight,
+    outputWidth,
+    outputHeight,
+  };
+}
 
 function resolveImageSource(node: CanvasWorkflowNode): string | null {
   if (isUploadNode(node) || isImageEditNode(node) || isExportImageNode(node) || isStoryboardGenNode(node)) {

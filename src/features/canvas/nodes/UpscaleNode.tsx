@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Handle,
   Position,
@@ -18,7 +18,11 @@ import {
 } from '@/features/canvas/ui/nodeControlStyles';
 import { UiButton, UiSelect } from '@/components/ui';
 import { selectWorkflowNodes } from '@/features/canvas/application/canvasNodeSelectors';
-import { resolveUpscaleInput } from '@/features/canvas/application/upscaleInput';
+import { loadImageElement } from '@/features/canvas/application/imageData';
+import {
+  estimateUpscaleDimensions,
+  resolveUpscaleInput,
+} from '@/features/canvas/application/upscaleInput';
 import {
   cancelUpscaleRun,
   runUpscaleNode,
@@ -33,7 +37,7 @@ import { useCanvasStore } from '@/stores/canvasStore';
 import { useProjectStore } from '@/stores/projectStore';
 
 const UPSCALE_NODE_WIDTH = 264;
-const UPSCALE_NODE_HEIGHT = 154;
+const UPSCALE_NODE_HEIGHT = 176;
 
 type UpscaleNodeProps = NodeProps & {
   id: string;
@@ -69,6 +73,8 @@ function getBackendStatusKey(errorCode: UpscaleRuntimeErrorCode | null): string 
       return 'node.upscale.imageTooLarge';
     case 'SIDECAR_UNAVAILABLE':
       return 'node.upscale.sidecarUnavailable';
+    case 'GPU_UNAVAILABLE':
+      return 'node.upscale.gpuUnavailable';
     case 'SIDECAR_FAILED':
       return 'node.upscale.sidecarFailed';
     case 'CACHE_FAILED':
@@ -84,6 +90,26 @@ function getBackendStatusKey(errorCode: UpscaleRuntimeErrorCode | null): string 
     default:
       return null;
   }
+}
+
+function getPhaseStatusKey(phase: string | null | undefined): string | null {
+  switch (phase) {
+    case 'preparing':
+    case 'preprocessing':
+    case 'resolving_model':
+    case 'checking_cache':
+      return 'node.upscale.preparing';
+    case 'writing_cache':
+    case 'materializing_cache':
+    case 'materializing_output':
+      return 'node.upscale.saving';
+    default:
+      return null;
+  }
+}
+
+function formatDimensions(width: number, height: number): string {
+  return `${width.toLocaleString()} × ${height.toLocaleString()}`;
 }
 
 export const UpscaleNode = memo(({ id, data, selected, width, height }: UpscaleNodeProps) => {
@@ -104,10 +130,45 @@ export const UpscaleNode = memo(({ id, data, selected, width, height }: UpscaleN
     () => resolveUpscaleInput(id, workflowNodes, edges),
     [edges, id, workflowNodes]
   );
+  const inputImageUrl = input.ok ? input.sourceImageUrl : null;
+  const [inputDimensions, setInputDimensions] = useState<{
+    width: number;
+    height: number;
+  } | null>(null);
+  const dimensionEstimate = useMemo(
+    () => inputDimensions && estimateUpscaleDimensions(inputDimensions.width, inputDimensions.height, scale),
+    [inputDimensions, scale]
+  );
 
   useEffect(() => {
     updateNodeInternals(id);
   }, [id, resolvedHeight, resolvedWidth, updateNodeInternals]);
+
+  useEffect(() => {
+    let disposed = false;
+    if (!inputImageUrl) {
+      setInputDimensions(null);
+      return () => {
+        disposed = true;
+      };
+    }
+
+    setInputDimensions(null);
+    void loadImageElement(inputImageUrl)
+      .then((image) => {
+        if (!disposed) {
+          setInputDimensions({ width: image.naturalWidth, height: image.naturalHeight });
+        }
+      })
+      .catch(() => {
+        if (!disposed) {
+          setInputDimensions(null);
+        }
+      });
+    return () => {
+      disposed = true;
+    };
+  }, [inputImageUrl]);
 
   const statusText = useMemo(() => {
     if (status === 'failed') {
@@ -144,6 +205,10 @@ export const UpscaleNode = memo(({ id, data, selected, width, height }: UpscaleN
       return t('node.upscale.projectRequired');
     }
 
+    const phaseStatusKey = getPhaseStatusKey(runtime?.phase);
+    if (phaseStatusKey) {
+      return t(phaseStatusKey);
+    }
     if (status === 'starting' || status === 'running') {
       return t('node.upscale.running');
     }
@@ -160,7 +225,7 @@ export const UpscaleNode = memo(({ id, data, selected, width, height }: UpscaleN
       return t('node.upscale.completed');
     }
     return t('node.upscale.srgbOnly');
-  }, [currentProjectId, input, runtime?.errorCode, status, t]);
+  }, [currentProjectId, input, runtime?.errorCode, runtime?.phase, status, t]);
 
   const handleRun = useCallback(() => {
     void runUpscaleNode(id, { resultTitle: t('node.upscale.resultTitle') });
@@ -215,6 +280,18 @@ export const UpscaleNode = memo(({ id, data, selected, width, height }: UpscaleN
           </UiSelect>
         </div>
       </div>
+
+      {dimensionEstimate && (
+        <div className="flex min-w-0 items-center gap-1 text-[10px] text-text-muted">
+          <span className="truncate">
+            {formatDimensions(dimensionEstimate.inputWidth, dimensionEstimate.inputHeight)}
+          </span>
+          <span aria-hidden="true">→</span>
+          <span className="truncate text-text-dark">
+            {formatDimensions(dimensionEstimate.outputWidth, dimensionEstimate.outputHeight)}
+          </span>
+        </div>
+      )}
 
       <div
         className={`flex min-h-5 items-center gap-1.5 text-[10px] leading-4 ${

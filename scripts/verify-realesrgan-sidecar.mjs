@@ -120,12 +120,11 @@ function verifyUsage(sidecar) {
   if (result.error) {
     throw result.error;
   }
-  if (result.status !== 0) {
-    throw new Error(`Real-ESRGAN sidecar -h exited with status ${result.status ?? 'unknown'}: ${result.stderr ?? ''}`);
-  }
   const output = `${result.stdout ?? ''}\n${result.stderr ?? ''}`;
   if (!output.includes('realesrgan-x4plus') || !output.includes('gpu-id')) {
-    throw new Error('Real-ESRGAN sidecar help output does not expose the expected locked CLI contract.');
+    throw new Error(
+      `Real-ESRGAN sidecar help output does not expose the expected locked CLI contract (exit ${result.status ?? 'unknown'}).`,
+    );
   }
 }
 

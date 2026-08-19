@@ -88,6 +88,7 @@ function setFailure(
   setRuntime(run, {
     status: 'failed',
     progress: null,
+    phase: 'failed',
     errorCode,
     error,
   });
@@ -205,6 +206,7 @@ async function pollUpscaleJob(
       setRuntime(run, {
         status: status.status,
         progress: status.progress,
+        phase: status.phase,
         errorCode: null,
         error: null,
       });
@@ -220,7 +222,8 @@ async function pollUpscaleJob(
       }
       setRuntime(run, {
         status: 'succeeded',
-        progress: 1,
+        progress: status.progress,
+        phase: 'completed',
         errorCode: null,
         error: null,
         resultNodeId,
@@ -232,6 +235,7 @@ async function pollUpscaleJob(
       setRuntime(run, {
         status: 'cancelled',
         progress: null,
+        phase: 'cancelled',
         errorCode: null,
         error: null,
       });
@@ -262,6 +266,7 @@ export async function runUpscaleNode(
   if (!isUpscaleNode(sourceNode)) {
     useUpscaleRuntimeStore.getState().setRuntime(nodeId, {
       status: 'failed',
+      phase: 'failed',
       errorCode: 'NODE_NOT_FOUND',
       error: null,
     });
@@ -272,6 +277,7 @@ export async function runUpscaleNode(
   if (!project) {
     useUpscaleRuntimeStore.getState().setRuntime(nodeId, {
       status: 'failed',
+      phase: 'failed',
       errorCode: 'PROJECT_REQUIRED',
       error: null,
     });
@@ -282,6 +288,7 @@ export async function runUpscaleNode(
   if (!input.ok) {
     useUpscaleRuntimeStore.getState().setRuntime(nodeId, {
       status: 'failed',
+      phase: 'failed',
       errorCode: input.code,
       error: null,
     });
@@ -300,6 +307,7 @@ export async function runUpscaleNode(
     status: 'starting',
     jobId: null,
     progress: null,
+    phase: 'starting',
     errorCode: null,
     error: null,
   });
@@ -322,6 +330,7 @@ export async function runUpscaleNode(
       status: 'queued',
       jobId: started.jobId,
       progress: null,
+      phase: 'queued',
       errorCode: null,
       error: null,
     });
@@ -360,6 +369,7 @@ export async function cancelUpscaleRun(nodeId: string): Promise<void> {
   }
   useUpscaleRuntimeStore.getState().setRuntime(nodeId, {
     status: 'cancelling',
+    phase: 'cancelling',
     errorCode: null,
     error: null,
   });
@@ -371,6 +381,7 @@ export async function cancelUpscaleRun(nodeId: string): Promise<void> {
       const commandError = normalizeUpscaleCommandError(error);
       useUpscaleRuntimeStore.getState().setRuntime(nodeId, {
         status: 'failed',
+        phase: 'failed',
         errorCode: commandError.code,
         error: commandError.message,
       });
@@ -384,6 +395,7 @@ export async function cancelUpscaleRun(nodeId: string): Promise<void> {
   useUpscaleRuntimeStore.getState().setRuntime(nodeId, {
     status: 'cancelled',
     progress: null,
+    phase: 'cancelled',
     errorCode: null,
     error: null,
   });

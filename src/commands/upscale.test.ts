@@ -48,6 +48,7 @@ describe('upscale command adapter', () => {
       jobId: 'upscale-job-1',
       status: 'succeeded',
       progress: 1,
+      phase: null,
       resultImageUrl: 'C:\\projects\\project-1\\outputs\\images\\upscaled.png',
       previewImageUrl: null,
       aspectRatio: null,
@@ -73,6 +74,7 @@ describe('upscale command adapter', () => {
 
   it.each([
     ['sidecar_unavailable', 'SIDECAR_UNAVAILABLE'],
+    ['gpu_unavailable', 'GPU_UNAVAILABLE'],
     ['sidecar_failed', 'SIDECAR_FAILED'],
     ['cache_failed', 'CACHE_FAILED'],
     ['image_too_large', 'IMAGE_TOO_LARGE'],

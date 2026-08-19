@@ -8,11 +8,16 @@ use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Manager};
 use uuid::Uuid;
 
-use super::sidecar::REAL_ESRGAN_MODEL_NAME;
+use super::sidecar::{REAL_ESRGAN_ENGINE_VERSION, REAL_ESRGAN_MODEL_NAME};
 use super::{UpscaleFailure, ERROR_CACHE_FAILED};
 
-const UPSCALE_ENGINE_VERSION: &str = "realesrgan-ncnn-vulkan-v1";
 const UPSCALE_PREPROCESS_VERSION: &str = "srgb-orientation-png-v1";
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub(super) enum CacheOutputPublication {
+    Created,
+    Existing,
+}
 
 pub(crate) fn ensure_upscale_cache_schema(conn: &Connection) -> Result<(), String> {
     conn.execute_batch(
@@ -87,7 +92,7 @@ pub(super) fn resolve_cache_dir(app: &AppHandle) -> Result<PathBuf, UpscaleFailu
 pub(super) fn build_cache_key(source_sha256: &str, scale: u8, model_sha256: &str) -> String {
     sha256_hex(
         format!(
-            "{UPSCALE_ENGINE_VERSION}|{UPSCALE_PREPROCESS_VERSION}|{REAL_ESRGAN_MODEL_NAME}|{model_sha256}|{source_sha256}|{scale}"
+            "{REAL_ESRGAN_ENGINE_VERSION}|{UPSCALE_PREPROCESS_VERSION}|{REAL_ESRGAN_MODEL_NAME}|{model_sha256}|{source_sha256}|{scale}"
         )
         .as_bytes(),
     )
@@ -143,11 +148,15 @@ pub(super) fn lookup_cache_entry(
 pub(super) fn publish_cache_output(
     source_path: &Path,
     cache_path: &Path,
-) -> Result<(), UpscaleFailure> {
+) -> Result<CacheOutputPublication, UpscaleFailure> {
     if cache_path.is_file() {
-        return Ok(());
+        return Ok(CacheOutputPublication::Existing);
     }
-    copy_file_atomically(source_path, cache_path, "cache")
+    match copy_file_atomically(source_path, cache_path, "cache") {
+        Ok(()) => Ok(CacheOutputPublication::Created),
+        Err(_error) if cache_path.is_file() => Ok(CacheOutputPublication::Existing),
+        Err(error) => Err(error),
+    }
 }
 
 pub(super) fn record_cache_entry(
@@ -182,7 +191,7 @@ pub(super) fn record_cache_entry(
         params![
             cache_key,
             source_sha256,
-            UPSCALE_ENGINE_VERSION,
+            REAL_ESRGAN_ENGINE_VERSION,
             i64::from(scale),
             cache_path.to_string_lossy().to_string(),
             i64::try_from(output_bytes).unwrap_or(i64::MAX),
@@ -197,6 +206,33 @@ pub(super) fn record_cache_entry(
         )
     })?;
     Ok(())
+}
+
+pub(super) fn discard_cache_entry(
+    conn: &Connection,
+    cache_dir: &Path,
+    cache_key: &str,
+) -> Result<(), UpscaleFailure> {
+    conn.execute(
+        "DELETE FROM upscale_cache WHERE cache_key = ?1",
+        params![cache_key],
+    )
+    .map_err(|error| {
+        UpscaleFailure::new(
+            ERROR_CACHE_FAILED,
+            format!("failed to remove cancelled cache row: {error}"),
+        )
+    })?;
+
+    let cache_path = cache_dir.join(format!("{cache_key}.png"));
+    match fs::remove_file(&cache_path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(UpscaleFailure::new(
+            ERROR_CACHE_FAILED,
+            format!("failed to remove cancelled cache output: {error}"),
+        )),
+    }
 }
 
 pub(super) fn prune_cache_to_limit(
@@ -379,6 +415,57 @@ mod tests {
         prune_cache_to_limit(&mut conn, &cache_dir, 8).expect("prune cache");
         assert!(!cache_dir.join("old.png").exists());
         assert!(cache_dir.join("new.png").exists());
+        let _ = fs::remove_dir_all(&cache_dir);
+    }
+
+    #[test]
+    fn discarding_a_cancelled_cache_entry_removes_its_row_and_file() {
+        let cache_dir =
+            std::env::temp_dir().join(format!("lumina-upscale-cancel-{}", Uuid::new_v4()));
+        fs::create_dir_all(&cache_dir).expect("create cache directory");
+        let conn = Connection::open_in_memory().expect("open test database");
+        ensure_upscale_cache_schema(&conn).expect("initialize cache table");
+        let cache_key = "cancelled";
+        let path = cache_dir.join(format!("{cache_key}.png"));
+        fs::write(&path, [1_u8; 8]).expect("write cache output");
+        conn.execute(
+            "INSERT INTO upscale_cache (cache_key, output_path, output_bytes) VALUES (?1, ?2, 8)",
+            params![cache_key, path.to_string_lossy().to_string()],
+        )
+        .expect("insert cache row");
+
+        discard_cache_entry(&conn, &cache_dir, cache_key).expect("discard cache entry");
+
+        let rows = conn
+            .query_row(
+                "SELECT COUNT(*) FROM upscale_cache WHERE cache_key = ?1",
+                params![cache_key],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("count cache entries");
+        assert_eq!(rows, 0);
+        assert!(!path.exists());
+        let _ = fs::remove_dir_all(&cache_dir);
+    }
+
+    #[test]
+    fn publishing_an_existing_cache_file_does_not_claim_ownership() {
+        let cache_dir =
+            std::env::temp_dir().join(format!("lumina-upscale-existing-cache-{}", Uuid::new_v4()));
+        fs::create_dir_all(&cache_dir).expect("create cache directory");
+        let source_path = cache_dir.join("source.png");
+        let cache_path = cache_dir.join("cache.png");
+        fs::write(&source_path, b"new output").expect("write source output");
+        fs::write(&cache_path, b"existing output").expect("write existing cache output");
+
+        let outcome =
+            publish_cache_output(&source_path, &cache_path).expect("publish cache output");
+
+        assert_eq!(outcome, CacheOutputPublication::Existing);
+        assert_eq!(
+            fs::read(&cache_path).expect("read cache output"),
+            b"existing output"
+        );
         let _ = fs::remove_dir_all(&cache_dir);
     }
 }
