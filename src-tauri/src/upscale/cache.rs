@@ -3,13 +3,16 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use image::ImageReader;
 use rusqlite::{params, Connection, OptionalExtension};
 use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Manager};
 use uuid::Uuid;
 
 use super::sidecar::{REAL_ESRGAN_ENGINE_VERSION, REAL_ESRGAN_MODEL_NAME};
-use super::{UpscaleFailure, ERROR_CACHE_FAILED};
+use super::{
+    UpscaleFailure, ERROR_CACHE_FAILED, MAX_OUTPUT_BYTES, MAX_OUTPUT_EDGE, MAX_OUTPUT_PIXELS,
+};
 
 const UPSCALE_PREPROCESS_VERSION: &str = "srgb-orientation-png-v1";
 
@@ -102,6 +105,8 @@ pub(super) fn lookup_cache_entry(
     conn: &Connection,
     cache_dir: &Path,
     cache_key: &str,
+    expected_width: u32,
+    expected_height: u32,
 ) -> Result<Option<PathBuf>, UpscaleFailure> {
     let stored_path = conn
         .query_row(
@@ -118,7 +123,10 @@ pub(super) fn lookup_cache_entry(
     };
 
     let expected_path = cache_dir.join(format!("{cache_key}.png"));
-    if Path::new(&stored_path) != expected_path || !expected_path.is_file() {
+    if Path::new(&stored_path) != expected_path
+        || !expected_path.is_file()
+        || !cache_output_matches(&expected_path, expected_width, expected_height)
+    {
         conn.execute(
             "DELETE FROM upscale_cache WHERE cache_key = ?1",
             params![cache_key],
@@ -129,6 +137,7 @@ pub(super) fn lookup_cache_entry(
                 format!("failed to remove stale cache row: {error}"),
             )
         })?;
+        let _ = fs::remove_file(&expected_path);
         return Ok(None);
     }
 
@@ -143,6 +152,31 @@ pub(super) fn lookup_cache_entry(
         )
     })?;
     Ok(Some(expected_path))
+}
+
+fn cache_output_matches(path: &Path, expected_width: u32, expected_height: u32) -> bool {
+    let Ok(metadata) = fs::metadata(path) else {
+        return false;
+    };
+    if metadata.len() == 0 || metadata.len() > MAX_OUTPUT_BYTES {
+        return false;
+    }
+    let Ok(reader) = ImageReader::open(path) else {
+        return false;
+    };
+    let Ok(reader) = reader.with_guessed_format() else {
+        return false;
+    };
+    let Ok((width, height)) = reader.into_dimensions() else {
+        return false;
+    };
+    if width > MAX_OUTPUT_EDGE || height > MAX_OUTPUT_EDGE {
+        return false;
+    }
+    let Some(pixels) = u64::from(width).checked_mul(u64::from(height)) else {
+        return false;
+    };
+    pixels <= MAX_OUTPUT_PIXELS && width == expected_width && height == expected_height
 }
 
 pub(super) fn publish_cache_output(
@@ -393,6 +427,7 @@ fn unix_timestamp_millis() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use image::RgbaImage;
 
     #[test]
     fn cache_cleanup_evicts_oldest_entry_first() {
@@ -466,6 +501,76 @@ mod tests {
             fs::read(&cache_path).expect("read cache output"),
             b"existing output"
         );
+        let _ = fs::remove_dir_all(&cache_dir);
+    }
+
+    #[test]
+    fn cache_lookup_requires_a_decodable_output_with_expected_dimensions() {
+        let cache_dir = std::env::temp_dir().join(format!(
+            "lumina-upscale-cache-validation-{}",
+            Uuid::new_v4()
+        ));
+        fs::create_dir_all(&cache_dir).expect("create cache directory");
+        let conn = Connection::open_in_memory().expect("open test database");
+        ensure_upscale_cache_schema(&conn).expect("initialize cache table");
+        let cache_key = "wrong-dimensions";
+        let path = cache_dir.join(format!("{cache_key}.png"));
+        RgbaImage::new(2, 2)
+            .save(&path)
+            .expect("write cache output");
+        conn.execute(
+            "INSERT INTO upscale_cache (cache_key, output_path, output_bytes) VALUES (?1, ?2, ?3)",
+            params![
+                cache_key,
+                path.to_string_lossy().to_string(),
+                fs::metadata(&path).unwrap().len() as i64
+            ],
+        )
+        .expect("insert cache row");
+
+        let result =
+            lookup_cache_entry(&conn, &cache_dir, cache_key, 4, 4).expect("validate cache lookup");
+
+        assert!(result.is_none());
+        assert!(!path.exists());
+        let row_count = conn
+            .query_row(
+                "SELECT COUNT(*) FROM upscale_cache WHERE cache_key = ?1",
+                params![cache_key],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("count cache rows");
+        assert_eq!(row_count, 0);
+        let _ = fs::remove_dir_all(&cache_dir);
+    }
+
+    #[test]
+    fn cache_lookup_accepts_a_valid_png_with_expected_dimensions() {
+        let cache_dir =
+            std::env::temp_dir().join(format!("lumina-upscale-cache-valid-{}", Uuid::new_v4()));
+        fs::create_dir_all(&cache_dir).expect("create cache directory");
+        let conn = Connection::open_in_memory().expect("open test database");
+        ensure_upscale_cache_schema(&conn).expect("initialize cache table");
+        let cache_key = "valid";
+        let path = cache_dir.join(format!("{cache_key}.png"));
+        RgbaImage::new(4, 4)
+            .save(&path)
+            .expect("write cache output");
+        conn.execute(
+            "INSERT INTO upscale_cache (cache_key, output_path, output_bytes) VALUES (?1, ?2, ?3)",
+            params![
+                cache_key,
+                path.to_string_lossy().to_string(),
+                fs::metadata(&path).unwrap().len() as i64
+            ],
+        )
+        .expect("insert cache row");
+
+        let result =
+            lookup_cache_entry(&conn, &cache_dir, cache_key, 4, 4).expect("validate cache lookup");
+
+        assert_eq!(result, Some(path.clone()));
+        assert!(path.exists());
         let _ = fs::remove_dir_all(&cache_dir);
     }
 }

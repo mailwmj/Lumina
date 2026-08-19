@@ -575,7 +575,13 @@ fn execute_job(
         }
 
         manager.update_active_snapshot(job_id, STATUS_RUNNING, "checking_cache");
-        if let Some(cache_path) = lookup_cache_entry(&conn, &cache_dir, &cache_key)? {
+        if let Some(cache_path) = lookup_cache_entry(
+            &conn,
+            &cache_dir,
+            &cache_key,
+            prepared.expected_width,
+            prepared.expected_height,
+        )? {
             tracing::info!(%job_id, "upscale.cache.hit");
             if control.cancel_requested.load(Ordering::Acquire) {
                 return Err(UpscaleFailure::new(
