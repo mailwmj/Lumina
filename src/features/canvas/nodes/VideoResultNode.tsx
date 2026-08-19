@@ -9,12 +9,17 @@ import { AlertTriangle, Copy, Video, Check, ChevronDown, ChevronUp, RefreshCw, X
 import { useTranslation } from 'react-i18next';
 
 import {
-  CANVAS_NODE_TYPES,
+  VIDEO_RESULT_NODE_MIN_HEIGHT,
+  VIDEO_RESULT_NODE_MIN_WIDTH,
   type ExportVideoNodeData,
 } from '@/features/canvas/domain/canvasNodes';
 import {
   resolveResizeMinConstraintsByAspect,
 } from '@/features/canvas/application/imageNodeSizing';
+import {
+  createVideoOutputNode,
+  resolveVideoResultNodeSize,
+} from '@/features/canvas/application/videoOutput';
 import { NodeResizeHandle } from '@/features/canvas/ui/NodeResizeHandle';
 import { resolveNodeSurfaceStateClass } from '@/features/canvas/ui/nodeSurfaceStyles';
 import { useCanvasStore } from '@/stores/canvasStore';
@@ -31,18 +36,6 @@ type VideoResultNodeProps = NodeProps & {
   selected?: boolean;
 };
 
-const VIDEO_RESULT_NODE_MIN_WIDTH = 320;
-const VIDEO_RESULT_NODE_MIN_HEIGHT = 240;
-const VIDEO_RESULT_NODE_DEFAULT_WIDTH = 560;
-const VIDEO_RESULT_NODE_DEFAULT_HEIGHT = 400;
-
-function resolveNodeDimension(value: number | undefined, fallback: number): number {
-  if (typeof value === 'number' && Number.isFinite(value) && value > 1) {
-    return Math.round(value);
-  }
-  return fallback;
-}
-
 export const VideoResultNode = memo(({ id, data, selected, width, height }: VideoResultNodeProps) => {
   const { t } = useTranslation();
   const updateNodeInternals = useUpdateNodeInternals();
@@ -51,7 +44,7 @@ export const VideoResultNode = memo(({ id, data, selected, width, height }: Vide
   const updateNodeDataWithoutHistory = useCanvasStore(
     (state) => state.updateNodeDataWithoutHistory
   );
-  const addNode = useCanvasStore((state) => state.addNode);
+  const addNodeBatch = useCanvasStore((state) => state.addNodeBatch);
   const addEdge = useCanvasStore((state) => state.addEdge);
   const [now, setNow] = useState(() => Date.now());
   const [isCopySuccess, setIsCopySuccess] = useState(false);
@@ -142,43 +135,35 @@ export const VideoResultNode = memo(({ id, data, selected, width, height }: Vide
       return;
     }
 
-    // Find a position to the right of this node
-    const currentNode = useCanvasStore.getState().nodes.find((n) => n.id === id);
-    if (!currentNode) {
-      log('ERROR: currentNode not found');
-      return;
-    }
-    const position = currentNode.position;
-    const newNodePosition = {
-      x: position.x + (currentNode.measured?.width ?? VIDEO_RESULT_NODE_MIN_WIDTH) + 50,
-      y: position.y,
-    };
-
-    // Step 1: Create export video node first (isGenerating: true) so user sees it immediately
-    const newNodeId = addNode(
-      CANVAS_NODE_TYPES.exportVideo,
-      newNodePosition,
-      {
+    const currentCanvas = useCanvasStore.getState();
+    const newNodeId = createVideoOutputNode({
+      sourceNodeId: id,
+      existingNodes: currentCanvas.nodes,
+      existingEdges: currentCanvas.edges,
+      addNodeBatch,
+      addEdge,
+      data: {
         isGenerating: true,
         generationStartedAt: Date.now(),
         generationDurationMs: 120000,
-        generationJobId: '', // Will be updated after API call
+        generationJobId: '',
         generationProviderId: 'volcvideo',
         videoApiId: apiConfig.id,
         displayName: t('node.videoGen.title'),
         aspectRatio: data.aspectRatio || '16:9',
         model: data.model,
-        resolution: '720p', // Final video always 720p, not draft's 480p
+        resolution: '720p',
         duration: data.duration || 5,
         hasAudio: data.hasAudio ?? true,
         seed: -1,
         prompt: '',
-      }
-    );
+      },
+    });
+    if (!newNodeId) {
+      log('ERROR: unable to create export video node');
+      return;
+    }
     log('Created exportVideo node, newNodeId=' + newNodeId);
-
-    // Connect the new node to this node
-    addEdge(id, newNodeId);
 
     // Step 2: Submit API
     try {
@@ -238,7 +223,7 @@ export const VideoResultNode = memo(({ id, data, selected, width, height }: Vide
         generationJobId: null,
       });
     }
-  }, [id, data.draftTaskId, data.model, data.aspectRatio, data.resolution, data.duration, data.hasAudio, addNode, addEdge, updateNodeData, t]);
+  }, [id, data.draftTaskId, data.model, data.aspectRatio, data.resolution, data.duration, data.hasAudio, addNodeBatch, addEdge, updateNodeData, t]);
 
   const generationStartedAt =
     typeof data.generationStartedAt === 'number' ? data.generationStartedAt : null;
@@ -251,8 +236,13 @@ export const VideoResultNode = memo(({ id, data, selected, width, height }: Vide
   });
   const resizeMinWidth = resizeConstraints.minWidth;
   const resizeMinHeight = resizeConstraints.minHeight;
-  const resolvedWidth = resolveNodeDimension(width, VIDEO_RESULT_NODE_DEFAULT_WIDTH);
-  const resolvedHeight = resolveNodeDimension(height, VIDEO_RESULT_NODE_DEFAULT_HEIGHT);
+  const fittedSize = resolveVideoResultNodeSize(data.aspectRatio || '16:9');
+  const resolvedWidth = typeof width === 'number' && Number.isFinite(width) && width > 1
+    ? Math.round(width)
+    : fittedSize.width;
+  const resolvedHeight = typeof height === 'number' && Number.isFinite(height) && height > 1
+    ? Math.round(height)
+    : fittedSize.height;
   useEffect(() => {
     updateNodeInternals(id);
   }, [id, updateNodeInternals, resolvedWidth, resolvedHeight]);

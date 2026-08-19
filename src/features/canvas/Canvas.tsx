@@ -60,6 +60,7 @@ import { resolveImageProviderRuntime } from '@/features/canvas/application/image
 import {
   CANVAS_IMAGE_QUALITY_SETTLE_DELAY_MS,
   findCanvasImageFocusCandidate,
+  getVisibleCanvasImageNodeIds,
 } from '@/features/canvas/application/canvasImageRenderPolicy';
 import { useCanvasImageQualityStore } from '@/features/canvas/application/canvasImageQualityStore';
 import {
@@ -416,6 +417,12 @@ export function Canvas() {
   const setCanvasImageFocusedNodeId = useCanvasImageQualityStore(
     (state) => state.setFocusedNodeId
   );
+  const retainVisibleCanvasImageOriginals = useCanvasImageQualityStore(
+    (state) => state.retainVisibleOriginalNodes
+  );
+  const clearRetainedCanvasImageOriginals = useCanvasImageQualityStore(
+    (state) => state.clearRetainedOriginalNodes
+  );
   useExternalAgentBridge({
     projectId: currentProjectId ?? '',
     projectName: currentProjectName,
@@ -488,20 +495,32 @@ export function Canvas() {
       }
 
       const containerRect = container.getBoundingClientRect();
+      const resolvedViewport = viewport ?? reactFlowInstance.getViewport();
+      const viewportSize = {
+        width: containerRect.width,
+        height: containerRect.height,
+      };
+      const currentNodes = useCanvasStore.getState().nodes;
+      retainVisibleCanvasImageOriginals(getVisibleCanvasImageNodeIds({
+        nodes: currentNodes,
+        viewport: resolvedViewport,
+        viewportSize,
+      }));
       const focusedNodeId = findCanvasImageFocusCandidate({
-        nodes: useCanvasStore.getState().nodes,
-        viewport: viewport ?? reactFlowInstance.getViewport(),
-        viewportSize: {
-          width: containerRect.width,
-          height: containerRect.height,
-        },
+        nodes: currentNodes,
+        viewport: resolvedViewport,
+        viewportSize,
         preferredNodeId: intent.preferredNodeId,
         focusPoint: intent.focusPoint,
         devicePixelRatio: window.devicePixelRatio,
       });
       setCanvasImageFocusedNodeId(focusedNodeId);
     }, CANVAS_IMAGE_QUALITY_SETTLE_DELAY_MS);
-  }, [reactFlowInstance, setCanvasImageFocusedNodeId]);
+  }, [
+    reactFlowInstance,
+    retainVisibleCanvasImageOriginals,
+    setCanvasImageFocusedNodeId,
+  ]);
 
   useEffect(() => {
     if (imageQualitySettleTimerRef.current) {
@@ -510,7 +529,13 @@ export function Canvas() {
     }
     setCanvasImageFocusedNodeId(null);
     setCanvasImageInteractionActive(false);
-  }, [currentProjectId, setCanvasImageFocusedNodeId, setCanvasImageInteractionActive]);
+    clearRetainedCanvasImageOriginals();
+  }, [
+    clearRetainedCanvasImageOriginals,
+    currentProjectId,
+    setCanvasImageFocusedNodeId,
+    setCanvasImageInteractionActive,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -519,8 +544,13 @@ export function Canvas() {
       }
       setCanvasImageFocusedNodeId(null);
       setCanvasImageInteractionActive(false);
+      clearRetainedCanvasImageOriginals();
     };
-  }, [setCanvasImageFocusedNodeId, setCanvasImageInteractionActive]);
+  }, [
+    clearRetainedCanvasImageOriginals,
+    setCanvasImageFocusedNodeId,
+    setCanvasImageInteractionActive,
+  ]);
 
   useEffect(() => {
     const unsubscribeOpen = canvasEventBus.subscribe('tool-dialog/open', (payload) => {

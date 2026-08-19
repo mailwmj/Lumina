@@ -13,8 +13,6 @@ import { useTranslation } from 'react-i18next';
 
 import {
   CANVAS_NODE_TYPES,
-  EXPORT_RESULT_NODE_DEFAULT_WIDTH,
-  EXPORT_RESULT_NODE_LAYOUT_HEIGHT,
   type SeedanceVideoInputMode,
   type VideoGenNodeData,
   type VideoResolution,
@@ -64,6 +62,7 @@ import { useSettingsStore } from '@/stores/settingsStore';
 import { logger } from '@/lib/logger';
 import { usePreserveNodeCenterOnAutoResize } from '@/features/canvas/ui/usePreserveNodeCenterOnAutoResize';
 import { getVideoApiControlLabel } from '@/features/canvas/ui/videoApiLabel';
+import { createVideoOutputNode } from '@/features/canvas/application/videoOutput';
 
 type VideoGenNodeProps = NodeProps & {
   id: string;
@@ -118,9 +117,8 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
   const updateNodeData = useCanvasStore((state) => state.updateNodeData);
   const reorderNodeInput = useCanvasStore((state) => state.reorderNodeInput);
   const setSelectedNode = useCanvasStore((state) => state.setSelectedNode);
-  const addNode = useCanvasStore((state) => state.addNode);
+  const addNodeBatch = useCanvasStore((state) => state.addNodeBatch);
   const addEdge = useCanvasStore((state) => state.addEdge);
-  const findNodePosition = useCanvasStore((state) => state.findNodePosition);
   const videoApis = useSettingsStore((state) => state.videoApis);
   const textApis = useSettingsStore((state) => state.textApis);
   const imagePolishConfig = useSettingsStore((state) => state.imagePolishConfig);
@@ -483,16 +481,14 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
     const generationDurationMs = 120000;
     setError(null);
 
-    const newNodePosition = findNodePosition(
-      id,
-      EXPORT_RESULT_NODE_DEFAULT_WIDTH,
-      EXPORT_RESULT_NODE_LAYOUT_HEIGHT
-    );
-
-    const newNodeId = addNode(
-      CANVAS_NODE_TYPES.exportVideo,
-      newNodePosition,
-      {
+    const currentCanvas = useCanvasStore.getState();
+    const newNodeId = createVideoOutputNode({
+      sourceNodeId: id,
+      existingNodes: currentCanvas.nodes,
+      existingEdges: currentCanvas.edges,
+      addNodeBatch,
+      addEdge,
+      data: {
         isGenerating: true,
         generationStartedAt,
         generationDurationMs,
@@ -505,9 +501,11 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
         hasAudio: true,
         watermark: false,
         prompt,
-      }
-    );
-    addEdge(id, newNodeId);
+      },
+    });
+    if (!newNodeId) {
+      return;
+    }
 
     try {
       const extraParams = {
@@ -559,9 +557,8 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
     }
   }, [
     addEdge,
-    addNode,
+    addNodeBatch,
     data,
-    findNodePosition,
     id,
     isSelectedVideoApiSelectable,
     seedanceRequestPlan,
@@ -775,7 +772,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
 
       {/* Footer (32px) */}
       <div className={`${NODE_CONTROL_FOOTER_CLASS} gap-1`}>
-        <div className="w-[9.25rem] shrink-0">
+        <div className="w-[8.75rem] shrink-0">
           <UiSelect
             className={`nodrag nowheel ${NODE_CONTROL_CHIP_CLASS} !h-6 !w-full !min-w-0 !justify-between font-mono text-text-dark`}
             value={isSelectedVideoApiSelectable ? selectedVideoApi?.id ?? '' : ''}
@@ -783,6 +780,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
             aria-label={t('node.videoGen.model')}
             menuMinWidth={272}
             disabled={videoApiOptions.length === 0}
+            compact
           >
             {videoApiOptions.map((api) => (
               <option key={api.id} value={api.id}>
@@ -792,12 +790,13 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
           </UiSelect>
         </div>
 
-        <div className="w-[6rem] shrink-0">
+        <div className="w-[5.75rem] shrink-0">
           <UiSelect
             className={`nodrag nowheel ${NODE_CONTROL_CHIP_CLASS} !h-6 !w-full !min-w-0 !justify-between text-text-dark`}
             value={inputMode}
             onChange={handleInputModeChange}
             aria-label={t('node.videoGen.inputMode')}
+            compact
           >
             <option value="automatic">{t('node.videoGen.automaticMode')}</option>
             <option
@@ -810,12 +809,13 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
           </UiSelect>
         </div>
 
-        <div className="w-[5rem] shrink-0">
+        <div className="w-[4.5rem] shrink-0">
           <UiSelect
             className={`nodrag nowheel ${NODE_CONTROL_CHIP_CLASS} !h-6 !w-full !min-w-0 !justify-between font-mono text-text-dark`}
             value={data.aspectRatio || '16:9'}
             onChange={handleAspectRatioChange}
             aria-label={t('node.videoGen.size')}
+            compact
           >
             {SEEDANCE_2_ASPECT_RATIOS.map((ratio) => (
               <option key={ratio} value={ratio}>{ratio}</option>
@@ -823,12 +823,13 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
           </UiSelect>
         </div>
 
-        <div className="w-[5.75rem] shrink-0">
+        <div className="w-[4.75rem] shrink-0">
           <UiSelect
             className={`nodrag nowheel ${NODE_CONTROL_CHIP_CLASS} !h-6 !w-full !min-w-0 !justify-between font-mono text-text-dark`}
             value={selectedResolution}
             onChange={handleResolutionChange}
             aria-label={t('node.videoGen.resolution')}
+            compact
           >
             {videoControlOptions.resolutions.map((resolution) => (
               <option key={resolution} value={resolution}>
@@ -838,12 +839,13 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
           </UiSelect>
         </div>
 
-        <div className="w-[5.25rem] shrink-0">
+        <div className="w-[4.25rem] shrink-0">
           <UiSelect
             className={`nodrag nowheel ${NODE_CONTROL_CHIP_CLASS} !h-6 !w-full !min-w-0 !justify-between font-mono text-text-dark`}
             value={selectedDuration}
             onChange={handleDurationChange}
             aria-label={t('node.videoGen.duration')}
+            compact
           >
             {videoControlOptions.durations.map((d) => (
               <option key={d} value={d}>

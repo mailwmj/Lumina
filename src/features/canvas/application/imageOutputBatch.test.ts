@@ -52,10 +52,10 @@ describe('image output batch layout', () => {
       { nodeId: 'result-4', outputIndex: 3 },
     ]);
     expect(addedNodes.map(({ position }) => position)).toEqual([
+      { x: 640, y: -134 },
       { x: 640, y: 182 },
       { x: 640, y: 498 },
-      { x: 640, y: 814 },
-      { x: 956, y: 182 },
+      { x: 956, y: -134 },
     ]);
     expect(addedNodes.map(({ type }) => type)).toEqual(
       Array.from({ length: 4 }, () => CANVAS_NODE_TYPES.exportImage)
@@ -106,7 +106,7 @@ describe('image output batch layout', () => {
     const existingResult: CanvasNode = {
       id: 'existing-result',
       type: CANVAS_NODE_TYPES.exportImage,
-      position: { x: 640, y: 182 },
+      position: { x: 640, y: -134 },
       width: 288,
       height: 288,
       data: {
@@ -133,8 +133,8 @@ describe('image output batch layout', () => {
     });
 
     expect(addedNodes.map(({ position }) => position)).toEqual([
+      { x: 640, y: 182 },
       { x: 640, y: 498 },
-      { x: 640, y: 814 },
     ]);
     expect(addedNodes.map(({ data }) => data?.generationLaneSlot)).toEqual([1, 2]);
   });

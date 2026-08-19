@@ -51,7 +51,7 @@ function edge(source: string, target: string): CanvasEdge {
 describe('image result placement', () => {
   const resultSize = { width: 288, height: 288 };
 
-  it('uses three top-to-bottom slots before opening the next column', () => {
+  it('uses upper, center, and lower slots before opening the next column', () => {
     const source = node('source', CANVAS_NODE_TYPES.imageEdit, 100, 200, 320, 240);
 
     expect(IMAGE_RESULT_LANE_ROWS).toBe(3);
@@ -62,10 +62,10 @@ describe('image result placement', () => {
       resultSize,
       resultCount: 4,
     })).toEqual([
-      { laneSlot: 0, position: { x: 448, y: 200 } },
-      { laneSlot: 1, position: { x: 448, y: 516 } },
-      { laneSlot: 2, position: { x: 448, y: 832 } },
-      { laneSlot: 3, position: { x: 764, y: 200 } },
+      { laneSlot: 0, position: { x: 448, y: -140 } },
+      { laneSlot: 1, position: { x: 448, y: 176 } },
+      { laneSlot: 2, position: { x: 448, y: 492 } },
+      { laneSlot: 3, position: { x: 764, y: -140 } },
     ]);
   });
 
@@ -75,7 +75,7 @@ describe('image result placement', () => {
       'result-1',
       CANVAS_NODE_TYPES.exportImage,
       448,
-      200,
+      -140,
       288,
       288,
       { resultKind: 'generic', generationLaneSlot: 0 }
@@ -84,7 +84,7 @@ describe('image result placement', () => {
       'result-2',
       CANVAS_NODE_TYPES.exportImage,
       448,
-      516,
+      176,
       288,
       288,
       { resultKind: 'generic', generationLaneSlot: 1 }
@@ -93,7 +93,7 @@ describe('image result placement', () => {
       'result-3',
       CANVAS_NODE_TYPES.exportImage,
       448,
-      832,
+      492,
       288,
       288,
       { resultKind: 'generic', generationLaneSlot: 2 }
@@ -110,7 +110,7 @@ describe('image result placement', () => {
       resultSize,
       resultCount: 1,
     })).toEqual([
-      { laneSlot: 3, position: { x: 764, y: 200 } },
+      { laneSlot: 3, position: { x: 764, y: -140 } },
     ]);
   });
 
@@ -120,7 +120,7 @@ describe('image result placement', () => {
       'result',
       CANVAS_NODE_TYPES.exportImage,
       448,
-      200,
+      -140,
       288,
       288,
       { resultKind: 'generic' }
@@ -133,13 +133,13 @@ describe('image result placement', () => {
       resultSize,
       resultCount: 1,
     })).toEqual([
-      { laneSlot: 1, position: { x: 448, y: 516 } },
+      { laneSlot: 1, position: { x: 448, y: 176 } },
     ]);
   });
 
-  it('skips blocked slots in reading order instead of jumping above the source', () => {
+  it('skips a blocked upper slot before choosing the center slot', () => {
     const source = node('source', CANVAS_NODE_TYPES.imageEdit, 100, 200, 320, 240);
-    const blocker = node('blocker', CANVAS_NODE_TYPES.textGeneration, 448, 200, 288, 288);
+    const blocker = node('blocker', CANVAS_NODE_TYPES.textGeneration, 448, -140, 288, 288);
 
     expect(resolveImageResultBatchPositions({
       sourceNodeId: source.id,
@@ -148,7 +148,7 @@ describe('image result placement', () => {
       resultSize,
       resultCount: 1,
     })).toEqual([
-      { laneSlot: 1, position: { x: 448, y: 516 } },
+      { laneSlot: 1, position: { x: 448, y: 176 } },
     ]);
   });
 
@@ -163,7 +163,7 @@ describe('image result placement', () => {
       resultSize,
       resultCount: 1,
     })).toEqual([
-      { laneSlot: 3, position: { x: 764, y: 200 } },
+      { laneSlot: 3, position: { x: 764, y: -140 } },
     ]);
   });
 
@@ -186,7 +186,7 @@ describe('image result placement', () => {
       resultSize,
       resultCount: 1,
     })).toEqual([
-      { laneSlot: 0, position: { x: 1_448, y: 850 } },
+      { laneSlot: 0, position: { x: 1_448, y: 510 } },
     ]);
   });
 });

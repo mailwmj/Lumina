@@ -17,6 +17,7 @@ export interface ImageResultBatchPlacementInput {
   edges: readonly CanvasEdge[];
   resultSize: ImageResultBatchSize;
   resultCount: number;
+  resultNodeType?: typeof CANVAS_NODE_TYPES.exportImage | typeof CANVAS_NODE_TYPES.exportVideo;
 }
 
 export interface ImageResultBatchPlacement {
@@ -88,18 +89,27 @@ function rectsCollide(left: CanvasRect, right: CanvasRect): boolean {
   );
 }
 
-function isGenericImageResult(node: CanvasNode): boolean {
-  if (node.type !== CANVAS_NODE_TYPES.exportImage) {
+function isTrackedResult(
+  node: CanvasNode,
+  resultNodeType: NonNullable<ImageResultBatchPlacementInput['resultNodeType']>
+): boolean {
+  if (node.type !== resultNodeType) {
     return false;
   }
+
+  if (resultNodeType === CANVAS_NODE_TYPES.exportVideo) {
+    return true;
+  }
+
   const data = node.data as ExportImageNodeData;
   return data.resultKind === undefined || data.resultKind === 'generic';
 }
 
-function getDirectGenericImageResults(
+function getDirectTrackedResults(
   sourceNodeId: string,
   nodesById: ReadonlyMap<string, CanvasNode>,
-  edges: readonly CanvasEdge[]
+  edges: readonly CanvasEdge[],
+  resultNodeType: NonNullable<ImageResultBatchPlacementInput['resultNodeType']>
 ): CanvasNode[] {
   const targetIds = new Set(
     edges
@@ -110,12 +120,12 @@ function getDirectGenericImageResults(
   return Array.from(targetIds)
     .map((nodeId) => nodesById.get(nodeId))
     .filter((node): node is CanvasNode => Boolean(node))
-    .filter(isGenericImageResult);
+    .filter((node) => isTrackedResult(node, resultNodeType));
 }
 
 function resolveNextLaneSlot(results: readonly CanvasNode[]): number {
   const assignedSlots = results.flatMap((node) => {
-    const laneSlot = (node.data as ExportImageNodeData).generationLaneSlot;
+    const laneSlot = (node.data as { generationLaneSlot?: unknown }).generationLaneSlot;
     return typeof laneSlot === 'number' && Number.isInteger(laneSlot) && laneSlot >= 0
       ? [laneSlot]
       : [];
@@ -130,22 +140,25 @@ function resolveNextLaneSlot(results: readonly CanvasNode[]): number {
 
 function resolveLanePosition(
   laneSlot: number,
-  origin: { x: number; y: number },
+  origin: { x: number; centerY: number },
   resultSize: ImageResultBatchSize
 ): { x: number; y: number } {
   const column = Math.floor(laneSlot / IMAGE_RESULT_LANE_ROWS);
   const row = laneSlot % IMAGE_RESULT_LANE_ROWS;
 
   return {
-    x: origin.x + column * (resultSize.width + IMAGE_RESULT_LANE_GAP),
-    y: origin.y + row * (resultSize.height + IMAGE_RESULT_LANE_GAP),
+    x: Math.round(origin.x + column * (resultSize.width + IMAGE_RESULT_LANE_GAP)),
+    y: Math.round(
+      origin.centerY - resultSize.height / 2
+        + (row - 1) * (resultSize.height + IMAGE_RESULT_LANE_GAP)
+    ),
   };
 }
 
 /**
- * Reserves deterministic, top-to-bottom result slots to the right of one image node.
- * A source-local lane holds three images per column. Existing nodes are never moved;
- * unrelated obstacles only cause later slots to be selected, never an upward jump.
+ * Reserves deterministic mind-map result slots to the right of one source node.
+ * A source-local lane holds upper, center, then lower slots per column. Existing nodes
+ * are never moved; unrelated obstacles only cause later slots to be selected.
  */
 export function resolveImageResultBatchPositions({
   sourceNodeId,
@@ -153,6 +166,7 @@ export function resolveImageResultBatchPositions({
   edges,
   resultSize,
   resultCount,
+  resultNodeType = CANVAS_NODE_TYPES.exportImage,
 }: ImageResultBatchPlacementInput): ImageResultBatchPlacement[] {
   const safeResultCount = Math.max(0, Math.floor(resultCount));
   if (safeResultCount === 0) {
@@ -163,7 +177,7 @@ export function resolveImageResultBatchPositions({
   if (!sourceNode) {
     return Array.from({ length: safeResultCount }, (_, laneSlot) => ({
       laneSlot,
-      position: resolveLanePosition(laneSlot, { x: 100, y: 100 }, resultSize),
+      position: resolveLanePosition(laneSlot, { x: 100, centerY: 100 }, resultSize),
     }));
   }
 
@@ -171,9 +185,9 @@ export function resolveImageResultBatchPositions({
   const sourceRect = resolveNodeRect(sourceNode, nodesById);
   const origin = {
     x: sourceRect.x + sourceRect.width + IMAGE_RESULT_LANE_GAP,
-    y: sourceRect.y,
+    centerY: sourceRect.y + sourceRect.height / 2,
   };
-  const directResults = getDirectGenericImageResults(sourceNodeId, nodesById, edges);
+  const directResults = getDirectTrackedResults(sourceNodeId, nodesById, edges, resultNodeType);
   const ignoredNodeIds = new Set([sourceNodeId]);
   const obstacleRects = nodes
     .filter((node) => node.type !== CANVAS_NODE_TYPES.group && !ignoredNodeIds.has(node.id))

@@ -34,6 +34,10 @@ export function useCanvasNodeImageSource({
   const isFocused = useCanvasImageQualityStore(
     (state) => state.focusedNodeId === nodeId
   );
+  const isOriginalRetained = useCanvasImageQualityStore(
+    (state) => state.retainedOriginalNodeIds.includes(nodeId)
+  );
+  const retainOriginalNode = useCanvasImageQualityStore((state) => state.retainOriginalNode);
   const originalDisplaySource = useMemo(
     () => imageUrl ? resolveImageDisplayUrl(imageUrl) : null,
     [imageUrl]
@@ -55,9 +59,11 @@ export function useCanvasNodeImageSource({
     imageUrl,
     previewImageUrl,
     focusedNodeId: isFocused ? nodeId : null,
+    retainedOriginalNodeIds: isOriginalRetained && hasLoadedOriginal ? [nodeId] : [],
   }), [
     imageUrl,
     isFocused,
+    isOriginalRetained,
     nodeId,
     previewImageUrl,
   ]);
@@ -80,6 +86,15 @@ export function useCanvasNodeImageSource({
       && previewDisplaySource !== originalDisplaySource
     );
     if (!shouldPreloadOriginal) {
+      if (
+        isFocused
+        && hasLoadedOriginal
+        && previewDisplaySource
+        && previewDisplaySource !== originalDisplaySource
+        && preferredDisplaySource === originalDisplaySource
+      ) {
+        retainOriginalNode(nodeId);
+      }
       setDisplaySource(preferredDisplaySource);
       return;
     }
@@ -89,6 +104,7 @@ export function useCanvasNodeImageSource({
       .then(() => {
         if (!cancelled) {
           setDisplaySource(preferredDisplaySource);
+          retainOriginalNode(nodeId);
         }
       })
       .catch(() => {
@@ -106,6 +122,7 @@ export function useCanvasNodeImageSource({
     originalDisplaySource,
     preferredDisplaySource,
     previewDisplaySource,
+    retainOriginalNode,
   ]);
 
   return displaySource;

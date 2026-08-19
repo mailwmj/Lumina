@@ -31,6 +31,10 @@ export const EXPORT_RESULT_NODE_DEFAULT_WIDTH = 384;
 export const EXPORT_RESULT_NODE_LAYOUT_HEIGHT = 288;
 export const EXPORT_RESULT_NODE_MIN_WIDTH = 168;
 export const EXPORT_RESULT_NODE_MIN_HEIGHT = 168;
+export const VIDEO_RESULT_NODE_DEFAULT_WIDTH = 560;
+export const VIDEO_RESULT_NODE_DEFAULT_HEIGHT = 400;
+export const VIDEO_RESULT_NODE_MIN_WIDTH = 320;
+export const VIDEO_RESULT_NODE_MIN_HEIGHT = 240;
 
 export const IMAGE_SIZES = ['0.5K', '1K', '2K', '4K'] as const;
 export const IMAGE_OUTPUT_COUNTS = [1, 2, 4] as const;
@@ -256,6 +260,8 @@ export interface ExportVideoNodeData extends NodeDisplayData {
   seed?: number;
   prompt?: string;
   resultKind?: 'videoGen';
+  /** Stable, source-local slot used to keep generated videos in a predictable result lane. */
+  generationLaneSlot?: number;
   // SD 2.0 新参数
   generateAudio?: boolean;
   draft?: boolean;

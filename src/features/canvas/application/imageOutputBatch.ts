@@ -89,6 +89,7 @@ export function createImageOutputBatchNodes({
     edges: existingEdges,
     resultSize: outputSize,
     resultCount: outputCount,
+    resultNodeType: CANVAS_NODE_TYPES.exportImage,
   });
   const generationBatchId = `${sourceNodeId}:generation:${generationStartedAt}`;
 

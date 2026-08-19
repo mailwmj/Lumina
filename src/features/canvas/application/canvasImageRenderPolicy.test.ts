@@ -6,6 +6,7 @@ import {
 } from '@/features/canvas/domain/canvasNodes';
 import {
   findCanvasImageFocusCandidate,
+  getVisibleCanvasImageNodeIds,
   hasDistinctCanvasImagePreview,
   resolveCanvasImageRenderSource,
 } from './canvasImageRenderPolicy';
@@ -48,6 +49,27 @@ describe('canvas image render policy', () => {
       previewImageUrl: 'file:///preview.jpg',
       focusedNodeId: 'image-1',
     })).toBe('file:///original.jpg');
+  });
+
+  it('keeps a recently inspected image on its original while it remains retained', () => {
+    expect(resolveCanvasImageRenderSource({
+      nodeId: 'image-1',
+      imageUrl: 'file:///original.jpg',
+      previewImageUrl: 'file:///preview.jpg',
+      focusedNodeId: 'image-2',
+      retainedOriginalNodeIds: ['image-1'],
+    })).toBe('file:///original.jpg');
+  });
+
+  it('identifies image nodes that remain visible after a viewport move', () => {
+    const visible = createImageNode('visible', { x: 0, y: 0 }, { width: 400, height: 400 });
+    const offscreen = createImageNode('offscreen', { x: 1600, y: 0 }, { width: 400, height: 400 });
+
+    expect(getVisibleCanvasImageNodeIds({
+      nodes: [visible, offscreen],
+      viewport: { x: 0, y: 0, zoom: 1 },
+      viewportSize: { width: 1000, height: 800 },
+    })).toEqual([visible.id]);
   });
 
   it('falls back to the original when no distinct preview exists', () => {

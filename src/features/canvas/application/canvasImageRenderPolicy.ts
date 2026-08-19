@@ -17,6 +17,7 @@ export interface CanvasImageRenderSourceInput {
   imageUrl: string | null | undefined;
   previewImageUrl: string | null | undefined;
   focusedNodeId: string | null;
+  retainedOriginalNodeIds?: readonly string[];
 }
 
 export interface CanvasImageFocusInput {
@@ -234,6 +235,7 @@ export function resolveCanvasImageRenderSource({
   imageUrl,
   previewImageUrl,
   focusedNodeId,
+  retainedOriginalNodeIds = [],
 }: CanvasImageRenderSourceInput): string | null {
   const original = nonEmptyString(imageUrl);
   const preview = nonEmptyString(previewImageUrl);
@@ -244,11 +246,31 @@ export function resolveCanvasImageRenderSource({
     return original;
   }
 
-  if (focusedNodeId !== nodeId) {
+  if (focusedNodeId !== nodeId && !retainedOriginalNodeIds.includes(nodeId)) {
     return preview;
   }
 
   return original;
+}
+
+export function getVisibleCanvasImageNodeIds({
+  nodes,
+  viewport,
+  viewportSize,
+}: Pick<CanvasImageFocusInput, 'nodes' | 'viewport' | 'viewportSize'>): string[] {
+  if (viewportSize.width <= 0 || viewportSize.height <= 0) {
+    return [];
+  }
+
+  const nodesById = new Map(nodes.map((node) => [node.id, node] as const));
+  return nodes
+    .filter((node) => isCanvasImageRenderNode(node) && isVisibleInViewport(
+      node,
+      viewport,
+      viewportSize,
+      nodesById
+    ))
+    .map((node) => node.id);
 }
 
 export function findCanvasImageFocusCandidate({

@@ -56,6 +56,7 @@ interface UiCheckboxProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 
 
 interface UiSelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
   menuMinWidth?: number;
+  compact?: boolean;
 }
 
 interface UiSelectOption {
@@ -212,7 +213,7 @@ export const UiCheckbox = forwardRef<HTMLButtonElement, UiCheckboxProps>(
 
 UiCheckbox.displayName = 'UiCheckbox';
 
-export function UiSelect({ className = '', children, menuMinWidth, ...props }: UiSelectProps) {
+export function UiSelect({ className = '', children, menuMinWidth, compact = false, ...props }: UiSelectProps) {
   const {
     value,
     defaultValue,
@@ -438,7 +439,9 @@ export function UiSelect({ className = '', children, menuMinWidth, ...props }: U
         onBlur={(event) => onBlur?.(event as never)}
         onFocus={(event) => onFocus?.(event as never)}
       >
-        <span className="min-w-0 truncate pr-3">{selectedOption?.label ?? ''}</span>
+        <span className={`min-w-0 truncate ${compact ? 'pr-0' : 'pr-3'}`}>
+          {selectedOption?.label ?? ''}
+        </span>
         <span className="flex h-4 w-4 shrink-0 items-center justify-center text-text-muted transition-colors group-hover:text-text-dark group-focus-visible:text-accent">
           <UiIcon
             icon={ChevronDownIcon}
