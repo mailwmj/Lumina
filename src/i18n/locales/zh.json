@@ -96,6 +96,13 @@
       "dragHandle": "拖动以批量连接",
       "invalidTarget": "所选节点无法全部连接到该目标"
     },
+    "mediaImport": {
+      "images": "图片",
+      "videos": "视频",
+      "audio": "音频",
+      "openFailed": "无法打开文件选择器，请重试",
+      "failed": "以下 {{count}} 个资源导入失败：{{names}}"
+    },
     "nodeContextMenu": {
       "label": "节点操作",
       "duplicate": "生成副本",
@@ -161,7 +168,7 @@
   },
   "node": {
     "menu": {
-      "uploadImage": "上传图片",
+      "uploadImage": "上传",
       "aiImageGeneration": "AI生图",
       "storyboard": "分镜节点",
       "storyboardGen": "分镜生成",

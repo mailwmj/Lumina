@@ -96,6 +96,13 @@
       "dragHandle": "Drag to connect selection",
       "invalidTarget": "Not all selected nodes can connect to this target"
     },
+    "mediaImport": {
+      "images": "Images",
+      "videos": "Videos",
+      "audio": "Audio",
+      "openFailed": "Unable to open the file picker. Please try again.",
+      "failed": "Failed to import {{count}} resource(s): {{names}}"
+    },
     "nodeContextMenu": {
       "label": "Node actions",
       "duplicate": "Duplicate",
@@ -161,7 +168,7 @@
   },
   "node": {
     "menu": {
-      "uploadImage": "Upload Image",
+      "uploadImage": "Upload",
       "aiImageGeneration": "AI Image Generation",
       "storyboard": "Storyboard Node",
       "storyboardGen": "Storyboard Generation",

@@ -22,6 +22,7 @@ import {
   type Viewport,
 } from '@xyflow/react';
 import { useTranslation } from 'react-i18next';
+import { open } from '@tauri-apps/plugin-dialog';
 import '@xyflow/react/dist/style.css';
 
 import { useCanvasStore } from '@/stores/canvasStore';
@@ -80,6 +81,12 @@ import {
   nodeHasTargetHandle,
 } from '@/features/canvas/domain/nodeRegistry';
 import { convertAudioToMp3, convertVideoToMp4 } from '@/commands/media';
+import {
+  createCanvasMediaImportDialogFilters,
+  getCanvasMediaFileName,
+  layoutCanvasMediaImportNodes,
+  prepareCanvasMediaImportBatch,
+} from '@/features/canvas/application/canvasMediaImport';
 import { embedStoryboardImageMetadata, autoSaveVideoToProject, autoSaveImageToProject } from '@/commands/image';
 import { shouldSuppressPaneClickAfterProjectOpen } from '@/features/app/projectOpenPaneClickGuard';
 import { nodeTypes } from './nodes';
@@ -372,6 +379,7 @@ export function Canvas() {
     (state) => state.updateNodeDataWithoutHistory
   );
   const addNode = useCanvasStore((state) => state.addNode);
+  const addNodeBatch = useCanvasStore((state) => state.addNodeBatch);
   const setSelectedNode = useCanvasStore((state) => state.setSelectedNode);
   const selectedNodeId = useCanvasStore((state) => state.selectedNodeId);
   const deleteEdge = useCanvasStore((state) => state.deleteEdge);
@@ -1724,6 +1732,46 @@ export function Canvas() {
     setShowNodeMenu(true);
   }, [reactFlowInstance]);
 
+  const importCanvasMedia = useCallback(async (position: { x: number; y: number }) => {
+    let selected: string | string[] | null;
+    try {
+      selected = await open({
+        multiple: true,
+        directory: false,
+        filters: createCanvasMediaImportDialogFilters({
+          images: t('canvas.mediaImport.images'),
+          videos: t('canvas.mediaImport.videos'),
+          audio: t('canvas.mediaImport.audio'),
+        }),
+      });
+    } catch (error) {
+      logger.error('Failed to open canvas media import dialog', error);
+      void showErrorDialog(t('canvas.mediaImport.openFailed'), t('common.error'));
+      return;
+    }
+    if (!selected) {
+      return;
+    }
+
+    const paths = Array.isArray(selected) ? selected : [selected];
+    const { items, failures } = await prepareCanvasMediaImportBatch(
+      paths,
+      getCurrentProject()?.id,
+      useUploadFilenameAsNodeTitle,
+    );
+    if (items.length > 0) {
+      addNodeBatch(layoutCanvasMediaImportNodes(items, position));
+      scheduleCanvasPersist(0);
+    }
+    if (failures.length > 0) {
+      const names = failures.map((failure) => getCanvasMediaFileName(failure.path)).join('、');
+      void showErrorDialog(
+        t('canvas.mediaImport.failed', { count: failures.length, names }),
+        t('common.error'),
+      );
+    }
+  }, [addNodeBatch, getCurrentProject, scheduleCanvasPersist, t, useUploadFilenameAsNodeTitle]);
+
   const handleCanvasDrop = useCallback(
     async (event: ReactDragEvent<HTMLDivElement>) => {
       event.preventDefault();
@@ -1874,6 +1922,14 @@ export function Canvas() {
   const handleNodeSelect = useCallback(
     (type: CanvasNodeType) => {
       const batchSourceNodeIds = pendingMultiConnectSourceNodeIds;
+      if (
+        type === CANVAS_NODE_TYPES.upload
+        && !pendingConnectStart
+        && (!batchSourceNodeIds || batchSourceNodeIds.length === 0)
+      ) {
+        void importCanvasMedia(flowPosition);
+        return;
+      }
       if (batchSourceNodeIds && batchSourceNodeIds.length > 0) {
         const currentNodes = useCanvasStore.getState().nodes;
         if (!getBatchConnectMenuNodeTypes(batchSourceNodeIds, currentNodes).includes(type)) {
@@ -1953,6 +2009,7 @@ export function Canvas() {
       connectNodes,
       connectNodesBatch,
       flowPosition,
+      importCanvasMedia,
       pendingConnectStart,
       pendingMultiConnectSourceNodeIds,
       scheduleCanvasPersist,
