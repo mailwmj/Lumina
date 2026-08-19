@@ -3,6 +3,7 @@ pub mod canvas_agent;
 pub mod commands;
 pub mod session;
 pub mod storage;
+pub mod upscale;
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -156,6 +157,8 @@ pub fn run() {
                 warn!("Canvas Agent unavailable: {error}");
             }
             app.manage(canvas_agent_manager);
+            upscale::cleanup_stale_temp_dirs(&app.handle());
+            app.manage(upscale::UpscaleJobManager::new());
             tauri::async_runtime::spawn(async move {
                 tokio::time::sleep(Duration::from_millis(FRONTEND_READY_TIMEOUT_MS)).await;
 
@@ -233,11 +236,19 @@ pub fn run() {
             project_state::rename_project_record,
             project_state::delete_project_record,
             project_state::create_project_dirs,
+            upscale::start_upscale_job,
+            upscale::get_upscale_job_status,
+            upscale::cancel_upscale_job,
             system::get_runtime_system_info,
             update::check_latest_release_tag,
             logging::append_frontend_log,
             logging::open_log_dir,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            if matches!(event, tauri::RunEvent::ExitRequested { .. }) {
+                app.state::<upscale::UpscaleJobManager>().shutdown();
+            }
+        });
 }

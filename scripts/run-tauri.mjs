@@ -11,15 +11,25 @@ const command = args[0];
 
 if (command === 'dev' || command === 'build') {
   const targetArgs = readTargetArgs(args);
-  run(process.execPath, [
+  run('Canvas Agent sidecar build', process.execPath, [
     path.join(repositoryRoot, 'scripts', 'build-canvas-agent-sidecar.mjs'),
     ...targetArgs,
   ]);
   if (command === 'build') {
-    run(process.execPath, [
+    run('Real-ESRGAN sidecar build', process.execPath, [
+      path.join(repositoryRoot, 'scripts', 'build-realesrgan-sidecar.mjs'),
+      ...targetArgs,
+    ]);
+    run('Canvas Agent sidecar smoke', process.execPath, [
       path.join(repositoryRoot, 'scripts', 'smoke-canvas-agent-sidecar.mjs'),
       ...targetArgs,
     ]);
+    run('Real-ESRGAN sidecar verification', process.execPath, [
+      path.join(repositoryRoot, 'scripts', 'verify-realesrgan-sidecar.mjs'),
+      ...targetArgs,
+    ]);
+  } else {
+    verifyOptionalRealEsrganSidecar(targetArgs);
   }
 }
 
@@ -49,7 +59,7 @@ function readTargetArgs(values) {
     : [];
 }
 
-function run(program, programArgs) {
+function run(label, program, programArgs) {
   const child = spawnSync(program, programArgs, {
     cwd: repositoryRoot,
     stdio: 'inherit',
@@ -59,6 +69,29 @@ function run(program, programArgs) {
     throw child.error;
   }
   if (child.status !== 0) {
-    throw new Error(`Canvas Agent sidecar build exited with status ${child.status ?? 'unknown'}.`);
+    throw new Error(`${label} exited with status ${child.status ?? 'unknown'}.`);
   }
+}
+
+function verifyOptionalRealEsrganSidecar(targetArgs) {
+  const child = spawnSync(process.execPath, [
+    path.join(repositoryRoot, 'scripts', 'verify-realesrgan-sidecar.mjs'),
+    ...targetArgs,
+  ], {
+    cwd: repositoryRoot,
+    encoding: 'utf8',
+    env: process.env,
+  });
+
+  if (!child.error && child.status === 0) {
+    process.stdout.write(child.stdout ?? '');
+    return;
+  }
+
+  const detail = `${child.stderr ?? ''}${child.stdout ?? ''}`.trim().split('\n')[0];
+  const suffix = detail ? ` (${detail})` : '';
+  process.stderr.write(
+    `Real-ESRGAN sidecar is unavailable for tauri dev${suffix}. `
+      + 'Run npm run realesrgan:sidecar to enable upscale; otherwise upscale requests return sidecar_unavailable.\n',
+  );
 }

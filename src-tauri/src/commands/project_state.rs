@@ -92,6 +92,8 @@ fn ensure_projects_table(conn: &Connection) -> Result<(), String> {
         .map_err(|e| format!("Failed to add node_count column: {}", e))?;
     }
 
+    super::upscale::ensure_upscale_cache_schema(conn)?;
+
     Ok(())
 }
 
@@ -242,7 +244,7 @@ fn prune_unreferenced_images(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-fn open_db(app: &AppHandle) -> Result<Connection, String> {
+pub(crate) fn open_db(app: &AppHandle) -> Result<Connection, String> {
     let db_path = resolve_db_path(app)?;
     let conn = Connection::open(db_path).map_err(|e| format!("Failed to open SQLite DB: {}", e))?;
 
@@ -257,6 +259,17 @@ fn open_db(app: &AppHandle) -> Result<Connection, String> {
 
     ensure_projects_table(&conn)?;
     Ok(conn)
+}
+
+pub(crate) fn project_record_exists(app: &AppHandle, project_id: &str) -> Result<bool, String> {
+    let conn = open_db(app)?;
+    conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM projects WHERE id = ?1)",
+        params![project_id],
+        |row| row.get::<_, i64>(0),
+    )
+    .map(|exists| exists != 0)
+    .map_err(|e| format!("Failed to check project record: {}", e))
 }
 
 #[tauri::command]

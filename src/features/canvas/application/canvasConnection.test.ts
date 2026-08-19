@@ -3,8 +3,10 @@ import { describe, expect, it } from 'vitest';
 import { canvasNodeFactory } from './canvasServices';
 import {
   buildBatchConnectionPlan,
+  canNodeTypeBeManualConnectionSource,
   getBatchConnectMenuNodeTypes,
   isCanvasConnectionValid,
+  isCanvasProgrammaticConnectionValid,
 } from './canvasConnection';
 import { CANVAS_NODE_TYPES, type CanvasEdge, type CanvasNode } from '../domain/canvasNodes';
 
@@ -161,6 +163,17 @@ describe('batch canvas connections', () => {
 });
 
 describe('typed canvas connections', () => {
+  it('reserves upscale output connections for application-created result provenance', () => {
+    const upscale = createNode(CANVAS_NODE_TYPES.upscale, 'upscale');
+    const result = createNode(CANVAS_NODE_TYPES.exportImage, 'result');
+    const nodes = [upscale, result];
+
+    expect(canNodeTypeBeManualConnectionSource(upscale.type)).toBe(false);
+    expect(getBatchConnectMenuNodeTypes([upscale.id], nodes)).toEqual([]);
+    expect(isCanvasConnectionValid({ source: upscale.id, target: result.id }, nodes, [])).toBe(false);
+    expect(isCanvasProgrammaticConnectionValid({ source: upscale.id, target: result.id }, nodes, [])).toBe(true);
+  });
+
   it('routes text, image, video, and audio sources through the visible Seedance automatic node', () => {
     const text = createNode(CANVAS_NODE_TYPES.textGeneration, 'text');
     const image = createNode(CANVAS_NODE_TYPES.upload, 'image');

@@ -9,6 +9,7 @@ pub mod project_state;
 pub mod system;
 pub mod storage;
 pub mod update;
+pub mod upscale;
 
 pub use ai::*;
 pub use cleanup::*;
@@ -19,3 +20,4 @@ pub use project_state::*;
 pub use system::*;
 pub use storage::*;
 pub use update::*;
+pub use upscale::*;

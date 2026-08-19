@@ -1,0 +1,5 @@
+/build-metadata.json
+/models/*
+!/models/.gitignore
+/LICENSES/*
+!/LICENSES/.gitignore

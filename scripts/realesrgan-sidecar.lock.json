@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 1,
+  "sidecar": {
+    "name": "realesrgan-ncnn-vulkan",
+    "version": "0.2.0",
+    "license": "MIT",
+    "sourceUrl": "https://github.com/xinntao/Real-ESRGAN-ncnn-vulkan"
+  },
+  "engineSource": {
+    "repository": "https://github.com/xinntao/Real-ESRGAN-ncnn-vulkan.git",
+    "tag": "v0.2.0",
+    "commitPrefix": "37026f4",
+    "archiveUrl": "https://codeload.github.com/xinntao/Real-ESRGAN-ncnn-vulkan/tar.gz/v0.2.0",
+    "archiveSha256": "346663b1924b2a1bfa655d656bfbba6b09f76ff75e4eee9d1fff4bfdef8b5712",
+    "license": "MIT"
+  },
+  "submodules": {
+    "ncnn": {
+      "repository": "https://github.com/Tencent/ncnn.git",
+      "commit": "6125c9f47cd14b589de0521350668cf9d3d37e3c",
+      "license": "BSD-3-Clause",
+      "licenseUrl": "https://github.com/Tencent/ncnn/blob/master/LICENSE.txt"
+    },
+    "libwebp": {
+      "repository": "https://github.com/webmproject/libwebp.git",
+      "commit": "8ea81561d2fdd382da60f57958741a7c23a18eb6",
+      "license": "BSD-3-Clause",
+      "licenseUrl": "https://github.com/webmproject/libwebp/blob/main/COPYING"
+    }
+  },
+  "model": {
+    "name": "realesrgan-x4plus",
+    "source": {
+      "release": "v0.2.5.0",
+      "archiveUrl": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/Real-ESRGAN-v0.2.5.0-models.tar.xz",
+      "archiveSha256": "1c858d2d0a0500735852c0559bf29e868aae5dbd1aff7f5900688701bee1264a",
+      "license": "BSD-3-Clause (repository-level; the release asset has no separate license declaration)",
+      "licenseUrl": "https://github.com/xinntao/Real-ESRGAN/blob/master/LICENSE"
+    },
+    "files": [
+      {
+        "name": "realesrgan-x4plus.param",
+        "sha256": "35330ececcea33b6c397a72548e788d5d53becee4734c50b7fada36e89f10a86",
+        "bytes": 117030
+      },
+      {
+        "name": "realesrgan-x4plus.bin",
+        "sha256": "713ee713b0353afaa27976f0563a64a5043bd70b9bd8936c2e26e25ebcdbcddf",
+        "bytes": 33424520
+      }
+    ]
+  },
+  "toolchains": {
+    "windows": {
+      "vulkanSdkVersion": "1.4.341.0",
+      "vulkanSdkArtifact": "vulkansdk-windows-X64-1.4.341.0.exe",
+      "vulkanSdkUrl": "https://sdk.lunarg.com/sdk/download/1.4.341.0/windows/vulkansdk-windows-X64-1.4.341.0.exe",
+      "vulkanSdkSha256": "5072ac63f0b00bc8c132bc0052bac0456f61983bd9d5dd50f614e190472db875",
+      "requirements": [
+        "MSVC x64 build environment",
+        "CMake",
+        "Git",
+        "tar",
+        "VULKAN_SDK pointing to the extracted SDK root"
+      ]
+    },
+    "macos": {
+      "vulkanSdkVersion": "1.4.341.0",
+      "vulkanSdkArtifact": "vulkansdk-macos-1.4.341.0.zip",
+      "vulkanSdkUrl": "https://sdk.lunarg.com/sdk/download/1.4.341.0/mac/vulkansdk-macos-1.4.341.0.zip",
+      "vulkanSdkSha256": "3b8af7f7db74b4bda02dc91503cec288ab70aebfe273ff98bb8cebabf04b196e",
+      "moltenVk": {
+        "license": "Apache-2.0",
+        "licenseUrl": "https://github.com/KhronosGroup/MoltenVK/blob/main/LICENSE"
+      },
+      "requirements": [
+        "Xcode command-line tools",
+        "CMake",
+        "Git",
+        "tar",
+        "lipo",
+        "unzip",
+        "VULKAN_SDK pointing to the macOS SDK directory",
+        "LUMINA_MOLTENVK_STATIC_LIBRARY pointing to libMoltenVK.a"
+      ]
+    }
+  }
+}

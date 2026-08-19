@@ -56,6 +56,42 @@ jobs:
         with:
           arch: amd64
 
+      - name: Setup locked Vulkan SDK for Real-ESRGAN
+        shell: pwsh
+        run: |
+          $sdkVersion = '1.4.341.0'
+          $installer = Join-Path $env:RUNNER_TEMP "vulkansdk-windows-X64-$sdkVersion.exe"
+          $extractDir = Join-Path $env:RUNNER_TEMP "VulkanSDK-$sdkVersion"
+          $url = "https://sdk.lunarg.com/sdk/download/$sdkVersion/windows/vulkansdk-windows-X64-$sdkVersion.exe"
+          $expectedSha256 = '5072ac63f0b00bc8c132bc0052bac0456f61983bd9d5dd50f614e190472db875'
+
+          Get-Command cmake -ErrorAction Stop | Out-Null
+          Get-Command git -ErrorAction Stop | Out-Null
+          Get-Command tar -ErrorAction Stop | Out-Null
+          Get-Command 7z -ErrorAction Stop | Out-Null
+          Get-Command cl -ErrorAction Stop | Out-Null
+
+          Invoke-WebRequest -Uri $url -OutFile $installer
+          $actualSha256 = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actualSha256 -ne $expectedSha256) {
+            throw "Vulkan SDK $sdkVersion SHA-256 mismatch. Expected $expectedSha256, received $actualSha256"
+          }
+          New-Item -ItemType Directory -Path $extractDir -Force | Out-Null
+          & $installer --root $extractDir --accept-licenses --default-answer --confirm-command install copy_only=1 | Out-Host
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to install Vulkan SDK $sdkVersion"
+          }
+
+          $header = Join-Path $extractDir 'Include/vulkan/vulkan.h'
+          if (-not (Test-Path -LiteralPath $header)) {
+            throw "Vulkan SDK $sdkVersion does not contain include/vulkan/vulkan.h"
+          }
+          $glslang = Join-Path $extractDir 'Bin/glslangValidator.exe'
+          if (-not (Test-Path -LiteralPath $glslang)) {
+            throw "Vulkan SDK $sdkVersion does not contain Bin/glslangValidator.exe"
+          }
+          "VULKAN_SDK=$extractDir" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
       - name: Update version
         if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag != '')
         shell: pwsh
@@ -91,8 +127,38 @@ jobs:
       - name: Test Canvas Agent
         run: npm run canvas-agent:test
 
+      - name: Build Real-ESRGAN Windows sidecar
+        shell: pwsh
+        run: npm run realesrgan:sidecar -- --target x86_64-pc-windows-msvc
+
+      - name: Verify Real-ESRGAN Windows sidecar
+        shell: pwsh
+        run: npm run realesrgan:sidecar:verify -- --target x86_64-pc-windows-msvc
+
       - name: Build application
         run: npm run tauri -- build
+
+      - name: Verify bundled Real-ESRGAN assets
+        shell: pwsh
+        run: |
+          $sidecar = Get-ChildItem -LiteralPath 'src-tauri/target/release' -Recurse -File |
+            Where-Object { $_.Name -like 'realesrgan-ncnn-vulkan*.exe' } |
+            Select-Object -First 1
+          if (-not $sidecar) {
+            throw "Bundled Real-ESRGAN executable not found in the Windows release staging directory"
+          }
+          npm run realesrgan:sidecar:verify -- --target x86_64-pc-windows-msvc --executable $sidecar.FullName
+
+          $installer = Get-ChildItem -LiteralPath 'src-tauri/target/release/bundle/nsis' -Filter '*.exe' | Select-Object -First 1
+          if (-not $installer) {
+            throw "Windows installer not found for Real-ESRGAN bundle verification"
+          }
+          $listing = (& 7z l $installer.FullName | Out-String)
+          foreach ($required in @('realesrgan-ncnn-vulkan.exe', 'realesrgan-x4plus.param', 'realesrgan-x4plus.bin', 'THIRD_PARTY_NOTICES.md', 'ncnn-BSD-3-Clause.txt', 'glslang-LICENSE.txt')) {
+            if ($listing -notmatch [regex]::Escape($required)) {
+              throw "Windows installer is missing bundled Real-ESRGAN asset: $required"
+            }
+          }
 
       - name: Rename Windows installer
         shell: pwsh
@@ -160,6 +226,55 @@ jobs:
         with:
           workspaces: src-tauri
 
+      - name: Setup locked Vulkan SDK for Real-ESRGAN
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdk_version='1.4.341.0'
+          archive="$RUNNER_TEMP/vulkansdk-macos-$sdk_version.zip"
+          extract_dir="$RUNNER_TEMP/VulkanSDK-$sdk_version"
+          install_dir="$RUNNER_TEMP/VulkanSDK-installed-$sdk_version"
+          url="https://sdk.lunarg.com/sdk/download/$sdk_version/mac/vulkansdk-macos-$sdk_version.zip"
+          expected_sha256='3b8af7f7db74b4bda02dc91503cec288ab70aebfe273ff98bb8cebabf04b196e'
+
+          command -v cmake
+          command -v git
+          command -v tar
+          command -v lipo
+          command -v unzip
+
+          curl --fail --location --retry 3 "$url" --output "$archive"
+          actual_sha256=$(shasum -a 256 "$archive" | awk '{print $1}')
+          if [[ "$actual_sha256" != "$expected_sha256" ]]; then
+            echo "Vulkan SDK $sdk_version SHA-256 mismatch. Expected $expected_sha256, received $actual_sha256"
+            exit 1
+          fi
+          mkdir -p "$extract_dir" "$install_dir"
+          unzip -q "$archive" -d "$extract_dir"
+          installer=$(find "$extract_dir" -type f -path '*/Contents/MacOS/*' -perm -111 -print -quit)
+          if [[ -z "$installer" ]]; then
+            echo "Vulkan SDK $sdk_version installer executable not found"
+            exit 1
+          fi
+          "$installer" --root "$install_dir" --accept-licenses --default-answer --confirm-command install copy_only=1
+
+          sdk_root="$install_dir/macOS"
+          header="$sdk_root/include/vulkan/vulkan.h"
+          if [[ ! -f "$header" ]]; then
+            echo "Vulkan SDK $sdk_version does not contain include/vulkan/vulkan.h"
+            exit 1
+          fi
+          glslang="$sdk_root/bin/glslangValidator"
+          moltenvk=$(find "$install_dir" -type f -path '*/MoltenVK.xcframework/macos-arm64_x86_64/libMoltenVK.a' -print -quit)
+          if [[ ! -x "$glslang" || -z "$moltenvk" ]]; then
+            echo "Vulkan SDK $sdk_version is missing glslangValidator or static libMoltenVK.a"
+            exit 1
+          fi
+          {
+            echo "VULKAN_SDK=$sdk_root"
+            echo "LUMINA_MOLTENVK_STATIC_LIBRARY=$moltenvk"
+          } >> "$GITHUB_ENV"
+
       - name: Update version
         if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag != '')
         run: |
@@ -192,6 +307,12 @@ jobs:
       - name: Test Canvas Agent
         run: npm run canvas-agent:test
 
+      - name: Build Real-ESRGAN macOS universal sidecar
+        run: npm run realesrgan:sidecar -- --target universal-apple-darwin
+
+      - name: Verify Real-ESRGAN macOS universal sidecar
+        run: npm run realesrgan:sidecar:verify -- --target universal-apple-darwin --expect-universal --expect-static-moltenvk
+
       - name: Build application (Universal Binary)
         env:
           CC: ""
@@ -207,6 +328,34 @@ jobs:
           fi
           lipo "$SIDECAR_PATH" -verify_arch arm64 x86_64
           node scripts/smoke-canvas-agent-sidecar.mjs --executable "$SIDECAR_PATH"
+
+      - name: Verify bundled Real-ESRGAN assets
+        run: |
+          APP_PATH=$(find src-tauri/target/universal-apple-darwin/release/bundle/macos -name '*.app' -type d -print -quit)
+          if [[ -z "$APP_PATH" ]]; then
+            echo "Bundled macOS app not found"
+            exit 1
+          fi
+          SIDECAR_PATH=$(find "$APP_PATH/Contents/MacOS" -name 'realesrgan-ncnn-vulkan' -type f -print -quit)
+          MODEL_PARAM=$(find "$APP_PATH/Contents/Resources" -name 'realesrgan-x4plus.param' -type f -print -quit)
+          MODEL_BIN=$(find "$APP_PATH/Contents/Resources" -name 'realesrgan-x4plus.bin' -type f -print -quit)
+          MANIFEST_PATH=$(find "$APP_PATH/Contents/Resources" -path '*/realesrgan/manifest.json' -type f -print -quit)
+          BUILD_METADATA_PATH=$(find "$APP_PATH/Contents/Resources" -path '*/realesrgan/build-metadata.json' -type f -print -quit)
+          NOTICE_PATH=$(find "$APP_PATH/Contents/Resources" -path '*/realesrgan/THIRD_PARTY_NOTICES.md' -type f -print -quit)
+          NCNN_LICENSE_PATH=$(find "$APP_PATH/Contents/Resources" -path '*/realesrgan/LICENSES/ncnn-BSD-3-Clause.txt' -type f -print -quit)
+          GLSLANG_LICENSE_PATH=$(find "$APP_PATH/Contents/Resources" -path '*/realesrgan/LICENSES/glslang-LICENSE.txt' -type f -print -quit)
+          if [[ -z "$SIDECAR_PATH" || -z "$MODEL_PARAM" || -z "$MODEL_BIN" || -z "$MANIFEST_PATH" || -z "$BUILD_METADATA_PATH" || -z "$NOTICE_PATH" || -z "$NCNN_LICENSE_PATH" || -z "$GLSLANG_LICENSE_PATH" ]]; then
+            echo "Bundled Real-ESRGAN sidecar, model, metadata, notices, or licenses are missing"
+            exit 1
+          fi
+          node scripts/verify-realesrgan-sidecar.mjs \
+            --target universal-apple-darwin \
+            --executable "$SIDECAR_PATH" \
+            --model-dir "$(dirname "$MODEL_PARAM")" \
+            --manifest "$MANIFEST_PATH" \
+            --build-metadata "$BUILD_METADATA_PATH" \
+            --expect-universal \
+            --expect-static-moltenvk
 
       - name: Rename macOS DMG
         run: |

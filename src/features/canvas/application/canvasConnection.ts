@@ -31,7 +31,11 @@ type CanvasConnectionLike = {
 
 export function canNodeTypeBeManualConnectionSource(type: CanvasNodeType): boolean {
   const connectivity = getNodeDefinition(type).connectivity;
-  return connectivity.sourceHandle && connectivity.sourceDataTypes.length > 0;
+  return (
+    connectivity.manualSource !== false
+    && connectivity.sourceHandle
+    && connectivity.sourceDataTypes.length > 0
+  );
 }
 
 export function inferCanvasConnectionValueType(sourceNode: CanvasNode): CanvasDataType | null {
@@ -96,6 +100,9 @@ export function getBatchConnectMenuNodeTypes(
     .filter((node): node is CanvasNode => Boolean(node));
 
   if (sourceNodes.length !== uniqueSourceIds.length || sourceNodes.length === 0) {
+    return [];
+  }
+  if (sourceNodes.some((sourceNode) => !canNodeTypeBeManualConnectionSource(sourceNode.type))) {
     return [];
   }
 

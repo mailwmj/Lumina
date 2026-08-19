@@ -19,6 +19,7 @@ import {
   type TextAnnotationNodeData,
   type TextGenerationNodeData,
   type UploadImageNodeData,
+  type UpscaleNodeData,
   type VideoGenNodeData,
 } from './canvasNodes';
 import { DEFAULT_NODE_DISPLAY_NAME } from './nodeDisplay';
@@ -34,6 +35,8 @@ export interface CanvasNodeCapabilities {
 export interface CanvasNodeConnectivity {
   sourceHandle: boolean;
   targetHandle: boolean;
+  /** Whether users may draw new connections from this output. Defaults to true. */
+  manualSource?: boolean;
   sourceHandleIds?: readonly string[];
   targetHandleIds?: readonly string[];
   sourceDataTypes: CanvasDataType[];
@@ -157,6 +160,40 @@ const imageEditNodeDefinition: CanvasNodeDefinition<ImageEditNodeData> = {
     isGenerating: false,
     generationStartedAt: null,
     generationDurationMs: 60000,
+  }),
+};
+
+const upscaleNodeDefinition: CanvasNodeDefinition<UpscaleNodeData> = {
+  type: CANVAS_NODE_TYPES.upscale,
+  menuLabelKey: 'node.menu.upscale',
+  menuIcon: 'sparkles',
+  visibleInMenu: true,
+  capabilities: {
+    toolbar: true,
+    promptInput: false,
+  },
+  agent: {
+    creatable: false,
+    readableFields: ['displayName', 'scale'],
+    writableFields: ['displayName', 'scale'],
+  },
+  connectivity: {
+    sourceHandle: true,
+    targetHandle: true,
+    manualSource: false,
+    sourceDataTypes: ['image'],
+    targetDataTypes: ['image'],
+    targetInputLimits: {
+      image: 1,
+    },
+    connectMenu: {
+      fromSource: false,
+      fromTarget: false,
+    },
+  },
+  createDefaultData: () => ({
+    displayName: DEFAULT_NODE_DISPLAY_NAME[CANVAS_NODE_TYPES.upscale],
+    scale: 2,
   }),
 };
 
@@ -836,6 +873,7 @@ const sd2VideoGenNodeDefinition: CanvasNodeDefinition<SD2VideoGenNodeData> = {
 export const canvasNodeDefinitions: Record<CanvasNodeType, CanvasNodeDefinition> = {
   [CANVAS_NODE_TYPES.upload]: uploadNodeDefinition,
   [CANVAS_NODE_TYPES.imageEdit]: imageEditNodeDefinition,
+  [CANVAS_NODE_TYPES.upscale]: upscaleNodeDefinition,
   [CANVAS_NODE_TYPES.exportImage]: exportImageNodeDefinition,
   [CANVAS_NODE_TYPES.textGeneration]: textGenerationNodeDefinition,
   [CANVAS_NODE_TYPES.textAnnotation]: textAnnotationNodeDefinition,
@@ -856,6 +894,7 @@ export const canvasNodeDefinitions: Record<CanvasNodeType, CanvasNodeDefinition>
 const menuNodeTypeOrder = [
   CANVAS_NODE_TYPES.upload,
   CANVAS_NODE_TYPES.imageEdit,
+  CANVAS_NODE_TYPES.upscale,
   CANVAS_NODE_TYPES.textGeneration,
   CANVAS_NODE_TYPES.seedanceAutoVideo,
   CANVAS_NODE_TYPES.videoUpload,

@@ -4,6 +4,7 @@ import type { TextReasoningEffort } from '@/features/canvas/models/types';
 export const CANVAS_NODE_TYPES = {
   upload: 'uploadNode',
   imageEdit: 'imageNode',
+  upscale: 'upscaleNode',
   exportImage: 'exportImageNode',
   textGeneration: 'textGenerationNode',
   textAnnotation: 'textAnnotationNode',
@@ -74,8 +75,17 @@ export interface UploadImageNodeData extends NodeImageData {
   sourceFileName?: string | null;
 }
 
+/** Persisted configuration for the local Real-ESRGAN image-upscale operation. */
+export type UpscaleScale = 2 | 4;
+
+export interface UpscaleNodeData extends NodeDisplayData {
+  scale: UpscaleScale;
+  [key: string]: unknown;
+}
+
 export type ExportImageNodeResultKind =
   | 'generic'
+  | 'upscaleOutput'
   | 'storyboardGenOutput'
   | 'storyboardSplitExport'
   | 'storyboardFrameEdit';
@@ -322,6 +332,7 @@ export interface SD2VideoGenNodeData extends NodeDisplayData {
 
 export type CanvasNodeData =
   | UploadImageNodeData
+  | UpscaleNodeData
   | ExportImageNodeData
   | TextGenerationNodeData
   | TextAnnotationNodeData
@@ -393,6 +404,12 @@ export function isImageEditNode<TNode extends CanvasWorkflowNode>(
   node: TNode | null | undefined
 ): node is CanvasNodeWithData<TNode, ImageEditNodeData, typeof CANVAS_NODE_TYPES.imageEdit> {
   return node?.type === CANVAS_NODE_TYPES.imageEdit;
+}
+
+export function isUpscaleNode<TNode extends CanvasWorkflowNode>(
+  node: TNode | null | undefined
+): node is CanvasNodeWithData<TNode, UpscaleNodeData, typeof CANVAS_NODE_TYPES.upscale> {
+  return node?.type === CANVAS_NODE_TYPES.upscale;
 }
 
 export function isExportImageNode<TNode extends CanvasWorkflowNode>(
