@@ -19,7 +19,7 @@ third-party repackaging as the source of truth.
 
 ## Pinned distribution inputs
 
-- Engine source: `v0.2.0` / `37026f4`,
+- Engine source: `v0.2.0` / `37026f49824c5cf84062e7c6a5dd71445dcf610f`,
   `https://codeload.github.com/xinntao/Real-ESRGAN-ncnn-vulkan/tar.gz/v0.2.0`,
   SHA-256 `346663b1924b2a1bfa655d656bfbba6b09f76ff75e4eee9d1fff4bfdef8b5712`.
 - Engine submodules: ncnn `6125c9f47cd14b589de0521350668cf9d3d37e3c` and libwebp

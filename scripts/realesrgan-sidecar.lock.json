@@ -9,7 +9,7 @@
   "engineSource": {
     "repository": "https://github.com/xinntao/Real-ESRGAN-ncnn-vulkan.git",
     "tag": "v0.2.0",
-    "commitPrefix": "37026f4",
+    "commit": "37026f49824c5cf84062e7c6a5dd71445dcf610f",
     "archiveUrl": "https://codeload.github.com/xinntao/Real-ESRGAN-ncnn-vulkan/tar.gz/v0.2.0",
     "archiveSha256": "346663b1924b2a1bfa655d656bfbba6b09f76ff75e4eee9d1fff4bfdef8b5712",
     "license": "MIT"

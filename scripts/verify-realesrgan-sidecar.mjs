@@ -66,7 +66,7 @@ function verifyManifest(manifest) {
     throw new Error('Bundled Real-ESRGAN manifest does not match the locked sidecar identity.');
   }
   if (manifest.engine?.tag !== lock.engineSource.tag
-    || manifest.engine?.commitPrefix !== lock.engineSource.commitPrefix
+    || manifest.engine?.commit !== lock.engineSource.commit
     || manifest.engine?.sourceArchiveSha256 !== lock.engineSource.archiveSha256
     || manifest.engine?.ncnn?.commit !== lock.submodules.ncnn.commit
     || manifest.engine?.libwebp?.commit !== lock.submodules.libwebp.commit

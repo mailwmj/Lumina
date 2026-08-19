@@ -90,7 +90,7 @@ function verifyStaticManifest() {
     throw new Error(`Resource manifest sidecar identity does not match ${lockFile}.`);
   }
   if (manifest.engine?.tag !== lock.engineSource.tag
-    || manifest.engine?.commitPrefix !== lock.engineSource.commitPrefix
+    || manifest.engine?.commit !== lock.engineSource.commit
     || manifest.engine?.sourceArchiveSha256 !== lock.engineSource.archiveSha256
     || manifest.engine?.ncnn?.commit !== lock.submodules.ncnn.commit
     || manifest.engine?.libwebp?.commit !== lock.submodules.libwebp.commit
@@ -275,8 +275,8 @@ async function prepareEngineSource() {
     run('git', ['clone', '--no-checkout', lock.engineSource.repository, checkoutDir]);
     run('git', ['-C', checkoutDir, 'checkout', '--detach', lock.engineSource.tag]);
     const commit = runOutput('git', ['-C', checkoutDir, 'rev-parse', 'HEAD']);
-    if (!commit.startsWith(lock.engineSource.commitPrefix)) {
-      throw new Error(`Unexpected Real-ESRGAN source commit ${commit}; expected ${lock.engineSource.commitPrefix}.`);
+    if (commit !== lock.engineSource.commit) {
+      throw new Error(`Unexpected Real-ESRGAN source commit ${commit}; expected ${lock.engineSource.commit}.`);
     }
     run('git', ['-C', checkoutDir, 'config', 'submodule.src/ncnn.url', lock.submodules.ncnn.repository]);
     run('git', ['-C', checkoutDir, 'config', 'submodule.src/libwebp.url', lock.submodules.libwebp.repository]);
