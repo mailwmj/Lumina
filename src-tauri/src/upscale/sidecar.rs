@@ -390,6 +390,27 @@ pub(super) fn validate_sidecar_output(
             ),
         ));
     }
+    ImageReader::open(path)
+        .map_err(|error| {
+            UpscaleFailure::new(
+                ERROR_SIDECAR_FAILED,
+                format!("failed to re-open sidecar output: {error}"),
+            )
+        })?
+        .with_guessed_format()
+        .map_err(|error| {
+            UpscaleFailure::new(
+                ERROR_SIDECAR_FAILED,
+                format!("failed to re-detect sidecar output: {error}"),
+            )
+        })?
+        .decode()
+        .map_err(|error| {
+            UpscaleFailure::new(
+                ERROR_SIDECAR_FAILED,
+                format!("failed to fully decode sidecar output: {error}"),
+            )
+        })?;
     Ok(())
 }
 
@@ -445,6 +466,24 @@ mod tests {
             .expect("write output image");
 
         let error = validate_sidecar_output(&path, 4, 4).expect_err("reject wrong dimensions");
+
+        assert_eq!(error.code, ERROR_SIDECAR_FAILED);
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn rejects_truncated_sidecar_output_even_when_header_dimensions_match() {
+        let path =
+            std::env::temp_dir().join(format!("lumina-upscale-truncated-{}.png", Uuid::new_v4()));
+        RgbaImage::new(4, 4)
+            .save(&path)
+            .expect("write output image");
+        let mut bytes = fs::read(&path).expect("read output image");
+        bytes.truncate(33); // PNG signature plus IHDR: dimensions remain readable, pixels do not.
+        fs::write(&path, bytes).expect("truncate output image");
+
+        let error =
+            validate_sidecar_output(&path, 4, 4).expect_err("reject truncated image output");
 
         assert_eq!(error.code, ERROR_SIDECAR_FAILED);
         let _ = fs::remove_file(path);

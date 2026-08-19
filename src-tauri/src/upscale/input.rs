@@ -131,7 +131,7 @@ pub(super) fn preprocess_source(
             format!("failed to read source: {error}"),
         )
     })?;
-    let mut image = decode_srgb_image(&bytes)?;
+    let mut image = decode_srgb_image(&bytes, scale)?;
     let (expected_width, expected_height) =
         expected_output_dimensions(image.width(), image.height(), scale)?;
 
@@ -182,7 +182,7 @@ fn expected_output_dimensions(
     Ok((expected_width, expected_height))
 }
 
-fn decode_srgb_image(bytes: &[u8]) -> Result<DynamicImage, UpscaleFailure> {
+fn decode_srgb_image(bytes: &[u8], scale: u8) -> Result<DynamicImage, UpscaleFailure> {
     let reader = ImageReader::new(Cursor::new(bytes))
         .with_guessed_format()
         .map_err(|error| {
@@ -222,6 +222,8 @@ fn decode_srgb_image(bytes: &[u8]) -> Result<DynamicImage, UpscaleFailure> {
             format!("failed to read image orientation: {error}"),
         )
     })?;
+    let (source_width, source_height) = decoder.dimensions();
+    expected_output_dimensions(source_width, source_height, scale)?;
     let mut image = DynamicImage::from_decoder(decoder).map_err(|error| {
         UpscaleFailure::new(
             ERROR_UNSUPPORTED_IMAGE,
@@ -466,7 +468,7 @@ mod tests {
             .expect("encode JPEG");
         let oriented = insert_exif_orientation(encoded, 6);
 
-        let image = decode_srgb_image(&oriented).expect("decode oriented JPEG");
+        let image = decode_srgb_image(&oriented, 2).expect("decode oriented JPEG");
         assert_eq!((image.width(), image.height()), (1, 2));
     }
 

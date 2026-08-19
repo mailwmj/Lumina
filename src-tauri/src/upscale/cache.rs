@@ -228,7 +228,14 @@ fn cache_output_matches(path: &Path, expected_width: u32, expected_height: u32) 
     let Some(pixels) = u64::from(width).checked_mul(u64::from(height)) else {
         return false;
     };
-    pixels <= MAX_OUTPUT_PIXELS && width == expected_width && height == expected_height
+    if pixels > MAX_OUTPUT_PIXELS || width != expected_width || height != expected_height {
+        return false;
+    }
+    ImageReader::open(path)
+        .ok()
+        .and_then(|reader| reader.with_guessed_format().ok())
+        .and_then(|reader| reader.decode().ok())
+        .is_some()
 }
 
 pub(super) fn publish_cache_output(
@@ -683,6 +690,32 @@ mod tests {
             )
             .expect("count cache rows");
         assert_eq!(row_count, 0);
+        let _ = fs::remove_dir_all(&cache_dir);
+    }
+
+    #[test]
+    fn cache_lookup_rejects_a_truncated_png_with_matching_dimensions() {
+        let cache_dir =
+            std::env::temp_dir().join(format!("lumina-upscale-cache-truncated-{}", Uuid::new_v4()));
+        fs::create_dir_all(&cache_dir).expect("create cache directory");
+        let mut conn = Connection::open_in_memory().expect("open test database");
+        ensure_upscale_cache_schema(&conn).expect("initialize cache table");
+        let cache_key = "truncated";
+        let path = cache_dir.join(format!("{cache_key}.png"));
+        RgbaImage::new(4, 4)
+            .save(&path)
+            .expect("write cache output");
+        let mut bytes = fs::read(&path).expect("read cache output");
+        bytes.truncate(33); // PNG signature plus IHDR: header dimensions are still valid.
+        fs::write(&path, bytes).expect("truncate cache output");
+        record_cache_entry(&mut conn, &path, cache_key, "source", 2, "model", 4, 4)
+            .expect("insert cache row");
+
+        let result = lookup_cache_entry(&conn, &cache_dir, cache_key, "source", 2, "model", 4, 4)
+            .expect("validate cache lookup");
+
+        assert!(result.is_none());
+        assert!(!path.exists());
         let _ = fs::remove_dir_all(&cache_dir);
     }
 
