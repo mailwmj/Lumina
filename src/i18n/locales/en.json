@@ -169,7 +169,7 @@
       "textAnnotation": "Text Annotation",
       "videoFrame": "Video (First-Last Frame)",
       "videoSingle": "Video (Single Image)",
-      "seedanceAutoVideo": "Seedance Video",
+      "seedanceAutoVideo": "AI Video Generation",
       "sd2VideoGen": "Video Generation (SD2)",
       "audioUploadRef": "Audio Upload",
       "videoUploadRef": "Video Upload"

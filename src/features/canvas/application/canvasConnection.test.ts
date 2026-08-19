@@ -92,7 +92,7 @@ describe('batch canvas connections', () => {
     expect(plan.invalidSourceIds).toEqual(['source-9']);
   });
 
-  it('offers new targets that can accept every selected source', () => {
+  it('offers the unified Seedance video target that can accept every selected image source', () => {
     const sourceA = createNode(CANVAS_NODE_TYPES.upload, 'source-a');
     const sourceB = createNode(CANVAS_NODE_TYPES.upload, 'source-b');
 
@@ -102,7 +102,8 @@ describe('batch canvas connections', () => {
     );
 
     expect(targetTypes).toContain(CANVAS_NODE_TYPES.imageEdit);
-    expect(targetTypes).toContain(CANVAS_NODE_TYPES.videoFrame);
+    expect(targetTypes).toContain(CANVAS_NODE_TYPES.seedanceAutoVideo);
+    expect(targetTypes).not.toContain(CANVAS_NODE_TYPES.videoFrame);
   });
 
   it('assigns one or two strict-frame inputs to their visible semantic ports', () => {
@@ -193,6 +194,41 @@ describe('typed canvas connections', () => {
       [...images, automatic],
       edges
     )).toBe(false);
+  });
+
+  it('limits the unified Seedance node to one or two image inputs in first-last mode', () => {
+    const images = Array.from({ length: 3 }, (_, index) =>
+      createNode(CANVAS_NODE_TYPES.upload, `image-${index}`)
+    );
+    const firstLast = createNode(CANVAS_NODE_TYPES.seedanceAutoVideo, 'first-last');
+    firstLast.data = { ...firstLast.data, inputMode: 'first-last' };
+    const edges: CanvasEdge[] = images.slice(0, 2).map((image, index) => ({
+      id: `image-edge-${index}`,
+      source: image.id,
+      target: firstLast.id,
+      sourceHandle: 'source',
+      targetHandle: 'target',
+      data: { valueType: 'image', inputOrder: index },
+    }));
+
+    expect(isCanvasConnectionValid(
+      { source: images[2].id, target: firstLast.id, targetHandle: 'target' },
+      [...images, firstLast],
+      edges
+    )).toBe(false);
+  });
+
+  it('rejects video and audio inputs for the unified Seedance node in first-last mode', () => {
+    const image = createNode(CANVAS_NODE_TYPES.upload, 'image');
+    const video = createNode(CANVAS_NODE_TYPES.videoUpload, 'video');
+    const audio = createNode(CANVAS_NODE_TYPES.audioUpload, 'audio');
+    const firstLast = createNode(CANVAS_NODE_TYPES.seedanceAutoVideo, 'first-last');
+    firstLast.data = { ...firstLast.data, inputMode: 'first-last' };
+    const nodes = [image, video, audio, firstLast];
+
+    expect(isCanvasConnectionValid({ source: image.id, target: firstLast.id }, nodes, [])).toBe(true);
+    expect(isCanvasConnectionValid({ source: video.id, target: firstLast.id }, nodes, [])).toBe(false);
+    expect(isCanvasConnectionValid({ source: audio.id, target: firstLast.id }, nodes, [])).toBe(false);
   });
 
   it('accepts text and image inputs for a text generation node and rejects video', () => {

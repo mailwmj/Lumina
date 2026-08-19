@@ -134,8 +134,8 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
   );
   const nodeType = workflowNodes.find((node) => node.id === id)?.type;
   const isLegacyVideoFrame = nodeType === CANVAS_NODE_TYPES.videoFrame;
-  const inputMode = data.inputMode ?? 'automatic';
-  const isFirstLastMode = inputMode === 'first-last' || isLegacyVideoFrame;
+  const inputMode = isLegacyVideoFrame ? 'first-last' : data.inputMode ?? 'automatic';
+  const isFirstLastMode = inputMode === 'first-last';
   const videoApiOptions = useMemo(() => {
     return videoApis.filter((api) => (
       api.modelId.trim().length > 0 && isSeedance20Model(api.modelId)
@@ -775,15 +775,15 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
 
       {/* Footer (32px) */}
       <div className={`${NODE_CONTROL_FOOTER_CLASS} gap-1`}>
-        <div className="w-[12rem] shrink-0">
+        <div className="w-[9.25rem] shrink-0">
           <UiSelect
             className={`nodrag nowheel ${NODE_CONTROL_CHIP_CLASS} !h-6 !w-full !min-w-0 !justify-between font-mono text-text-dark`}
             value={isSelectedVideoApiSelectable ? selectedVideoApi?.id ?? '' : ''}
             onChange={handleVideoApiChange}
             aria-label={t('node.videoGen.model')}
             menuMinWidth={272}
+            disabled={videoApiOptions.length === 0}
           >
-            <option value="">{t('node.videoGen.model')}</option>
             {videoApiOptions.map((api) => (
               <option key={api.id} value={api.id}>
                 {getVideoApiControlLabel(api)}
@@ -792,7 +792,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
           </UiSelect>
         </div>
 
-        <div className="w-[5.75rem] shrink-0">
+        <div className="w-[6rem] shrink-0">
           <UiSelect
             className={`nodrag nowheel ${NODE_CONTROL_CHIP_CLASS} !h-6 !w-full !min-w-0 !justify-between text-text-dark`}
             value={inputMode}
@@ -810,7 +810,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
           </UiSelect>
         </div>
 
-        <div className="w-[4.5rem] shrink-0">
+        <div className="w-[5rem] shrink-0">
           <UiSelect
             className={`nodrag nowheel ${NODE_CONTROL_CHIP_CLASS} !h-6 !w-full !min-w-0 !justify-between font-mono text-text-dark`}
             value={data.aspectRatio || '16:9'}
@@ -823,7 +823,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
           </UiSelect>
         </div>
 
-        <div className="w-[5.25rem] shrink-0">
+        <div className="w-[5.75rem] shrink-0">
           <UiSelect
             className={`nodrag nowheel ${NODE_CONTROL_CHIP_CLASS} !h-6 !w-full !min-w-0 !justify-between font-mono text-text-dark`}
             value={selectedResolution}
@@ -838,7 +838,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
           </UiSelect>
         </div>
 
-        <div className="w-[4.5rem] shrink-0">
+        <div className="w-[5.25rem] shrink-0">
           <UiSelect
             className={`nodrag nowheel ${NODE_CONTROL_CHIP_CLASS} !h-6 !w-full !min-w-0 !justify-between font-mono text-text-dark`}
             value={selectedDuration}

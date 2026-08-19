@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildSeedanceVideoRequestPlan,
+  getSeedanceFirstLastModeAvailability,
   type SeedanceConnectedMedia,
 } from './seedanceVideoRequestPlan';
 
@@ -31,14 +32,14 @@ function automaticPlan(mediaInputs: SeedanceConnectedMedia[] = [], overrides = {
 }
 
 describe('Seedance video request plan', () => {
-  it('assigns first and last frame roles in strict port order, including a valid first-frame-only request', () => {
+  it('assigns first and last frame roles in connected image order, including a valid first-frame-only request', () => {
     const oneFrame = buildSeedanceVideoRequestPlan({
       kind: 'strict-frame',
       model: 'doubao-seedance-2-0-260128',
       prompt: 'The character waves',
       resolution: '720p',
       duration: 5,
-      media: [media('image', 'https://media.example/first.png', 'target-first')],
+      media: [media('image', 'https://media.example/first.png')],
     });
     const twoFrames = buildSeedanceVideoRequestPlan({
       kind: 'strict-frame',
@@ -47,8 +48,8 @@ describe('Seedance video request plan', () => {
       resolution: '4k',
       duration: 15,
       media: [
-        media('image', 'https://media.example/first.png', 'target-first'),
-        media('image', 'https://media.example/last.png', 'target-last'),
+        media('image', 'https://media.example/first.png'),
+        media('image', 'https://media.example/last.png'),
       ],
     });
 
@@ -71,6 +72,26 @@ describe('Seedance video request plan', () => {
         ],
       },
     });
+  });
+
+  it('reports whether current reference media can switch to first-last mode', () => {
+    expect(getSeedanceFirstLastModeAvailability([
+      media('image', 'https://media.example/first.png'),
+    ])).toMatchObject({ isAvailable: true, imageCount: 1, videoCount: 0, audioCount: 0 });
+    expect(getSeedanceFirstLastModeAvailability([
+      media('image', 'https://media.example/first.png'),
+      media('image', 'https://media.example/last.png'),
+    ])).toMatchObject({ isAvailable: true, imageCount: 2 });
+    expect(getSeedanceFirstLastModeAvailability([
+      media('image', 'https://media.example/one.png'),
+      media('image', 'https://media.example/two.png'),
+      media('image', 'https://media.example/three.png'),
+    ])).toMatchObject({ isAvailable: false, imageCount: 3 });
+    expect(getSeedanceFirstLastModeAvailability([
+      media('image', 'https://media.example/first.png'),
+      media('video', 'https://media.example/reference.mp4'),
+      media('audio', 'https://media.example/reference.mp3'),
+    ])).toMatchObject({ isAvailable: false, videoCount: 1, audioCount: 1 });
   });
 
   it('creates text-only and typed automatic reference plans without a mode selection', () => {

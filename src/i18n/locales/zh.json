@@ -169,7 +169,7 @@
       "textAnnotation": "文本注释",
       "videoFrame": "视频生成（首尾帧）",
       "videoSingle": "视频生成（单图）",
-      "seedanceAutoVideo": "Seedance 视频生成",
+      "seedanceAutoVideo": "AI 生视频",
       "sd2VideoGen": "视频生成（SD2）",
       "audioUploadRef": "音频上传",
       "videoUploadRef": "视频上传"
