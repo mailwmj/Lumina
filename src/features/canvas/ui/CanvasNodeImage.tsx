@@ -185,6 +185,9 @@ export const CanvasNodeImage = memo(({
     <>
       <img
         {...props}
+        // WebKit can retain the previous texture when a transformed canvas node
+        // changes image URLs. A new element guarantees the decoded original repaints.
+        key={typeof src === 'string' ? src : undefined}
         src={src}
         data-viewer-src={
           typeof viewerSourceUrl === 'string' && viewerSourceUrl.trim().length > 0
