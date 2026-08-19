@@ -10,6 +10,7 @@ import {
 interface VideoApisSettingsProps {
   apis: VideoApiConfig[];
   onChange: (apis: VideoApiConfig[]) => void;
+  onDetailChange?: (isOpen: boolean) => void;
 }
 
 function createCustomVideoApiConfig(): VideoApiConfig {
@@ -25,7 +26,7 @@ function createCustomVideoApiConfig(): VideoApiConfig {
   };
 }
 
-export function VideoApisSettings({ apis, onChange }: VideoApisSettingsProps) {
+export function VideoApisSettings({ apis, onChange, onDetailChange }: VideoApisSettingsProps) {
   const { t } = useTranslation();
 
   const updateApi = (id: string, next: VideoApiConfig) => {
@@ -45,6 +46,7 @@ export function VideoApisSettings({ apis, onChange }: VideoApisSettingsProps) {
         return config.id;
       }}
       onRemove={(id) => onChange(apis.filter((api) => api.id !== id))}
+      onDetailChange={onDetailChange}
       renderDetail={(api) => (
         <div className="space-y-3">
           <label className="block">

@@ -23,13 +23,16 @@ import {
   type OpenAiImageApiConfig,
 } from '@/stores/settingsStore';
 
-interface ImageApisSettingsProps {
+export interface ImageApisSettingsValue {
   openAiImageApi: OpenAiImageApiConfig;
   chaomoImageApi: ChaomoImageApiConfig;
   customImageApis: CustomImageApiConfig[];
-  onOpenAiImageApiChange: (config: OpenAiImageApiConfig) => void;
-  onChaomoImageApiChange: (config: ChaomoImageApiConfig) => void;
-  onCustomImageApisChange: (configs: CustomImageApiConfig[]) => void;
+}
+
+interface ImageApisSettingsProps {
+  value: ImageApisSettingsValue;
+  onChange: (value: ImageApisSettingsValue) => void;
+  onDetailChange?: (isOpen: boolean) => void;
 }
 
 interface DiscoveryState {
@@ -215,18 +218,26 @@ function ImageDetailForm<TConfig extends ImageProviderApiConfig>({
 }
 
 export function ImageApisSettings({
-  openAiImageApi,
-  chaomoImageApi,
-  customImageApis,
-  onOpenAiImageApiChange,
-  onChaomoImageApiChange,
-  onCustomImageApisChange,
+  value,
+  onChange,
+  onDetailChange,
 }: ImageApisSettingsProps) {
+  const { openAiImageApi, chaomoImageApi, customImageApis } = value;
   const { t } = useTranslation();
   const [discoveryByProvider, setDiscoveryByProvider] = useState<Record<string, DiscoveryState>>({});
   const [revealedProviderIds, setRevealedProviderIds] = useState<Set<string>>(() => new Set());
   const [manualModelIds, setManualModelIds] = useState<Record<string, string>>({});
   const [pendingProtocolChange, setPendingProtocolChange] = useState<PendingProtocolChange | null>(null);
+
+  const updateOpenAiImageApi = useCallback((config: OpenAiImageApiConfig) => {
+    onChange({ ...value, openAiImageApi: config });
+  }, [onChange, value]);
+  const updateChaomoImageApi = useCallback((config: ChaomoImageApiConfig) => {
+    onChange({ ...value, chaomoImageApi: config });
+  }, [onChange, value]);
+  const updateCustomImageApis = useCallback((configs: CustomImageApiConfig[]) => {
+    onChange({ ...value, customImageApis: configs });
+  }, [onChange, value]);
 
   const discoveryState = (providerId: string): DiscoveryState =>
     discoveryByProvider[providerId] ?? { isLoading: false, error: null };
@@ -290,7 +301,7 @@ export function ImageApisSettings({
   }, [t]);
 
   const updateCustomProvider = (providerId: string, next: CustomImageApiConfig) => {
-    onCustomImageApisChange(customImageApis.map((config) =>
+    updateCustomImageApis(customImageApis.map((config) =>
       config.id === providerId ? next : config
     ));
   };
@@ -392,8 +403,8 @@ export function ImageApisSettings({
           discoveryState={discoveryState(providerId)}
           isApiKeyRevealed={revealedProviderIds.has(providerId)}
           onApiKeyRevealToggle={() => toggleApiKey(providerId)}
-          onChange={onOpenAiImageApiChange}
-          onDiscover={() => void handleDiscover(providerId, entry.config, onOpenAiImageApiChange)}
+          onChange={updateOpenAiImageApi}
+          onDiscover={() => void handleDiscover(providerId, entry.config, updateOpenAiImageApi)}
         />
       );
     }
@@ -406,8 +417,8 @@ export function ImageApisSettings({
           discoveryState={discoveryState(providerId)}
           isApiKeyRevealed={revealedProviderIds.has(providerId)}
           onApiKeyRevealToggle={() => toggleApiKey(providerId)}
-          onChange={onChaomoImageApiChange}
-          onDiscover={() => void handleDiscover(providerId, entry.config, onChaomoImageApiChange)}
+          onChange={updateChaomoImageApi}
+          onDiscover={() => void handleDiscover(providerId, entry.config, updateChaomoImageApi)}
         />
       );
     }
@@ -543,12 +554,13 @@ export function ImageApisSettings({
       isBuiltIn={isEntryBuiltIn}
       onAdd={() => {
         const config = createCustomImageApiConfig();
-        onCustomImageApisChange([...customImageApis, config]);
+        updateCustomImageApis([...customImageApis, config]);
         return config.id;
       }}
-      onRemove={(id) => onCustomImageApisChange(
+      onRemove={(id) => updateCustomImageApis(
         customImageApis.filter((config) => config.id !== id)
       )}
+      onDetailChange={onDetailChange}
       renderDetail={renderDetail}
       addLabel={t('settings.addCustomImageApi')}
       removeLabel={t('settings.removeCustomImageApi')}

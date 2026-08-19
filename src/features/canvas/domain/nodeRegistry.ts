@@ -436,13 +436,13 @@ const videoFrameNodeDefinition: CanvasNodeDefinition<VideoGenNodeData> = {
   type: CANVAS_NODE_TYPES.videoFrame,
   menuLabelKey: 'node.menu.videoFrame',
   menuIcon: 'video',
-  visibleInMenu: true,
+  visibleInMenu: false,
   capabilities: {
     toolbar: false,
     promptInput: false,
   },
   agent: {
-    creatable: true,
+    creatable: false,
     readableFields: [
       'displayName',
       'aspectRatio',
@@ -472,8 +472,8 @@ const videoFrameNodeDefinition: CanvasNodeDefinition<VideoGenNodeData> = {
     sourceDataTypes: ['video'],
     targetDataTypes: ['image'],
     connectMenu: {
-      fromSource: true,
-      fromTarget: true,
+      fromSource: false,
+      fromTarget: false,
     },
   },
   createDefaultData: () => ({
@@ -485,6 +485,7 @@ const videoFrameNodeDefinition: CanvasNodeDefinition<VideoGenNodeData> = {
     model: '',
     resolution: '720p',
     duration: 5,
+    inputMode: 'first-last',
     referenceImagePrompt: false,
     referenceImages: [],
     isSizeManuallyAdjusted: false,
@@ -618,6 +619,7 @@ const seedanceAutoVideoNodeDefinition: CanvasNodeDefinition<VideoGenNodeData> = 
     model: 'doubao-seedance-2-0-260128',
     resolution: '720p',
     duration: 5,
+    inputMode: 'automatic',
     referenceImagePrompt: false,
     referenceImages: [],
     isSizeManuallyAdjusted: false,

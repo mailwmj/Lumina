@@ -62,6 +62,7 @@ interface UiSelectOption {
   value: string;
   label: ReactNode;
   disabled: boolean;
+  disabledReason?: ReactNode;
 }
 
 interface UiModalProps {
@@ -254,6 +255,7 @@ export function UiSelect({ className = '', children, menuMinWidth, ...props }: U
           value: String(optionValue ?? ''),
           label: child.props.children,
           disabled: Boolean(child.props.disabled),
+          disabledReason: child.props['data-disabled-reason'],
         },
       ];
     });
@@ -468,13 +470,14 @@ export function UiSelect({ className = '', children, menuMinWidth, ...props }: U
               >
                 {parsedOptions.map((option) => {
                   const isSelected = option.value === selectedValue;
-                  return (
+                  const optionButton = (
                     <button
                       key={option.value}
                       type="button"
                       role="option"
                       aria-selected={isSelected}
-                      disabled={option.disabled}
+                      aria-disabled={option.disabled || undefined}
+                      tabIndex={option.disabled ? -1 : undefined}
                       className={`flex w-full items-center justify-between rounded-[4px] px-3 py-2 text-sm transition-colors ${
                         option.disabled
                           ? 'cursor-not-allowed opacity-40'
@@ -495,6 +498,11 @@ export function UiSelect({ className = '', children, menuMinWidth, ...props }: U
                       {isSelected ? <UiIcon icon={CheckmarkCircle02Icon} className="ml-3 h-3.5 w-3.5 shrink-0" /> : null}
                     </button>
                   );
+                  return option.disabled && option.disabledReason ? (
+                    <UiTooltip key={option.value} content={option.disabledReason}>
+                      {optionButton}
+                    </UiTooltip>
+                  ) : optionButton;
                 })}
               </div>
             </div>,

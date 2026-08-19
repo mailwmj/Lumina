@@ -16,6 +16,7 @@ import {
 interface TextApisSettingsProps {
   apis: TextApiConfig[];
   onChange: (apis: TextApiConfig[]) => void;
+  onDetailChange?: (isOpen: boolean) => void;
 }
 
 interface AsyncState {
@@ -25,7 +26,7 @@ interface AsyncState {
 
 const IDLE_STATE: AsyncState = { isLoading: false, error: null };
 
-export function TextApisSettings({ apis, onChange }: TextApisSettingsProps) {
+export function TextApisSettings({ apis, onChange, onDetailChange }: TextApisSettingsProps) {
   const { t } = useTranslation();
   const [discoveryByApi, setDiscoveryByApi] = useState<Record<string, AsyncState>>({});
   const [testingApiId, setTestingApiId] = useState<string | null>(null);
@@ -300,6 +301,7 @@ export function TextApisSettings({ apis, onChange }: TextApisSettingsProps) {
         return config.id;
       }}
       onRemove={(id) => onChange(apis.filter((api) => api.id !== id))}
+      onDetailChange={onDetailChange}
       renderDetail={renderDetail}
       addLabel={t('settings.addTextApi')}
       removeLabel={t('settings.removeTextApi')}

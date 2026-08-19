@@ -5,6 +5,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type DragEvent,
 } from 'react';
 import { Handle, Position, useUpdateNodeInternals, type NodeProps } from '@xyflow/react';
 import { Loader2, Music, Video, Wand2 } from '@/components/ui/icons';
@@ -14,6 +15,7 @@ import {
   CANVAS_NODE_TYPES,
   EXPORT_RESULT_NODE_DEFAULT_WIDTH,
   EXPORT_RESULT_NODE_LAYOUT_HEIGHT,
+  type SeedanceVideoInputMode,
   type VideoGenNodeData,
   type VideoResolution,
 } from '@/features/canvas/domain/canvasNodes';
@@ -34,6 +36,7 @@ import { resolveVideoApiConfig } from '@/features/canvas/application/videoApiSel
 import { selectWorkflowNodes } from '@/features/canvas/application/canvasNodeSelectors';
 import {
   buildSeedanceVideoRequestPlan,
+  getSeedanceFirstLastModeAvailability,
   getSeedance20ModelCapabilities,
   isSeedance20Model,
   type SeedanceMediaType,
@@ -70,7 +73,9 @@ type VideoGenNodeProps = NodeProps & {
 
 const DEFAULT_SEEDANCE_2_RESOLUTIONS: VideoResolution[] = ['480p', '720p', '1080p', '4k'];
 const DEFAULT_SEEDANCE_2_DURATIONS = Array.from({ length: 12 }, (_, index) => index + 4);
-const VIDEO_GENERATION_MIN_WIDTH = 520;
+const VIDEO_GENERATION_DEFAULT_WIDTH = 680;
+const VIDEO_GENERATION_MIN_WIDTH = 640;
+const SEEDANCE_2_ASPECT_RATIOS = ['16:9', '9:16', '4:3', '3:4', '1:1', '21:9'] as const;
 
 function getVideoControlOptions(modelId: string): {
   resolutions: VideoResolution[];
@@ -111,6 +116,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
   const workflowNodes = useCanvasStore(selectWorkflowNodes);
   const edges = useCanvasStore((state) => state.edges);
   const updateNodeData = useCanvasStore((state) => state.updateNodeData);
+  const reorderNodeInput = useCanvasStore((state) => state.reorderNodeInput);
   const setSelectedNode = useCanvasStore((state) => state.setSelectedNode);
   const addNode = useCanvasStore((state) => state.addNode);
   const addEdge = useCanvasStore((state) => state.addEdge);
@@ -127,7 +133,9 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
     [imagePolishConfig.textApiId, imagePolishConfig.textModelId, textApis]
   );
   const nodeType = workflowNodes.find((node) => node.id === id)?.type;
-  const isVideoFrame = nodeType === CANVAS_NODE_TYPES.videoFrame;
+  const isLegacyVideoFrame = nodeType === CANVAS_NODE_TYPES.videoFrame;
+  const inputMode = data.inputMode ?? 'automatic';
+  const isFirstLastMode = inputMode === 'first-last' || isLegacyVideoFrame;
   const videoApiOptions = useMemo(() => {
     return videoApis.filter((api) => (
       api.modelId.trim().length > 0 && isSeedance20Model(api.modelId)
@@ -149,6 +157,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const promptHighlightRef = useRef<HTMLDivElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  const draggedReferenceSourceIdRef = useRef<string | null>(null);
 
   const seedanceGraphInputs = useMemo(
     () => resolveSeedanceVideoGraphInputs(id, workflowNodes, edges),
@@ -168,9 +177,35 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
   const selectedDuration = videoControlOptions.durations.includes(data.duration ?? 5)
     ? data.duration ?? 5
     : videoControlOptions.durations[0];
+  const firstLastModeAvailability = useMemo(
+    () => getSeedanceFirstLastModeAvailability(seedanceGraphInputs),
+    [seedanceGraphInputs]
+  );
+  const firstLastModeDisabledReason = useMemo(() => {
+    if (firstLastModeAvailability.isAvailable) {
+      return undefined;
+    }
+    const reasons: string[] = [];
+    if (firstLastModeAvailability.imageCount < 1 || firstLastModeAvailability.imageCount > 2) {
+      reasons.push(t('node.videoGen.firstLastImageCount', {
+        count: firstLastModeAvailability.imageCount,
+      }));
+    }
+    if (firstLastModeAvailability.videoCount > 0) {
+      reasons.push(t('node.videoGen.firstLastVideoUnsupported', {
+        count: firstLastModeAvailability.videoCount,
+      }));
+    }
+    if (firstLastModeAvailability.audioCount > 0) {
+      reasons.push(t('node.videoGen.firstLastAudioUnsupported', {
+        count: firstLastModeAvailability.audioCount,
+      }));
+    }
+    return reasons.join('；');
+  }, [firstLastModeAvailability, t]);
   const seedanceRequestPlan = useMemo(() => {
     return buildSeedanceVideoRequestPlan({
-      kind: isVideoFrame ? 'strict-frame' : 'automatic',
+      kind: isFirstLastMode ? 'strict-frame' : 'automatic',
       model: selectedModel,
       prompt: effectivePrompt,
       resolution: selectedResolution,
@@ -179,7 +214,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
     });
   }, [
     effectivePrompt,
-    isVideoFrame,
+    isFirstLastMode,
     seedanceGraphInputs,
     selectedDuration,
     selectedModel,
@@ -235,10 +270,10 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
       }
       nextIndexes[input.type] += 1;
       const referenceIndex = nextIndexes[input.type];
-      const label = isVideoFrame
-        ? input.targetHandle === 'target-first'
+      const label = isFirstLastMode && input.type === 'image'
+        ? referenceIndex === 1
           ? t('node.videoGen.firstFrame')
-          : input.targetHandle === 'target-last'
+          : referenceIndex === 2
             ? t('node.videoGen.lastFrame')
             : t('node.videoGen.referenceImage', { index: referenceIndex })
         : t(`node.videoGen.reference${input.type[0].toUpperCase()}${input.type.slice(1)}`, {
@@ -252,7 +287,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
         referenceIndex,
       }];
     });
-  }, [isVideoFrame, seedanceGraphInputs, t]);
+  }, [isFirstLastMode, seedanceGraphInputs, t]);
 
   const layout = resolveTextGenerationLayout({
     width,
@@ -261,7 +296,9 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
     hasResult: false,
     isSizeManuallyAdjusted: data.isSizeManuallyAdjusted,
   });
-  const resolvedWidth = Math.max(layout.width, VIDEO_GENERATION_MIN_WIDTH);
+  const resolvedWidth = data.isSizeManuallyAdjusted
+    ? Math.max(layout.width, VIDEO_GENERATION_MIN_WIDTH)
+    : VIDEO_GENERATION_DEFAULT_WIDTH;
   const resolvedHeight = layout.height;
 
   usePreserveNodeCenterOnAutoResize({
@@ -305,7 +342,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
     const connectedImages = seedanceGraphInputs.flatMap(
       (input) => input.type === 'image' && input.url ? [input.url] : []
     );
-    if (isVideoFrame && connectedImages.length === 0) {
+    if (isFirstLastMode && connectedImages.length === 0) {
       void showErrorDialog(t('node.videoGen.polishImageRequired'), t('node.videoGen.polishTitle'));
       return;
     }
@@ -316,7 +353,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
       seedanceGraphInputs.some((input) => input.type === 'video' && input.url) ? '参考视频' : null,
       seedanceGraphInputs.some((input) => input.type === 'audio' && input.url) ? '参考音频' : null,
     ].filter((value): value is string => Boolean(value));
-    const referenceText = isVideoFrame
+    const referenceText = isFirstLastMode
       ? connectedImages.length > 1
         ? '图1（首帧）、图2（尾帧）'
         : '图1（首帧）'
@@ -327,7 +364,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
       textToPolish = referenceText
         ? `${referenceText}\n\n请根据以上参考内容优化这个视频提示词：${prompt}`
         : `请优化这个视频提示词：${prompt}`;
-    } else if (isVideoFrame) {
+    } else if (isFirstLastMode) {
       textToPolish = `请根据以下首尾帧图片生成一个适合AI视频的提示词：\n${referenceText}`;
     } else if (referenceText) {
       textToPolish = `请根据以下参考内容生成一个适合AI视频的提示词：\n${referenceText}`;
@@ -346,7 +383,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
         videoDuration: selectedDuration.toString(),
         videoResolution: selectedResolution,
         videoAspectRatio: data.aspectRatio,
-        isVideoFrame,
+        isVideoFrame: isFirstLastMode,
         customPrompt: effectivePolishPrompt,
         promptType: 'video',
         reasoningEffort: imagePolishConfig.reasoningEffort ?? undefined,
@@ -375,7 +412,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
     data,
     id,
     imagePolishConfig.reasoningEffort,
-    isVideoFrame,
+    isFirstLastMode,
     promptDraft,
     seedanceGraphInputs,
     selectedDuration,
@@ -568,6 +605,38 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
     updateNodeData(id, { duration: parseInt(e.target.value, 10) });
   }, [id, updateNodeData]);
 
+  const handleInputModeChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
+    const nextMode = e.target.value as SeedanceVideoInputMode;
+    if (nextMode === 'first-last' && !firstLastModeAvailability.isAvailable) {
+      return;
+    }
+    updateNodeData(id, { inputMode: nextMode });
+  }, [firstLastModeAvailability.isAvailable, id, updateNodeData]);
+
+  const handleAspectRatioChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
+    updateNodeData(id, { aspectRatio: e.target.value });
+  }, [id, updateNodeData]);
+
+  const handleReferenceDragStart = useCallback((event: DragEvent<HTMLDivElement>, reference: ReferencePreview) => {
+    if (!isFirstLastMode || reference.type !== 'image') {
+      return;
+    }
+    draggedReferenceSourceIdRef.current = reference.sourceNodeId;
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', reference.sourceNodeId);
+  }, [isFirstLastMode]);
+
+  const handleReferenceDrop = useCallback((event: DragEvent<HTMLDivElement>, reference: ReferencePreview) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const draggedSourceId = draggedReferenceSourceIdRef.current;
+    draggedReferenceSourceIdRef.current = null;
+    if (!isFirstLastMode || reference.type !== 'image' || !draggedSourceId) {
+      return;
+    }
+    reorderNodeInput(id, 'image', draggedSourceId, reference.sourceNodeId);
+  }, [id, isFirstLastMode, reorderNodeInput]);
+
   return (
     <div
       ref={rootRef}
@@ -575,7 +644,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
       style={{ width: resolvedWidth, height: resolvedHeight }}
       onClick={() => setSelectedNode(id)}
     >
-      {isVideoFrame ? (
+      {isLegacyVideoFrame ? (
         <>
           <span className="pointer-events-none absolute left-3 top-[35%] z-10 -translate-y-1/2 text-[10px] font-medium text-text-muted">
             {t('node.videoGen.firstFrame')}
@@ -604,10 +673,21 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
               return (
                 <div
                   key={`${reference.sourceNodeId}-${reference.type}-${reference.referenceIndex}`}
+                  draggable={isFirstLastMode && reference.type === 'image'}
+                  title={isFirstLastMode && reference.type === 'image'
+                    ? `${reference.label} · ${t('node.videoGen.firstLastDragHint')}`
+                    : reference.label}
+                  onDragStart={(event) => handleReferenceDragStart(event, reference)}
+                  onDragOver={(event) => {
+                    if (isFirstLastMode && reference.type === 'image') {
+                      event.preventDefault();
+                    }
+                  }}
+                  onDrop={(event) => handleReferenceDrop(event, reference)}
                   className={`nodrag nowheel relative h-16 shrink-0 overflow-hidden rounded-md border border-[var(--ui-border-soft)] bg-bg-dark ${
                     isAudio ? 'w-40' : 'w-16'
+                  } ${isFirstLastMode && reference.type === 'image' ? 'cursor-grab active:cursor-grabbing' : ''
                   }`}
-                  title={reference.label}
                 >
                   {reference.type === 'image' ? (
                     <img
@@ -695,7 +775,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
 
       {/* Footer (32px) */}
       <div className={`${NODE_CONTROL_FOOTER_CLASS} gap-1`}>
-        <div className="w-[13rem] shrink-0">
+        <div className="w-[12rem] shrink-0">
           <UiSelect
             className={`nodrag nowheel ${NODE_CONTROL_CHIP_CLASS} !h-6 !w-full !min-w-0 !justify-between font-mono text-text-dark`}
             value={isSelectedVideoApiSelectable ? selectedVideoApi?.id ?? '' : ''}
@@ -708,6 +788,37 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
               <option key={api.id} value={api.id}>
                 {getVideoApiControlLabel(api)}
               </option>
+            ))}
+          </UiSelect>
+        </div>
+
+        <div className="w-[5.75rem] shrink-0">
+          <UiSelect
+            className={`nodrag nowheel ${NODE_CONTROL_CHIP_CLASS} !h-6 !w-full !min-w-0 !justify-between text-text-dark`}
+            value={inputMode}
+            onChange={handleInputModeChange}
+            aria-label={t('node.videoGen.inputMode')}
+          >
+            <option value="automatic">{t('node.videoGen.automaticMode')}</option>
+            <option
+              value="first-last"
+              disabled={!firstLastModeAvailability.isAvailable && !isFirstLastMode}
+              data-disabled-reason={firstLastModeDisabledReason}
+            >
+              {t('node.videoGen.firstLastMode')}
+            </option>
+          </UiSelect>
+        </div>
+
+        <div className="w-[4.5rem] shrink-0">
+          <UiSelect
+            className={`nodrag nowheel ${NODE_CONTROL_CHIP_CLASS} !h-6 !w-full !min-w-0 !justify-between font-mono text-text-dark`}
+            value={data.aspectRatio || '16:9'}
+            onChange={handleAspectRatioChange}
+            aria-label={t('node.videoGen.size')}
+          >
+            {SEEDANCE_2_ASPECT_RATIOS.map((ratio) => (
+              <option key={ratio} value={ratio}>{ratio}</option>
             ))}
           </UiSelect>
         </div>

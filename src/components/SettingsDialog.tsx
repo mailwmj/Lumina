@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useLayoutEffect } from 'react';
 import { X, FolderOpen, Plus, Trash2 } from '@/components/ui/icons';
 import { useTranslation } from 'react-i18next';
 import { open } from '@tauri-apps/plugin-dialog';
@@ -110,6 +110,7 @@ export function SettingsDialog({
     textPolishConfig
   );
   const [localVideoApis, setLocalVideoApis] = useState<VideoApiConfig[]>(videoApis);
+  const [isProviderDetailOpen, setProviderDetailOpen] = useState(false);
   const [localExternalAgentConnection, setLocalExternalAgentConnection] =
     useState<ExternalAgentConnectionConfig>(externalAgentConnection);
   const { shouldRender, isVisible } = useDialogTransition(isOpen, UI_DIALOG_TRANSITION_MS);
@@ -164,6 +165,10 @@ export function SettingsDialog({
 
     setActiveCategory(initialCategory);
   }, [initialCategory, isOpen]);
+
+  useLayoutEffect(() => {
+    setProviderDetailOpen(false);
+  }, [activeCategory, isOpen]);
 
   const handleSave = useCallback(() => {
     setOpenAiImageApi(localOpenAiImageApi);
@@ -368,23 +373,30 @@ export function SettingsDialog({
           <div className="flex-1 flex flex-col">
             {activeCategory === 'imageApis' && (
               <>
-                <div className="border-b border-[var(--ui-border-soft)] px-6 py-4">
-                  <h2 className="text-base font-semibold text-text-dark">
-                    {t('settings.imageApis')}
-                  </h2>
-                  <p className="text-sm text-text-muted mt-1">
-                    {t('settings.imageApisDesc')}
-                  </p>
-                </div>
+                {!isProviderDetailOpen && (
+                  <div className="border-b border-[var(--ui-border-soft)] px-6 py-4">
+                    <h2 className="text-base font-semibold text-text-dark">
+                      {t('settings.imageApis')}
+                    </h2>
+                    <p className="text-sm text-text-muted mt-1">
+                      {t('settings.imageApisDesc')}
+                    </p>
+                  </div>
+                )}
 
                 <div className="ui-scrollbar flex-1 overflow-y-auto px-6 py-2">
                   <ImageApisSettings
-                    openAiImageApi={localOpenAiImageApi}
-                    chaomoImageApi={localChaomoImageApi}
-                    customImageApis={localCustomImageApis}
-                    onOpenAiImageApiChange={setLocalOpenAiImageApi}
-                    onChaomoImageApiChange={setLocalChaomoImageApi}
-                    onCustomImageApisChange={setLocalCustomImageApis}
+                    value={{
+                      openAiImageApi: localOpenAiImageApi,
+                      chaomoImageApi: localChaomoImageApi,
+                      customImageApis: localCustomImageApis,
+                    }}
+                    onChange={({ openAiImageApi, chaomoImageApi, customImageApis }) => {
+                      setLocalOpenAiImageApi(openAiImageApi);
+                      setLocalChaomoImageApi(chaomoImageApi);
+                      setLocalCustomImageApis(customImageApis);
+                    }}
+                    onDetailChange={setProviderDetailOpen}
                   />
                 </div>
 
@@ -633,17 +645,23 @@ export function SettingsDialog({
 
             {activeCategory === 'textApis' && (
               <>
-                <div className="px-6 py-5 border-b border-border-dark">
-                  <h2 className="text-lg font-semibold text-text-dark">
-                    {t('settings.textApis')}
-                  </h2>
-                  <p className="text-sm text-text-muted mt-1">
-                    {t('settings.textApisDesc')}
-                  </p>
-                </div>
+                {!isProviderDetailOpen && (
+                  <div className="px-6 py-5 border-b border-border-dark">
+                    <h2 className="text-lg font-semibold text-text-dark">
+                      {t('settings.textApis')}
+                    </h2>
+                    <p className="text-sm text-text-muted mt-1">
+                      {t('settings.textApisDesc')}
+                    </p>
+                  </div>
+                )}
 
                 <div className="ui-scrollbar flex-1 overflow-y-auto px-6 py-2">
-                  <TextApisSettings apis={localTextApis} onChange={setLocalTextApis} />
+                  <TextApisSettings
+                    apis={localTextApis}
+                    onChange={setLocalTextApis}
+                    onDetailChange={setProviderDetailOpen}
+                  />
                 </div>
 
                 <div className="flex justify-end border-t border-border-dark px-6 py-4">
@@ -693,17 +711,23 @@ export function SettingsDialog({
 
             {activeCategory === 'videoApis' && (
               <>
-                <div className="px-6 py-5 border-b border-border-dark">
-                  <h2 className="text-lg font-semibold text-text-dark">
-                    {t('settings.videoApis')}
-                  </h2>
-                  <p className="text-sm text-text-muted mt-1">
-                    {t('settings.videoApisDesc')}
-                  </p>
-                </div>
+                {!isProviderDetailOpen && (
+                  <div className="px-6 py-5 border-b border-border-dark">
+                    <h2 className="text-lg font-semibold text-text-dark">
+                      {t('settings.videoApis')}
+                    </h2>
+                    <p className="text-sm text-text-muted mt-1">
+                      {t('settings.videoApisDesc')}
+                    </p>
+                  </div>
+                )}
 
                 <div className="ui-scrollbar flex-1 overflow-y-auto px-6 py-2">
-                  <VideoApisSettings apis={localVideoApis} onChange={setLocalVideoApis} />
+                  <VideoApisSettings
+                    apis={localVideoApis}
+                    onChange={setLocalVideoApis}
+                    onDetailChange={setProviderDetailOpen}
+                  />
                 </div>
 
                 <div className="flex justify-end border-t border-border-dark px-6 py-4">

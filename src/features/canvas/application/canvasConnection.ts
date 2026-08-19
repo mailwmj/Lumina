@@ -234,6 +234,28 @@ function isCanvasConnectionValidWithPolicy(
     return false;
   }
 
+  const seedanceInputMode = (targetNode.data as { inputMode?: string }).inputMode ?? 'automatic';
+  if (targetNode.type === CANVAS_NODE_TYPES.seedanceAutoVideo && seedanceInputMode === 'first-last') {
+    if (valueType === 'video' || valueType === 'audio') {
+      return false;
+    }
+    if (valueType === 'image') {
+      const imageCount = edges.filter((edge) => {
+        if (edge.target !== targetId) {
+          return false;
+        }
+        if (edge.data?.valueType) {
+          return edge.data.valueType === 'image';
+        }
+        const existingSource = nodes.find((node) => node.id === edge.source);
+        return existingSource ? inferCanvasConnectionValueType(existingSource) === 'image' : false;
+      }).length;
+      if (imageCount >= 2) {
+        return false;
+      }
+    }
+  }
+
   const sourceIsAudioUpload = isAudioSource(sourceNode);
   const sourceIsVideoUpload = isVideoSource(sourceNode);
 

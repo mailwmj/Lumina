@@ -1,9 +1,7 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ArrowLeft, Plus, Trash2 } from '@/components/ui/icons';
-import { UI_DIALOG_TRANSITION_MS } from '@/components/ui/motion';
-import { useDialogTransition } from '@/components/ui/useDialogTransition';
 
 export interface ProviderListShellProps<TItem> {
   items: TItem[];
@@ -14,6 +12,7 @@ export interface ProviderListShellProps<TItem> {
   isBuiltIn?: (item: TItem) => boolean;
   onAdd: () => string;
   onRemove: (id: string) => void;
+  onDetailChange?: (isOpen: boolean) => void;
   renderDetail: (item: TItem) => ReactNode;
   addLabel: string;
   removeLabel: string;
@@ -29,6 +28,7 @@ export function ProviderListShell<TItem>({
   isBuiltIn,
   onAdd,
   onRemove,
+  onDetailChange,
   renderDetail,
   addLabel,
   removeLabel,
@@ -50,9 +50,18 @@ export function ProviderListShell<TItem>({
     }
   }, [selectedId, idSet]);
 
-  const showDetail = selectedId !== null;
-  const listTransition = useDialogTransition(!showDetail, UI_DIALOG_TRANSITION_MS);
-  const detailTransition = useDialogTransition(showDetail, UI_DIALOG_TRANSITION_MS);
+  const selectedItem = useMemo(() => {
+    if (selectedId === null) {
+      return null;
+    }
+    return items.find((item) => getItemId(item) === selectedId) ?? null;
+  }, [items, selectedId, getItemId]);
+
+  const showDetail = selectedItem !== null;
+
+  useLayoutEffect(() => {
+    onDetailChange?.(showDetail);
+  }, [onDetailChange, showDetail]);
 
   // Esc 键从详情回列表
   useEffect(() => {
@@ -69,13 +78,6 @@ export function ProviderListShell<TItem>({
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [showDetail]);
 
-  const selectedItem = useMemo(() => {
-    if (selectedId === null) {
-      return null;
-    }
-    return items.find((item) => getItemId(item) === selectedId) ?? null;
-  }, [items, selectedId, getItemId]);
-
   const handleAdd = () => {
     const newId = onAdd();
     setSelectedId(newId);
@@ -89,17 +91,11 @@ export function ProviderListShell<TItem>({
     setSelectedId(null);
   };
 
-  const listVisible = listTransition.isVisible;
-  const detailVisible = detailTransition.isVisible;
-
   return (
     <div className="relative">
       {/* 列表态 */}
-      {listTransition.shouldRender && (
-        <div
-          className={`transition-opacity ease-out ${listVisible ? 'opacity-100' : 'opacity-0'}`}
-          style={{ transitionDuration: `${UI_DIALOG_TRANSITION_MS}ms` }}
-        >
+      {!showDetail && (
+        <div>
           <div className="flex items-center justify-end gap-3 py-3">
             <button
               type="button"
@@ -153,11 +149,8 @@ export function ProviderListShell<TItem>({
       )}
 
       {/* 详情态 */}
-      {detailTransition.shouldRender && selectedItem && (
-        <div
-          className={`absolute inset-0 transition-opacity ease-out ${detailVisible ? 'opacity-100' : 'opacity-0'}`}
-          style={{ transitionDuration: `${UI_DIALOG_TRANSITION_MS}ms` }}
-        >
+      {showDetail && selectedItem && (
+        <div>
           <div className="flex items-center justify-between gap-3 py-3">
             <button
               type="button"

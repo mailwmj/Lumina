@@ -466,26 +466,20 @@ export function normalizeVideoApiConfigs(input: unknown): VideoApiConfig[] {
 }
 
 function mergeVideoApis(existingApis?: VideoApiConfig[]): VideoApiConfig[] {
-  // 记录到全局变量供调试
-  (globalThis as { __DEBUG_VIDEO_APIS__?: unknown }).__DEBUG_VIDEO_APIS__ = {
-    input: existingApis,
-    timestamp: Date.now(),
-  };
-
   const normalizedApis = normalizeVideoApiConfigs(existingApis);
   if (normalizedApis.length === 0) {
     return PRESET_VIDEO_APIS;
   }
 
-  // 构建现有API的模型ID映射
-  const existingModelIds = new Set(normalizedApis.map((api) => api.modelId));
+  // Preset membership is defined by the stable configuration ID. Model IDs are user-editable.
+  const existingIds = new Set(normalizedApis.map((api) => api.id));
 
-  // 找出缺失的预设模型
+  // 找出缺失的预设配置
   const missingPresets = PRESET_VIDEO_APIS.filter(
-    (preset) => !existingModelIds.has(preset.modelId)
+    (preset) => !existingIds.has(preset.id)
   );
 
-  // 如果有缺失的预设模型，合并它们
+  // 如果有缺失的预设配置，合并它们
   if (missingPresets.length > 0) {
     return [...normalizedApis, ...missingPresets];
   }
@@ -1102,7 +1096,6 @@ export const useSettingsStore = create<SettingsState>()(
         lastTextGenerationModelSelection: normalizeTextGenerationModelSelection(selection),
       }),
       setVideoApis: (apis) => {
-        logger.debug(`[settingsStore] setVideoApis called with: ${JSON.stringify(apis?.map(a => a.modelId))}`);
         set({ videoApis: mergeVideoApis(apis) });
       },
       setActiveVideoApiId: (id) => set({ activeVideoApiId: id }),

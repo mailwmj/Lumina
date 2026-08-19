@@ -235,6 +235,23 @@ describe('prompt polishing settings', () => {
       protocol: 'volcengine-seedance',
     });
   });
+
+  it('keeps an edited preset instead of adding a second configuration with its original model', () => {
+    const editedPreset = {
+      ...PRESET_VIDEO_APIS[0],
+      modelId: 'doubao-seedance-2-0-260201',
+    };
+    const migrated = migrateSettingsState({
+      videoApis: [editedPreset, PRESET_VIDEO_APIS[1]],
+    }, 31) as {
+      videoApis: Array<{ id: string; modelId: string }>;
+    };
+
+    expect(migrated.videoApis).toHaveLength(PRESET_VIDEO_APIS.length);
+    expect(migrated.videoApis.find((api) => api.id === editedPreset.id)).toMatchObject({
+      modelId: 'doubao-seedance-2-0-260201',
+    });
+  });
 });
 
 describe('external Agent connection settings', () => {

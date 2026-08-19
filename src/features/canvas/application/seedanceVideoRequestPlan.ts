@@ -7,6 +7,13 @@ export const SEEDANCE_AUTOMATIC_INPUT_LIMITS = {
 export type SeedanceMediaType = keyof typeof SEEDANCE_AUTOMATIC_INPUT_LIMITS;
 export type SeedanceVideoPlanKind = 'strict-frame' | 'automatic';
 
+export interface SeedanceFirstLastModeAvailability {
+  imageCount: number;
+  videoCount: number;
+  audioCount: number;
+  isAvailable: boolean;
+}
+
 export type SeedanceVideoContent =
   | {
     type: 'text';
@@ -88,6 +95,21 @@ export interface BuildSeedanceVideoRequestPlanInput {
   resolution: string;
   duration: number;
   media: readonly SeedanceConnectedMedia[];
+}
+
+export function getSeedanceFirstLastModeAvailability(
+  media: readonly SeedanceConnectedMedia[]
+): SeedanceFirstLastModeAvailability {
+  const imageCount = media.filter((item) => item.type === 'image').length;
+  const videoCount = media.filter((item) => item.type === 'video').length;
+  const audioCount = media.filter((item) => item.type === 'audio').length;
+
+  return {
+    imageCount,
+    videoCount,
+    audioCount,
+    isAvailable: imageCount >= 1 && imageCount <= 2 && videoCount === 0 && audioCount === 0,
+  };
 }
 
 const STANDARD_CAPABILITIES: SeedanceVideoModelCapabilities = {
@@ -199,20 +221,17 @@ function buildStrictFrameContent(
     return validationError('strict_frame_requires_images');
   }
 
-  const firstFrames = references.filter((reference) => reference.targetHandle === 'target-first');
-  const lastFrames = references.filter((reference) => reference.targetHandle === 'target-last');
-  if (firstFrames.length === 0) {
+  const firstFrame = references[0];
+  if (!firstFrame) {
     return validationError('first_frame_required');
-  }
-  if (firstFrames.length > 1 || lastFrames.length > 1 || firstFrames.length + lastFrames.length !== references.length) {
-    return validationError('strict_frame_invalid_handle');
   }
 
   const content: SeedanceVideoContent[] = [
-    { type: 'image_url', role: 'first_frame', url: firstFrames[0].url },
+    { type: 'image_url', role: 'first_frame', url: firstFrame.url },
   ];
-  if (lastFrames[0]) {
-    content.push({ type: 'image_url', role: 'last_frame', url: lastFrames[0].url });
+  const lastFrame = references[1];
+  if (lastFrame) {
+    content.push({ type: 'image_url', role: 'last_frame', url: lastFrame.url });
   }
   content.push({ type: 'text', text });
 

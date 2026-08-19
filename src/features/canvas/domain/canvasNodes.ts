@@ -199,6 +199,7 @@ export interface StoryboardGenNodeData {
 }
 
 export type VideoResolution = '480p' | '720p' | '1080p' | '4k';
+export type SeedanceVideoInputMode = 'automatic' | 'first-last';
 
 export interface VideoGenNodeData extends NodeDisplayData {
   videoUrl: string | null;
@@ -208,6 +209,8 @@ export interface VideoGenNodeData extends NodeDisplayData {
   model: string;
   resolution?: VideoResolution;
   duration?: number;
+  /** Determines whether connected media is passed as general references or as strict first/last frames. */
+  inputMode?: SeedanceVideoInputMode;
   referenceImagePrompt?: boolean;
   referenceImages?: string[];
   hasAudio?: boolean;
