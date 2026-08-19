@@ -473,6 +473,52 @@ mod tests {
     }
 
     #[test]
+    fn accepts_jpeg_png_and_webp_source_images() {
+        let pixels = [255, 0, 0, 0, 0, 255];
+        let mut jpeg = Vec::new();
+        image::codecs::jpeg::JpegEncoder::new(&mut jpeg)
+            .write_image(&pixels, 2, 1, image::ExtendedColorType::Rgb8)
+            .expect("encode JPEG");
+
+        let mut png = Vec::new();
+        image::codecs::png::PngEncoder::new(&mut png)
+            .write_image(&pixels, 2, 1, image::ExtendedColorType::Rgb8)
+            .expect("encode PNG");
+
+        let mut webp = Vec::new();
+        image::codecs::webp::WebPEncoder::new_lossless(&mut webp)
+            .write_image(&pixels, 2, 1, image::ExtendedColorType::Rgb8)
+            .expect("encode WebP");
+
+        for (format, bytes) in [("JPEG", jpeg), ("PNG", png), ("WebP", webp)] {
+            let image = decode_srgb_image(&bytes, 2)
+                .unwrap_or_else(|error| panic!("decode {format}: {}", error.code));
+            assert_eq!((image.width(), image.height()), (2, 1));
+        }
+    }
+
+    #[test]
+    fn accepts_srgb_profiles_and_rejects_non_srgb_profiles_from_jpeg() {
+        let s_rgb = jpeg_with_icc_profile(icc_profile_with_description("sRGB IEC61966-2.1"));
+        assert!(decode_srgb_image(&s_rgb, 2).is_ok());
+
+        let display_p3 = jpeg_with_icc_profile(icc_profile_with_description("Display P3"));
+        let error = decode_srgb_image(&display_p3, 2).expect_err("reject Display P3 profile");
+        assert_eq!(error.code, ERROR_UNSUPPORTED_COLOR_PROFILE);
+    }
+
+    #[test]
+    fn rejects_grayscale_source_images() {
+        let mut png = Vec::new();
+        image::codecs::png::PngEncoder::new(&mut png)
+            .write_image(&[127], 1, 1, image::ExtendedColorType::L8)
+            .expect("encode grayscale PNG");
+
+        let error = decode_srgb_image(&png, 2).expect_err("reject grayscale input");
+        assert_eq!(error.code, ERROR_UNSUPPORTED_COLOR_PROFILE);
+    }
+
+    #[test]
     fn rejects_scaled_images_that_exceed_the_maximum_edge_length() {
         let source_path = std::env::temp_dir().join(format!(
             "lumina-upscale-edge-source-{}.png",
@@ -510,6 +556,18 @@ mod tests {
         exif[29] = (orientation >> 8) as u8;
         jpeg.splice(2..2, exif);
         jpeg
+    }
+
+    fn jpeg_with_icc_profile(profile: Vec<u8>) -> Vec<u8> {
+        let mut encoded = Vec::new();
+        let mut encoder = image::codecs::jpeg::JpegEncoder::new(&mut encoded);
+        encoder
+            .set_icc_profile(profile)
+            .expect("attach ICC profile");
+        encoder
+            .write_image(&[255, 0, 0], 1, 1, image::ExtendedColorType::Rgb8)
+            .expect("encode JPEG");
+        encoded
     }
 
     fn icc_profile_with_description(description: &str) -> Vec<u8> {
