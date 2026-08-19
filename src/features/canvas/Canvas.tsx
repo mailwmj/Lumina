@@ -62,6 +62,8 @@ import {
   CANVAS_IMAGE_QUALITY_SETTLE_DELAY_MS,
   findCanvasImageFocusCandidate,
   getVisibleCanvasImageNodeIds,
+  getRequestedCanvasOriginalNodeIds,
+  resolveCanvasOriginalImageMode,
 } from '@/features/canvas/application/canvasImageRenderPolicy';
 import { useCanvasImageQualityStore } from '@/features/canvas/application/canvasImageQualityStore';
 import {
@@ -425,11 +427,17 @@ export function Canvas() {
   const setCanvasImageFocusedNodeId = useCanvasImageQualityStore(
     (state) => state.setFocusedNodeId
   );
+  const setCanvasOriginalImageMode = useCanvasImageQualityStore(
+    (state) => state.setOriginalImageMode
+  );
   const retainVisibleCanvasImageOriginals = useCanvasImageQualityStore(
     (state) => state.retainVisibleOriginalNodes
   );
   const clearRetainedCanvasImageOriginals = useCanvasImageQualityStore(
     (state) => state.clearRetainedOriginalNodes
+  );
+  const setRequestedCanvasImageOriginals = useCanvasImageQualityStore(
+    (state) => state.setRequestedOriginalNodes
   );
   useExternalAgentBridge({
     projectId: currentProjectId ?? '',
@@ -509,24 +517,44 @@ export function Canvas() {
         height: containerRect.height,
       };
       const currentNodes = useCanvasStore.getState().nodes;
+      const wasOriginalImageMode = useCanvasImageQualityStore.getState().isOriginalImageMode;
+      const isOriginalImageMode = resolveCanvasOriginalImageMode(
+        resolvedViewport.zoom,
+        wasOriginalImageMode
+      );
+      setCanvasOriginalImageMode(isOriginalImageMode);
+      if (wasOriginalImageMode && !isOriginalImageMode) {
+        clearRetainedCanvasImageOriginals();
+      }
       retainVisibleCanvasImageOriginals(getVisibleCanvasImageNodeIds({
         nodes: currentNodes,
         viewport: resolvedViewport,
         viewportSize,
       }));
-      const focusedNodeId = findCanvasImageFocusCandidate({
+      setRequestedCanvasImageOriginals(getRequestedCanvasOriginalNodeIds({
+        nodes: currentNodes,
+        viewport: resolvedViewport,
+        viewportSize,
+        isOriginalImageMode,
+        focusPoint: intent.focusPoint,
+        devicePixelRatio: window.devicePixelRatio,
+      }));
+      const focusedNodeId = isOriginalImageMode ? findCanvasImageFocusCandidate({
         nodes: currentNodes,
         viewport: resolvedViewport,
         viewportSize,
         preferredNodeId: intent.preferredNodeId,
         focusPoint: intent.focusPoint,
         devicePixelRatio: window.devicePixelRatio,
-      });
+      }) : null;
       setCanvasImageFocusedNodeId(focusedNodeId);
     }, CANVAS_IMAGE_QUALITY_SETTLE_DELAY_MS);
   }, [
     reactFlowInstance,
+    clearRetainedCanvasImageOriginals,
     retainVisibleCanvasImageOriginals,
+    setCanvasOriginalImageMode,
+    setRequestedCanvasImageOriginals,
     setCanvasImageFocusedNodeId,
   ]);
 
@@ -1259,9 +1287,14 @@ export function Canvas() {
   const handleMoveStart = useCallback(() => {
     if (!isRestoringCanvasRef.current) {
       setCanvasImageInteractionActive(true);
+      setRequestedCanvasImageOriginals([]);
     }
     cancelPendingViewportPersist();
-  }, [cancelPendingViewportPersist, setCanvasImageInteractionActive]);
+  }, [
+    cancelPendingViewportPersist,
+    setCanvasImageInteractionActive,
+    setRequestedCanvasImageOriginals,
+  ]);
 
   const handleCanvasPointerDownCapture = useCallback(() => {
     latestZoomFocusPointRef.current = null;

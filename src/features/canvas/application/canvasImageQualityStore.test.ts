@@ -47,4 +47,12 @@ describe('canvas image quality store', () => {
 
     expect(useCanvasImageQualityStore.getState().retainedOriginalNodeIds).toEqual(['image-2']);
   });
+
+  it('leaves inspection mode even when no original was retained or requested', () => {
+    const { clearRetainedOriginalNodes, setOriginalImageMode } = useCanvasImageQualityStore.getState();
+    setOriginalImageMode(true);
+    clearRetainedOriginalNodes();
+
+    expect(useCanvasImageQualityStore.getState().isOriginalImageMode).toBe(false);
+  });
 });

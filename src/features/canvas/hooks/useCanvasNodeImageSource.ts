@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   resolveCanvasImageRenderSource,
 } from '@/features/canvas/application/canvasImageRenderPolicy';
+import { createCanvasImageDecodeQueue } from '@/features/canvas/application/canvasImageDecodeQueue';
 import { useCanvasImageQualityStore } from '@/features/canvas/application/canvasImageQualityStore';
 import { resolveImageDisplayUrl } from '@/features/canvas/application/imageData';
 
@@ -26,6 +27,8 @@ function preloadImage(source: string): Promise<void> {
     : loaded;
 }
 
+const imageDecodeQueue = createCanvasImageDecodeQueue(preloadImage);
+
 export function useCanvasNodeImageSource({
   nodeId,
   imageUrl,
@@ -36,6 +39,9 @@ export function useCanvasNodeImageSource({
   );
   const isOriginalRetained = useCanvasImageQualityStore(
     (state) => state.retainedOriginalNodeIds.includes(nodeId)
+  );
+  const isOriginalRequested = useCanvasImageQualityStore(
+    (state) => state.requestedOriginalNodeIds.includes(nodeId)
   );
   const retainOriginalNode = useCanvasImageQualityStore((state) => state.retainOriginalNode);
   const originalDisplaySource = useMemo(
@@ -54,16 +60,20 @@ export function useCanvasNodeImageSource({
   const hasLoadedOriginal = Boolean(
     originalDisplaySource && displaySource === originalDisplaySource
   );
+  const shouldRequestOriginal = isFocused || isOriginalRequested;
   const preferredSource = useMemo(() => resolveCanvasImageRenderSource({
     nodeId,
     imageUrl,
     previewImageUrl,
-    focusedNodeId: isFocused ? nodeId : null,
+    focusedNodeId: isFocused && hasLoadedOriginal ? nodeId : null,
     retainedOriginalNodeIds: isOriginalRetained && hasLoadedOriginal ? [nodeId] : [],
+    requestedOriginalNodeIds: isOriginalRequested && hasLoadedOriginal ? [nodeId] : [],
   }), [
     imageUrl,
+    hasLoadedOriginal,
     isFocused,
     isOriginalRetained,
+    isOriginalRequested,
     nodeId,
     previewImageUrl,
   ]);
@@ -79,9 +89,9 @@ export function useCanvasNodeImageSource({
     }
 
     const shouldPreloadOriginal = (
-      isFocused
+      shouldRequestOriginal
       && !hasLoadedOriginal
-      && originalDisplaySource === preferredDisplaySource
+      && originalDisplaySource
       && previewDisplaySource
       && previewDisplaySource !== originalDisplaySource
     );
@@ -100,10 +110,11 @@ export function useCanvasNodeImageSource({
     }
 
     let cancelled = false;
-    void preloadImage(preferredDisplaySource)
+    const task = imageDecodeQueue.enqueue(originalDisplaySource);
+    void task.promise
       .then(() => {
         if (!cancelled) {
-          setDisplaySource(preferredDisplaySource);
+          setDisplaySource(originalDisplaySource);
           retainOriginalNode(nodeId);
         }
       })
@@ -115,14 +126,17 @@ export function useCanvasNodeImageSource({
 
     return () => {
       cancelled = true;
+      task.cancel();
     };
   }, [
     hasLoadedOriginal,
     isFocused,
+    isOriginalRequested,
     originalDisplaySource,
     preferredDisplaySource,
     previewDisplaySource,
     retainOriginalNode,
+    shouldRequestOriginal,
   ]);
 
   return displaySource;

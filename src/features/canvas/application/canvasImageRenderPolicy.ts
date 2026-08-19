@@ -6,7 +6,10 @@ import {
   type CanvasNode,
 } from '@/features/canvas/domain/canvasNodes';
 
-export const CANVAS_IMAGE_QUALITY_SETTLE_DELAY_MS = 150;
+export const CANVAS_IMAGE_QUALITY_SETTLE_DELAY_MS = 180;
+export const CANVAS_ORIGINAL_IMAGE_ENTER_ZOOM = 1.8;
+export const CANVAS_ORIGINAL_IMAGE_EXIT_ZOOM = 1.55;
+export const MIN_ORIGINAL_IMAGE_VISIBLE_RATIO = 0.25;
 // Previews are currently capped at 512px. Start the original-image decode before
 // the preview reaches a one-to-one physical-pixel display, so the transition is
 // not perceived as a blurry intermediate state on high-density screens.
@@ -18,6 +21,7 @@ export interface CanvasImageRenderSourceInput {
   previewImageUrl: string | null | undefined;
   focusedNodeId: string | null;
   retainedOriginalNodeIds?: readonly string[];
+  requestedOriginalNodeIds?: readonly string[];
 }
 
 export interface CanvasImageFocusInput {
@@ -33,6 +37,16 @@ export interface CanvasImageFocusInput {
   focusPoint?: { x: number; y: number } | null;
   /** Kept explicit so the policy is deterministic and testable. */
   devicePixelRatio?: number;
+}
+
+export interface CanvasOriginalImageRequestInput {
+  nodes: readonly CanvasNode[];
+  viewport: Viewport;
+  viewportSize: { width: number; height: number };
+  isOriginalImageMode: boolean;
+  focusPoint?: { x: number; y: number } | null;
+  devicePixelRatio?: number;
+  minimumVisibleRatio?: number;
 }
 
 function nonEmptyString(value: unknown): string | null {
@@ -185,6 +199,60 @@ function getNodeZIndex(node: CanvasNode): number {
   return typeof node.style?.zIndex === 'number' ? node.style.zIndex : 0;
 }
 
+function getViewportFlowBounds(
+  viewport: Viewport,
+  viewportSize: { width: number; height: number }
+): { minX: number; minY: number; maxX: number; maxY: number } {
+  const zoom = Math.max(0.01, viewport.zoom);
+  const minX = -viewport.x / zoom;
+  const minY = -viewport.y / zoom;
+  return {
+    minX,
+    minY,
+    maxX: minX + viewportSize.width / zoom,
+    maxY: minY + viewportSize.height / zoom,
+  };
+}
+
+function getNodeVisibleMetrics(
+  node: CanvasNode,
+  viewport: Viewport,
+  viewportSize: { width: number; height: number },
+  nodesById: ReadonlyMap<string, CanvasNode>,
+  focusPoint: { x: number; y: number } | null
+): { visibleRatio: number; screenArea: number; distanceFromFocus: number } | null {
+  const bounds = getViewportFlowBounds(viewport, viewportSize);
+  const position = getNodeAbsolutePosition(node, nodesById);
+  const size = getNodeSize(node);
+  const visibleWidth = Math.max(0, Math.min(position.x + size.width, bounds.maxX) - Math.max(position.x, bounds.minX));
+  const visibleHeight = Math.max(0, Math.min(position.y + size.height, bounds.maxY) - Math.max(position.y, bounds.minY));
+  const visibleArea = visibleWidth * visibleHeight;
+  if (visibleArea <= 0) {
+    return null;
+  }
+
+  const zoom = Math.max(0.01, viewport.zoom);
+  const flowFocus = focusPoint
+    ? {
+      x: (focusPoint.x - viewport.x) / zoom,
+      y: (focusPoint.y - viewport.y) / zoom,
+    }
+    : {
+      x: (bounds.minX + bounds.maxX) / 2,
+      y: (bounds.minY + bounds.maxY) / 2,
+    };
+  const center = {
+    x: position.x + size.width / 2,
+    y: position.y + size.height / 2,
+  };
+
+  return {
+    visibleRatio: visibleArea / Math.max(1, size.width * size.height),
+    screenArea: visibleArea * zoom * zoom,
+    distanceFromFocus: Math.hypot(center.x - flowFocus.x, center.y - flowFocus.y),
+  };
+}
+
 function findPointFocusCandidate(
   candidates: readonly CanvasNode[],
   focusPoint: { x: number; y: number },
@@ -236,6 +304,7 @@ export function resolveCanvasImageRenderSource({
   previewImageUrl,
   focusedNodeId,
   retainedOriginalNodeIds = [],
+  requestedOriginalNodeIds = [],
 }: CanvasImageRenderSourceInput): string | null {
   const original = nonEmptyString(imageUrl);
   const preview = nonEmptyString(previewImageUrl);
@@ -246,7 +315,11 @@ export function resolveCanvasImageRenderSource({
     return original;
   }
 
-  if (focusedNodeId !== nodeId && !retainedOriginalNodeIds.includes(nodeId)) {
+  if (
+    focusedNodeId !== nodeId
+    && !retainedOriginalNodeIds.includes(nodeId)
+    && !requestedOriginalNodeIds.includes(nodeId)
+  ) {
     return preview;
   }
 
@@ -271,6 +344,64 @@ export function getVisibleCanvasImageNodeIds({
       nodesById
     ))
     .map((node) => node.id);
+}
+
+export function getRequestedCanvasOriginalNodeIds({
+  nodes,
+  viewport,
+  viewportSize,
+  isOriginalImageMode,
+  focusPoint = null,
+  devicePixelRatio = 1,
+  minimumVisibleRatio = MIN_ORIGINAL_IMAGE_VISIBLE_RATIO,
+}: CanvasOriginalImageRequestInput): string[] {
+  if (!isOriginalImageMode || viewportSize.width <= 0 || viewportSize.height <= 0) {
+    return [];
+  }
+
+  const nodesById = new Map(nodes.map((node) => [node.id, node] as const));
+  const normalizedDevicePixelRatio = Number.isFinite(devicePixelRatio)
+    ? Math.max(1, devicePixelRatio)
+    : 1;
+  return nodes
+    .flatMap((node) => {
+      if (
+        !isCanvasImageRenderNode(node)
+        || !getNodeImageUrl(node)
+        || !hasDistinctCanvasImagePreview(
+          getNodeImageUrl(node),
+          getNodePreviewImageUrl(node)
+        )
+        || !hasInspectionScale(node, viewport, normalizedDevicePixelRatio)
+      ) {
+        return [];
+      }
+      const metrics = getNodeVisibleMetrics(
+        node,
+        viewport,
+        viewportSize,
+        nodesById,
+        focusPoint
+      );
+      return metrics && metrics.visibleRatio >= minimumVisibleRatio
+        ? [{ nodeId: node.id, ...metrics }]
+        : [];
+    })
+    .sort((left, right) => (
+      left.distanceFromFocus - right.distanceFromFocus
+      || right.screenArea - left.screenArea
+    ))
+    .map((item) => item.nodeId);
+}
+
+export function resolveCanvasOriginalImageMode(zoom: number, wasActive: boolean): boolean {
+  if (!Number.isFinite(zoom)) {
+    return false;
+  }
+
+  return wasActive
+    ? zoom >= CANVAS_ORIGINAL_IMAGE_EXIT_ZOOM
+    : zoom >= CANVAS_ORIGINAL_IMAGE_ENTER_ZOOM;
 }
 
 export function findCanvasImageFocusCandidate({

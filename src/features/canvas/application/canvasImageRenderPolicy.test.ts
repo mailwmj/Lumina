@@ -5,9 +5,13 @@ import {
   type CanvasNode,
 } from '@/features/canvas/domain/canvasNodes';
 import {
+  CANVAS_ORIGINAL_IMAGE_ENTER_ZOOM,
+  CANVAS_ORIGINAL_IMAGE_EXIT_ZOOM,
   findCanvasImageFocusCandidate,
+  getRequestedCanvasOriginalNodeIds,
   getVisibleCanvasImageNodeIds,
   hasDistinctCanvasImagePreview,
+  resolveCanvasOriginalImageMode,
   resolveCanvasImageRenderSource,
 } from './canvasImageRenderPolicy';
 
@@ -70,6 +74,66 @@ describe('canvas image render policy', () => {
       viewport: { x: 0, y: 0, zoom: 1 },
       viewportSize: { width: 1000, height: 800 },
     })).toEqual([visible.id]);
+  });
+
+  it('requests originals for sufficiently visible images in inspection mode', () => {
+    const visible = createImageNode('visible', { x: 0, y: 0 }, { width: 200, height: 200 });
+    const secondVisible = createImageNode('second-visible', { x: 220, y: 0 }, { width: 200, height: 200 });
+    const offscreen = createImageNode('offscreen', { x: 1000, y: 0 }, { width: 200, height: 200 });
+
+    expect(getRequestedCanvasOriginalNodeIds({
+      nodes: [visible, secondVisible, offscreen],
+      viewport: { x: 0, y: 0, zoom: CANVAS_ORIGINAL_IMAGE_ENTER_ZOOM },
+      viewportSize: { width: 1000, height: 800 },
+      isOriginalImageMode: true,
+      focusPoint: { x: 160, y: 160 },
+    })).toEqual([visible.id, secondVisible.id]);
+
+    expect(getRequestedCanvasOriginalNodeIds({
+      nodes: [visible, secondVisible, offscreen],
+      viewport: { x: 0, y: 0, zoom: CANVAS_ORIGINAL_IMAGE_ENTER_ZOOM },
+      viewportSize: { width: 1000, height: 800 },
+      isOriginalImageMode: false,
+    })).toEqual([]);
+  });
+
+  it('does not request an image whose visible area is below the threshold', () => {
+    const mostlyHidden = createImageNode('mostly-hidden', { x: 500, y: 0 }, { width: 400, height: 400 });
+
+    expect(getRequestedCanvasOriginalNodeIds({
+      nodes: [mostlyHidden],
+      viewport: { x: 0, y: 0, zoom: CANVAS_ORIGINAL_IMAGE_ENTER_ZOOM },
+      viewportSize: { width: 1000, height: 800 },
+      isOriginalImageMode: true,
+    })).toEqual([]);
+  });
+
+  it('keeps small overview images on their previews even in inspection mode', () => {
+    const small = createImageNode('small', { x: 0, y: 0 }, { width: 100, height: 100 });
+
+    expect(getRequestedCanvasOriginalNodeIds({
+      nodes: [small],
+      viewport: { x: 0, y: 0, zoom: 2.25 },
+      viewportSize: { width: 1000, height: 800 },
+      isOriginalImageMode: true,
+    })).toEqual([]);
+  });
+
+  it('uses separate enter and exit thresholds for inspection mode', () => {
+    expect(resolveCanvasOriginalImageMode(CANVAS_ORIGINAL_IMAGE_ENTER_ZOOM - 0.01, false)).toBe(false);
+    expect(resolveCanvasOriginalImageMode(CANVAS_ORIGINAL_IMAGE_ENTER_ZOOM, false)).toBe(true);
+    expect(resolveCanvasOriginalImageMode(CANVAS_ORIGINAL_IMAGE_EXIT_ZOOM, true)).toBe(true);
+    expect(resolveCanvasOriginalImageMode(CANVAS_ORIGINAL_IMAGE_EXIT_ZOOM - 0.01, true)).toBe(false);
+  });
+
+  it('uses the original after a visible image finishes loading it', () => {
+    expect(resolveCanvasImageRenderSource({
+      nodeId: 'image-1',
+      imageUrl: 'file:///original.jpg',
+      previewImageUrl: 'file:///preview.jpg',
+      focusedNodeId: null,
+      requestedOriginalNodeIds: ['image-1'],
+    })).toBe('file:///original.jpg');
   });
 
   it('falls back to the original when no distinct preview exists', () => {

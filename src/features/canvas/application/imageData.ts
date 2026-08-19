@@ -87,12 +87,6 @@ function createImagePipelineError(message: string, details?: string, cause?: unk
   return error;
 }
 
-const ORIGINAL_IMAGE_ZOOM_THRESHOLD = 1.45;
-
-export function shouldUseOriginalImageByZoom(zoom: number): boolean {
-  return Number.isFinite(zoom) && zoom >= ORIGINAL_IMAGE_ZOOM_THRESHOLD;
-}
-
 export function isLikelyLocalImagePath(imageUrl: string): boolean {
   if (!imageUrl) {
     return false;
