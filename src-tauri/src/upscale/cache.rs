@@ -22,6 +22,18 @@ pub(super) enum CacheOutputPublication {
     Existing,
 }
 
+struct CacheEntry {
+    output_path: String,
+    source_sha256: String,
+    engine_version: String,
+    model_name: String,
+    model_sha256: String,
+    preprocess_version: String,
+    scale: i64,
+    output_width: i64,
+    output_height: i64,
+}
+
 pub(crate) fn ensure_upscale_cache_schema(conn: &Connection) -> Result<(), String> {
     conn.execute_batch(
         r#"
@@ -29,14 +41,17 @@ pub(crate) fn ensure_upscale_cache_schema(conn: &Connection) -> Result<(), Strin
           cache_key TEXT PRIMARY KEY,
           source_sha256 TEXT NOT NULL DEFAULT '',
           engine_version TEXT NOT NULL DEFAULT '',
+          model_name TEXT NOT NULL DEFAULT '',
+          model_sha256 TEXT NOT NULL DEFAULT '',
+          preprocess_version TEXT NOT NULL DEFAULT '',
           scale INTEGER NOT NULL DEFAULT 2,
           output_path TEXT NOT NULL DEFAULT '',
           output_bytes INTEGER NOT NULL DEFAULT 0,
+          output_width INTEGER NOT NULL DEFAULT 0,
+          output_height INTEGER NOT NULL DEFAULT 0,
           created_at INTEGER NOT NULL DEFAULT 0,
           last_used_at INTEGER NOT NULL DEFAULT 0
         );
-        CREATE INDEX IF NOT EXISTS idx_upscale_cache_last_used_at
-          ON upscale_cache(last_used_at ASC);
         "#,
     )
     .map_err(|error| format!("Failed to initialize upscale cache table: {error}"))?;
@@ -57,9 +72,14 @@ pub(crate) fn ensure_upscale_cache_schema(conn: &Connection) -> Result<(), Strin
     for (name, definition) in [
         ("source_sha256", "TEXT NOT NULL DEFAULT ''"),
         ("engine_version", "TEXT NOT NULL DEFAULT ''"),
+        ("model_name", "TEXT NOT NULL DEFAULT ''"),
+        ("model_sha256", "TEXT NOT NULL DEFAULT ''"),
+        ("preprocess_version", "TEXT NOT NULL DEFAULT ''"),
         ("scale", "INTEGER NOT NULL DEFAULT 2"),
         ("output_path", "TEXT NOT NULL DEFAULT ''"),
         ("output_bytes", "INTEGER NOT NULL DEFAULT 0"),
+        ("output_width", "INTEGER NOT NULL DEFAULT 0"),
+        ("output_height", "INTEGER NOT NULL DEFAULT 0"),
         ("created_at", "INTEGER NOT NULL DEFAULT 0"),
         ("last_used_at", "INTEGER NOT NULL DEFAULT 0"),
     ] {
@@ -71,6 +91,11 @@ pub(crate) fn ensure_upscale_cache_schema(conn: &Connection) -> Result<(), Strin
             .map_err(|error| format!("Failed to add upscale cache column {name}: {error}"))?;
         }
     }
+
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_upscale_cache_last_used_at ON upscale_cache(last_used_at ASC);",
+    )
+    .map_err(|error| format!("Failed to initialize upscale cache index: {error}"))?;
 
     Ok(())
 }
@@ -105,26 +130,53 @@ pub(super) fn lookup_cache_entry(
     conn: &Connection,
     cache_dir: &Path,
     cache_key: &str,
+    source_sha256: &str,
+    scale: u8,
+    model_sha256: &str,
     expected_width: u32,
     expected_height: u32,
 ) -> Result<Option<PathBuf>, UpscaleFailure> {
-    let stored_path = conn
+    let stored_entry = conn
         .query_row(
-            "SELECT output_path FROM upscale_cache WHERE cache_key = ?1",
+            r#"
+            SELECT output_path, source_sha256, engine_version, model_name, model_sha256,
+                   preprocess_version, scale, output_width, output_height
+            FROM upscale_cache
+            WHERE cache_key = ?1
+            "#,
             params![cache_key],
-            |row| row.get::<_, String>(0),
+            |row| {
+                Ok(CacheEntry {
+                    output_path: row.get(0)?,
+                    source_sha256: row.get(1)?,
+                    engine_version: row.get(2)?,
+                    model_name: row.get(3)?,
+                    model_sha256: row.get(4)?,
+                    preprocess_version: row.get(5)?,
+                    scale: row.get(6)?,
+                    output_width: row.get(7)?,
+                    output_height: row.get(8)?,
+                })
+            },
         )
         .optional()
         .map_err(|error| {
             UpscaleFailure::new(ERROR_CACHE_FAILED, format!("failed to read cache: {error}"))
         })?;
-    let Some(stored_path) = stored_path else {
+    let Some(stored_entry) = stored_entry else {
         return Ok(None);
     };
 
     let expected_path = cache_dir.join(format!("{cache_key}.png"));
-    if Path::new(&stored_path) != expected_path
-        || !expected_path.is_file()
+    if Path::new(&stored_entry.output_path) != expected_path
+        || stored_entry.source_sha256 != source_sha256
+        || stored_entry.engine_version != REAL_ESRGAN_ENGINE_VERSION
+        || stored_entry.model_name != REAL_ESRGAN_MODEL_NAME
+        || stored_entry.model_sha256 != model_sha256
+        || stored_entry.preprocess_version != UPSCALE_PREPROCESS_VERSION
+        || stored_entry.scale != i64::from(scale)
+        || stored_entry.output_width != i64::from(expected_width)
+        || stored_entry.output_height != i64::from(expected_height)
         || !cache_output_matches(&expected_path, expected_width, expected_height)
     {
         conn.execute(
@@ -155,10 +207,10 @@ pub(super) fn lookup_cache_entry(
 }
 
 fn cache_output_matches(path: &Path, expected_width: u32, expected_height: u32) -> bool {
-    let Ok(metadata) = fs::metadata(path) else {
+    let Ok(metadata) = fs::symlink_metadata(path) else {
         return false;
     };
-    if metadata.len() == 0 || metadata.len() > MAX_OUTPUT_BYTES {
+    if !metadata.file_type().is_file() || metadata.len() == 0 || metadata.len() > MAX_OUTPUT_BYTES {
         return false;
     }
     let Ok(reader) = ImageReader::open(path) else {
@@ -182,13 +234,35 @@ fn cache_output_matches(path: &Path, expected_width: u32, expected_height: u32) 
 pub(super) fn publish_cache_output(
     source_path: &Path,
     cache_path: &Path,
+    expected_width: u32,
+    expected_height: u32,
 ) -> Result<CacheOutputPublication, UpscaleFailure> {
-    if cache_path.is_file() {
-        return Ok(CacheOutputPublication::Existing);
+    match fs::symlink_metadata(cache_path) {
+        Ok(metadata)
+            if metadata.file_type().is_file()
+                && cache_output_matches(cache_path, expected_width, expected_height) =>
+        {
+            return Ok(CacheOutputPublication::Existing);
+        }
+        Ok(_) => fs::remove_file(cache_path).map_err(|error| {
+            UpscaleFailure::new(
+                ERROR_CACHE_FAILED,
+                format!("failed to remove invalid cache output: {error}"),
+            )
+        })?,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(UpscaleFailure::new(
+                ERROR_CACHE_FAILED,
+                format!("failed to inspect cache output: {error}"),
+            ));
+        }
     }
     match copy_file_atomically(source_path, cache_path, "cache") {
         Ok(()) => Ok(CacheOutputPublication::Created),
-        Err(_error) if cache_path.is_file() => Ok(CacheOutputPublication::Existing),
+        Err(_error) if cache_output_matches(cache_path, expected_width, expected_height) => {
+            Ok(CacheOutputPublication::Existing)
+        }
         Err(error) => Err(error),
     }
 }
@@ -199,6 +273,9 @@ pub(super) fn record_cache_entry(
     cache_key: &str,
     source_sha256: &str,
     scale: u8,
+    model_sha256: &str,
+    output_width: u32,
+    output_height: u32,
 ) -> Result<(), UpscaleFailure> {
     let output_bytes = fs::metadata(cache_path)
         .map_err(|error| {
@@ -212,23 +289,34 @@ pub(super) fn record_cache_entry(
     conn.execute(
         r#"
         INSERT INTO upscale_cache (
-          cache_key, source_sha256, engine_version, scale, output_path, output_bytes, created_at, last_used_at
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+          cache_key, source_sha256, engine_version, model_name, model_sha256, preprocess_version,
+          scale, output_path, output_bytes, output_width, output_height, created_at, last_used_at
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
         ON CONFLICT(cache_key) DO UPDATE SET
           source_sha256 = excluded.source_sha256,
           engine_version = excluded.engine_version,
+          model_name = excluded.model_name,
+          model_sha256 = excluded.model_sha256,
+          preprocess_version = excluded.preprocess_version,
           scale = excluded.scale,
           output_path = excluded.output_path,
           output_bytes = excluded.output_bytes,
+          output_width = excluded.output_width,
+          output_height = excluded.output_height,
           last_used_at = excluded.last_used_at
         "#,
         params![
             cache_key,
             source_sha256,
             REAL_ESRGAN_ENGINE_VERSION,
+            REAL_ESRGAN_MODEL_NAME,
+            model_sha256,
+            UPSCALE_PREPROCESS_VERSION,
             i64::from(scale),
             cache_path.to_string_lossy().to_string(),
             i64::try_from(output_bytes).unwrap_or(i64::MAX),
+            i64::from(output_width),
+            i64::from(output_height),
             now,
             now,
         ],
@@ -427,6 +515,46 @@ fn unix_timestamp_millis() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cache_schema_migrates_a_legacy_table_before_creating_its_index() {
+        let conn = Connection::open_in_memory().expect("open test database");
+        conn.execute_batch("CREATE TABLE upscale_cache (cache_key TEXT PRIMARY KEY);")
+            .expect("create legacy cache table");
+
+        ensure_upscale_cache_schema(&conn).expect("migrate legacy cache table");
+
+        let columns = conn
+            .prepare("PRAGMA table_info(upscale_cache)")
+            .expect("inspect cache table")
+            .query_map([], |row| row.get::<_, String>(1))
+            .expect("read cache columns")
+            .collect::<Result<HashSet<_>, _>>()
+            .expect("decode cache columns");
+        for required in [
+            "source_sha256",
+            "engine_version",
+            "model_name",
+            "model_sha256",
+            "preprocess_version",
+            "output_width",
+            "output_height",
+            "last_used_at",
+        ] {
+            assert!(
+                columns.contains(required),
+                "missing migrated column {required}"
+            );
+        }
+        let index_count = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_upscale_cache_last_used_at'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("count cache indexes");
+        assert_eq!(index_count, 1);
+    }
     use image::RgbaImage;
 
     #[test]
@@ -490,17 +618,38 @@ mod tests {
         fs::create_dir_all(&cache_dir).expect("create cache directory");
         let source_path = cache_dir.join("source.png");
         let cache_path = cache_dir.join("cache.png");
-        fs::write(&source_path, b"new output").expect("write source output");
-        fs::write(&cache_path, b"existing output").expect("write existing cache output");
+        RgbaImage::new(4, 4)
+            .save(&source_path)
+            .expect("write source output");
+        RgbaImage::new(2, 2)
+            .save(&cache_path)
+            .expect("write existing cache output");
 
         let outcome =
-            publish_cache_output(&source_path, &cache_path).expect("publish cache output");
+            publish_cache_output(&source_path, &cache_path, 2, 2).expect("publish cache output");
 
         assert_eq!(outcome, CacheOutputPublication::Existing);
-        assert_eq!(
-            fs::read(&cache_path).expect("read cache output"),
-            b"existing output"
-        );
+        assert!(cache_output_matches(&cache_path, 2, 2));
+        let _ = fs::remove_dir_all(&cache_dir);
+    }
+
+    #[test]
+    fn publishing_repairs_an_invalid_orphaned_cache_file() {
+        let cache_dir =
+            std::env::temp_dir().join(format!("lumina-upscale-invalid-cache-{}", Uuid::new_v4()));
+        fs::create_dir_all(&cache_dir).expect("create cache directory");
+        let source_path = cache_dir.join("source.png");
+        let cache_path = cache_dir.join("cache.png");
+        RgbaImage::new(4, 4)
+            .save(&source_path)
+            .expect("write source output");
+        fs::write(&cache_path, b"invalid orphan").expect("write invalid cache output");
+
+        let outcome = publish_cache_output(&source_path, &cache_path, 4, 4)
+            .expect("repair invalid cache output");
+
+        assert_eq!(outcome, CacheOutputPublication::Created);
+        assert!(cache_output_matches(&cache_path, 4, 4));
         let _ = fs::remove_dir_all(&cache_dir);
     }
 
@@ -511,25 +660,18 @@ mod tests {
             Uuid::new_v4()
         ));
         fs::create_dir_all(&cache_dir).expect("create cache directory");
-        let conn = Connection::open_in_memory().expect("open test database");
+        let mut conn = Connection::open_in_memory().expect("open test database");
         ensure_upscale_cache_schema(&conn).expect("initialize cache table");
         let cache_key = "wrong-dimensions";
         let path = cache_dir.join(format!("{cache_key}.png"));
         RgbaImage::new(2, 2)
             .save(&path)
             .expect("write cache output");
-        conn.execute(
-            "INSERT INTO upscale_cache (cache_key, output_path, output_bytes) VALUES (?1, ?2, ?3)",
-            params![
-                cache_key,
-                path.to_string_lossy().to_string(),
-                fs::metadata(&path).unwrap().len() as i64
-            ],
-        )
-        .expect("insert cache row");
+        record_cache_entry(&mut conn, &path, cache_key, "source", 2, "model", 4, 4)
+            .expect("insert cache row");
 
-        let result =
-            lookup_cache_entry(&conn, &cache_dir, cache_key, 4, 4).expect("validate cache lookup");
+        let result = lookup_cache_entry(&conn, &cache_dir, cache_key, "source", 2, "model", 4, 4)
+            .expect("validate cache lookup");
 
         assert!(result.is_none());
         assert!(!path.exists());
@@ -549,25 +691,18 @@ mod tests {
         let cache_dir =
             std::env::temp_dir().join(format!("lumina-upscale-cache-valid-{}", Uuid::new_v4()));
         fs::create_dir_all(&cache_dir).expect("create cache directory");
-        let conn = Connection::open_in_memory().expect("open test database");
+        let mut conn = Connection::open_in_memory().expect("open test database");
         ensure_upscale_cache_schema(&conn).expect("initialize cache table");
         let cache_key = "valid";
         let path = cache_dir.join(format!("{cache_key}.png"));
         RgbaImage::new(4, 4)
             .save(&path)
             .expect("write cache output");
-        conn.execute(
-            "INSERT INTO upscale_cache (cache_key, output_path, output_bytes) VALUES (?1, ?2, ?3)",
-            params![
-                cache_key,
-                path.to_string_lossy().to_string(),
-                fs::metadata(&path).unwrap().len() as i64
-            ],
-        )
-        .expect("insert cache row");
+        record_cache_entry(&mut conn, &path, cache_key, "source", 2, "model", 4, 4)
+            .expect("insert cache row");
 
-        let result =
-            lookup_cache_entry(&conn, &cache_dir, cache_key, 4, 4).expect("validate cache lookup");
+        let result = lookup_cache_entry(&conn, &cache_dir, cache_key, "source", 2, "model", 4, 4)
+            .expect("validate cache lookup");
 
         assert_eq!(result, Some(path.clone()));
         assert!(path.exists());

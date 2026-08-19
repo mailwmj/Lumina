@@ -266,4 +266,96 @@ describe('upscale node execution', () => {
     expect(useCanvasStore.getState().nodes.some((node) => node.data.resultKind === 'upscaleOutput')).toBe(false);
     expect(useUpscaleRuntimeStore.getState().runtimesByNodeId[upscale.id]).toBeUndefined();
   });
+
+  it('discards a late successful result after the input source changes', async () => {
+    const project = createProject('project-change-input-upscale');
+    useProjectStore.setState({ currentProjectId: project.id, currentProject: project });
+    const source = canvasNodeFactory.createNode(CANVAS_NODE_TYPES.upload, { x: 0, y: 0 }, {
+      imageUrl: 'C:\\projects\\project-change-input-upscale\\uploads\\portrait-a.jpg',
+      aspectRatio: '4:5',
+    });
+    const upscale = canvasNodeFactory.createNode(CANVAS_NODE_TYPES.upscale, { x: 320, y: 0 }, {
+      scale: 2,
+    });
+    useCanvasStore.getState().setCanvasData([source, upscale], [imageEdge(source.id, upscale.id)]);
+
+    const delayedStatus = createDeferred<{
+      jobId: string;
+      status: 'succeeded';
+      progress: number;
+      resultImageUrl: string;
+      previewImageUrl: null;
+      aspectRatio: string;
+      error: null;
+      errorCode: null;
+    }>();
+    commands.startUpscaleJob.mockResolvedValueOnce({ jobId: 'change-input-upscale-job' });
+    commands.getUpscaleJobStatus.mockReturnValueOnce(delayedStatus.promise);
+
+    const run = runUpscaleNode(upscale.id);
+    await vi.waitFor(() => expect(commands.getUpscaleJobStatus).toHaveBeenCalledWith('change-input-upscale-job'));
+    useCanvasStore.getState().updateNodeData(source.id, {
+      imageUrl: 'C:\\projects\\project-change-input-upscale\\uploads\\portrait-b.jpg',
+    });
+    delayedStatus.resolve({
+      jobId: 'change-input-upscale-job',
+      status: 'succeeded',
+      progress: 1,
+      resultImageUrl: 'C:\\projects\\project-change-input-upscale\\outputs\\images\\portrait-a-x2.png',
+      previewImageUrl: null,
+      aspectRatio: '4:5',
+      error: null,
+      errorCode: null,
+    });
+    await run;
+
+    expect(commands.cancelUpscaleJob).toHaveBeenCalledWith('change-input-upscale-job');
+    expect(useCanvasStore.getState().nodes.some((node) => node.data.resultKind === 'upscaleOutput')).toBe(false);
+    expect(useUpscaleRuntimeStore.getState().runtimesByNodeId[upscale.id]).toBeUndefined();
+  });
+
+  it('discards a late successful result after the upscale scale changes', async () => {
+    const project = createProject('project-change-scale-upscale');
+    useProjectStore.setState({ currentProjectId: project.id, currentProject: project });
+    const source = canvasNodeFactory.createNode(CANVAS_NODE_TYPES.upload, { x: 0, y: 0 }, {
+      imageUrl: 'C:\\projects\\project-change-scale-upscale\\uploads\\portrait.jpg',
+      aspectRatio: '4:5',
+    });
+    const upscale = canvasNodeFactory.createNode(CANVAS_NODE_TYPES.upscale, { x: 320, y: 0 }, {
+      scale: 2,
+    });
+    useCanvasStore.getState().setCanvasData([source, upscale], [imageEdge(source.id, upscale.id)]);
+
+    const delayedStatus = createDeferred<{
+      jobId: string;
+      status: 'succeeded';
+      progress: number;
+      resultImageUrl: string;
+      previewImageUrl: null;
+      aspectRatio: string;
+      error: null;
+      errorCode: null;
+    }>();
+    commands.startUpscaleJob.mockResolvedValueOnce({ jobId: 'change-scale-upscale-job' });
+    commands.getUpscaleJobStatus.mockReturnValueOnce(delayedStatus.promise);
+
+    const run = runUpscaleNode(upscale.id);
+    await vi.waitFor(() => expect(commands.getUpscaleJobStatus).toHaveBeenCalledWith('change-scale-upscale-job'));
+    useCanvasStore.getState().updateNodeData(upscale.id, { scale: 4 });
+    delayedStatus.resolve({
+      jobId: 'change-scale-upscale-job',
+      status: 'succeeded',
+      progress: 1,
+      resultImageUrl: 'C:\\projects\\project-change-scale-upscale\\outputs\\images\\portrait-x2.png',
+      previewImageUrl: null,
+      aspectRatio: '4:5',
+      error: null,
+      errorCode: null,
+    });
+    await run;
+
+    expect(commands.cancelUpscaleJob).toHaveBeenCalledWith('change-scale-upscale-job');
+    expect(useCanvasStore.getState().nodes.some((node) => node.data.resultKind === 'upscaleOutput')).toBe(false);
+    expect(useUpscaleRuntimeStore.getState().runtimesByNodeId[upscale.id]).toBeUndefined();
+  });
 });

@@ -579,6 +579,9 @@ fn execute_job(
             &conn,
             &cache_dir,
             &cache_key,
+            &prepared.source_sha256,
+            request.scale,
+            &model_sha256,
             prepared.expected_width,
             prepared.expected_height,
         )? {
@@ -621,6 +624,33 @@ fn execute_job(
                 "cancelled while waiting for the GPU",
             ));
         }
+        manager.update_active_snapshot(job_id, STATUS_RUNNING, "checking_cache");
+        if let Some(cache_path) = lookup_cache_entry(
+            &conn,
+            &cache_dir,
+            &cache_key,
+            &prepared.source_sha256,
+            request.scale,
+            &model_sha256,
+            prepared.expected_width,
+            prepared.expected_height,
+        )? {
+            tracing::info!(%job_id, "upscale.cache.hit_after_queue");
+            drop(permit);
+            if control.cancel_requested.load(Ordering::Acquire) {
+                return Err(UpscaleFailure::new(
+                    ERROR_CANCELLED,
+                    "cancelled before cache output",
+                ));
+            }
+            manager.update_active_snapshot(job_id, STATUS_RUNNING, "materializing_cache");
+            return materialize_project_output(&cache_path, &output_dir, job_id).map(
+                |output_path| CompletedUpscaleJob {
+                    output_path,
+                    published_cache: None,
+                },
+            );
+        }
         let sidecar = resolve_sidecar_binary()?;
         let sidecar_output = work_dir.join("upscaled.png");
         manager.update_active_snapshot(job_id, STATUS_RUNNING, "upscaling");
@@ -653,7 +683,12 @@ fn execute_job(
 
         manager.update_active_snapshot(job_id, STATUS_RUNNING, "writing_cache");
         let cache_path = cache_dir.join(format!("{cache_key}.png"));
-        let cache_publication = publish_cache_output(&sidecar_output, &cache_path)?;
+        let cache_publication = publish_cache_output(
+            &sidecar_output,
+            &cache_path,
+            prepared.expected_width,
+            prepared.expected_height,
+        )?;
         let owns_cache_entry = cache_publication == CacheOutputPublication::Created;
         if control.cancel_requested.load(Ordering::Acquire) {
             if owns_cache_entry {
@@ -664,17 +699,20 @@ fn execute_job(
                 "cancelled while publishing cache output",
             ));
         }
-        if owns_cache_entry {
-            if let Err(error) = record_cache_entry(
-                &mut conn,
-                &cache_path,
-                &cache_key,
-                &prepared.source_sha256,
-                request.scale,
-            ) {
+        if let Err(error) = record_cache_entry(
+            &mut conn,
+            &cache_path,
+            &cache_key,
+            &prepared.source_sha256,
+            request.scale,
+            &model_sha256,
+            prepared.expected_width,
+            prepared.expected_height,
+        ) {
+            if owns_cache_entry {
                 let _ = discard_cache_entry(&conn, &cache_dir, &cache_key);
-                return Err(error);
             }
+            return Err(error);
         }
         if control.cancel_requested.load(Ordering::Acquire) {
             if owns_cache_entry {
@@ -685,8 +723,11 @@ fn execute_job(
                 "cancelled while recording cache output",
             ));
         }
-        if owns_cache_entry {
-            prune_cache_to_limit(&mut conn, &cache_dir, MAX_UPSCALE_CACHE_BYTES)?;
+        if let Err(error) = prune_cache_to_limit(&mut conn, &cache_dir, MAX_UPSCALE_CACHE_BYTES) {
+            if owns_cache_entry {
+                let _ = discard_cache_entry(&conn, &cache_dir, &cache_key);
+            }
+            return Err(error);
         }
 
         if control.cancel_requested.load(Ordering::Acquire) {

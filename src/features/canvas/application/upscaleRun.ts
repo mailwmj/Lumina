@@ -8,6 +8,7 @@ import {
 import {
   isExportImageNode,
   isUpscaleNode,
+  type UpscaleScale,
 } from '@/features/canvas/domain/canvasNodes';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useProjectStore } from '@/stores/projectStore';
@@ -26,6 +27,8 @@ const UPSCALE_POLL_INTERVAL_MS = 900;
 interface ActiveUpscaleRun {
   nodeId: string;
   projectId: string;
+  sourceImageUrl: string;
+  scale: UpscaleScale;
   resultTitle?: string;
   jobId: string | null;
   cancelled: boolean;
@@ -62,8 +65,14 @@ function isRunCurrent(run: ActiveUpscaleRun): boolean {
     return false;
   }
 
-  const node = useCanvasStore.getState().nodes.find((candidate) => candidate.id === run.nodeId);
-  return isUpscaleNode(node);
+  const canvas = useCanvasStore.getState();
+  const node = canvas.nodes.find((candidate) => candidate.id === run.nodeId);
+  if (!isUpscaleNode(node) || node.data.scale !== run.scale) {
+    return false;
+  }
+
+  const input = resolveUpscaleInput(run.nodeId, canvas.nodes, canvas.edges);
+  return input.ok && input.sourceImageUrl === run.sourceImageUrl;
 }
 
 function setRuntime(run: ActiveUpscaleRun, patch: Partial<UpscaleNodeRuntime>): void {
@@ -298,6 +307,8 @@ export async function runUpscaleNode(
   const run: ActiveUpscaleRun = {
     nodeId,
     projectId: project.id,
+    sourceImageUrl: input.sourceImageUrl,
+    scale: sourceNode.data.scale,
     resultTitle: options.resultTitle,
     jobId: null,
     cancelled: false,
