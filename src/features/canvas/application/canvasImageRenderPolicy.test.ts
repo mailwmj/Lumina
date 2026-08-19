@@ -5,13 +5,10 @@ import {
   type CanvasNode,
 } from '@/features/canvas/domain/canvasNodes';
 import {
-  CANVAS_ORIGINAL_IMAGE_ENTER_ZOOM,
-  CANVAS_ORIGINAL_IMAGE_EXIT_ZOOM,
   findCanvasImageFocusCandidate,
   getRequestedCanvasOriginalNodeIds,
   getVisibleCanvasImageNodeIds,
   hasDistinctCanvasImagePreview,
-  resolveCanvasOriginalImageMode,
   resolveCanvasImageRenderSource,
 } from './canvasImageRenderPolicy';
 
@@ -71,7 +68,7 @@ describe('canvas image render policy', () => {
 
     expect(getVisibleCanvasImageNodeIds({
       nodes: [visible, offscreen],
-      viewport: { x: 0, y: 0, zoom: 1 },
+      viewport: { x: 0, y: 0, zoom: 2 },
       viewportSize: { width: 1000, height: 800 },
     })).toEqual([visible.id]);
   });
@@ -83,7 +80,7 @@ describe('canvas image render policy', () => {
 
     expect(getRequestedCanvasOriginalNodeIds({
       nodes: [visible, secondVisible, offscreen],
-      viewport: { x: 0, y: 0, zoom: CANVAS_ORIGINAL_IMAGE_ENTER_ZOOM },
+      viewport: { x: 0, y: 0, zoom: 2 },
       viewportSize: { width: 1000, height: 800 },
       isOriginalImageMode: true,
       focusPoint: { x: 160, y: 160 },
@@ -91,18 +88,18 @@ describe('canvas image render policy', () => {
 
     expect(getRequestedCanvasOriginalNodeIds({
       nodes: [visible, secondVisible, offscreen],
-      viewport: { x: 0, y: 0, zoom: CANVAS_ORIGINAL_IMAGE_ENTER_ZOOM },
+      viewport: { x: 0, y: 0, zoom: 1 },
       viewportSize: { width: 1000, height: 800 },
       isOriginalImageMode: false,
     })).toEqual([]);
   });
 
   it('does not request an image whose visible area is below the threshold', () => {
-    const mostlyHidden = createImageNode('mostly-hidden', { x: 500, y: 0 }, { width: 400, height: 400 });
+    const mostlyHidden = createImageNode('mostly-hidden', { x: 480, y: 0 }, { width: 400, height: 400 });
 
     expect(getRequestedCanvasOriginalNodeIds({
       nodes: [mostlyHidden],
-      viewport: { x: 0, y: 0, zoom: CANVAS_ORIGINAL_IMAGE_ENTER_ZOOM },
+      viewport: { x: 0, y: 0, zoom: 2 },
       viewportSize: { width: 1000, height: 800 },
       isOriginalImageMode: true,
     })).toEqual([]);
@@ -119,11 +116,15 @@ describe('canvas image render policy', () => {
     })).toEqual([]);
   });
 
-  it('uses separate enter and exit thresholds for inspection mode', () => {
-    expect(resolveCanvasOriginalImageMode(CANVAS_ORIGINAL_IMAGE_ENTER_ZOOM - 0.01, false)).toBe(false);
-    expect(resolveCanvasOriginalImageMode(CANVAS_ORIGINAL_IMAGE_ENTER_ZOOM, false)).toBe(true);
-    expect(resolveCanvasOriginalImageMode(CANVAS_ORIGINAL_IMAGE_EXIT_ZOOM, true)).toBe(true);
-    expect(resolveCanvasOriginalImageMode(CANVAS_ORIGINAL_IMAGE_EXIT_ZOOM - 0.01, true)).toBe(false);
+  it('requests an original for a manually enlarged image even at canvas zoom 1', () => {
+    const enlarged = createImageNode('enlarged', { x: 0, y: 0 }, { width: 800, height: 800 });
+
+    expect(getRequestedCanvasOriginalNodeIds({
+      nodes: [enlarged],
+      viewport: { x: 0, y: 0, zoom: 1 },
+      viewportSize: { width: 1000, height: 800 },
+      isOriginalImageMode: true,
+    })).toEqual([enlarged.id]);
   });
 
   it('uses the original after a visible image finishes loading it', () => {

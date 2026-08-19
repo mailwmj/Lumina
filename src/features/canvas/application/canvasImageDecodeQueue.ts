@@ -1,4 +1,4 @@
-export const MAX_CONCURRENT_CANVAS_IMAGE_DECODES = 2;
+export const MAX_CONCURRENT_CANVAS_IMAGE_DECODES = 4;
 
 export interface CanvasImageDecodeTask {
   cancel: () => void;

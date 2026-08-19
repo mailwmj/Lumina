@@ -63,7 +63,6 @@ import {
   findCanvasImageFocusCandidate,
   getVisibleCanvasImageNodeIds,
   getRequestedCanvasOriginalNodeIds,
-  resolveCanvasOriginalImageMode,
 } from '@/features/canvas/application/canvasImageRenderPolicy';
 import { useCanvasImageQualityStore } from '@/features/canvas/application/canvasImageQualityStore';
 import {
@@ -518,10 +517,15 @@ export function Canvas() {
       };
       const currentNodes = useCanvasStore.getState().nodes;
       const wasOriginalImageMode = useCanvasImageQualityStore.getState().isOriginalImageMode;
-      const isOriginalImageMode = resolveCanvasOriginalImageMode(
-        resolvedViewport.zoom,
-        wasOriginalImageMode
-      );
+      const requestedOriginalNodeIds = getRequestedCanvasOriginalNodeIds({
+        nodes: currentNodes,
+        viewport: resolvedViewport,
+        viewportSize,
+        isOriginalImageMode: true,
+        focusPoint: intent.focusPoint,
+        devicePixelRatio: window.devicePixelRatio,
+      });
+      const isOriginalImageMode = requestedOriginalNodeIds.length > 0;
       setCanvasOriginalImageMode(isOriginalImageMode);
       if (wasOriginalImageMode && !isOriginalImageMode) {
         clearRetainedCanvasImageOriginals();
@@ -531,14 +535,7 @@ export function Canvas() {
         viewport: resolvedViewport,
         viewportSize,
       }));
-      setRequestedCanvasImageOriginals(getRequestedCanvasOriginalNodeIds({
-        nodes: currentNodes,
-        viewport: resolvedViewport,
-        viewportSize,
-        isOriginalImageMode,
-        focusPoint: intent.focusPoint,
-        devicePixelRatio: window.devicePixelRatio,
-      }));
+      setRequestedCanvasImageOriginals(requestedOriginalNodeIds);
       const focusedNodeId = isOriginalImageMode ? findCanvasImageFocusCandidate({
         nodes: currentNodes,
         viewport: resolvedViewport,

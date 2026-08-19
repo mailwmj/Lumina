@@ -7,8 +7,6 @@ import {
 } from '@/features/canvas/domain/canvasNodes';
 
 export const CANVAS_IMAGE_QUALITY_SETTLE_DELAY_MS = 180;
-export const CANVAS_ORIGINAL_IMAGE_ENTER_ZOOM = 1.8;
-export const CANVAS_ORIGINAL_IMAGE_EXIT_ZOOM = 1.55;
 export const MIN_ORIGINAL_IMAGE_VISIBLE_RATIO = 0.25;
 // Previews are currently capped at 512px. Start the original-image decode before
 // the preview reaches a one-to-one physical-pixel display, so the transition is
@@ -392,16 +390,6 @@ export function getRequestedCanvasOriginalNodeIds({
       || right.screenArea - left.screenArea
     ))
     .map((item) => item.nodeId);
-}
-
-export function resolveCanvasOriginalImageMode(zoom: number, wasActive: boolean): boolean {
-  if (!Number.isFinite(zoom)) {
-    return false;
-  }
-
-  return wasActive
-    ? zoom >= CANVAS_ORIGINAL_IMAGE_EXIT_ZOOM
-    : zoom >= CANVAS_ORIGINAL_IMAGE_ENTER_ZOOM;
 }
 
 export function findCanvasImageFocusCandidate({
