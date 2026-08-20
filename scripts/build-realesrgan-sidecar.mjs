@@ -47,6 +47,7 @@ async function main() {
   const outputs = resolveOutputs(target);
   if (!force && canReuse(outputs)) {
     await ensureModelResources();
+    copySourceNotices(await prepareEngineSource());
     process.stdout.write(`Real-ESRGAN sidecar is current: ${outputs.primary}\n`);
     return;
   }
@@ -336,7 +337,7 @@ function buildUniversalMacSidecar(sourceDir, toolchain, outputs) {
     const x64 = compileTarget(sourceDir, toolchain, 'x86_64-apple-darwin', x64Path);
     fs.mkdirSync(path.dirname(outputs.primary), { recursive: true });
     run('lipo', ['-create', arm64Path, x64Path, '-output', outputs.primary]);
-    run('lipo', ['-verify_arch', 'arm64', 'x86_64', outputs.primary]);
+    run('lipo', [outputs.primary, '-verify_arch', 'arm64', 'x86_64']);
     fs.chmodSync(outputs.primary, 0o755);
     for (const destination of outputs.files.slice(1)) {
       fs.copyFileSync(outputs.primary, destination);

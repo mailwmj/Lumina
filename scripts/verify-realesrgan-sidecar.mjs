@@ -132,7 +132,7 @@ function verifyUniversalBinary(sidecar) {
   if (process.platform !== 'darwin') {
     throw new Error('--expect-universal can only be checked on macOS.');
   }
-  run('lipo', ['-verify_arch', 'arm64', 'x86_64', sidecar]);
+  run('lipo', [sidecar, '-verify_arch', 'arm64', 'x86_64']);
 }
 
 function verifyStaticMoltenVk(sidecar) {
