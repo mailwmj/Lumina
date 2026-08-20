@@ -360,7 +360,14 @@ function compileTarget(sourceDir, toolchain, targetTriple, destination) {
   const engineMarker = JSON.parse(fs.readFileSync(path.join(sourceDir, '.lumina-engine-source.json'), 'utf8'));
   const environment = { ...process.env, VULKAN_SDK: toolchain.sdk };
   try {
-    const configureArgs = ['-S', sourceCmakeDir, '-B', buildDir, '-DCMAKE_BUILD_TYPE=Release'];
+    const configureArgs = [
+      '-S',
+      sourceCmakeDir,
+      '-B',
+      buildDir,
+      '-DCMAKE_BUILD_TYPE=Release',
+      '-DCMAKE_POLICY_VERSION_MINIMUM=3.5',
+    ];
     if (targetTriple.includes('windows')) {
       configureArgs.push('-A', 'x64');
     } else {
