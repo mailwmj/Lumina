@@ -122,7 +122,8 @@ async function ensureModelResources() {
 
   ensureCommand('tar', ['--version']);
   const downloadsDir = path.join(cacheDir, 'downloads');
-  const modelArchive = path.join(downloadsDir, 'Real-ESRGAN-v0.2.5.0-models.tar.xz');
+  const modelArchiveName = path.basename(new URL(lock.model.source.archiveUrl).pathname);
+  const modelArchive = path.join(downloadsDir, modelArchiveName);
   await downloadAndVerify(
     lock.model.source.archiveUrl,
     modelArchive,
@@ -231,7 +232,7 @@ function ensureBuildCommands(targetTriple) {
   ensureCommand('git', ['--version']);
   ensureCommand('tar', ['--version']);
   if (targetTriple === 'universal-apple-darwin') {
-    ensureCommand('lipo', ['-version']);
+    ensureCommand('lipo', ['-info', process.execPath]);
   }
 }
 

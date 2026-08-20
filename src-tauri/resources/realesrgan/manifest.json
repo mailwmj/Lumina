@@ -33,14 +33,14 @@
   "model": {
     "name": "realesrgan-x4plus",
     "sourceRelease": "v0.2.5.0",
-    "sourceUrl": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/Real-ESRGAN-v0.2.5.0-models.tar.xz",
-    "sourceArchiveSha256": "1c858d2d0a0500735852c0559bf29e868aae5dbd1aff7f5900688701bee1264a",
+    "sourceUrl": "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesrgan-ncnn-vulkan-20220424-windows.zip",
+    "sourceArchiveSha256": "abc02804e17982a3be33675e4d471e91ea374e65b70167abc09e31acb412802d",
     "license": "BSD-3-Clause (repository-level; no separate model-asset license declaration)",
     "files": [
       {
         "name": "realesrgan-x4plus.param",
         "sha256": "35330ececcea33b6c397a72548e788d5d53becee4734c50b7fada36e89f10a86",
-        "bytes": 117030
+        "bytes": 116029
       },
       {
         "name": "realesrgan-x4plus.bin",
