@@ -1,6 +1,6 @@
 [package]
 name = "lumina"
-version = "0.2.32"
+version = "0.2.38"
 description = "Lumina（流光）- AI 图像生成与分镜工具"
 authors = ["you"]
 edition = "2021"

@@ -2915,7 +2915,7 @@ dependencies = [
 
 [[package]]
 name = "lumina"
-version = "0.2.32"
+version = "0.2.38"
 dependencies = [
  "ab_glyph",
  "arboard",
