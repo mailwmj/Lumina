@@ -9,7 +9,7 @@
       "resources/realesrgan/manifest.json",
       "resources/realesrgan/build-metadata.json",
       "resources/realesrgan/THIRD_PARTY_NOTICES.md",
-      "resources/realesrgan/LICENSES/**",
+      "resources/realesrgan/LICENSES/**/*",
       "resources/realesrgan/models/realesrgan-x4plus.param",
       "resources/realesrgan/models/realesrgan-x4plus.bin"
     ]
