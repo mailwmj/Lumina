@@ -8,9 +8,7 @@ use tokio::sync::RwLock;
 use tracing::info;
 
 use crate::ai::error::AIError;
-use crate::ai::{
-    AIProvider, GenerateRequest,
-};
+use crate::ai::{AIProvider, GenerateRequest};
 
 const TASK_BASE_URL: &str = "https://api.bltcy.ai";
 
@@ -108,7 +106,11 @@ impl BltcyProvider {
         };
 
         std::fs::read(&path).map_err(|err| {
-            format!("failed to read path \"{}\": {}", path.to_string_lossy(), err)
+            format!(
+                "failed to read path \"{}\": {}",
+                path.to_string_lossy(),
+                err
+            )
         })
     }
 
@@ -126,8 +128,8 @@ impl BltcyProvider {
 
     /// Parse OpenAI DALL-E style response
     fn parse_response(raw: &str) -> Result<String, String> {
-        let response: BltcyDallEResponse = serde_json::from_str(raw)
-            .map_err(|err| format!("failed to parse JSON: {}", err))?;
+        let response: BltcyDallEResponse =
+            serde_json::from_str(raw).map_err(|err| format!("failed to parse JSON: {}", err))?;
 
         if let Some(error) = response.error {
             return Err(error.message.unwrap_or_else(|| "Unknown error".to_string()));
@@ -184,14 +186,14 @@ impl BltcyProvider {
                 let file_name = format!("reference_{}.png", i);
                 let part = Part::bytes(image_bytes.clone())
                     .file_name(file_name)
-                    .mime_str("image/png").map_err(|e| {
-                        AIError::InvalidRequest(format!("invalid mime type: {}", e))
-                    })?;
+                    .mime_str("image/png")
+                    .map_err(|e| AIError::InvalidRequest(format!("invalid mime type: {}", e)))?;
                 form = form.part("image", part);
             }
         }
 
-        info!("[BLTCY Edits Request] model: {}, aspect_ratio: {}, size: {}, refs: {:?}",
+        info!(
+            "[BLTCY Edits Request] model: {}, aspect_ratio: {}, size: {}, refs: {:?}",
             model,
             request.aspect_ratio,
             request.size,
@@ -209,7 +211,10 @@ impl BltcyProvider {
         let status = response.status();
         let raw_response = response.text().await.unwrap_or_default();
 
-        info!("[BLTCY Edits Response] status: {}, body: {}", status, raw_response);
+        info!(
+            "[BLTCY Edits Response] status: {}, body: {}",
+            status, raw_response
+        );
 
         if !status.is_success() {
             return Err(AIError::Provider(format!(
@@ -266,8 +271,12 @@ impl AIProvider for BltcyProvider {
 
         // Log raw request info
         let raw_refs = request.reference_images.as_deref().unwrap_or(&[]);
-        info!("[BLTCY Generate] model: {}, prompt: {}, raw_refs count: {}",
-            model, request.prompt, raw_refs.len());
+        info!(
+            "[BLTCY Generate] model: {}, prompt: {}, raw_refs count: {}",
+            model,
+            request.prompt,
+            raw_refs.len()
+        );
         if !raw_refs.is_empty() {
             info!("[BLTCY Generate] raw ref images: {:?}", raw_refs);
         }
@@ -282,8 +291,7 @@ impl AIProvider for BltcyProvider {
             .map(|source| Self::source_to_bytes(source))
             .collect();
 
-        let reference_images = reference_images
-            .map_err(|e| AIError::InvalidRequest(e))?;
+        let reference_images = reference_images.map_err(|e| AIError::InvalidRequest(e))?;
 
         // Log file paths for debugging (not sent to API)
         let _ref_paths: Vec<String> = request
@@ -295,9 +303,11 @@ impl AIProvider for BltcyProvider {
             .map(|source| Self::source_to_file_url(source))
             .collect();
 
-        info!("[BLTCY Generate] processed_refs count: {}, bytes_total: {}",
+        info!(
+            "[BLTCY Generate] processed_refs count: {}, bytes_total: {}",
             reference_images.len(),
-            reference_images.iter().map(|b| b.len()).sum::<usize>());
+            reference_images.iter().map(|b| b.len()).sum::<usize>()
+        );
 
         self.generate_edits(&api_key, &request, &model, reference_images)
             .await

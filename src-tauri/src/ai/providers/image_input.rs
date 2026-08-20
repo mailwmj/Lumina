@@ -137,11 +137,7 @@ pub(crate) async fn load_reference_image(
             .and_then(|value| value.to_str().ok())
             .map(str::to_string);
         let bytes = response.bytes().await?.to_vec();
-        return Ok(reference_image(
-            bytes,
-            declared_mime_type.as_deref(),
-            None,
-        ));
+        return Ok(reference_image(bytes, declared_mime_type.as_deref(), None));
     }
 
     let likely_base64 = trimmed.len() > 256

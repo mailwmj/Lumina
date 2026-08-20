@@ -198,7 +198,9 @@ mod generation_job_recovery_storage_tests {
 
         ensure_generation_jobs_table(&conn).unwrap();
 
-        let mut stmt = conn.prepare("PRAGMA table_info(ai_generation_jobs)").unwrap();
+        let mut stmt = conn
+            .prepare("PRAGMA table_info(ai_generation_jobs)")
+            .unwrap();
         let column_names = stmt
             .query_map([], |row| row.get::<_, String>(1))
             .unwrap()
@@ -312,9 +314,7 @@ fn update_generation_job_with_seed(
 ) -> Result<(), String> {
     let conn = open_db(app)?;
     // Build metadata JSON with seed if provided
-    let meta_json = seed.map(|s| {
-        serde_json::json!({ "seed": s }).to_string()
-    });
+    let meta_json = seed.map(|s| serde_json::json!({ "seed": s }).to_string());
     conn.execute(
         r#"
         UPDATE ai_generation_jobs
@@ -379,12 +379,8 @@ fn recover_generation_job_after_transient_poll_failure(
     task_id: &str,
     error_message: &str,
 ) -> Result<GenerationJobStatusDto, String> {
-    let recovery = schedule_transient_poll_retry(
-        task_id,
-        record.poll_retry_count,
-        now_ms(),
-        error_message,
-    );
+    let recovery =
+        schedule_transient_poll_retry(task_id, record.poll_retry_count, now_ms(), error_message);
     info!(
         "[GenerationJob] retryable poll error for job {} (attempt {}): {}",
         record.job_id, recovery.retry_count, error_message
@@ -407,7 +403,10 @@ fn touch_generation_job(app: &AppHandle, job_id: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn get_generation_job(app: &AppHandle, job_id: &str) -> Result<Option<GenerationJobRecord>, String> {
+fn get_generation_job(
+    app: &AppHandle,
+    job_id: &str,
+) -> Result<Option<GenerationJobRecord>, String> {
     let conn = open_db(app)?;
     let mut stmt = conn
         .prepare(
@@ -575,8 +574,8 @@ fn resolve_models_endpoint(base_url: &str) -> Result<String, String> {
         return Err("请填写 Base URL".to_string());
     }
 
-    let mut url = reqwest::Url::parse(normalized)
-        .map_err(|error| format!("Base URL 无效: {error}"))?;
+    let mut url =
+        reqwest::Url::parse(normalized).map_err(|error| format!("Base URL 无效: {error}"))?;
     if !matches!(url.scheme(), "http" | "https") {
         return Err("Base URL 仅支持 HTTP(S)".to_string());
     }
@@ -600,8 +599,8 @@ fn resolve_gemini_models_endpoint(base_url: &str) -> Result<String, String> {
         return Err("请填写 Base URL".to_string());
     }
 
-    let mut url = reqwest::Url::parse(normalized)
-        .map_err(|error| format!("Base URL 无效: {error}"))?;
+    let mut url =
+        reqwest::Url::parse(normalized).map_err(|error| format!("Base URL 无效: {error}"))?;
     if !matches!(url.scheme(), "http" | "https") {
         return Err("Base URL 仅支持 HTTP(S)".to_string());
     }
@@ -625,8 +624,8 @@ fn resolve_gemini_compatible_models_endpoint(base_url: &str) -> Result<String, S
         return Err("请填写 Base URL".to_string());
     }
 
-    let mut url = reqwest::Url::parse(normalized)
-        .map_err(|error| format!("Base URL 无效: {error}"))?;
+    let mut url =
+        reqwest::Url::parse(normalized).map_err(|error| format!("Base URL 无效: {error}"))?;
     if !matches!(url.scheme(), "http" | "https") {
         return Err("Base URL 仅支持 HTTP(S)".to_string());
     }
@@ -654,8 +653,8 @@ fn resolve_chat_completions_endpoint(base_url: &str) -> Result<String, String> {
         return Err("请填写 Base URL".to_string());
     }
 
-    let mut url = reqwest::Url::parse(normalized)
-        .map_err(|error| format!("Base URL 无效: {error}"))?;
+    let mut url =
+        reqwest::Url::parse(normalized).map_err(|error| format!("Base URL 无效: {error}"))?;
     if !matches!(url.scheme(), "http" | "https") {
         return Err("Base URL 仅支持 HTTP(S)".to_string());
     }
@@ -793,10 +792,8 @@ mod text_api_endpoint_tests {
     #[test]
     fn preserves_volc_coding_plan_chat_path() {
         assert_eq!(
-            resolve_chat_completions_endpoint(
-                "https://ark.cn-beijing.volces.com/api/coding"
-            )
-            .unwrap(),
+            resolve_chat_completions_endpoint("https://ark.cn-beijing.volces.com/api/coding")
+                .unwrap(),
             "https://ark.cn-beijing.volces.com/api/coding/v3/chat/completions"
         );
     }
@@ -821,7 +818,10 @@ mod text_api_endpoint_tests {
             reasoning_effort: Some("high".to_string()),
         })
         .unwrap();
-        assert_eq!(chat.get("reasoning_effort").and_then(Value::as_str), Some("high"));
+        assert_eq!(
+            chat.get("reasoning_effort").and_then(Value::as_str),
+            Some("high")
+        );
 
         let responses = serde_json::to_value(ResponsesRequest {
             model: "test-model".to_string(),
@@ -863,14 +863,21 @@ mod text_api_endpoint_tests {
             reasoning_effort: Some("high".to_string()),
         };
 
-        let body = serde_json::to_value(build_generate_text_chat_request(&request).unwrap()).unwrap();
+        let body =
+            serde_json::to_value(build_generate_text_chat_request(&request).unwrap()).unwrap();
         let messages = body.get("messages").and_then(Value::as_array).unwrap();
         assert_eq!(messages.len(), 1);
-        assert_eq!(messages[0].get("role").and_then(Value::as_str), Some("user"));
+        assert_eq!(
+            messages[0].get("role").and_then(Value::as_str),
+            Some("user")
+        );
         let serialized = serde_json::to_string(&body).unwrap();
         assert!(serialized.contains("用户原文"));
         assert!(!serialized.contains("system"));
-        assert_eq!(body.get("reasoning_effort").and_then(Value::as_str), Some("high"));
+        assert_eq!(
+            body.get("reasoning_effort").and_then(Value::as_str),
+            Some("high")
+        );
     }
 
     #[test]
@@ -887,8 +894,8 @@ mod text_api_endpoint_tests {
             reasoning_effort: None,
         };
 
-        let chat = serde_json::to_value(build_generate_text_chat_request(&request).unwrap())
-            .unwrap();
+        let chat =
+            serde_json::to_value(build_generate_text_chat_request(&request).unwrap()).unwrap();
         let chat_content = chat
             .get("messages")
             .and_then(Value::as_array)
@@ -967,7 +974,8 @@ mod text_api_endpoint_tests {
             reasoning_effort: None,
         };
 
-        let body = serde_json::to_value(build_generate_text_chat_request(&request).unwrap()).unwrap();
+        let body =
+            serde_json::to_value(build_generate_text_chat_request(&request).unwrap()).unwrap();
         let content = body
             .get("messages")
             .and_then(Value::as_array)
@@ -978,8 +986,14 @@ mod text_api_endpoint_tests {
 
         assert_eq!(content.len(), 2);
         assert_eq!(content[0].get("type").and_then(Value::as_str), Some("text"));
-        assert_eq!(content[0].get("text").and_then(Value::as_str), Some("图片 1："));
-        assert_eq!(content[1].get("type").and_then(Value::as_str), Some("image_url"));
+        assert_eq!(
+            content[0].get("text").and_then(Value::as_str),
+            Some("图片 1：")
+        );
+        assert_eq!(
+            content[1].get("type").and_then(Value::as_str),
+            Some("image_url")
+        );
     }
 
     #[test]
@@ -990,7 +1004,10 @@ mod text_api_endpoint_tests {
         });
 
         assert_eq!(extract_generated_text(&chat).unwrap(), " chat result ");
-        assert_eq!(extract_generated_text(&responses).unwrap(), " response result ");
+        assert_eq!(
+            extract_generated_text(&responses).unwrap(),
+            " response result "
+        );
     }
 
     #[test]
@@ -1130,10 +1147,12 @@ fn model_list_error_message(payload: &Value, status: reqwest::StatusCode) -> Str
     payload
         .get("error")
         .and_then(|error| {
-            error
-                .as_str()
-                .map(str::to_string)
-                .or_else(|| error.get("message").and_then(Value::as_str).map(str::to_string))
+            error.as_str().map(str::to_string).or_else(|| {
+                error
+                    .get("message")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+            })
         })
         .unwrap_or_else(|| format!("HTTP {status}"))
 }
@@ -1412,8 +1431,8 @@ pub async fn discover_image_models(
         return Err("FHL Images 协议仅支持自定义图片 Provider".to_string());
     }
 
-    let use_gemini_native = is_custom_openai_provider
-        && request.protocol == CustomImageProtocol::GeminiNative;
+    let use_gemini_native =
+        is_custom_openai_provider && request.protocol == CustomImageProtocol::GeminiNative;
     let endpoint = if use_gemini_native {
         resolve_gemini_models_endpoint(&request.base_url)?
     } else {
@@ -1444,12 +1463,14 @@ pub async fn submit_generate_image_job(
     app: AppHandle,
     request: GenerateRequestDto,
 ) -> Result<String, String> {
-    info!("[submit_generate_image_job] COMMAND INVOKED - model: {}", request.model);
-    info!("[Job Request] model: {}, size: {}, aspect_ratio: {}, refs: {:?}",
-        request.model,
-        request.size,
-        request.aspect_ratio,
-        request.reference_images);
+    info!(
+        "[submit_generate_image_job] COMMAND INVOKED - model: {}",
+        request.model
+    );
+    info!(
+        "[Job Request] model: {}, size: {}, aspect_ratio: {}, refs: {:?}",
+        request.model, request.size, request.aspect_ratio, request.reference_images
+    );
 
     let registry = get_registry();
     let provider = if let Some(provider_id) = request.provider_id.as_deref() {
@@ -1478,8 +1499,10 @@ pub async fn submit_generate_image_job(
         draft_task_id: request.draft_task_id,
     };
 
-    info!("[Job Request Full] prompt: {}, reference_images: {:?}",
-        req.prompt, req.reference_images);
+    info!(
+        "[Job Request Full] prompt: {}, reference_images: {:?}",
+        req.prompt, req.reference_images
+    );
 
     let job_id = Uuid::new_v4().to_string();
     let provider_id = provider.name().to_string();
@@ -1571,15 +1594,15 @@ pub async fn submit_generate_image_job(
 }
 
 #[tauri::command]
-pub async fn cancel_generate_image_job(
-    app: AppHandle,
-    job_id: String,
-) -> Result<(), String> {
+pub async fn cancel_generate_image_job(app: AppHandle, job_id: String) -> Result<(), String> {
     info!("[cancel_generate_image_job] called with job_id: {}", job_id);
 
     let maybe_record = get_generation_job(&app, job_id.as_str())?;
     let Some(record) = maybe_record else {
-        info!("[cancel_generate_image_job] job not found in DB: {}", job_id);
+        info!(
+            "[cancel_generate_image_job] job not found in DB: {}",
+            job_id
+        );
         return Err("Job not found".to_string());
     };
 
@@ -1595,7 +1618,10 @@ pub async fn cancel_generate_image_job(
     // Note: Full API cancellation requires access to settings which is handled by frontend
     if let Some(external_task_id) = &record.external_task_id {
         if record.provider_id == "volcvideo" {
-            info!("[cancel_generate_image_job] volcvideo task {} - frontend should call cancel API", external_task_id);
+            info!(
+                "[cancel_generate_image_job] volcvideo task {} - frontend should call cancel API",
+                external_task_id
+            );
         }
     }
 
@@ -1614,7 +1640,10 @@ pub async fn cancel_generate_image_job(
         active_set.remove(job_id.as_str());
     }
 
-    info!("[cancel_generate_image_job] job {} cancelled successfully", job_id);
+    info!(
+        "[cancel_generate_image_job] job {} cancelled successfully",
+        job_id
+    );
     Ok(())
 }
 
@@ -1624,7 +1653,10 @@ pub async fn cancel_video_generation_task(
     base_url: String,
     task_id: String,
 ) -> Result<(), String> {
-    info!("[cancel_video_generation_task] cancelling task: {}", task_id);
+    info!(
+        "[cancel_video_generation_task] cancelling task: {}",
+        task_id
+    );
 
     use crate::ai::providers::volcvideo::cancel_volcvideo_task;
 
@@ -1695,11 +1727,16 @@ async fn get_generate_image_job_inner(
         });
     };
 
-    info!("[get_generate_image_job] found job: id={}, provider={}, status={}, external_task_id={:?}",
-        record.job_id, record.provider_id, record.status, record.external_task_id);
+    info!(
+        "[get_generate_image_job] found job: id={}, provider={}, status={}, external_task_id={:?}",
+        record.job_id, record.provider_id, record.status, record.external_task_id
+    );
 
     if record.status == "succeeded" || record.status == "failed" {
-        info!("[get_generate_image_job] job {} already terminal, returning: {}", job_id, record.status);
+        info!(
+            "[get_generate_image_job] job {} already terminal, returning: {}",
+            job_id, record.status
+        );
         return Ok(dto_from_record(&record));
     }
 
@@ -1752,7 +1789,10 @@ async fn get_generate_image_job_inner(
         );
         return Ok(dto_from_record(&record));
     }
-    if record.next_poll_at.is_some_and(|next_poll_at| next_poll_at > now_ms()) {
+    if record
+        .next_poll_at
+        .is_some_and(|next_poll_at| next_poll_at > now_ms())
+    {
         return Ok(dto_from_record(&record));
     }
 
@@ -1762,7 +1802,10 @@ async fn get_generate_image_job_inner(
         .and_then(|raw| serde_json::from_str::<Value>(raw).ok());
     let task_id_for_recovery = task_id.clone();
 
-    info!("[get_generate_image_job] calling provider.poll_task for job: {}, task_id: {}", job_id, task_id);
+    info!(
+        "[get_generate_image_job] calling provider.poll_task for job: {}, task_id: {}",
+        job_id, task_id
+    );
     match provider
         .poll_task_with_config(
             ProviderTaskHandle {
@@ -1800,7 +1843,10 @@ async fn get_generate_image_job_inner(
             })
         }
         Ok(ProviderTaskPollResult::SucceededWithMeta { url, seed }) => {
-            info!("[get_generate_image_job] SucceededWithMeta: url={}, seed={:?}", url, seed);
+            info!(
+                "[get_generate_image_job] SucceededWithMeta: url={}, seed={:?}",
+                url, seed
+            );
             update_generation_job_with_seed(
                 &app,
                 record.job_id.as_str(),
@@ -1863,17 +1909,18 @@ async fn get_generate_image_job_inner(
                 error_msg.as_str(),
             )
         }
-        Err(AIError::Transient(error_msg)) => {
-            recover_generation_job_after_transient_poll_failure(
-                &app,
-                &mut record,
-                task_id_for_recovery.as_str(),
-                error_msg.as_str(),
-            )
-        }
+        Err(AIError::Transient(error_msg)) => recover_generation_job_after_transient_poll_failure(
+            &app,
+            &mut record,
+            task_id_for_recovery.as_str(),
+            error_msg.as_str(),
+        ),
         Err(error) => {
             let error_msg = error.to_string();
-            info!("[VideoJob] poll_task error for job {}: {}", job_id, error_msg);
+            info!(
+                "[VideoJob] poll_task error for job {}: {}",
+                job_id, error_msg
+            );
             update_generation_job(
                 &app,
                 record.job_id.as_str(),
@@ -2117,7 +2164,10 @@ fn validate_generate_text_request(request: &GenerateTextRequest) -> Result<(), S
         return Err("请先配置 API 密钥".to_string());
     }
     if request.text.trim().is_empty()
-        && request.reference_images.as_ref().map_or(true, Vec::is_empty)
+        && request
+            .reference_images
+            .as_ref()
+            .map_or(true, Vec::is_empty)
     {
         return Err("请输入文本或连接图片".to_string());
     }
@@ -2291,8 +2341,8 @@ fn resolve_responses_endpoint(base_url: &str) -> Result<String, String> {
     if normalized.is_empty() {
         return Err("请填写 Base URL".to_string());
     }
-    let mut url = reqwest::Url::parse(normalized)
-        .map_err(|error| format!("Base URL 无效: {error}"))?;
+    let mut url =
+        reqwest::Url::parse(normalized).map_err(|error| format!("Base URL 无效: {error}"))?;
     if !matches!(url.scheme(), "http" | "https") {
         return Err("Base URL 仅支持 HTTP(S)".to_string());
     }
@@ -2320,7 +2370,10 @@ fn text_api_error(status: reqwest::StatusCode, raw_response: &str) -> String {
     } else {
         "请求参数有误"
     };
-    format!("API 调用失败 [{}]: {} | 错误详情: {}", status, summary, raw_response)
+    format!(
+        "API 调用失败 [{}]: {} | 错误详情: {}",
+        status, summary, raw_response
+    )
 }
 
 #[tauri::command]
@@ -2407,16 +2460,24 @@ fn build_video_metadata_prefix(
 
 #[tauri::command]
 pub async fn polish_text(request: PolishTextRequest) -> Result<String, String> {
-    info!("Polishing text with model: {}, base_url: {}", request.model, request.base_url);
+    info!(
+        "Polishing text with model: {}, base_url: {}",
+        request.model, request.base_url
+    );
 
     let model = request.model.clone();
-    let has_reference = request.reference_images.as_ref().map(|r| !r.is_empty()).unwrap_or(false);
+    let has_reference = request
+        .reference_images
+        .as_ref()
+        .map(|r| !r.is_empty())
+        .unwrap_or(false);
 
     let client = reqwest::Client::new();
 
     // 判断使用 Responses API 还是 Chat API
     // Responses API 使用 /api/v3 基础路径，Chat API 使用 /api/coding
-    let is_responses_api = request.base_url.contains("/api/v3") && !request.base_url.contains("/coding");
+    let is_responses_api =
+        request.base_url.contains("/api/v3") && !request.base_url.contains("/coding");
 
     // 构建视频元信息前缀
     let video_metadata_prefix = build_video_metadata_prefix(
@@ -2429,7 +2490,10 @@ pub async fn polish_text(request: PolishTextRequest) -> Result<String, String> {
     if is_responses_api {
         // 使用 Responses API 格式
         let endpoint = format!("{}/responses", request.base_url.trim_end_matches('/'));
-        info!("[PolishText] using Responses API format, endpoint: {}", endpoint);
+        info!(
+            "[PolishText] using Responses API format, endpoint: {}",
+            endpoint
+        );
 
         // 如果有视频元信息，构建增强版提示词
         let enhanced_text = if !video_metadata_prefix.is_empty() {
@@ -2450,14 +2514,23 @@ pub async fn polish_text(request: PolishTextRequest) -> Result<String, String> {
             if custom.trim().is_empty() {
                 // 使用默认模板
                 if has_reference {
-                    format!("{}\n\n请根据参考图片润色这个提示词：{}\n\n参考图片已提供。", default_template, enhanced_text)
+                    format!(
+                        "{}\n\n请根据参考图片润色这个提示词：{}\n\n参考图片已提供。",
+                        default_template, enhanced_text
+                    )
                 } else {
-                    format!("{}\n\n请润色这个提示词：{}", default_template, enhanced_text)
+                    format!(
+                        "{}\n\n请润色这个提示词：{}",
+                        default_template, enhanced_text
+                    )
                 }
             } else {
                 // 使用用户自定义模板
                 if has_reference {
-                    format!("{}\n\n请润色这个提示词：{}\n\n参考图片已提供。", custom, enhanced_text)
+                    format!(
+                        "{}\n\n请润色这个提示词：{}\n\n参考图片已提供。",
+                        custom, enhanced_text
+                    )
                 } else {
                     format!("{}\n\n请润色这个提示词：{}", custom, enhanced_text)
                 }
@@ -2465,9 +2538,15 @@ pub async fn polish_text(request: PolishTextRequest) -> Result<String, String> {
         } else {
             // 使用默认模板
             if has_reference {
-                format!("{}\n\n请根据参考图片润色这个提示词：{}\n\n参考图片已提供。", default_template, enhanced_text)
+                format!(
+                    "{}\n\n请根据参考图片润色这个提示词：{}\n\n参考图片已提供。",
+                    default_template, enhanced_text
+                )
             } else {
-                format!("{}\n\n请润色这个提示词：{}", default_template, enhanced_text)
+                format!(
+                    "{}\n\n请润色这个提示词：{}",
+                    default_template, enhanced_text
+                )
             }
         };
 
@@ -2498,7 +2577,10 @@ pub async fn polish_text(request: PolishTextRequest) -> Result<String, String> {
                 role: "user".to_string(),
                 content: content_parts,
             }],
-            reasoning: request.reasoning_effort.clone().map(|effort| ResponsesReasoning { effort }),
+            reasoning: request
+                .reasoning_effort
+                .clone()
+                .map(|effort| ResponsesReasoning { effort }),
         };
 
         info!("[PolishText] calling Responses API endpoint: {}", endpoint);
@@ -2527,11 +2609,14 @@ pub async fn polish_text(request: PolishTextRequest) -> Result<String, String> {
             } else {
                 "请求参数有误"
             };
-            return Err(format!("API调用失败 [{}]: {} | 错误详情: {}", status, error_detail, raw_response));
+            return Err(format!(
+                "API调用失败 [{}]: {} | 错误详情: {}",
+                status, error_detail, raw_response
+            ));
         }
 
-        let resp: ResponsesResponse = serde_json::from_str(&raw_response)
-            .map_err(|e| format!("响应格式解析失败: {}", e))?;
+        let resp: ResponsesResponse =
+            serde_json::from_str(&raw_response).map_err(|e| format!("响应格式解析失败: {}", e))?;
 
         if let Some(output) = resp.output {
             if let Some(choices) = output.choices {
@@ -2576,7 +2661,10 @@ pub async fn polish_text(request: PolishTextRequest) -> Result<String, String> {
             if custom.trim().is_empty() {
                 // 空模板，使用默认模板
                 let usr_default = if has_reference {
-                    format!("请根据参考图片润色这个提示词：{}\n\n参考图片已提供。", enhanced_text)
+                    format!(
+                        "请根据参考图片润色这个提示词：{}\n\n参考图片已提供。",
+                        enhanced_text
+                    )
                 } else {
                     format!("请润色这个提示词：{}", enhanced_text)
                 };
@@ -2594,7 +2682,10 @@ pub async fn polish_text(request: PolishTextRequest) -> Result<String, String> {
         } else {
             // 使用默认模板
             let usr_content = if has_reference {
-                format!("请根据参考图片润色这个提示词：{}\n\n参考图片已提供。", enhanced_text)
+                format!(
+                    "请根据参考图片润色这个提示词：{}\n\n参考图片已提供。",
+                    enhanced_text
+                )
             } else {
                 format!("请润色这个提示词：{}", enhanced_text)
             };
@@ -2606,88 +2697,96 @@ pub async fn polish_text(request: PolishTextRequest) -> Result<String, String> {
             content: ChatContent::Text(system_content),
         });
 
-    // 构建用户消息
-    let user_content = if has_reference {
-        let mut parts = Vec::new();
+        // 构建用户消息
+        let user_content = if has_reference {
+            let mut parts = Vec::new();
 
-        // 添加参考图片 - 支持 http/https URL 和 data:image base64
-        let mut valid_image_count = 0;
-        for img_url in request.reference_images.as_ref().unwrap_or(&vec![]).iter() {
-            if img_url.starts_with("http://") || img_url.starts_with("https://") || img_url.starts_with("data:") {
-                parts.push(ContentPart {
-                    part_type: "image_url".to_string(),
-                    text: None,
-                    image_url: Some(ImageUrl { url: img_url.clone() }),
-                });
-                valid_image_count += 1;
-            }
-        }
-        info!("[PolishText] valid images added: {}", valid_image_count);
-
-        let text_part = user_text;
-        parts.push(ContentPart {
-            part_type: "text".to_string(),
-            text: Some(text_part),
-            image_url: None,
-        });
-
-        ChatContent::Array(parts)
-    } else {
-        ChatContent::Text(user_text)
-    };
-
-    messages.push(ChatMessage {
-        role: "user".to_string(),
-        content: user_content,
-    });
-
-    let body = ChatRequest {
-        model: model.clone(),
-        messages,
-        stream: Some(false),
-        reasoning_effort: request.reasoning_effort.clone(),
-    };
-
-    let response = client
-        .post(&endpoint)
-        .header("Authorization", format!("Bearer {}", request.api_key))
-        .header("Content-Type", "application/json")
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| format!("网络请求失败，请检查网络连接: {}", e))?;
-
-    let status = response.status();
-    let raw_response = response.text().await.unwrap_or_default();
-
-    if !status.is_success() {
-        let error_detail = if status.as_u16() >= 500 {
-            "服务器内部错误，请稍后重试"
-        } else if status.as_u16() == 401 {
-            "API密钥无效或已过期"
-        } else if status.as_u16() == 403 {
-            "API访问被拒绝，请检查密钥权限"
-        } else if status.as_u16() == 429 {
-            "请求过于频繁，请稍后重试"
-        } else {
-            "请求参数有误"
-        };
-        return Err(format!("API调用失败 [{}]: {} | 错误详情: {}", status, error_detail, raw_response));
-    }
-
-    let resp: ChatResponse = serde_json::from_str(&raw_response)
-        .map_err(|e| format!("响应格式解析失败: {}", e))?;
-
-    if let Some(choices) = resp.choices {
-        if let Some(choice) = choices.first() {
-            if let Some(msg) = &choice.message {
-                if let Some(content) = &msg.content {
-                    return Ok(content.clone());
+            // 添加参考图片 - 支持 http/https URL 和 data:image base64
+            let mut valid_image_count = 0;
+            for img_url in request.reference_images.as_ref().unwrap_or(&vec![]).iter() {
+                if img_url.starts_with("http://")
+                    || img_url.starts_with("https://")
+                    || img_url.starts_with("data:")
+                {
+                    parts.push(ContentPart {
+                        part_type: "image_url".to_string(),
+                        text: None,
+                        image_url: Some(ImageUrl {
+                            url: img_url.clone(),
+                        }),
+                    });
+                    valid_image_count += 1;
                 }
             }
+            info!("[PolishText] valid images added: {}", valid_image_count);
+
+            let text_part = user_text;
+            parts.push(ContentPart {
+                part_type: "text".to_string(),
+                text: Some(text_part),
+                image_url: None,
+            });
+
+            ChatContent::Array(parts)
+        } else {
+            ChatContent::Text(user_text)
+        };
+
+        messages.push(ChatMessage {
+            role: "user".to_string(),
+            content: user_content,
+        });
+
+        let body = ChatRequest {
+            model: model.clone(),
+            messages,
+            stream: Some(false),
+            reasoning_effort: request.reasoning_effort.clone(),
+        };
+
+        let response = client
+            .post(&endpoint)
+            .header("Authorization", format!("Bearer {}", request.api_key))
+            .header("Content-Type", "application/json")
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| format!("网络请求失败，请检查网络连接: {}", e))?;
+
+        let status = response.status();
+        let raw_response = response.text().await.unwrap_or_default();
+
+        if !status.is_success() {
+            let error_detail = if status.as_u16() >= 500 {
+                "服务器内部错误，请稍后重试"
+            } else if status.as_u16() == 401 {
+                "API密钥无效或已过期"
+            } else if status.as_u16() == 403 {
+                "API访问被拒绝，请检查密钥权限"
+            } else if status.as_u16() == 429 {
+                "请求过于频繁，请稍后重试"
+            } else {
+                "请求参数有误"
+            };
+            return Err(format!(
+                "API调用失败 [{}]: {} | 错误详情: {}",
+                status, error_detail, raw_response
+            ));
         }
 
-        return Err("API返回内容为空".to_string());
+        let resp: ChatResponse =
+            serde_json::from_str(&raw_response).map_err(|e| format!("响应格式解析失败: {}", e))?;
+
+        if let Some(choices) = resp.choices {
+            if let Some(choice) = choices.first() {
+                if let Some(msg) = &choice.message {
+                    if let Some(content) = &msg.content {
+                        return Ok(content.clone());
+                    }
+                }
+            }
+
+            return Err("API返回内容为空".to_string());
         } else {
             return Err("API返回内容为空".to_string());
         }
@@ -2695,22 +2794,21 @@ pub async fn polish_text(request: PolishTextRequest) -> Result<String, String> {
 }
 
 #[tauri::command]
-pub async fn test_text_api(
-    request: PolishTextRequest,
-) -> Result<String, String> {
-    info!("Testing text API with model: {}, base_url: {}", request.model, request.base_url);
+pub async fn test_text_api(request: PolishTextRequest) -> Result<String, String> {
+    info!(
+        "Testing text API with model: {}, base_url: {}",
+        request.model, request.base_url
+    );
 
     let model = request.model.clone();
     let client = reqwest::Client::new();
 
     let endpoint = resolve_chat_completions_endpoint(&request.base_url)?;
 
-    let messages = vec![
-        ChatMessage {
-            role: "user".to_string(),
-            content: ChatContent::Text("你是什么模型？请简单介绍一下你自己。".to_string()),
-        },
-    ];
+    let messages = vec![ChatMessage {
+        role: "user".to_string(),
+        content: ChatContent::Text("你是什么模型？请简单介绍一下你自己。".to_string()),
+    }];
 
     let body = ChatRequest {
         model: model.clone(),
@@ -2743,11 +2841,14 @@ pub async fn test_text_api(
         } else {
             "请求参数有误"
         };
-        return Err(format!("API调用失败 [{}]: {} | 错误详情: {}", status, error_detail, raw_response));
+        return Err(format!(
+            "API调用失败 [{}]: {} | 错误详情: {}",
+            status, error_detail, raw_response
+        ));
     }
 
-    let resp: ChatResponse = serde_json::from_str(&raw_response)
-        .map_err(|e| format!("响应格式解析失败: {}", e))?;
+    let resp: ChatResponse =
+        serde_json::from_str(&raw_response).map_err(|e| format!("响应格式解析失败: {}", e))?;
 
     if let Some(choices) = resp.choices {
         if let Some(choice) = choices.first() {

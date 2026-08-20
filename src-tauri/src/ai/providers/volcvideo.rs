@@ -10,8 +10,8 @@ use tracing::info;
 use crate::ai::error::AIError;
 use crate::ai::generation_recovery::is_retryable_poll_status;
 use crate::ai::{
-    AIProvider, GenerateRequest, ProviderTaskHandle, ProviderTaskPollResult, ProviderTaskSubmission,
-    VideoContentInput,
+    AIProvider, GenerateRequest, ProviderTaskHandle, ProviderTaskPollResult,
+    ProviderTaskSubmission, VideoContentInput,
 };
 
 const DEFAULT_API_BASE_URL: &str = "https://ark.cn-beijing.volces.com";
@@ -344,10 +344,16 @@ impl VolcVideoProvider {
             let role = input.role.as_deref();
             let next = match part_type {
                 "text" => {
-                    let text = input.text.as_deref().map(str::trim).filter(|value| !value.is_empty())
-                        .ok_or_else(|| AIError::InvalidRequest(
-                            "Seedance text content requires non-empty text".to_string(),
-                        ))?;
+                    let text = input
+                        .text
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty())
+                        .ok_or_else(|| {
+                            AIError::InvalidRequest(
+                                "Seedance text content requires non-empty text".to_string(),
+                            )
+                        })?;
                     if role.is_some() || input.url.is_some() {
                         return Err(AIError::InvalidRequest(
                             "Seedance text content must not include a role or URL".to_string(),
@@ -369,18 +375,22 @@ impl VolcVideoProvider {
                         Some("first_frame") | Some("last_frame") | Some("reference_image") => {
                             role.unwrap().to_string()
                         }
-                        _ => return Err(AIError::InvalidRequest(
-                            "Seedance image content has an unsupported role".to_string(),
-                        )),
+                        _ => {
+                            return Err(AIError::InvalidRequest(
+                                "Seedance image content has an unsupported role".to_string(),
+                            ))
+                        }
                     };
-                    let url = input.url.as_deref().ok_or_else(|| AIError::InvalidRequest(
-                        "Seedance image content requires a URL".to_string(),
-                    ))?;
+                    let url = input.url.as_deref().ok_or_else(|| {
+                        AIError::InvalidRequest("Seedance image content requires a URL".to_string())
+                    })?;
                     VideoSubmitContent {
                         part_type: "image_url".to_string(),
                         role: Some(role),
                         text: None,
-                        image_url: Some(ImageUrl { url: Self::typed_source_to_public_url(url)? }),
+                        image_url: Some(ImageUrl {
+                            url: Self::typed_source_to_public_url(url)?,
+                        }),
                         video_url: None,
                         audio_url: None,
                         draft_task: None,
@@ -392,15 +402,17 @@ impl VolcVideoProvider {
                             "Seedance video content must use the reference_video role".to_string(),
                         ));
                     }
-                    let url = input.url.as_deref().ok_or_else(|| AIError::InvalidRequest(
-                        "Seedance video content requires a URL".to_string(),
-                    ))?;
+                    let url = input.url.as_deref().ok_or_else(|| {
+                        AIError::InvalidRequest("Seedance video content requires a URL".to_string())
+                    })?;
                     VideoSubmitContent {
                         part_type: "video_url".to_string(),
                         role: Some("reference_video".to_string()),
                         text: None,
                         image_url: None,
-                        video_url: Some(VideoUrl { url: Self::typed_source_to_public_url(url)? }),
+                        video_url: Some(VideoUrl {
+                            url: Self::typed_source_to_public_url(url)?,
+                        }),
                         audio_url: None,
                         draft_task: None,
                     }
@@ -411,23 +423,27 @@ impl VolcVideoProvider {
                             "Seedance audio content must use the reference_audio role".to_string(),
                         ));
                     }
-                    let url = input.url.as_deref().ok_or_else(|| AIError::InvalidRequest(
-                        "Seedance audio content requires a URL".to_string(),
-                    ))?;
+                    let url = input.url.as_deref().ok_or_else(|| {
+                        AIError::InvalidRequest("Seedance audio content requires a URL".to_string())
+                    })?;
                     VideoSubmitContent {
                         part_type: "audio_url".to_string(),
                         role: Some("reference_audio".to_string()),
                         text: None,
                         image_url: None,
                         video_url: None,
-                        audio_url: Some(AudioUrl { url: Self::typed_source_to_public_url(url)? }),
+                        audio_url: Some(AudioUrl {
+                            url: Self::typed_source_to_public_url(url)?,
+                        }),
                         draft_task: None,
                     }
                 }
-                _ => return Err(AIError::InvalidRequest(format!(
-                    "Seedance typed content has an unsupported type: {}",
-                    input.content_type
-                ))),
+                _ => {
+                    return Err(AIError::InvalidRequest(format!(
+                        "Seedance typed content has an unsupported type: {}",
+                        input.content_type
+                    )))
+                }
             };
             content.push(next);
         }
@@ -452,7 +468,9 @@ impl VolcVideoProvider {
             .map(|r| !r.is_empty())
             .unwrap_or(false);
         let typed_video_content = request.video_content.as_deref();
-        let has_typed_content = typed_video_content.map(|items| !items.is_empty()).unwrap_or(false);
+        let has_typed_content = typed_video_content
+            .map(|items| !items.is_empty())
+            .unwrap_or(false);
         let has_reference = has_legacy_reference || has_typed_content;
         let draft_task_id = request.draft_task_id.clone();
 
@@ -462,7 +480,10 @@ impl VolcVideoProvider {
         // Draft mode: generate final video from draft task
         // Content should only contain draft_task reference, no images or text needed
         if let Some(ref draft_id) = draft_task_id {
-            info!("[VolcVideo] Draft mode: generating final video from draft task {}", draft_id);
+            info!(
+                "[VolcVideo] Draft mode: generating final video from draft task {}",
+                draft_id
+            );
             content.push(VideoSubmitContent {
                 part_type: "draft_task".to_string(),
                 role: None,
@@ -470,7 +491,9 @@ impl VolcVideoProvider {
                 image_url: None,
                 video_url: None,
                 audio_url: None,
-                draft_task: Some(DraftTaskRef { id: draft_id.clone() }),
+                draft_task: Some(DraftTaskRef {
+                    id: draft_id.clone(),
+                }),
             });
         } else if let Some(typed_content) = typed_video_content {
             content = Self::build_typed_video_content(typed_content)?;
@@ -491,12 +514,22 @@ impl VolcVideoProvider {
                 .iter()
                 .enumerate()
             {
-                let url_preview = if img_source.len() > 100 { &img_source[..100] } else { img_source };
-                info!("[VolcVideo] reference_image[{}] source: {}...", i, url_preview);
+                let url_preview = if img_source.len() > 100 {
+                    &img_source[..100]
+                } else {
+                    img_source
+                };
+                info!(
+                    "[VolcVideo] reference_image[{}] source: {}...",
+                    i, url_preview
+                );
                 match Self::source_to_url(img_source) {
                     Ok(url) => {
                         let url_display = if url.len() > 100 { &url[..100] } else { &url };
-                        info!("[VolcVideo] reference_image[{}] converted successfully: {}...", i, url_display);
+                        info!(
+                            "[VolcVideo] reference_image[{}] converted successfully: {}...",
+                            i, url_display
+                        );
                         // Determine role based on position in CONTENT (not original index)
                         // For first/last frame mode (2 images): use "first_frame" or "last_frame"
                         // For single image mode: API doesn't require role for image content
@@ -528,14 +561,30 @@ impl VolcVideoProvider {
                     }
                 }
             }
-            info!("[VolcVideo] valid images processed: {}/{}", valid_images_count, images_count);
+            info!(
+                "[VolcVideo] valid images processed: {}/{}",
+                valid_images_count, images_count
+            );
             if valid_images_count < images_count {
                 info!("[VolcVideo] WARNING: Some images were skipped!");
             }
             // Log the final content array with roles
             for (idx, item) in content.iter().enumerate() {
-                let img_url_display = item.image_url.as_ref().map(|u| if u.url.len() > 80 { &u.url[..80] } else { &u.url }).unwrap_or("(none)");
-                info!("[VolcVideo] content[{}]: type={}, role={:?}, image_url={}...", idx, item.part_type, item.role, img_url_display);
+                let img_url_display = item
+                    .image_url
+                    .as_ref()
+                    .map(|u| {
+                        if u.url.len() > 80 {
+                            &u.url[..80]
+                        } else {
+                            &u.url
+                        }
+                    })
+                    .unwrap_or("(none)");
+                info!(
+                    "[VolcVideo] content[{}]: type={}, role={:?}, image_url={}...",
+                    idx, item.part_type, item.role, img_url_display
+                );
             }
         } else {
             info!("[VolcVideo] no reference images to process");
@@ -598,7 +647,9 @@ impl VolcVideoProvider {
             // SD 2.0: web search
             if let Some(v) = extra.get("enable_web_search").and_then(|v| v.as_bool()) {
                 if v {
-                    tools = Some(vec![Tool { tool_type: "web_search".to_string() }]);
+                    tools = Some(vec![Tool {
+                        tool_type: "web_search".to_string(),
+                    }]);
                 }
             }
         } else if draft_task_id.is_none() {
@@ -665,15 +716,24 @@ impl VolcVideoProvider {
             )));
         }
 
-        let body: VideoSubmitResponse = serde_json::from_str(&raw_response)
-            .map_err(|err| AIError::Provider(format!("VolcVideo parse error: {}, raw: {}", err, raw_response)))?;
+        let body: VideoSubmitResponse = serde_json::from_str(&raw_response).map_err(|err| {
+            AIError::Provider(format!(
+                "VolcVideo parse error: {}, raw: {}",
+                err, raw_response
+            ))
+        })?;
 
-        info!("[VolcVideo Submit] response: id={:?}, task_id={:?}, status={:?}, error={:?}",
-              body.id, body.task_id, body.status, body.error);
+        info!(
+            "[VolcVideo Submit] response: id={:?}, task_id={:?}, status={:?}, error={:?}",
+            body.id, body.task_id, body.status, body.error
+        );
 
         if let Some(error) = body.error {
             // Extract detailed error info from API response
-            let msg = error.get("message").and_then(|v| v.as_str()).unwrap_or("Unknown error");
+            let msg = error
+                .get("message")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Unknown error");
             let code = error.get("code").and_then(|v| v.as_str()).unwrap_or("");
             let param = error.get("param").and_then(|v| v.as_str()).unwrap_or("");
             let err_type = error.get("type").and_then(|v| v.as_str()).unwrap_or("");
@@ -691,8 +751,14 @@ impl VolcVideoProvider {
                 detailed_msg
             };
 
-            info!("[VolcVideo] API error detailed: code={}, message={}, param={}, type={}", code, msg, param, err_type);
-            return Err(AIError::Provider(format!("VolcVideo API error: {}, raw: {}", final_msg, raw_response)));
+            info!(
+                "[VolcVideo] API error detailed: code={}, message={}, param={}, type={}",
+                code, msg, param, err_type
+            );
+            return Err(AIError::Provider(format!(
+                "VolcVideo API error: {}, raw: {}",
+                final_msg, raw_response
+            )));
         }
 
         // Use id if task_id is not present (API returns "id" field)
@@ -713,9 +779,17 @@ impl VolcVideoProvider {
         runtime: &VolcVideoRuntimeConfig,
         task_id: &str,
     ) -> Result<ProviderTaskPollResult, AIError> {
-        let endpoint = format!("{}/{}", build_endpoint(&runtime.base_url, QUERY_PATH)?, task_id);
-        info!("[VolcVideo Poll] querying task: {}, endpoint: {}, api_key present: {}",
-              task_id, endpoint, !runtime.api_key.is_empty());
+        let endpoint = format!(
+            "{}/{}",
+            build_endpoint(&runtime.base_url, QUERY_PATH)?,
+            task_id
+        );
+        info!(
+            "[VolcVideo Poll] querying task: {}, endpoint: {}, api_key present: {}",
+            task_id,
+            endpoint,
+            !runtime.api_key.is_empty()
+        );
 
         let response = self
             .client
@@ -728,7 +802,10 @@ impl VolcVideoProvider {
 
         let status = response.status();
         let raw_response = response.text().await?;
-        info!("[VolcVideo Poll] response status: {}, body: {}", status, raw_response);
+        info!(
+            "[VolcVideo Poll] response status: {}, body: {}",
+            status, raw_response
+        );
 
         if is_retryable_poll_status(status) {
             return Err(AIError::Transient(format!(
@@ -744,26 +821,30 @@ impl VolcVideoProvider {
             )));
         }
 
-        let body: VideoQueryResponse = serde_json::from_str(&raw_response)
-            .map_err(|err| {
-                info!("[VolcVideo Poll] JSON parse failed: {}, raw: {}", err, raw_response);
-                AIError::Provider(format!("VolcVideo parse error: {}", err))
-            })?;
+        let body: VideoQueryResponse = serde_json::from_str(&raw_response).map_err(|err| {
+            info!(
+                "[VolcVideo Poll] JSON parse failed: {}, raw: {}",
+                err, raw_response
+            );
+            AIError::Provider(format!("VolcVideo parse error: {}", err))
+        })?;
 
         // Cloud-compatible Seedance responses use content: [{ type: "video", video_url }].
         let content_video_url = extract_content_video_url(body.content.as_ref());
 
         // Check for URL in nested data structure if top-level output_url is missing
-        let nested_video_url = body.data.as_ref().and_then(|d| {
-            match d {
-                VideoQueryData::WithUrl(url_obj) => {
-                    url_obj.video_url.clone().or(url_obj.output_url.clone())
-                }
-                VideoQueryData::Raw(val) => {
-                    val.get("video_url").and_then(|v| v.as_str()).map(String::from)
-                    .or(val.get("output_url").and_then(|v| v.as_str()).map(String::from))
-                }
+        let nested_video_url = body.data.as_ref().and_then(|d| match d {
+            VideoQueryData::WithUrl(url_obj) => {
+                url_obj.video_url.clone().or(url_obj.output_url.clone())
             }
+            VideoQueryData::Raw(val) => val
+                .get("video_url")
+                .and_then(|v| v.as_str())
+                .map(String::from)
+                .or(val
+                    .get("output_url")
+                    .and_then(|v| v.as_str())
+                    .map(String::from)),
         });
 
         info!("[VolcVideo Poll] parsed response: id={:?}, task_id={:?}, status={:?}, output_url={:?}, content_video_url={:?}, nested_video_url={:?}, deleted={}, error={:?}",
@@ -856,31 +937,28 @@ impl AIProvider for VolcVideoProvider {
         &self,
         request: GenerateRequest,
     ) -> Result<ProviderTaskSubmission, AIError> {
-        let fallback_api_key = self
-            .api_key
-            .read()
-            .await
-            .clone();
+        let fallback_api_key = self.api_key.read().await.clone();
         let runtime = runtime_config_from_map(request.provider_config.as_ref(), fallback_api_key)?;
 
         let task_id = self.submit_task_internal(&runtime, &request).await?;
-        info!("[VolcVideo] submit_task succeeded, returning task_id: {}", task_id);
+        info!(
+            "[VolcVideo] submit_task succeeded, returning task_id: {}",
+            task_id
+        );
         Ok(ProviderTaskSubmission::Queued(ProviderTaskHandle {
             task_id,
             metadata: None,
         }))
     }
 
-    async fn poll_task(&self, handle: ProviderTaskHandle) -> Result<ProviderTaskPollResult, AIError> {
-        let fallback_api_key = self
-            .api_key
-            .read()
-            .await
-            .clone();
+    async fn poll_task(
+        &self,
+        handle: ProviderTaskHandle,
+    ) -> Result<ProviderTaskPollResult, AIError> {
+        let fallback_api_key = self.api_key.read().await.clone();
         let runtime = runtime_config_from_map(None, fallback_api_key)?;
 
-        self.poll_task_once(&runtime, handle.task_id.as_str())
-            .await
+        self.poll_task_once(&runtime, handle.task_id.as_str()).await
     }
 
     async fn poll_task_with_config(
@@ -894,16 +972,11 @@ impl AIProvider for VolcVideoProvider {
     }
 
     async fn generate(&self, request: GenerateRequest) -> Result<String, AIError> {
-        let fallback_api_key = self
-            .api_key
-            .read()
-            .await
-            .clone();
+        let fallback_api_key = self.api_key.read().await.clone();
         let runtime = runtime_config_from_map(request.provider_config.as_ref(), fallback_api_key)?;
 
         let task_id = self.submit_task_internal(&runtime, &request).await?;
-        self.poll_task_until_complete(&runtime, &task_id)
-            .await
+        self.poll_task_until_complete(&runtime, &task_id).await
     }
 }
 
@@ -914,7 +987,10 @@ pub async fn cancel_volcvideo_task(
     task_id: &str,
 ) -> Result<(), AIError> {
     let endpoint = format!("{}/{}", build_endpoint(base_url, QUERY_PATH)?, task_id);
-    info!("[VolcVideo Cancel] cancelling task: {}, endpoint: {}", task_id, endpoint);
+    info!(
+        "[VolcVideo Cancel] cancelling task: {}, endpoint: {}",
+        task_id, endpoint
+    );
 
     let client = Client::new();
     let response = client
@@ -928,7 +1004,10 @@ pub async fn cancel_volcvideo_task(
     let status = response.status();
     let raw_response = response.text().await.unwrap_or_default();
 
-    info!("[VolcVideo Cancel] response status: {}, body: {}", status, raw_response);
+    info!(
+        "[VolcVideo Cancel] response status: {}, body: {}",
+        status, raw_response
+    );
 
     if status.is_success() || status.as_u16() == 404 {
         // 204 No Content or 404 means success (task cancelled or already gone)
@@ -964,10 +1043,7 @@ mod tests {
             let size = socket.read(&mut buffer).await.unwrap();
             assert!(size > 0, "connection closed before request headers");
             request.extend_from_slice(&buffer[..size]);
-            if let Some(header_end) = request
-                .windows(4)
-                .position(|chunk| chunk == b"\r\n\r\n")
-            {
+            if let Some(header_end) = request.windows(4).position(|chunk| chunk == b"\r\n\r\n") {
                 break header_end + 4;
             }
         };
@@ -1121,25 +1197,33 @@ mod tests {
         let submit_request = String::from_utf8(submit_request).unwrap();
         let poll_request = String::from_utf8(poll_request).unwrap();
 
-        assert!(submit_request.starts_with(
-            "POST /hub/volcengine/api/v3/contents/generations/tasks HTTP/1.1"
-        ));
-        assert!(submit_request.to_ascii_lowercase().contains("authorization: bearer yunxin-key"));
-        assert!(submit_request.to_ascii_lowercase().contains("content-type: application/json"));
+        assert!(submit_request
+            .starts_with("POST /hub/volcengine/api/v3/contents/generations/tasks HTTP/1.1"));
+        assert!(submit_request
+            .to_ascii_lowercase()
+            .contains("authorization: bearer yunxin-key"));
+        assert!(submit_request
+            .to_ascii_lowercase()
+            .contains("content-type: application/json"));
         let submit_body_start = submit_request.find("\r\n\r\n").unwrap() + 4;
         let submit_body: serde_json::Value =
             serde_json::from_str(&submit_request[submit_body_start..]).unwrap();
         assert_eq!(submit_body["model"], json!("doubao-seedance-2-0-260128"));
-        assert_eq!(submit_body["content"], json!([
-            { "type": "text", "text": "A rainy city at night" }
-        ]));
+        assert_eq!(
+            submit_body["content"],
+            json!([
+                { "type": "text", "text": "A rainy city at night" }
+            ])
+        );
         assert_eq!(submit_body["resolution"], json!("720p"));
         assert_eq!(submit_body["ratio"], json!("16:9"));
         assert_eq!(submit_body["generate_audio"], json!(true));
         assert!(poll_request.starts_with(
             "GET /hub/volcengine/api/v3/contents/generations/tasks/tsk_yunxin_123 HTTP/1.1"
         ));
-        assert!(poll_request.to_ascii_lowercase().contains("authorization: bearer yunxin-key"));
+        assert!(poll_request
+            .to_ascii_lowercase()
+            .contains("authorization: bearer yunxin-key"));
         assert!(matches!(
             poll_result,
             ProviderTaskPollResult::SucceededWithMeta { url, seed: None }
@@ -1219,34 +1303,37 @@ mod tests {
         let request = String::from_utf8(server.await.unwrap()).unwrap();
         let body_start = request.find("\r\n\r\n").unwrap() + 4;
         let body: serde_json::Value = serde_json::from_str(&request[body_start..]).unwrap();
-        assert_eq!(body["content"], json!([
-            {
-                "type": "image_url",
-                "role": "first_frame",
-                "image_url": { "url": "https://media.example/first.png" }
-            },
-            {
-                "type": "image_url",
-                "role": "last_frame",
-                "image_url": { "url": "https://media.example/last.png" }
-            },
-            {
-                "type": "image_url",
-                "role": "reference_image",
-                "image_url": { "url": "https://media.example/reference.png" }
-            },
-            {
-                "type": "video_url",
-                "role": "reference_video",
-                "video_url": { "url": "https://media.example/source.mp4" }
-            },
-            {
-                "type": "audio_url",
-                "role": "reference_audio",
-                "audio_url": { "url": "https://media.example/music.mp3" }
-            },
-            { "type": "text", "text": "Make the subject dance to the beat" }
-        ]));
+        assert_eq!(
+            body["content"],
+            json!([
+                {
+                    "type": "image_url",
+                    "role": "first_frame",
+                    "image_url": { "url": "https://media.example/first.png" }
+                },
+                {
+                    "type": "image_url",
+                    "role": "last_frame",
+                    "image_url": { "url": "https://media.example/last.png" }
+                },
+                {
+                    "type": "image_url",
+                    "role": "reference_image",
+                    "image_url": { "url": "https://media.example/reference.png" }
+                },
+                {
+                    "type": "video_url",
+                    "role": "reference_video",
+                    "video_url": { "url": "https://media.example/source.mp4" }
+                },
+                {
+                    "type": "audio_url",
+                    "role": "reference_audio",
+                    "audio_url": { "url": "https://media.example/music.mp3" }
+                },
+                { "type": "text", "text": "Make the subject dance to the beat" }
+            ])
+        );
         assert!(body.get("omni_reference_task_type").is_none());
     }
 

@@ -1,6 +1,7 @@
-use base64::{engine::general_purpose::STANDARD, Engine};
+use crate::storage::{source::resolve_media_source, tos};
 use ab_glyph::{FontArc, PxScale};
 use arboard::{Clipboard, ImageData};
+use base64::{engine::general_purpose::STANDARD, Engine};
 use chrono::Local;
 use directories::UserDirs;
 use fast_image_resize as fir;
@@ -17,7 +18,6 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager};
 use tracing::info;
 use uuid::Uuid;
-use crate::storage::{source::resolve_media_source, tos};
 
 const STORYBOARD_METADATA_PNG_TEXT_KEY: &str = "StoryboardCopilotMetadata";
 const FAST_PREVIEW_BYPASS_MAX_BYTES: usize = 2_000_000;
@@ -135,8 +135,10 @@ pub async fn split_image(
 
     let (width, height) = img.dimensions();
     let resolved_line = resolve_line_thickness(width, height, safe_rows, safe_cols, requested_line);
-    let usable_width = width.saturating_sub((safe_cols.saturating_sub(1)).saturating_mul(resolved_line));
-    let usable_height = height.saturating_sub((safe_rows.saturating_sub(1)).saturating_mul(resolved_line));
+    let usable_width =
+        width.saturating_sub((safe_cols.saturating_sub(1)).saturating_mul(resolved_line));
+    let usable_height =
+        height.saturating_sub((safe_rows.saturating_sub(1)).saturating_mul(resolved_line));
 
     if usable_width < safe_cols || usable_height < safe_rows {
         return Err("分割线过粗，无法完成切割".to_string());
@@ -222,8 +224,10 @@ pub async fn split_image_source(
 
     let (width, height) = image.dimensions();
     let resolved_line = resolve_line_thickness(width, height, safe_rows, safe_cols, requested_line);
-    let usable_width = width.saturating_sub((safe_cols.saturating_sub(1)).saturating_mul(resolved_line));
-    let usable_height = height.saturating_sub((safe_rows.saturating_sub(1)).saturating_mul(resolved_line));
+    let usable_width =
+        width.saturating_sub((safe_cols.saturating_sub(1)).saturating_mul(resolved_line));
+    let usable_height =
+        height.saturating_sub((safe_rows.saturating_sub(1)).saturating_mul(resolved_line));
 
     if usable_width < safe_cols || usable_height < safe_rows {
         return Err("分割线过粗，无法完成切割".to_string());
@@ -268,7 +272,8 @@ pub async fn split_image_source(
                 .write_with_encoder(encoder)
                 .map_err(|e| format!("Failed to encode split image: {}", e))?;
 
-            let persisted = persist_image_bytes(&app, buffer.get_ref(), "jpg", project_id.as_deref())?;
+            let persisted =
+                persist_image_bytes(&app, buffer.get_ref(), "jpg", project_id.as_deref())?;
             results.push(persisted);
         }
     }
@@ -419,9 +424,8 @@ fn resolve_line_thickness(
 
 fn parse_hex_color(color: &str) -> Rgba<u8> {
     let value = color.trim().trim_start_matches('#');
-    let parse_pair = |start: usize| -> Option<u8> {
-        u8::from_str_radix(value.get(start..start + 2)?, 16).ok()
-    };
+    let parse_pair =
+        |start: usize| -> Option<u8> { u8::from_str_radix(value.get(start..start + 2)?, 16).ok() };
 
     match value.len() {
         6 => {
@@ -431,12 +435,9 @@ fn parse_hex_color(color: &str) -> Rgba<u8> {
             Rgba([r, g, b, 255])
         }
         8 => {
-            let (Some(r), Some(g), Some(b), Some(a)) = (
-                parse_pair(0),
-                parse_pair(2),
-                parse_pair(4),
-                parse_pair(6),
-            ) else {
+            let (Some(r), Some(g), Some(b), Some(a)) =
+                (parse_pair(0), parse_pair(2), parse_pair(4), parse_pair(6))
+            else {
                 return Rgba([15, 17, 21, 255]);
             };
             Rgba([r, g, b, a])
@@ -590,7 +591,14 @@ fn fill_rect_alpha_blend(
     }
 }
 
-fn stroke_right_edge(image: &mut RgbaImage, x: u32, y: u32, width: u32, height: u32, color: Rgba<u8>) {
+fn stroke_right_edge(
+    image: &mut RgbaImage,
+    x: u32,
+    y: u32,
+    width: u32,
+    height: u32,
+    color: Rgba<u8>,
+) {
     if width < 1 || height < 1 {
         return;
     }
@@ -608,7 +616,14 @@ fn stroke_right_edge(image: &mut RgbaImage, x: u32, y: u32, width: u32, height: 
     }
 }
 
-fn stroke_bottom_edge(image: &mut RgbaImage, x: u32, y: u32, width: u32, height: u32, color: Rgba<u8>) {
+fn stroke_bottom_edge(
+    image: &mut RgbaImage,
+    x: u32,
+    y: u32,
+    width: u32,
+    height: u32,
+    color: Rgba<u8>,
+) {
     if width < 1 || height < 1 {
         return;
     }
@@ -626,7 +641,11 @@ fn stroke_bottom_edge(image: &mut RgbaImage, x: u32, y: u32, width: u32, height:
     }
 }
 
-fn resize_image_fast(source: &DynamicImage, target_width: u32, target_height: u32) -> Result<RgbaImage, String> {
+fn resize_image_fast(
+    source: &DynamicImage,
+    target_width: u32,
+    target_height: u32,
+) -> Result<RgbaImage, String> {
     let source_rgba = source.to_rgba8();
     let source_width = source_rgba.width().max(1);
     let source_height = source_rgba.height().max(1);
@@ -639,18 +658,25 @@ fn resize_image_fast(source: &DynamicImage, target_width: u32, target_height: u3
         fir::PixelType::U8x4,
     )
     .map_err(|e| format!("Failed to create source image for fast resize: {}", e))?;
-    let mut target_image =
-        FirImage::new(target_width.max(1), target_height.max(1), fir::PixelType::U8x4);
+    let mut target_image = FirImage::new(
+        target_width.max(1),
+        target_height.max(1),
+        fir::PixelType::U8x4,
+    );
 
     let mut resizer = fir::Resizer::new();
-    let resize_options =
-        fir::ResizeOptions::new().resize_alg(fir::ResizeAlg::Convolution(fir::FilterType::Bilinear));
+    let resize_options = fir::ResizeOptions::new()
+        .resize_alg(fir::ResizeAlg::Convolution(fir::FilterType::Bilinear));
     resizer
         .resize(&source_image, &mut target_image, Some(&resize_options))
         .map_err(|e| format!("Failed to run fast image resize: {}", e))?;
 
-    RgbaImage::from_raw(target_width.max(1), target_height.max(1), target_image.into_vec())
-        .ok_or_else(|| "Failed to build RGBA image from resized buffer".to_string())
+    RgbaImage::from_raw(
+        target_width.max(1),
+        target_height.max(1),
+        target_image.into_vec(),
+    )
+    .ok_or_else(|| "Failed to build RGBA image from resized buffer".to_string())
 }
 
 async fn load_dynamic_image_from_source(source: &str) -> Result<DynamicImage, String> {
@@ -683,8 +709,8 @@ fn prepare_node_image_from_bytes(
 
     let persist_started = Instant::now();
     // Decode and re-encode as JPEG for uniform format
-    let image = image::load_from_memory(bytes)
-        .map_err(|e| format!("Failed to decode image: {}", e))?;
+    let image =
+        image::load_from_memory(bytes).map_err(|e| format!("Failed to decode image: {}", e))?;
     let mut jpeg_buffer = Cursor::new(Vec::new());
     let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg_buffer, 90);
     image
@@ -722,10 +748,14 @@ fn prepare_node_image_from_bytes(
     let scale = safe_max_dimension as f64 / longest_side as f64;
     let target_width = ((width as f64) * scale).round().max(1.0) as u32;
     let target_height = ((height as f64) * scale).round().max(1.0) as u32;
-    let resized_rgba = resize_image_fast(&image, target_width, target_height)
-        .unwrap_or_else(|_| {
+    let resized_rgba =
+        resize_image_fast(&image, target_width, target_height).unwrap_or_else(|_| {
             image
-                .resize(target_width, target_height, image::imageops::FilterType::Triangle)
+                .resize(
+                    target_width,
+                    target_height,
+                    image::imageops::FilterType::Triangle,
+                )
                 .to_rgba8()
         });
     let resized = DynamicImage::ImageRgba8(resized_rgba);
@@ -861,15 +891,19 @@ pub async fn create_image_preview(
         });
     }
 
-    let image = image::load_from_memory(&bytes)
-        .map_err(|e| format!("Failed to decode image: {}", e))?;
+    let image =
+        image::load_from_memory(&bytes).map_err(|e| format!("Failed to decode image: {}", e))?;
     let scale = safe_max_dimension as f64 / width.max(height) as f64;
     let target_width = ((width as f64) * scale).round().max(1.0) as u32;
     let target_height = ((height as f64) * scale).round().max(1.0) as u32;
-    let resized_rgba = resize_image_fast(&image, target_width, target_height)
-        .unwrap_or_else(|_| {
+    let resized_rgba =
+        resize_image_fast(&image, target_width, target_height).unwrap_or_else(|_| {
             image
-                .resize(target_width, target_height, image::imageops::FilterType::Triangle)
+                .resize(
+                    target_width,
+                    target_height,
+                    image::imageops::FilterType::Triangle,
+                )
                 .to_rgba8()
         });
     let resized = DynamicImage::ImageRgba8(resized_rgba);
@@ -878,12 +912,8 @@ pub async fn create_image_preview(
     resized
         .write_with_encoder(encoder)
         .map_err(|e| format!("Failed to encode preview image: {}", e))?;
-    let preview_image_path = persist_image_bytes(
-        &app,
-        preview_buffer.get_ref(),
-        "jpg",
-        project_id.as_deref(),
-    )?;
+    let preview_image_path =
+        persist_image_bytes(&app, preview_buffer.get_ref(), "jpg", project_id.as_deref())?;
 
     Ok(CreateImagePreviewResult {
         preview_image_path,
@@ -1063,7 +1093,11 @@ pub async fn merge_storyboard_images(
     );
     let placeholder = Rgba([0, 0, 0, 90]);
     let border = Rgba([255, 255, 255, 56]);
-    let overlay_font = if overlay_requested { load_overlay_font() } else { None };
+    let overlay_font = if overlay_requested {
+        load_overlay_font()
+    } else {
+        None
+    };
     let overlay_scale = PxScale::from(font_size.max(9) as f32);
     let text_overlay_applied = !overlay_requested || overlay_font.is_some();
 
@@ -1071,7 +1105,8 @@ pub async fn merge_storyboard_images(
         let row = (index as u32) / cols;
         let col = (index as u32) % cols;
         let x = padding + col.saturating_mul(cell_width.saturating_add(gap));
-        let y = padding + row.saturating_mul(cell_height.saturating_add(note_height).saturating_add(gap));
+        let y = padding
+            + row.saturating_mul(cell_height.saturating_add(note_height).saturating_add(gap));
 
         fill_rect(&mut canvas, x, y, cell_width, cell_height, placeholder);
 
@@ -1086,7 +1121,8 @@ pub async fn merge_storyboard_images(
             let draw_w = (src_w * ratio).round().max(1.0) as u32;
             let draw_h = (src_h * ratio).round().max(1.0) as u32;
 
-            let mut cell_canvas = RgbaImage::from_pixel(cell_width.max(1), cell_height.max(1), placeholder);
+            let mut cell_canvas =
+                RgbaImage::from_pixel(cell_width.max(1), cell_height.max(1), placeholder);
             let draw_x = (cell_width as i64 - draw_w as i64) / 2;
             let draw_y = (cell_height as i64 - draw_h as i64) / 2;
 
@@ -1134,7 +1170,15 @@ pub async fn merge_storyboard_images(
                 let text_y = badge_y
                     .saturating_add(badge_height.saturating_sub(label_h) / 2)
                     .max(0) as i32;
-                draw_text_mut(&mut canvas, text_color, text_x, text_y, overlay_scale, font, &label);
+                draw_text_mut(
+                    &mut canvas,
+                    text_color,
+                    text_x,
+                    text_y,
+                    overlay_scale,
+                    font,
+                    &label,
+                );
             }
 
             if show_frame_note {
@@ -1143,7 +1187,12 @@ pub async fn merge_storyboard_images(
                     .map(|value| value.trim())
                     .unwrap_or("");
                 if !note_raw.is_empty() {
-                    let note = trim_text_to_width(font, overlay_scale, note_raw, cell_width.saturating_sub(14));
+                    let note = trim_text_to_width(
+                        font,
+                        overlay_scale,
+                        note_raw,
+                        cell_width.saturating_sub(14),
+                    );
                     if !note.is_empty() {
                         let (note_w, note_h) = text_size(overlay_scale, font, &note);
                         if note_placement == "bottom" && note_height > 0 {
@@ -1153,12 +1202,19 @@ pub async fn merge_storyboard_images(
                                 .saturating_add(note_height.saturating_sub(note_h) / 2)
                                 .max(0) as i32;
                             let _ = note_w;
-                            draw_text_mut(&mut canvas, text_color, note_x, note_y, overlay_scale, font, &note);
+                            draw_text_mut(
+                                &mut canvas,
+                                text_color,
+                                note_x,
+                                note_y,
+                                overlay_scale,
+                                font,
+                                &note,
+                            );
                         } else {
                             let overlay_height = (font_size as f32 * 1.35).round().max(18.0) as u32;
-                            let overlay_y = y
-                                .saturating_add(cell_height)
-                                .saturating_sub(overlay_height);
+                            let overlay_y =
+                                y.saturating_add(cell_height).saturating_sub(overlay_height);
                             fill_rect_alpha_blend(
                                 &mut canvas,
                                 x,
@@ -1171,7 +1227,15 @@ pub async fn merge_storyboard_images(
                             let note_y = overlay_y
                                 .saturating_add(overlay_height.saturating_sub(note_h) / 2)
                                 .max(0) as i32;
-                            draw_text_mut(&mut canvas, text_color, note_x, note_y, overlay_scale, font, &note);
+                            draw_text_mut(
+                                &mut canvas,
+                                text_color,
+                                note_x,
+                                note_y,
+                                overlay_scale,
+                                font,
+                                &note,
+                            );
                         }
                     }
                 }
@@ -1185,7 +1249,8 @@ pub async fn merge_storyboard_images(
         .write_with_encoder(encoder)
         .map_err(|e| format!("Failed to encode merged storyboard image: {}", e))?;
 
-    let image_path = persist_image_bytes(&app, buffer.get_ref(), "jpg", payload.project_id.as_deref())?;
+    let image_path =
+        persist_image_bytes(&app, buffer.get_ref(), "jpg", payload.project_id.as_deref())?;
     info!(
         "merge_storyboard_images done: {} cells, load={}ms, total={}ms, text_overlay_applied={}",
         total_cells,
@@ -1216,17 +1281,19 @@ fn resolve_project_dir(app: &AppHandle, project_id: &str, subdir: &str) -> Resul
         .app_data_dir()
         .map_err(|e| format!("Failed to resolve app data dir: {}", e))?;
 
-    let dir = app_data_dir
-        .join("projects")
-        .join(project_id)
-        .join(subdir);
+    let dir = app_data_dir.join("projects").join(project_id).join(subdir);
     std::fs::create_dir_all(&dir)
         .map_err(|e| format!("Failed to create directory {}: {}", dir.display(), e))?;
 
     Ok(dir)
 }
 
-fn persist_image_bytes(app: &AppHandle, bytes: &[u8], extension: &str, project_id: Option<&str>) -> Result<String, String> {
+fn persist_image_bytes(
+    app: &AppHandle,
+    bytes: &[u8],
+    extension: &str,
+    project_id: Option<&str>,
+) -> Result<String, String> {
     let dir = if let Some(pid) = project_id {
         resolve_project_dir(app, pid, "uploads")?
     } else {
@@ -1235,8 +1302,7 @@ fn persist_image_bytes(app: &AppHandle, bytes: &[u8], extension: &str, project_i
             .app_data_dir()
             .map_err(|e| format!("Failed to resolve app data dir: {}", e))?;
         let dir = app_data_dir.join("images");
-        std::fs::create_dir_all(&dir)
-            .map_err(|e| format!("Failed to create images dir: {}", e))?;
+        std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create images dir: {}", e))?;
         dir
     };
     // 使用时间戳+进程ID+原子计数器确保唯一性，避免哈希碰撞导致文件被覆盖
@@ -1247,7 +1313,13 @@ fn persist_image_bytes(app: &AppHandle, bytes: &[u8], extension: &str, project_i
         .as_nanos() as u64;
     let process_id = std::process::id() as u64;
     let counter = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let filename = format!("img_{}_{}_{}.{}", timestamp, process_id, counter, normalize_extension(extension));
+    let filename = format!(
+        "img_{}_{}_{}.{}",
+        timestamp,
+        process_id,
+        counter,
+        normalize_extension(extension)
+    );
     let output_path = dir.join(&filename);
 
     std::fs::write(&output_path, bytes)
@@ -1321,8 +1393,8 @@ fn decode_asset_url_path(value: &str) -> Result<PathBuf, String> {
         .strip_prefix("asset://localhost/")
         .or_else(|| value.strip_prefix("asset:///"))
         .ok_or_else(|| format!("Invalid asset URL format: {}", value))?;
-    let decoded = urlencoding::decode(path_part)
-        .map_err(|e| format!("URL decode failed: {}", e))?;
+    let decoded =
+        urlencoding::decode(path_part).map_err(|e| format!("URL decode failed: {}", e))?;
     let path = if cfg!(target_os = "windows") {
         decoded.trim_start_matches('/').to_string()
     } else if decoded.starts_with('/') {
@@ -1355,7 +1427,9 @@ fn parse_data_url(source: &str) -> Result<(Vec<u8>, String), String> {
     Ok((bytes, extension_from_mime(mime)))
 }
 
-fn read_storyboard_metadata_from_png_bytes(bytes: &[u8]) -> Result<Option<StoryboardImageMetadata>, String> {
+fn read_storyboard_metadata_from_png_bytes(
+    bytes: &[u8],
+) -> Result<Option<StoryboardImageMetadata>, String> {
     let decoder = Decoder::new(Cursor::new(bytes));
     let reader = decoder
         .read_info()
@@ -1411,10 +1485,7 @@ fn encode_png_with_storyboard_metadata(
         encoder.set_color(ColorType::Rgba);
         encoder.set_depth(BitDepth::Eight);
         encoder
-            .add_itxt_chunk(
-                STORYBOARD_METADATA_PNG_TEXT_KEY.to_string(),
-                metadata_json,
-            )
+            .add_itxt_chunk(STORYBOARD_METADATA_PNG_TEXT_KEY.to_string(), metadata_json)
             .map_err(|e| format!("Failed to attach storyboard metadata into PNG: {}", e))?;
         let mut writer = encoder
             .write_header()
@@ -1482,15 +1553,17 @@ async fn resolve_source_bytes(source: &str) -> Result<(Vec<u8>, String), String>
             .strip_prefix("asset://localhost/")
             .or_else(|| source.strip_prefix("asset:///"))
             .ok_or_else(|| format!("Invalid asset URL format: {}", source))?;
-        let decoded = urlencoding::decode(path_part)
-            .map_err(|e| format!("URL decode failed: {}", e))?;
+        let decoded =
+            urlencoding::decode(path_part).map_err(|e| format!("URL decode failed: {}", e))?;
         let file_path = decoded.trim_start_matches('/');
         let local_path = PathBuf::from(&file_path);
         let bytes = std::fs::read(&local_path)
             .or_else(|_| {
                 std::fs::canonicalize(&file_path).and_then(|c| {
                     let canonical_str = c.to_string_lossy();
-                    let clean = canonical_str.strip_prefix("\\\\?\\").unwrap_or(&canonical_str);
+                    let clean = canonical_str
+                        .strip_prefix("\\\\?\\")
+                        .unwrap_or(&canonical_str);
                     std::fs::read(clean)
                 })
             })
@@ -1633,12 +1706,18 @@ fn ensure_unique_path(path: PathBuf) -> PathBuf {
         return path;
     }
 
-    let parent = path.parent().map(Path::to_path_buf).unwrap_or_else(|| PathBuf::from("."));
+    let parent = path
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."));
     let stem = path
         .file_stem()
         .and_then(|value| value.to_str())
         .unwrap_or("storyboard-image");
-    let ext = path.extension().and_then(|value| value.to_str()).unwrap_or("png");
+    let ext = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("png");
 
     for index in 1..10_000_u32 {
         let candidate = parent.join(format!("{}-{}.{}", stem, index, ext));
@@ -1703,7 +1782,10 @@ pub async fn save_image_source_to_downloads(
 }
 
 #[tauri::command]
-pub async fn save_image_source_to_path(source: String, target_path: String) -> Result<String, String> {
+pub async fn save_image_source_to_path(
+    source: String,
+    target_path: String,
+) -> Result<String, String> {
     let trimmed_source = source.trim();
     if trimmed_source.is_empty() {
         return Err("Image source is empty".to_string());
@@ -1831,8 +1913,8 @@ pub async fn copy_image_source_to_clipboard(source: String) -> Result<(), String
     let height = image.height() as usize;
     let pixels = image.into_raw();
 
-    let mut clipboard = Clipboard::new()
-        .map_err(|e| format!("Failed to access clipboard: {}", e))?;
+    let mut clipboard =
+        Clipboard::new().map_err(|e| format!("Failed to access clipboard: {}", e))?;
     clipboard
         .set_image(ImageData {
             width,
@@ -1873,10 +1955,7 @@ pub async fn save_video_source_to_path(
     video_url: String,
     target_path: String,
 ) -> Result<String, String> {
-    info!(
-        "Downloading video from {} to {}",
-        video_url, target_path
-    );
+    info!("Downloading video from {} to {}", video_url, target_path);
 
     let bytes = if video_url.starts_with("data:") {
         let parts: Vec<&str> = video_url.splitn(2, ',').collect();
@@ -1892,15 +1971,17 @@ pub async fn save_video_source_to_path(
             .strip_prefix("asset://localhost/")
             .or_else(|| video_url.strip_prefix("asset:///"))
             .ok_or_else(|| format!("Invalid asset URL format: {}", video_url))?;
-        let decoded = urlencoding::decode(path_part)
-            .map_err(|e| format!("URL decode failed: {}", e))?;
+        let decoded =
+            urlencoding::decode(path_part).map_err(|e| format!("URL decode failed: {}", e))?;
         let file_path = decoded.trim_start_matches('/');
         // Try reading directly first, then canonicalize
         std::fs::read(&file_path)
             .or_else(|_| {
                 std::fs::canonicalize(&file_path).and_then(|c| {
                     let canonical_str = c.to_string_lossy();
-                    let clean = canonical_str.strip_prefix("\\\\?\\").unwrap_or(&canonical_str);
+                    let clean = canonical_str
+                        .strip_prefix("\\\\?\\")
+                        .unwrap_or(&canonical_str);
                     std::fs::read(clean)
                 })
             })
@@ -1908,8 +1989,8 @@ pub async fn save_video_source_to_path(
     } else if video_url.starts_with("file://") {
         // Handle file:// protocol
         let path_part = video_url.strip_prefix("file://").unwrap_or(&video_url);
-        let decoded = urlencoding::decode(path_part)
-            .map_err(|e| format!("file URL decode failed: {}", e))?;
+        let decoded =
+            urlencoding::decode(path_part).map_err(|e| format!("file URL decode failed: {}", e))?;
         let file_path = decoded.trim_start_matches('/');
         std::fs::read(&file_path)
             .map_err(|e| format!("Failed to read file:// {}: {}", file_path, e))?
@@ -1927,8 +2008,14 @@ pub async fn save_video_source_to_path(
                 let app_data_dir = std::env::current_dir()
                     .map_err(|e| format!("Failed to get current dir: {}", e))?;
                 let full_path = app_data_dir.join(&local_path);
-                std::fs::read(&full_path)
-                    .map_err(|e| format!("Failed to read local file {} (tried {}): {}", trimmed, full_path.display(), e))?
+                std::fs::read(&full_path).map_err(|e| {
+                    format!(
+                        "Failed to read local file {} (tried {}): {}",
+                        trimmed,
+                        full_path.display(),
+                        e
+                    )
+                })?
             }
         } else {
             // HTTP/HTTPS URL - fetch via network
@@ -1951,8 +2038,7 @@ pub async fn save_video_source_to_path(
         std::fs::create_dir_all(parent)
             .map_err(|e| format!("Create directory {}: {}", parent.display(), e))?;
     }
-    std::fs::write(&target, &bytes)
-        .map_err(|e| format!("Write file {}: {}", target_path, e))?;
+    std::fs::write(&target, &bytes).map_err(|e| format!("Write file {}: {}", target_path, e))?;
 
     info!("Video saved to: {}", target_path);
     Ok(target_path)
@@ -1997,10 +2083,13 @@ pub async fn auto_save_video_to_project(
     let filename = format!("video_{}_{}_{}.mp4", timestamp, process_id, counter);
     let output_path = outputs_dir.join(&filename);
 
-    std::fs::write(&output_path, &bytes)
-        .map_err(|e| format!("Failed to save video: {}", e))?;
+    std::fs::write(&output_path, &bytes).map_err(|e| format!("Failed to save video: {}", e))?;
 
-    info!("Video auto-saved to project {}: {}", project_id, output_path.display());
+    info!(
+        "Video auto-saved to project {}: {}",
+        project_id,
+        output_path.display()
+    );
     Ok(output_path.to_string_lossy().to_string())
 }
 
@@ -2012,7 +2101,11 @@ pub async fn auto_save_image_to_project(
     provider_name: Option<String>,
     model_name: Option<String>,
 ) -> Result<String, String> {
-    info!("[auto_save_image_to_project] START project_id={}, url={}", project_id, &image_url[..image_url.len().min(100)]);
+    info!(
+        "[auto_save_image_to_project] START project_id={}, url={}",
+        project_id,
+        &image_url[..image_url.len().min(100)]
+    );
     let bytes = if image_url.starts_with("data:") {
         let parts: Vec<&str> = image_url.splitn(2, ',').collect();
         if parts.len() != 2 {
@@ -2040,8 +2133,7 @@ pub async fn auto_save_image_to_project(
         } else {
             PathBuf::from(&image_url)
         };
-        std::fs::read(&local_path)
-            .map_err(|e| format!("Read local file {}: {}", image_url, e))?
+        std::fs::read(&local_path).map_err(|e| format!("Read local file {}: {}", image_url, e))?
     };
 
     let outputs_dir = resolve_project_dir(&app, &project_id, "outputs/images")?;
@@ -2052,7 +2144,11 @@ pub async fn auto_save_image_to_project(
         model_name.as_deref(),
     )?;
 
-    info!("Generated image auto-saved to project {}: {}", project_id, output_path.display());
+    info!(
+        "Generated image auto-saved to project {}: {}",
+        project_id,
+        output_path.display()
+    );
     Ok(output_path.to_string_lossy().to_string())
 }
 
@@ -2060,17 +2156,24 @@ pub async fn auto_save_image_to_project(
 /// Text APIs accept inline base64 images, so we don't need external hosting
 #[tauri::command]
 pub async fn convert_image_to_data_url(source: String) -> Result<String, String> {
-    info!("[convert_data_url] starting, source length: {}", source.len());
+    info!(
+        "[convert_data_url] starting, source length: {}",
+        source.len()
+    );
 
     // Use resolve_source_bytes to get image bytes from any source type
-    let (image_bytes, extension) = resolve_source_bytes(&source).await
+    let (image_bytes, extension) = resolve_source_bytes(&source)
+        .await
         .map_err(|e| format!("[convert_data_url] Failed to read image: {}", e))?;
 
     if image_bytes.is_empty() {
         return Err("[convert_data_url] Image data is empty".to_string());
     }
 
-    info!("[convert_data_url] image bytes: {} KB", image_bytes.len() / 1024);
+    info!(
+        "[convert_data_url] image bytes: {} KB",
+        image_bytes.len() / 1024
+    );
 
     // Encode to base64
     let base64_data = STANDARD.encode(&image_bytes);
@@ -2086,7 +2189,10 @@ pub async fn convert_image_to_data_url(source: String) -> Result<String, String>
     };
 
     let data_url = format!("data:{};base64,{}", mime_type, base64_data);
-    info!("[convert_data_url] converted to data URL, length: {}", data_url.len());
+    info!(
+        "[convert_data_url] converted to data URL, length: {}",
+        data_url.len()
+    );
 
     Ok(data_url)
 }
@@ -2123,13 +2229,14 @@ pub async fn open_in_edge(url: String) -> Result<(), String> {
         ];
 
         for edge_path in &edge_paths {
-            let result = Command::new(edge_path)
-                .arg(&url)
-                .spawn();
+            let result = Command::new(edge_path).arg(&url).spawn();
 
             match result {
                 Ok(_) => {
-                    info!("[open_in_edge] Successfully opened URL in Edge: {}", edge_path);
+                    info!(
+                        "[open_in_edge] Successfully opened URL in Edge: {}",
+                        edge_path
+                    );
                     return Ok(());
                 }
                 Err(_) => continue,
@@ -2159,9 +2266,7 @@ pub async fn open_in_edge(url: String) -> Result<(), String> {
     {
         // On non-Windows, use default browser via open command
         use std::process::Command;
-        let result = Command::new("open")
-            .arg(&url)
-            .output();
+        let result = Command::new("open").arg(&url).output();
 
         match result {
             Ok(output) => {
@@ -2196,9 +2301,11 @@ pub async fn delete_project_upload_file(
 
     // Verify the file exists and is within the uploads directory
     // This prevents accidental deletion of system files
-    let canonical_uploads = uploads_dir.canonicalize()
+    let canonical_uploads = uploads_dir
+        .canonicalize()
         .map_err(|e| format!("Failed to resolve uploads dir: {}", e))?;
-    let canonical_file = file_path.canonicalize()
+    let canonical_file = file_path
+        .canonicalize()
         .map_err(|e| format!("File does not exist or cannot be accessed: {}", e))?;
 
     // Ensure the file is within the uploads directory
@@ -2255,13 +2362,19 @@ mod tests {
     #[test]
     fn decodes_local_media_urls_without_losing_the_root_path() {
         if cfg!(target_os = "windows") {
-            assert_eq!(decode_file_url_path("file:///C:/Users/mir/media.mp4"), "C:/Users/mir/media.mp4");
+            assert_eq!(
+                decode_file_url_path("file:///C:/Users/mir/media.mp4"),
+                "C:/Users/mir/media.mp4"
+            );
             assert_eq!(
                 decode_asset_url_path("asset://localhost/C:/Users/mir/media.mp4").unwrap(),
                 std::path::PathBuf::from("C:/Users/mir/media.mp4")
             );
         } else {
-            assert_eq!(decode_file_url_path("file:///Users/mir/media.mp4"), "/Users/mir/media.mp4");
+            assert_eq!(
+                decode_file_url_path("file:///Users/mir/media.mp4"),
+                "/Users/mir/media.mp4"
+            );
             assert_eq!(
                 decode_asset_url_path("asset://localhost/Users/mir/media.mp4").unwrap(),
                 std::path::PathBuf::from("/Users/mir/media.mp4")

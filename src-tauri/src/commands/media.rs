@@ -27,12 +27,20 @@ fn ensure_file_exists(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn resolve_project_upload_dir(app: &AppHandle, project_id: &str, kind: &str) -> Result<PathBuf, String> {
+fn resolve_project_upload_dir(
+    app: &AppHandle,
+    project_id: &str,
+    kind: &str,
+) -> Result<PathBuf, String> {
     let app_data_dir = app
         .path()
         .app_data_dir()
         .map_err(|e| format!("Failed to resolve app data dir: {}", e))?;
-    let dir = app_data_dir.join("projects").join(project_id).join("uploads").join(kind);
+    let dir = app_data_dir
+        .join("projects")
+        .join(project_id)
+        .join("uploads")
+        .join(kind);
     std::fs::create_dir_all(&dir)
         .map_err(|e| format!("Failed to create media upload dir {}: {}", dir.display(), e))?;
     Ok(dir)
@@ -84,8 +92,7 @@ pub fn persist_media_bytes_to_project(
     let output_dir = resolve_project_upload_dir(&app, &project_id, directory_kind)?;
     let extension = normalize_media_extension(&file_name, fallback_extension);
     let output_path = output_dir.join(build_output_filename(Path::new(&file_name), &extension));
-    std::fs::write(&output_path, bytes)
-        .map_err(|error| format!("保存媒体文件失败: {error}"))?;
+    std::fs::write(&output_path, bytes).map_err(|error| format!("保存媒体文件失败: {error}"))?;
     Ok(output_path.to_string_lossy().to_string())
 }
 
@@ -97,9 +104,12 @@ fn run_ffmpeg_convert(source: &Path, target: &Path, args: &[&str]) -> Result<(),
     }
     command.arg(target);
 
-    let output = command
-        .output()
-        .map_err(|e| format!("Failed to run ffmpeg: {}. Please install ffmpeg and ensure it's in PATH.", e))?;
+    let output = command.output().map_err(|e| {
+        format!(
+            "Failed to run ffmpeg: {}. Please install ffmpeg and ensure it's in PATH.",
+            e
+        )
+    })?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(format!("ffmpeg convert failed: {}", stderr));

@@ -1,7 +1,7 @@
 use base64::{engine::general_purpose::STANDARD, Engine};
 use reqwest::redirect::Policy;
-use std::path::{Path, PathBuf};
 use std::net::IpAddr;
+use std::path::{Path, PathBuf};
 use tokio::net::lookup_host;
 use url::Url;
 use urlencoding::decode;
@@ -190,11 +190,13 @@ fn is_private_or_local_ip(ip: &IpAddr) -> bool {
                 || value.is_multicast()
                 || (first == 100 && (64..=127).contains(&second))
         }
-        IpAddr::V6(value) => value.is_loopback()
-            || value.is_unspecified()
-            || value.is_multicast()
-            || value.is_unique_local()
-            || value.segments()[0] == 0xfe80,
+        IpAddr::V6(value) => {
+            value.is_loopback()
+                || value.is_unspecified()
+                || value.is_multicast()
+                || value.is_unique_local()
+                || value.segments()[0] == 0xfe80
+        }
     }
 }
 
@@ -276,7 +278,9 @@ fn content_type_from_extension(extension: &str) -> String {
 
 #[allow(dead_code)]
 fn _path_file_name(path: &Path) -> &str {
-    path.file_name().and_then(|value| value.to_str()).unwrap_or("input.bin")
+    path.file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("input.bin")
 }
 
 #[cfg(test)]
@@ -292,8 +296,14 @@ mod tests {
 
     #[test]
     fn rejects_private_and_loopback_addresses() {
-        assert!(is_private_or_local_ip(&"127.0.0.1".parse::<IpAddr>().unwrap()));
-        assert!(is_private_or_local_ip(&"192.168.1.10".parse::<IpAddr>().unwrap()));
-        assert!(!is_private_or_local_ip(&"8.8.8.8".parse::<IpAddr>().unwrap()));
+        assert!(is_private_or_local_ip(
+            &"127.0.0.1".parse::<IpAddr>().unwrap()
+        ));
+        assert!(is_private_or_local_ip(
+            &"192.168.1.10".parse::<IpAddr>().unwrap()
+        ));
+        assert!(!is_private_or_local_ip(
+            &"8.8.8.8".parse::<IpAddr>().unwrap()
+        ));
     }
 }

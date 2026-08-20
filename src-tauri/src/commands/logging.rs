@@ -14,10 +14,7 @@ pub struct FrontendLogEntry {
 
 #[tauri::command]
 pub async fn append_frontend_log(app: AppHandle, entry: FrontendLogEntry) -> Result<(), String> {
-    let session_id = app
-        .state::<SessionId>()
-        .0
-        .clone();
+    let session_id = app.state::<SessionId>().0.clone();
     let fields = entry.fields.unwrap_or(serde_json::json!({}));
     let enriched = serde_json::json!({
         "session": session_id,
@@ -26,10 +23,18 @@ pub async fn append_frontend_log(app: AppHandle, entry: FrontendLogEntry) -> Res
     });
 
     match entry.level.as_str() {
-        "debug" => tracing::debug!(target: "frontend", ns = %entry.target, data = %enriched, "{}", entry.message),
-        "info"  => tracing::info!(target:  "frontend", ns = %entry.target, data = %enriched, "{}", entry.message),
-        "warn"  => tracing::warn!(target:  "frontend", ns = %entry.target, data = %enriched, "{}", entry.message),
-        "error" => tracing::error!(target: "frontend", ns = %entry.target, data = %enriched, "{}", entry.message),
+        "debug" => {
+            tracing::debug!(target: "frontend", ns = %entry.target, data = %enriched, "{}", entry.message)
+        }
+        "info" => {
+            tracing::info!(target:  "frontend", ns = %entry.target, data = %enriched, "{}", entry.message)
+        }
+        "warn" => {
+            tracing::warn!(target:  "frontend", ns = %entry.target, data = %enriched, "{}", entry.message)
+        }
+        "error" => {
+            tracing::error!(target: "frontend", ns = %entry.target, data = %enriched, "{}", entry.message)
+        }
         _ => return Err(format!("invalid level: {}", entry.level)),
     }
     Ok(())

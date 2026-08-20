@@ -88,9 +88,8 @@ async fn fetch_latest_release_tag() -> Result<String, String> {
         .and_then(|value| value.to_str().ok())
         .ok_or_else(|| "missing location header in releases redirect".to_string())?;
 
-    extract_tag_from_location(location).ok_or_else(|| {
-        format!("failed to parse tag from releases redirect location: {location}")
-    })
+    extract_tag_from_location(location)
+        .ok_or_else(|| format!("failed to parse tag from releases redirect location: {location}"))
 }
 
 #[tauri::command]

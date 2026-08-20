@@ -367,7 +367,11 @@ impl OpenAiProvider {
         .filter_map(|pointer| body.pointer(pointer).and_then(Value::as_str))
         .find(|value| value.starts_with("image/"))
         .unwrap_or("image/png");
-        for pointer in ["/data/0/b64_json", "/data/0/image/b64_json", "/data/0/base64"] {
+        for pointer in [
+            "/data/0/b64_json",
+            "/data/0/image/b64_json",
+            "/data/0/base64",
+        ] {
             if let Some(base64_data) = body.pointer(pointer).and_then(Value::as_str) {
                 return Some(format!("data:{};base64,{}", mime_type, base64_data));
             }
@@ -1065,11 +1069,7 @@ mod tests {
 
     #[test]
     fn reference_image_uses_local_file_extension_when_content_is_unknown() {
-        let image = reference_image(
-            vec![0x00, 0x01],
-            None,
-            Some(Path::new("reference.webp")),
-        );
+        let image = reference_image(vec![0x00, 0x01], None, Some(Path::new("reference.webp")));
 
         assert_eq!(image.mime_type, "image/webp");
         assert_eq!(image.extension, "webp");
@@ -1230,22 +1230,14 @@ mod tests {
         let server = tokio::spawn(async move {
             let (mut socket, _) = listener.accept().await.unwrap();
             let request = read_http_request(&mut socket).await;
-            write_json_response(
-                &mut socket,
-                "200 OK",
-                r#"{"data":[{"b64_json":"AQID"}]}"#,
-            )
-            .await;
+            write_json_response(&mut socket, "200 OK", r#"{"data":[{"b64_json":"AQID"}]}"#).await;
             request
         });
 
         let provider = OpenAiProvider::fhl();
         let mut request = generate_request("fhl/gpt-image-2", "4K", "16:9");
         request.provider_config = Some(HashMap::from([
-            (
-                "base_url".to_string(),
-                json!(format!("http://{address}")),
-            ),
+            ("base_url".to_string(), json!(format!("http://{address}"))),
             ("api_key".to_string(), json!("test-key")),
         ]));
 
@@ -1281,22 +1273,14 @@ mod tests {
         let server = tokio::spawn(async move {
             let (mut socket, _) = listener.accept().await.unwrap();
             let request = read_http_request(&mut socket).await;
-            write_json_response(
-                &mut socket,
-                "200 OK",
-                r#"{"data":[{"b64_json":"AQID"}]}"#,
-            )
-            .await;
+            write_json_response(&mut socket, "200 OK", r#"{"data":[{"b64_json":"AQID"}]}"#).await;
             request
         });
 
         let provider = OpenAiProvider::fhl();
         let mut request = generate_request("fhl/gpt-image-2", "4K", "1:1");
         request.provider_config = Some(HashMap::from([
-            (
-                "base_url".to_string(),
-                json!(format!("http://{address}")),
-            ),
+            ("base_url".to_string(), json!(format!("http://{address}"))),
             ("api_key".to_string(), json!("test-key")),
         ]));
         request.reference_images = Some(vec![

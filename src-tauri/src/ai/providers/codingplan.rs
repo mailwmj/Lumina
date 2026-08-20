@@ -159,11 +159,7 @@ impl CodingPlanProvider {
         }
     }
 
-    async fn chat(
-        &self,
-        api_key: &str,
-        request: &GenerateRequest,
-    ) -> Result<String, AIError> {
+    async fn chat(&self, api_key: &str, request: &GenerateRequest) -> Result<String, AIError> {
         let model = sanitize_model(&request.model);
         let has_reference = request
             .reference_images
@@ -197,7 +193,13 @@ impl CodingPlanProvider {
             let mut parts = Vec::new();
 
             // Add reference images
-            for (i, img_source) in request.reference_images.as_ref().unwrap_or(&vec![]).iter().enumerate() {
+            for (i, img_source) in request
+                .reference_images
+                .as_ref()
+                .unwrap_or(&vec![])
+                .iter()
+                .enumerate()
+            {
                 match Self::source_to_url(img_source) {
                     Ok(url) => {
                         parts.push(ContentPart {
@@ -277,12 +279,17 @@ impl CodingPlanProvider {
                     }
                 }
             }
-            Err(AIError::Provider("CodingPlan response has no content".to_string()))
+            Err(AIError::Provider(
+                "CodingPlan response has no content".to_string(),
+            ))
         } else {
             let resp: ChatResponse = serde_json::from_str(&raw_response)
                 .map_err(|err| AIError::Provider(format!("CodingPlan parse error: {}", err)))?;
             if let Some(error) = resp.error {
-                let msg = error.get("message").and_then(|v| v.as_str()).unwrap_or("Unknown error");
+                let msg = error
+                    .get("message")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Unknown error");
                 return Err(AIError::Provider(format!("CodingPlan error: {}", msg)));
             }
             if let Some(choices) = resp.choices {
@@ -294,7 +301,9 @@ impl CodingPlanProvider {
                     }
                 }
             }
-            Err(AIError::Provider("CodingPlan response has no content".to_string()))
+            Err(AIError::Provider(
+                "CodingPlan response has no content".to_string(),
+            ))
         }
     }
 }
@@ -312,16 +321,11 @@ impl AIProvider for CodingPlanProvider {
     }
 
     fn supports_model(&self, model: &str) -> bool {
-        matches!(
-            sanitize_model(model).as_str(),
-            "codingplan"
-        )
+        matches!(sanitize_model(model).as_str(), "codingplan")
     }
 
     fn list_models(&self) -> Vec<String> {
-        vec![
-            "codingplan/codingplan".to_string(),
-        ]
+        vec!["codingplan/codingplan".to_string()]
     }
 
     async fn set_api_key(&self, api_key: String) -> Result<(), AIError> {

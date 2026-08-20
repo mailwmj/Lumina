@@ -196,8 +196,8 @@ impl RunningHubProvider {
     /// on the longest side are scaled down; all images are re-encoded as JPEG
     /// to ensure reasonable payload size for the RunningHub API.
     fn resize_and_encode(bytes: &[u8]) -> Result<(Vec<u8>, &'static str), String> {
-        let img = image::load_from_memory(bytes)
-            .map_err(|e| format!("failed to decode image: {}", e))?;
+        let img =
+            image::load_from_memory(bytes).map_err(|e| format!("failed to decode image: {}", e))?;
 
         let (w, h) = img.dimensions();
         let max_dim = w.max(h);
@@ -339,8 +339,8 @@ impl RunningHubProvider {
                         )));
                     }
 
-                    let body: RunningHubUploadResponse =
-                        serde_json::from_str(&raw_response).map_err(|err| {
+                    let body: RunningHubUploadResponse = serde_json::from_str(&raw_response)
+                        .map_err(|err| {
                             AIError::Provider(format!(
                                 "RunningHub upload invalid JSON: {}; raw={}",
                                 err, raw_response
@@ -370,16 +370,16 @@ impl RunningHubProvider {
                             ))
                         })?;
 
-                    let resolved_url =
-                        if download_url.starts_with("http://") || download_url.starts_with("https://")
-                        {
-                            download_url
-                        } else {
-                            format!(
-                                "https://www.runninghub.cn/{}",
-                                download_url.trim_start_matches('/')
-                            )
-                        };
+                    let resolved_url = if download_url.starts_with("http://")
+                        || download_url.starts_with("https://")
+                    {
+                        download_url
+                    } else {
+                        format!(
+                            "https://www.runninghub.cn/{}",
+                            download_url.trim_start_matches('/')
+                        )
+                    };
 
                     info!(
                         "[RunningHub] Uploaded image {} -> {}",
@@ -461,7 +461,10 @@ impl AIProvider for RunningHubProvider {
         true
     }
 
-    async fn submit_task(&self, request: GenerateRequest) -> Result<ProviderTaskSubmission, AIError> {
+    async fn submit_task(
+        &self,
+        request: GenerateRequest,
+    ) -> Result<ProviderTaskSubmission, AIError> {
         let api_key = self
             .api_key
             .read()
@@ -487,18 +490,27 @@ impl AIProvider for RunningHubProvider {
 
         // V1 支持 "auto" aspectRatio；G31 Flash 不支持 "auto"，此时省略该字段（API 标记为可选）
         if !request.aspect_ratio.is_empty() && request.aspect_ratio != "auto" {
-            body_map.insert("aspectRatio".to_string(), serde_json::json!(request.aspect_ratio));
+            body_map.insert(
+                "aspectRatio".to_string(),
+                serde_json::json!(request.aspect_ratio),
+            );
         } else if is_v1 && request.aspect_ratio == "auto" {
             body_map.insert("aspectRatio".to_string(), serde_json::json!("auto"));
         }
 
         // G31 Flash resolution 值需小写（API 要求 1k/2k/4k，前端传 1K/2K/4K）；V1 不需要 resolution
         if !request.size.is_empty() && !is_v1 {
-            body_map.insert("resolution".to_string(), serde_json::json!(request.size.to_lowercase()));
+            body_map.insert(
+                "resolution".to_string(),
+                serde_json::json!(request.size.to_lowercase()),
+            );
         }
 
         // V1 /edit 和 G31 Flash /image-to-image 都要求 imageUrls 字段
-        body_map.insert("imageUrls".to_string(), serde_json::json!(image_urls.unwrap_or_default()));
+        body_map.insert(
+            "imageUrls".to_string(),
+            serde_json::json!(image_urls.unwrap_or_default()),
+        );
         let body = serde_json::Value::Object(body_map);
 
         info!(
@@ -549,7 +561,10 @@ impl AIProvider for RunningHubProvider {
         }))
     }
 
-    async fn poll_task(&self, handle: ProviderTaskHandle) -> Result<ProviderTaskPollResult, AIError> {
+    async fn poll_task(
+        &self,
+        handle: ProviderTaskHandle,
+    ) -> Result<ProviderTaskPollResult, AIError> {
         let api_key = self
             .api_key
             .read()
@@ -605,7 +620,9 @@ impl AIProvider for RunningHubProvider {
                         return Ok(ProviderTaskPollResult::Succeeded(first_result.url.clone()));
                     }
                 }
-                Ok(ProviderTaskPollResult::Failed("No results in response".to_string()))
+                Ok(ProviderTaskPollResult::Failed(
+                    "No results in response".to_string(),
+                ))
             }
             "FAILED" => {
                 let error_msg = query_body
@@ -634,7 +651,9 @@ impl AIProvider for RunningHubProvider {
                 }
                 ProviderTaskPollResult::Succeeded(url) => return Ok(url),
                 ProviderTaskPollResult::SucceededWithMeta { url, .. } => return Ok(url),
-                ProviderTaskPollResult::Failed(message) => return Err(AIError::TaskFailed(message)),
+                ProviderTaskPollResult::Failed(message) => {
+                    return Err(AIError::TaskFailed(message))
+                }
             }
         }
     }
