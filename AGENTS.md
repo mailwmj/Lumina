@@ -310,8 +310,8 @@ npm run release -- patch --notes-file docs/releases/v0.2.1.md
 
 ### Issue tracker
 
-Issues and specs for this repo live in GitHub Issues at `mailwmj/opencanvas`; use `gh`
-with the explicit `--repo mailwmj/opencanvas` flag. See `docs/agents/issue-tracker.md`.
+Issues and specs for this repo live in GitHub Issues at `mailwmj/Lumina`; use `gh`
+with the explicit `--repo mailwmj/Lumina` flag. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 

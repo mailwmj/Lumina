@@ -1,7 +1,7 @@
 # Triage Labels
 
 The skills speak in terms of five canonical triage roles. These are the label strings used
-in `mailwmj/opencanvas`.
+in `mailwmj/Lumina`.
 
 | Label in skills | Label in this tracker | Meaning |
 | --- | --- | --- |
