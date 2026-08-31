@@ -87,7 +87,9 @@ export type CustomImageProviderId = `${typeof CUSTOM_IMAGE_PROVIDER_ID_PREFIX}${
 export type ImageProviderId = BuiltInImageProviderId | CustomImageProviderId;
 
 export const DEFAULT_OPENAI_IMAGE_BASE_URL = 'https://api.ai-media.vip/v1';
-export const DEFAULT_CHAOMO_IMAGE_BASE_URL = 'https://www.chaomoapi.com/v1';
+export const DEFAULT_CHAOMO_IMAGE_BASE_URL = 'https://zntcode.net/v1';
+
+const LEGACY_CHAOMO_IMAGE_HOSTS = new Set(['chaomoapi.com', 'www.chaomoapi.com']);
 
 export interface DiscoveredImageModel {
   id: string;
@@ -663,7 +665,19 @@ function normalizeChaomoImageApiConfig(
   input: Partial<ChaomoImageApiConfig> | null | undefined
 ): ChaomoImageApiConfig {
   const defaults = createDefaultChaomoImageApiConfig();
-  const baseUrl = typeof input?.baseUrl === 'string' ? input.baseUrl.trim() : '';
+  const configuredBaseUrl = typeof input?.baseUrl === 'string' ? input.baseUrl.trim() : '';
+  let baseUrl = configuredBaseUrl;
+  if (configuredBaseUrl) {
+    try {
+      const url = new URL(configuredBaseUrl);
+      if (LEGACY_CHAOMO_IMAGE_HOSTS.has(url.hostname.toLowerCase())) {
+        url.hostname = 'zntcode.net';
+        baseUrl = url.toString();
+      }
+    } catch {
+      // Keep malformed custom input unchanged; request validation handles it later.
+    }
+  }
   const modelCatalog = normalizeImageModelCatalog(input?.modelCatalog);
 
   return {

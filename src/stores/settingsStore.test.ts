@@ -101,6 +101,19 @@ describe('prompt polishing settings', () => {
     expect(migrated.customImageApis[0]?.protocol).toBe('openai-images');
   });
 
+  it('migrates persisted Chaomo endpoints to the current domain', () => {
+    const migrated = migrateSettingsState({
+      chaomoImageApi: {
+        apiKey: 'key',
+        baseUrl: 'https://www.chaomoapi.com/v1',
+      },
+    }, 32) as {
+      chaomoImageApi: { baseUrl: string };
+    };
+
+    expect(migrated.chaomoImageApi.baseUrl).toBe('https://zntcode.net/v1');
+  });
+
   it('upgrades legacy FHL providers without changing their configured identity or models', () => {
     const providerId = 'custom-openai:fhl';
     const modelId = `${providerId}/gpt-image-2`;
