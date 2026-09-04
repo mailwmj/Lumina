@@ -14,14 +14,20 @@ import {
   renderBatchFixedCanvas,
 } from './infrastructure/tauriBatchImageCropGateway';
 
+const tauriWindowMocks = vi.hoisted(() => ({
+  enabled: false,
+  close: vi.fn(),
+  onCloseRequested: vi.fn(),
+}));
+
 vi.mock('@tauri-apps/api/core', () => ({
-  isTauri: () => false,
+  isTauri: () => tauriWindowMocks.enabled,
 }));
 
 vi.mock('@tauri-apps/api/window', () => ({
   getCurrentWindow: () => ({
-    close: vi.fn(),
-    onCloseRequested: vi.fn(),
+    close: tauriWindowMocks.close,
+    onCloseRequested: tauriWindowMocks.onCloseRequested,
   }),
 }));
 
@@ -87,6 +93,8 @@ describe('BatchImageCropWorkbench completed export', () => {
   beforeEach(async () => {
     await i18n.changeLanguage('zh');
     vi.clearAllMocks();
+    tauriWindowMocks.enabled = false;
+    tauriWindowMocks.onCloseRequested.mockResolvedValue(() => undefined);
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
     vi.stubGlobal('ResizeObserver', class ResizeObserver {
       observe() {}
@@ -252,5 +260,45 @@ describe('BatchImageCropWorkbench completed export', () => {
 
     await act(async () => findButton(container, '裁剪填满').click());
     expect(findButton(container, '恢复自动裁剪').disabled).toBe(false);
+  });
+
+  it('leaves the workbench even when temporary cache cleanup does not settle', async () => {
+    const onExit = vi.fn();
+    const backHandlerRef = { current: () => undefined };
+    vi.mocked(cleanupBatchCropCache).mockReturnValue(new Promise(() => undefined));
+
+    await act(async () => {
+      root.render(<BatchImageCropWorkbench onExit={onExit} backHandlerRef={backHandlerRef} />);
+    });
+    await act(async () => {
+      backHandlerRef.current();
+    });
+
+    expect(cleanupBatchCropCache).toHaveBeenCalledTimes(1);
+    expect(onExit).toHaveBeenCalledTimes(1);
+  });
+
+  it('closes the app even when temporary cache cleanup does not settle', async () => {
+    let closeRequestedHandler: ((event: { preventDefault: () => void }) => void) | undefined;
+    tauriWindowMocks.enabled = true;
+    tauriWindowMocks.onCloseRequested.mockImplementation(async (handler) => {
+      closeRequestedHandler = handler;
+      return () => undefined;
+    });
+    vi.mocked(cleanupBatchCropCache).mockReturnValue(new Promise(() => undefined));
+
+    await act(async () => {
+      root.render(<BatchImageCropWorkbench onExit={() => undefined} backHandlerRef={{ current: () => undefined }} />);
+    });
+    await vi.waitFor(() => expect(closeRequestedHandler).toBeTypeOf('function'));
+
+    const preventDefault = vi.fn();
+    await act(async () => {
+      closeRequestedHandler?.({ preventDefault });
+    });
+
+    expect(preventDefault).toHaveBeenCalledTimes(1);
+    expect(cleanupBatchCropCache).toHaveBeenCalledTimes(1);
+    expect(tauriWindowMocks.close).toHaveBeenCalledTimes(1);
   });
 });

@@ -120,13 +120,13 @@ export function BatchImageCropWorkbench({ onExit, backHandlerRef }: BatchImageCr
     await cleanupBatchCropCache(batchIdRef.current).catch(() => undefined);
   }, []);
 
-  const exitWorkbench = useCallback(async () => {
+  const exitWorkbench = useCallback(() => {
     if (exitFinalizingRef.current) return;
     exitFinalizingRef.current = true;
-    await clearBatch();
+    void clearBatch();
     if (isTauri() && closeRequestedRef.current) {
       allowWindowCloseRef.current = true;
-      await getCurrentWindow().close();
+      void getCurrentWindow().close();
       return;
     }
     onExit();
