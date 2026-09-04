@@ -367,27 +367,124 @@ impl OpenAiProvider {
         .filter_map(|pointer| body.pointer(pointer).and_then(Value::as_str))
         .find(|value| value.starts_with("image/"))
         .unwrap_or("image/png");
-        for pointer in ["/data/0/b64_json", "/data/0/image/b64_json", "/data/0/base64"] {
-            if let Some(base64_data) = body.pointer(pointer).and_then(Value::as_str) {
-                return Some(format!("data:{};base64,{}", mime_type, base64_data));
+
+        for pointer in [
+            "/data/0",
+            "/images/0",
+            "/result",
+            "/output",
+            "/response",
+            "/image",
+        ] {
+            if let Some(source) =
+                Self::response_image_source_from_value(body.pointer(pointer), mime_type)
+            {
+                return Some(source);
             }
         }
 
         let url_pointers = [
             "/data/0/url",
+            "/image_url",
+            "/url",
+            "/download_url",
+            "/output_url",
             "/assets/0/signed_url",
             "/assets/0/url",
             "/output/url",
         ];
         for pointer in url_pointers {
-            if let Some(url) = body.pointer(pointer).and_then(Value::as_str) {
-                if !url.trim().is_empty() {
-                    return Some(url.to_string());
-                }
+            if let Some(source) =
+                Self::response_image_source_from_value(body.pointer(pointer), mime_type)
+            {
+                return Some(source);
+            }
+        }
+
+        for pointer in ["/b64_json", "/base64", "/image_base64"] {
+            if let Some(base64_data) = body.pointer(pointer).and_then(Value::as_str) {
+                return Self::response_base64_source(base64_data, mime_type);
             }
         }
 
         None
+    }
+
+    fn response_image_source_from_value(
+        value: Option<&Value>,
+        fallback_mime_type: &str,
+    ) -> Option<String> {
+        match value? {
+            Value::Array(items) => items.iter().find_map(|item| {
+                Self::response_image_source_from_value(Some(item), fallback_mime_type)
+            }),
+            Value::Object(object) => {
+                let mime_type = ["media_type", "mime_type", "mimeType", "content_type"]
+                    .into_iter()
+                    .filter_map(|key| object.get(key).and_then(Value::as_str))
+                    .find(|value| value.starts_with("image/"))
+                    .unwrap_or(fallback_mime_type);
+
+                for key in [
+                    "url",
+                    "image_url",
+                    "download_url",
+                    "signed_url",
+                    "output_url",
+                ] {
+                    if let Some(source) = object
+                        .get(key)
+                        .and_then(Value::as_str)
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty())
+                    {
+                        return Some(source.to_string());
+                    }
+                    if let Some(source) =
+                        Self::response_image_source_from_value(object.get(key), mime_type)
+                    {
+                        return Some(source);
+                    }
+                }
+
+                for key in ["b64_json", "base64", "image_base64"] {
+                    if let Some(base64_data) = object.get(key).and_then(Value::as_str) {
+                        if let Some(source) = Self::response_base64_source(base64_data, mime_type) {
+                            return Some(source);
+                        }
+                    }
+                }
+
+                for key in ["image", "result", "output", "response", "data", "images"] {
+                    if let Some(source) =
+                        Self::response_image_source_from_value(object.get(key), mime_type)
+                    {
+                        return Some(source);
+                    }
+                }
+
+                None
+            }
+            Value::String(source) => {
+                let source = source.trim();
+                (source.starts_with("data:")
+                    || source.starts_with("http://")
+                    || source.starts_with("https://"))
+                .then(|| source.to_string())
+            }
+            _ => None,
+        }
+    }
+
+    fn response_base64_source(base64_data: &str, mime_type: &str) -> Option<String> {
+        let base64_data = base64_data.trim();
+        if base64_data.is_empty() {
+            return None;
+        }
+        if base64_data.starts_with("data:") {
+            return Some(base64_data.to_string());
+        }
+        Some(format!("data:{};base64,{}", mime_type, base64_data))
     }
 
     fn response_task_id(body: &Value) -> Option<String> {
@@ -1223,6 +1320,23 @@ mod tests {
         );
     }
 
+    #[test]
+    fn response_image_source_supports_nested_urls_without_using_status_text() {
+        let body = json!({
+            "status": "completed",
+            "image_url": { "url": "https://assets.example/generated.png" },
+            "result": "completed"
+        });
+
+        assert_eq!(
+            OpenAiProvider::response_image_source(&body),
+            Some("https://assets.example/generated.png".to_string())
+        );
+
+        let status_only = json!({ "status": "completed", "result": "success" });
+        assert_eq!(OpenAiProvider::response_image_source(&status_only), None);
+    }
+
     #[tokio::test]
     async fn fhl_generation_posts_the_expected_images_api_body() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -1272,6 +1386,41 @@ mod tests {
         assert_eq!(body["response_format"], "b64_json");
         assert!(body.get("aspect_ratio").is_none());
         assert!(body.get("async").is_none());
+    }
+
+    #[tokio::test]
+    async fn fhl_generation_accepts_task_style_image_url_success_envelope() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let request = read_http_request(&mut socket).await;
+            write_json_response(
+                &mut socket,
+                "200 OK",
+                r#"{"status":"completed","image_url":"https://assets.example/generated.png","result":{"data":[{"revised_prompt":"updated"}]}}"#,
+            )
+            .await;
+            request
+        });
+
+        let provider = OpenAiProvider::fhl();
+        let mut request = generate_request("fhl/gpt-image-2", "4K", "3:4");
+        request.provider_config = Some(HashMap::from([
+            ("base_url".to_string(), json!(format!("http://{address}"))),
+            ("api_key".to_string(), json!("test-key")),
+        ]));
+
+        let submission = provider.submit_task(request).await.unwrap();
+        assert!(matches!(
+            submission,
+            crate::ai::ProviderTaskSubmission::Succeeded(source)
+                if source == "https://assets.example/generated.png"
+        ));
+
+        let request = server.await.unwrap();
+        let request_text = String::from_utf8_lossy(&request);
+        assert!(request_text.starts_with("POST /v1/images/generations HTTP/1.1"));
     }
 
     #[tokio::test]
