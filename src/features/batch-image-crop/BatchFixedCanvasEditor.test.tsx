@@ -112,6 +112,82 @@ describe('BatchFixedCanvasEditor interactions', () => {
     expect(container.querySelector('input[aria-label="整图缩放"]')).not.toBeNull();
   });
 
+  it('keeps move and corner scaling usable when pointer capture is unavailable', async () => {
+    vi.spyOn(HTMLElement.prototype, 'setPointerCapture').mockImplementation(() => {
+      throw new Error('pointer capture is unavailable');
+    });
+
+    const onChange = vi.fn();
+    await renderEditor(createDefaultFixedCanvasDraft('prompt'), onChange);
+    const frame = container.querySelector('[data-testid="fixed-canvas-transform-frame"]');
+    const canvas = container.querySelector('[data-testid="fixed-canvas"]');
+    const viewport = canvas?.parentElement;
+    expect(frame).toBeInstanceOf(HTMLDivElement);
+    expect(canvas).toBeInstanceOf(HTMLDivElement);
+    expect(viewport).toBeInstanceOf(HTMLDivElement);
+
+    await act(async () => {
+      frame?.dispatchEvent(new PointerEvent('pointerdown', {
+        bubbles: true,
+        clientX: 100,
+        clientY: 100,
+        pointerId: 10,
+      }));
+    });
+    await act(async () => {
+      viewport?.dispatchEvent(new PointerEvent('pointermove', {
+        bubbles: true,
+        clientX: 120,
+        clientY: 100,
+        pointerId: 10,
+      }));
+    });
+    await act(async () => {
+      viewport?.dispatchEvent(new PointerEvent('pointerup', {
+        bubbles: true,
+        clientX: 120,
+        clientY: 100,
+        pointerId: 10,
+      }));
+    });
+
+    const movedDraft = onChange.mock.calls[onChange.mock.calls.length - 1]?.[0] as FixedCanvasDraft;
+    expect(movedDraft.transform.pan.x).toBe(10);
+
+    onChange.mockClear();
+    await renderEditor(createDefaultFixedCanvasDraft('prompt'), onChange);
+    const resizeHandle = container.querySelector('button[aria-label="拖动等比缩放图片"]');
+    const nextCanvas = container.querySelector('[data-testid="fixed-canvas"]');
+    const nextViewport = nextCanvas?.parentElement;
+    await act(async () => {
+      resizeHandle?.dispatchEvent(new PointerEvent('pointerdown', {
+        bubbles: true,
+        clientX: 150,
+        clientY: 180,
+        pointerId: 11,
+      }));
+    });
+    await act(async () => {
+      nextViewport?.dispatchEvent(new PointerEvent('pointermove', {
+        bubbles: true,
+        clientX: 190,
+        clientY: 190,
+        pointerId: 11,
+      }));
+    });
+    await act(async () => {
+      nextViewport?.dispatchEvent(new PointerEvent('pointerup', {
+        bubbles: true,
+        clientX: 190,
+        clientY: 190,
+        pointerId: 11,
+      }));
+    });
+
+    const scaledDraft = onChange.mock.calls[onChange.mock.calls.length - 1]?.[0] as FixedCanvasDraft;
+    expect(scaledDraft.transform.zoom).toBeGreaterThan(100);
+  });
+
   it.each([
     { overflowTarget: { id: '1440x1440', width: 1440, height: 1440 }, zoom: 200 },
     { overflowTarget: { id: '1440x1920', width: 1440, height: 1920 }, zoom: 125 },

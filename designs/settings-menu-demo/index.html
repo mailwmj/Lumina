@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lumina 设置 Demo · A 侧栏模式</title>
+  <!--
+    PROTOTYPE ONLY: A sidebar settings menu demo.
+    Assumptions:
+    - 一级菜单按能力类型组织：图片模型、文本模型、视频模型、提示词润色。
+    - 通用、外观、实验、外部 Agent、日志也完整保留，但按使用频率分组。
+    - 供应商和模板数据是视觉夹具，不会保存、不调用真实 API。
+  -->
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #080a09;
+      --panel: #121613;
+      --panel-2: #171d18;
+      --panel-3: #0e120f;
+      --line: #2c352e;
+      --line-2: #465248;
+      --text: #f0f4ef;
+      --muted: #9aa69c;
+      --muted-2: #68756b;
+      --accent: #9de500;
+      --accent-ink: #0d1602;
+      --warning: #edbb67;
+      --danger: #ec7d73;
+      --shadow: 0 24px 80px rgba(0, 0, 0, .36);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-width: 1020px; background: var(--bg); color: var(--text); letter-spacing: 0; }
+    button, input, select, textarea { font: inherit; }
+    button { cursor: pointer; }
+    button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .prototype-tag { position: fixed; top: 15px; left: 50%; z-index: 5; transform: translateX(-50%); border: 1px solid #526052; background: #171c18; padding: 7px 12px; color: #c1cbc2; font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+    .stage { min-height: 100vh; padding: 76px 36px 36px; }
+    .window { width: min(1180px, calc(100vw - 72px)); min-height: 710px; margin: 0 auto; border: 1px solid var(--line); background: var(--panel); box-shadow: var(--shadow); }
+    .window-bar { display: flex; align-items: center; justify-content: space-between; height: 54px; padding: 0 20px; border-bottom: 1px solid var(--line); background: var(--panel-3); }
+    .brand-lockup { display: flex; align-items: baseline; gap: 11px; }
+    .brand { font-size: 15px; font-weight: 750; letter-spacing: .02em; }
+    .crumb { color: var(--muted); font-size: 12px; }
+    .close { border: 0; background: transparent; color: var(--muted); font-size: 22px; line-height: 1; }
+    .close:hover { color: var(--text); }
+    .layout { display: grid; grid-template-columns: 190px 280px minmax(0, 1fr); min-height: 656px; }
+    .sidebar { padding: 20px 11px; border-right: 1px solid var(--line); background: #0e120f; }
+    .group { margin-bottom: 22px; }
+    .group-label { padding: 0 10px 8px; color: var(--muted-2); font-size: 10px; font-weight: 750; letter-spacing: .1em; text-transform: uppercase; }
+    .nav { display: grid; gap: 2px; }
+    .nav button { width: 100%; padding: 10px 10px; border: 0; background: transparent; color: var(--muted); font-size: 12px; text-align: left; transition: background .14s ease, color .14s ease; }
+    .nav button:hover { background: #1b231c; color: var(--text); }
+    .nav button.active { box-shadow: inset 2px 0 0 var(--accent); background: #1d281d; color: var(--accent); font-weight: 700; }
+    .sidebar-foot { margin: 26px 10px 0; padding-top: 13px; border-top: 1px solid var(--line); color: var(--muted-2); font-size: 10px; line-height: 1.5; }
+    .provider-pane { padding: 21px 17px; border-right: 1px solid var(--line); }
+    .provider-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 15px; }
+    .provider-head h2 { margin: 0; font-size: 14px; }
+    .provider-head p { margin: 5px 0 0; color: var(--muted); font-size: 10px; line-height: 1.45; }
+    .provider-list { display: grid; gap: 8px; }
+    .provider-item { display: grid; grid-template-columns: minmax(0, 1fr) 31px; gap: 5px; align-items: stretch; }
+    .provider-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; width: 100%; padding: 12px; border: 1px solid var(--line); background: var(--panel-3); color: var(--text); text-align: left; }
+    .provider-row:hover { border-color: var(--line-2); background: #182019; }
+    .provider-row.active { border-color: #778876; box-shadow: inset 3px 0 0 var(--accent); background: #192219; }
+    .provider-main { min-width: 0; }
+    .provider-title { display: flex; align-items: center; gap: 7px; min-width: 0; overflow: hidden; font-size: 12px; font-weight: 650; }
+    .provider-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .provider-sub { display: block; margin-top: 5px; overflow: hidden; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+    .provider-meta { align-self: center; color: var(--muted); font-size: 10px; white-space: nowrap; }
+    .provider-delete { border: 1px solid var(--line); background: var(--panel-3); color: var(--muted-2); font-size: 15px; line-height: 1; }
+    .provider-delete:hover { border-color: var(--danger); background: #271614; color: var(--danger); }
+    .dot { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: var(--accent); }
+    .dot.off { background: var(--muted-2); }
+    .badge { display: inline-flex; align-items: center; gap: 5px; padding: 3px 6px; border: 1px solid var(--line); color: var(--muted); font-size: 9px; white-space: nowrap; }
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 32px; padding: 0 11px; border: 1px solid var(--line-2); background: var(--panel-2); color: var(--text); font-size: 11px; }
+    .btn:hover { border-color: #758475; background: #222a23; }
+    .btn.primary { border-color: var(--accent); background: var(--accent); color: var(--accent-ink); font-weight: 750; }
+    .btn.ghost { border-color: transparent; background: transparent; color: var(--muted); }
+    .btn.ghost:hover { border-color: var(--line); color: var(--text); }
+    .btn.danger { color: var(--danger); }
+    .add-provider { width: 100%; margin-top: 10px; }
+    .detail { min-width: 0; padding: 27px 30px; background: #121713; }
+    .detail-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding-bottom: 20px; border-bottom: 1px solid var(--line); }
+    .kicker { color: var(--accent); font-size: 10px; font-weight: 750; letter-spacing: .12em; text-transform: uppercase; }
+    h1 { margin: 8px 0 0; font-size: 25px; line-height: 1.12; letter-spacing: -.02em; }
+    h2 { margin: 0; font-size: 17px; }
+    h3 { margin: 0; font-size: 13px; }
+    .lead { margin: 8px 0 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
+    .detail-content { max-width: 650px; }
+    .form-grid { display: grid; gap: 14px; margin-top: 23px; }
+    .form-grid.two { grid-template-columns: 1fr 1fr; }
+    .field { display: grid; gap: 6px; }
+    .field label { color: var(--muted); font-size: 11px; }
+    .field input, .field select, .field textarea { width: 100%; border: 1px solid var(--line-2); background: #0b0e0c; color: var(--text); padding: 9px 10px; font-size: 12px; }
+    .field input:disabled { color: var(--muted-2); }
+    .field textarea { min-height: 138px; resize: vertical; line-height: 1.55; }
+    .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 22px; }
+    .section { padding: 21px 0; border-bottom: 1px solid var(--line); }
+    .section:last-child { border-bottom: 0; }
+    .section-title { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+    .section-title p { margin: 5px 0 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
+    .setting-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding: 14px 0; border-bottom: 1px solid var(--line); }
+    .setting-row:last-child { border-bottom: 0; }
+    .setting-row strong { display: block; font-size: 12px; font-weight: 650; }
+    .setting-row span { display: block; margin-top: 5px; color: var(--muted); font-size: 11px; line-height: 1.45; }
+    .switch { position: relative; width: 35px; height: 20px; flex: 0 0 auto; border: 0; border-radius: 99px; background: #3b463d; }
+    .switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: #dbe2dc; transition: transform .15s ease; }
+    .switch.on { background: var(--accent); }
+    .switch.on::after { transform: translateX(15px); background: var(--accent-ink); }
+    .switch.locked { opacity: .55; cursor: not-allowed; }
+    .path-list { display: grid; gap: 7px; margin-top: 14px; }
+    .path { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 10px; border: 1px solid var(--line); background: var(--panel-3); color: var(--muted); font: 10px ui-monospace, SFMono-Regular, Consolas, monospace; }
+    .path button { border: 0; background: transparent; color: var(--muted-2); font-size: 14px; }
+    .path button:hover { color: var(--danger); }
+    .inline { display: flex; align-items: center; gap: 8px; }
+    .color-swatch { width: 27px; height: 27px; border: 1px solid #dffab2; background: var(--accent); }
+    .locked-note { margin-top: 17px; padding: 11px 12px; border-left: 2px solid var(--warning); background: #211b10; color: #d9bd83; font-size: 11px; line-height: 1.5; }
+    .status { display: inline-flex; align-items: center; gap: 7px; color: var(--accent); font-size: 11px; }
+    .status .dot { width: 7px; height: 7px; }
+    .command { margin-top: 12px; overflow: auto; padding: 11px 12px; border: 1px solid var(--line); background: #0b0e0c; color: #b7c3b8; font: 10px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; }
+    .profile-tabs { display: flex; gap: 4px; margin-top: 22px; border-bottom: 1px solid var(--line); }
+    .profile-tabs button { padding: 9px 12px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); font-size: 11px; }
+    .profile-tabs button.active { border-bottom-color: var(--accent); color: var(--text); }
+    .toast { position: fixed; right: 24px; bottom: 24px; z-index: 15; padding: 10px 13px; border: 1px solid #627064; background: #1d271e; color: var(--text); font-size: 11px; box-shadow: 0 10px 25px rgba(0,0,0,.35); opacity: 0; transform: translateY(8px); transition: opacity .16s ease, transform .16s ease; pointer-events: none; }
+    .toast.show { opacity: 1; transform: translateY(0); }
+    @media (max-width: 1080px) { .stage { padding: 70px 16px 28px; } .window { width: 100%; } .layout { grid-template-columns: 175px 260px minmax(0, 1fr); } }
+  </style>
+</head>
+<body>
+  <div class="prototype-tag">Prototype · A 侧栏模式 · 仅供评审</div>
+  <main class="stage"><section class="window"><header class="window-bar"><div class="brand-lockup"><span class="brand">Lumina</span><span class="crumb">设置</span></div><button class="close" type="button" data-action="close" aria-label="关闭">×</button></header><div id="layout" class="layout"></div></section></main>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script>
+    const providersByType = {
+      image: [
+        { id: 'ai-media', name: 'AI Media', url: 'https://api.ai-media.vip/v1', meta: '2 个模型', kind: '内置', enabled: true },
+        { id: 'chaomo', name: 'Chaomo', url: 'https://www.chaomoapi.com/v1', meta: '4 个模型', kind: '内置', enabled: true },
+        { id: 'image-custom', name: '我的图片中转站', url: 'https://images.example.com/v1', meta: '1 个模型', kind: '自定义', enabled: false }
+      ],
+      text: [
+        { id: 'text-main', name: '文本主服务', url: 'https://text.example.com/v1', meta: '3 个模型', kind: '自定义', enabled: true },
+        { id: 'text-backup', name: '备用文本服务', url: 'https://backup.example.com/v1', meta: '1 个模型', kind: '自定义', enabled: false }
+      ],
+      video: [
+        { id: 'seedance', name: 'Seedance 2.0', url: 'https://ark.cn-beijing.volces.com/api/v3', meta: '2 个模型', kind: '内置', enabled: true },
+        { id: 'seedance-fast', name: 'Seedance 2.0 Fast', url: 'https://ark.cn-beijing.volces.com/api/v3', meta: '1 个模型', kind: '内置', enabled: false }
+      ]
+    };
+    const menus = [
+      { group: null, items: [
+        { id: 'image', label: '图片模型', description: '图片生成、编辑和参考图服务' },
+        { id: 'text', label: '文本模型', description: '文本生成和可用模型' },
+        { id: 'video', label: '视频模型', description: '视频生成和视频模型' },
+        { id: 'polish', label: '提示词润色', description: '图片、文本和视频润色模板' }
+      ] },
+      { group: '应用', items: [
+        { id: 'general', label: '通用', description: '下载和创作偏好' },
+        { id: 'appearance', label: '外观', description: '画布显示偏好' }
+      ] },
+      { group: '高级', items: [
+        { id: 'experimental', label: '实验功能', description: '低频功能，当前已固定' },
+        { id: 'external', label: '外部 Agent', description: 'Codex 画布访问权限' },
+        { id: 'logging', label: '日志', description: '开发和支持诊断' }
+      ] }
+    ];
+    const menuById = Object.fromEntries(menus.flatMap((group) => group.items.map((item) => [item.id, item])));
+    const state = {
+      activeMenu: 'image',
+      selected: { image: 'ai-media', text: 'text-main', video: 'seedance' },
+      polishProfile: 'image',
+      toggles: { keepStyle: true, noText: true, ignoreAt: true },
+      paths: ['D:/Lumina/outputs', 'D:/Lumina/references'],
+      saved: false
+    };
+
+    function activeMenu() { return menuById[state.activeMenu]; }
+    function currentProvider(type) {
+      const list = providersByType[type] || [];
+      return list.find((item) => item.id === state.selected[type]) || list[0];
+    }
+    function notify(message) {
+      const toast = document.getElementById('toast');
+      toast.textContent = message;
+      toast.classList.add('show');
+      window.clearTimeout(notify.timer);
+      notify.timer = window.setTimeout(() => toast.classList.remove('show'), 1800);
+    }
+    function selectMenu(id) { state.activeMenu = id; state.saved = false; render(); }
+    function selectProvider(type, id) { state.selected[type] = id; state.saved = false; render(); }
+    function save(message = 'Demo：设置已保存') { state.saved = true; render(); notify(message); }
+    function addProvider() { notify('Demo：这里打开新增供应商详情'); }
+    function removeProvider(type, id) {
+      const list = providersByType[type] || [];
+      const provider = list.find((item) => item.id === id);
+      if (!provider || provider.kind !== '自定义') { notify('内置供应商不可删除'); return; }
+      if (list.length <= 1) { notify('至少保留一个供应商'); return; }
+      providersByType[type] = list.filter((item) => item.id !== id);
+      if (state.selected[type] === id) state.selected[type] = providersByType[type][0].id;
+      state.saved = false;
+      render();
+      notify('Demo：供应商已删除');
+    }
+
+    function sidebar() {
+      return `<aside class="sidebar">${menus.map((group) => `
+        <section class="group">${group.group ? `<div class="group-label">${group.group}</div>` : ''}<nav class="nav">${group.items.map((item) => `<button type="button" data-menu="${item.id}" class="${state.activeMenu === item.id ? 'active' : ''}">${item.label}</button>`).join('')}</nav></section>
+      `).join('')}<div class="sidebar-foot">Demo 状态<br>当前菜单：${activeMenu().label}<br>所有数据均为本地模拟</div></aside>`;
+    }
+    function providerList(type) {
+      const list = providersByType[type] || [];
+      return `<div class="provider-list">${list.map((provider) => `<div class="provider-item"><button type="button" data-provider="${type}:${provider.id}" class="provider-row ${currentProvider(type)?.id === provider.id ? 'active' : ''}"><span class="provider-main"><span class="provider-title"><span class="dot ${provider.enabled ? '' : 'off'}"></span><span class="provider-name">${provider.name}</span><span class="badge">${provider.kind}</span></span><span class="provider-sub">${provider.url}</span></span><span class="provider-meta">${provider.meta}</span></button>${provider.kind === '自定义' ? `<button type="button" class="provider-delete" data-remove-provider="${type}:${provider.id}" aria-label="删除供应商">×</button>` : '<span class="provider-delete" title="内置供应商不可删除" aria-hidden="true">·</span>'}</div>`).join('')}</div>`;
+    }
+    function modelDetail(type) {
+      const provider = currentProvider(type);
+      const title = menuById[type].label;
+      return `<div class="detail-head"><div><div class="kicker">${title}</div><h1>${provider.name}</h1><p class="lead">先选择${title}，再配置该类型下的供应商连接和可用模型。</p></div><span class="badge"><span class="dot ${provider.enabled ? '' : 'off'}"></span>${provider.enabled ? '已启用' : '未启用'}</span></div><div class="detail-content"><div class="form-grid"><div class="form-grid two"><div class="field"><label>供应商名称</label><input value="${provider.name}" /></div><div class="field"><label>模型数量</label><input value="${provider.meta.replace(' 个模型', '')}" disabled /></div></div><div class="field"><label>接口地址</label><input value="${provider.url}" /></div><div class="field"><label>API Key</label><input type="password" value="sk-demo-••••••••••••" /></div><div class="field"><label>可用模型</label><select><option>${type === 'image' ? 'gpt-image-2' : type === 'text' ? 'gpt-5.6-terra' : 'doubao-seedance-2-0-260128'}</option><option>手动添加模型 ID</option></select></div></div><div class="actions">${provider.kind === '自定义' ? `<button class="btn danger" type="button" data-delete-provider="${type}:${provider.id}">删除供应商</button>` : ''}<span style="flex:1"></span><button class="btn ghost" type="button" data-action="cancel">取消</button><button class="btn primary" type="button" data-action="save">${state.saved ? '已保存' : '保存供应商'}</button></div></div>`;
+    }
+    function modelPage(type) {
+      const title = menuById[type].label;
+      return `<section class="provider-pane"><div class="provider-head"><div><h2>供应商</h2><p>在“${title}”下配置不同服务商</p></div><button class="btn" type="button" data-action="add">＋ 添加</button></div>${providerList(type)}<button class="btn ghost add-provider" type="button" data-action="add">＋ 添加供应商</button></section><section class="detail">${modelDetail(type)}</section>`;
+    }
+    function polishPage() {
+      const profiles = [{ id: 'image', label: '图片润色', desc: '图片、分镜提示词' }, { id: 'text', label: '文本润色', desc: '文本节点提示词' }, { id: 'video', label: '视频润色', desc: '视频模型提示词' }];
+      const profile = profiles.find((item) => item.id === state.polishProfile) || profiles[0];
+      return `<section class="provider-pane"><div class="provider-head"><div><h2>润色配置</h2><p>统一入口，分类型维护润色模板</p></div></div><div class="provider-list">${profiles.map((item) => `<button type="button" data-polish="${item.id}" class="provider-row ${item.id === state.polishProfile ? 'active' : ''}"><span class="provider-main"><span class="provider-title"><span class="dot"></span><span class="provider-name">${item.label}</span></span><span class="provider-sub">${item.desc}</span></span><span class="provider-meta">独立模板</span></button>`).join('')}</div></section><section class="detail"><div class="detail-head"><div><div class="kicker">提示词润色</div><h1>${profile.label}</h1><p class="lead">模型选择与模板编辑保持在同一页，互不影响供应商配置。</p></div><span class="status"><span class="dot"></span>可用</span></div><div class="detail-content"><div class="form-grid"><div class="field"><label>调用的文本模型</label><select><option>文本主服务 / gpt-5.6-terra</option><option>备用文本服务 / gpt-5.5</option></select></div><div class="field"><label>思考等级</label><select><option>默认</option><option>中等</option><option>高</option></select></div><div class="field"><label>润色模板</label><textarea>保持用户原意，补充主体、动作、镜头、风格和约束信息。输出可直接交给模型使用的提示词。</textarea></div></div><div class="actions"><button class="btn ghost" type="button" data-action="cancel">取消</button><button class="btn primary" type="button" data-action="save">${state.saved ? '已保存' : '保存润色配置'}</button></div></div></section>`;
+    }
+    function toggleRow(key, title, description) {
+      return `<div class="setting-row"><div><strong>${title}</strong><span>${description}</span></div><button type="button" class="switch ${state.toggles[key] ? 'on' : ''}" data-toggle="${key}" aria-label="${title}"></button></div>`;
+    }
+    function generalPage() {
+      return `<section class="detail" style="grid-column: 2 / -1"><div class="detail-head"><div><div class="kicker">应用</div><h1>通用</h1><p class="lead">保留真正影响创作和下载流程的常用偏好。</p></div></div><div class="detail-content"><div class="section"><div class="section-title"><div><h3>下载预设路径</h3><p>用于节点工具条的快速保存目录。</p></div><button class="btn" type="button" data-action="add-path">＋ 添加路径</button></div><div class="path-list">${state.paths.map((path, index) => `<div class="path"><span>${path}</span><button type="button" data-remove-path="${index}" aria-label="删除路径">×</button></div>`).join('')}</div></div><div class="section"><div class="section-title"><div><h3>分镜创作偏好</h3><p>这些选项仍可按个人工作流调整。</p></div></div>${toggleRow('keepStyle', '分镜图风格与参考图保持一致', '生成时自动追加风格一致性约束。')}${toggleRow('noText', '分镜图禁止生成描述文本', '减少画面中出现不需要的说明文字。')}${toggleRow('ignoreAt', '复制文本时忽略 @ 标签', '复制和保存时移除类似“@图1”的引用标记。')}</div><div class="section"><div class="section-title"><div><h3>系统行为</h3><p>低频控制由应用统一管理。</p></div></div><div class="setting-row"><div><strong>启动时检查更新</strong><span>保持开启，避免错过重要版本和修复。</span></div><button type="button" class="switch on locked" disabled></button></div></div><div class="actions"><button class="btn primary" type="button" data-action="save">${state.saved ? '已保存' : '保存通用设置'}</button></div></div></section>`;
+    }
+    function appearancePage() {
+      return `<section class="detail" style="grid-column: 2 / -1"><div class="detail-head"><div><div class="kicker">应用</div><h1>外观</h1><p class="lead">只保留影响画布可读性和界面识别的设置。</p></div></div><div class="detail-content"><div class="section"><div class="section-title"><div><h3>连线样式</h3><p>选择节点之间的路径风格。</p></div></div><div class="form-grid"><div class="field"><label>路径模式</label><select><option>曲线</option><option>直角</option><option>智能避让（直角）</option></select></div></div></div><div class="section"><div class="section-title"><div><h3>强调色</h3><p>用于按钮、选中边框和交互高亮。</p></div><div class="inline"><span class="color-swatch"></span><span class="tiny">#9DE500</span></div></div><div class="actions"><button class="btn" type="button" data-action="accent">切换强调色</button><button class="btn primary" type="button" data-action="save">${state.saved ? '已保存' : '保存外观设置'}</button></div></div></div></section>`;
+    }
+    function experimentalPage() {
+      return `<section class="detail" style="grid-column: 2 / -1"><div class="detail-head"><div><div class="kicker">高级 / 低频</div><h1>实验功能</h1><p class="lead">这些开关不放在普通创作流程里，当前由产品统一固定。</p></div><span class="badge">不可编辑</span></div><div class="detail-content"><div class="locked-note">为了保证不同用户的画布行为一致，实验开关只保留兼容旧配置的内部字段，不再提供修改入口。</div><div class="section">${['分镜网格预览快捷键|固定关闭，避免误触生成流程', '高级比例控制|统一使用默认比例逻辑', '空分镜自动推测|按产品默认规则补全空分镜'].map((item, index) => { const [title, desc] = item.split('|'); return `<div class="setting-row"><div><strong>${title}</strong><span>${desc}</span></div><button type="button" class="switch ${index === 2 ? 'on' : ''} locked" disabled></button></div>`; }).join('')}</div></div></section>`;
+    }
+    function externalPage() {
+      return `<section class="detail" style="grid-column: 2 / -1"><div class="detail-head"><div><div class="kicker">高级</div><h1>外部 Agent</h1><p class="lead">只有需要 Codex 访问当前画布时才开启。</p></div><span class="status"><span class="dot"></span>服务运行中</span></div><div class="detail-content"><div class="section"><div class="setting-row"><div><strong>允许外部 Agent 访问当前画布</strong><span>这是权限开关，关闭后不会发布画布状态。</span></div><button type="button" class="switch" data-toggle-external aria-label="允许外部 Agent"></button></div><div class="setting-row"><div><strong>Lumina MCP 服务</strong><span>由 Lumina 自动启动和停止，安装包用户无需配置 Node.js。</span></div><span class="status"><span class="dot"></span>画布已就绪</span></div></div><div class="section"><div class="section-title"><div><h3>Codex 注册命令</h3><p>复制一次即可将当前安装注册为 MCP 服务。</p></div><button class="btn" type="button" data-action="copy">复制命令</button></div><pre class="command">lumina-canvas-agent register --url http://127.0.0.1:17372 --token demo-token</pre></div></div></section>`;
+    }
+    function loggingPage() {
+      return `<section class="detail" style="grid-column: 2 / -1"><div class="detail-head"><div><div class="kicker">高级 / 支持</div><h1>日志</h1><p class="lead">普通用户不需要调整日志级别；出现问题时直接导出诊断信息。</p></div><span class="badge">只读</span></div><div class="detail-content"><div class="locked-note">日志级别、模块覆盖和持久化策略由应用管理。此页面只提供支持人员需要的查看和导出动作。</div><div class="section"><div class="setting-row"><div><strong>当前日志级别</strong><span>系统默认 · debug</span></div><span class="badge">固定</span></div><div class="setting-row"><div><strong>日志持久化</strong><span>发生错误时保留本地诊断记录。</span></div><button type="button" class="switch on locked" disabled></button></div></div><div class="actions"><button class="btn" type="button" data-action="open-log">打开日志目录</button><button class="btn primary" type="button" data-action="copy-log">复制诊断摘要</button></div></div></section>`;
+    }
+    function content() {
+      if (['image', 'text', 'video'].includes(state.activeMenu)) return modelPage(state.activeMenu);
+      if (state.activeMenu === 'polish') return polishPage();
+      if (state.activeMenu === 'general') return generalPage();
+      if (state.activeMenu === 'appearance') return appearancePage();
+      if (state.activeMenu === 'experimental') return experimentalPage();
+      if (state.activeMenu === 'external') return externalPage();
+      return loggingPage();
+    }
+    function render() {
+      document.getElementById('layout').innerHTML = sidebar() + content();
+      document.querySelectorAll('[data-menu]').forEach((button) => button.addEventListener('click', () => selectMenu(button.dataset.menu)));
+      document.querySelectorAll('[data-provider]').forEach((button) => { const [type, id] = button.dataset.provider.split(':'); button.addEventListener('click', () => selectProvider(type, id)); });
+      document.querySelectorAll('[data-remove-provider], [data-delete-provider]').forEach((button) => button.addEventListener('click', (event) => { event.stopPropagation(); const [type, id] = (button.dataset.removeProvider || button.dataset.deleteProvider).split(':'); removeProvider(type, id); }));
+      document.querySelectorAll('[data-polish]').forEach((button) => button.addEventListener('click', () => { state.polishProfile = button.dataset.polish; state.saved = false; render(); }));
+      document.querySelectorAll('[data-toggle]').forEach((button) => button.addEventListener('click', () => { state.toggles[button.dataset.toggle] = !state.toggles[button.dataset.toggle]; state.saved = false; render(); }));
+      document.querySelectorAll('[data-action="save"]').forEach((button) => button.addEventListener('click', () => save()));
+      document.querySelectorAll('[data-action="cancel"]').forEach((button) => button.addEventListener('click', () => { state.saved = false; render(); notify('Demo：未保存更改已取消'); }));
+      document.querySelectorAll('[data-action="add"]').forEach((button) => button.addEventListener('click', addProvider));
+      document.querySelectorAll('[data-action="add-path"]').forEach((button) => button.addEventListener('click', () => { state.paths.push('D:/Lumina/new-folder'); render(); notify('Demo：已添加一条路径'); }));
+      document.querySelectorAll('[data-remove-path]').forEach((button) => button.addEventListener('click', () => { state.paths.splice(Number(button.dataset.removePath), 1); render(); notify('Demo：路径已删除'); }));
+      document.querySelectorAll('[data-action="accent"]').forEach((button) => button.addEventListener('click', () => notify('Demo：这里切换强调色选择器')));
+      document.querySelectorAll('[data-action="copy"], [data-action="copy-log"]').forEach((button) => button.addEventListener('click', () => notify('Demo：内容已复制到剪贴板')));
+      document.querySelectorAll('[data-action="open-log"]').forEach((button) => button.addEventListener('click', () => notify('Demo：这里打开日志目录')));
+      document.querySelectorAll('[data-action="close"]').forEach((button) => button.addEventListener('click', () => notify('Demo：关闭设置窗口')));
+      document.querySelectorAll('[data-toggle-external]').forEach((button) => button.addEventListener('click', () => { button.classList.toggle('on'); notify(button.classList.contains('on') ? 'Demo：外部 Agent 已开启' : 'Demo：外部 Agent 已关闭'); }));
+    }
+    render();
+  </script>
+</body>
+</html>

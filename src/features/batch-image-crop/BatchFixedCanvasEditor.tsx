@@ -88,6 +88,14 @@ function pointInCanvas(event: ReactPointerEvent, element: HTMLElement): Point {
   };
 }
 
+function tryCapturePointer(element: HTMLElement, pointerId: number): void {
+  try {
+    element.setPointerCapture?.(pointerId);
+  } catch {
+    // Pointer capture is optional in embedded WebViews; the gesture can still start without it.
+  }
+}
+
 function intersects(left: NormalizedCanvasRect, right: NormalizedCanvasRect): boolean {
   return left.x < right.x + right.width
     && left.x + left.width > right.x
@@ -212,7 +220,7 @@ export function BatchFixedCanvasEditor({
   const startMove = (event: ReactPointerEvent) => {
     if (locked || draft.stage !== 'compose' || !canvasRef.current) return;
     event.stopPropagation();
-    canvasRef.current.setPointerCapture?.(event.pointerId);
+    tryCapturePointer(canvasRef.current, event.pointerId);
     setGesture({ type: 'move', start: pointInCanvas(event, canvasRef.current), transform: draft.transform });
   };
 
@@ -224,7 +232,7 @@ export function BatchFixedCanvasEditor({
       x: corner.endsWith('e') ? imageBox.x : imageBox.x + imageBox.width,
       y: corner.startsWith('s') ? imageBox.y : imageBox.y + imageBox.height,
     };
-    canvasRef.current.setPointerCapture?.(event.pointerId);
+    tryCapturePointer(canvasRef.current, event.pointerId);
     setGesture({
       type: 'scale',
       corner,
@@ -238,14 +246,14 @@ export function BatchFixedCanvasEditor({
   const startStretch = (event: ReactPointerEvent, direction: FixedCanvasStretchDirection) => {
     if (!selection || !canvasRef.current || locked) return;
     event.stopPropagation();
-    canvasRef.current.setPointerCapture?.(event.pointerId);
+    tryCapturePointer(canvasRef.current, event.pointerId);
     setGesture({ type: 'stretch', source: selection, direction });
   };
 
   const startSelectionMove = (event: ReactPointerEvent) => {
     if (!selection || !canvasRef.current || locked) return;
     event.stopPropagation();
-    canvasRef.current.setPointerCapture?.(event.pointerId);
+    tryCapturePointer(canvasRef.current, event.pointerId);
     setGesture({
       type: 'selection-move',
       start: pointInCanvas(event, canvasRef.current),
@@ -260,14 +268,14 @@ export function BatchFixedCanvasEditor({
       x: corner.endsWith('e') ? selection.x : selection.x + selection.width,
       y: corner.startsWith('s') ? selection.y : selection.y + selection.height,
     };
-    canvasRef.current.setPointerCapture?.(event.pointerId);
+    tryCapturePointer(canvasRef.current, event.pointerId);
     setGesture({ type: 'selection-resize', anchor, selection });
   };
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (locked || draft.stage !== 'fill' || draft.tool !== 'stretch' || !canvasRef.current) return;
     const point = pointInCanvas(event, canvasRef.current);
-    canvasRef.current.setPointerCapture?.(event.pointerId);
+    tryCapturePointer(canvasRef.current, event.pointerId);
     setGesture({ type: 'select', start: point, axis: null });
     setLiveSelection(null);
   };
@@ -446,7 +454,13 @@ export function BatchFixedCanvasEditor({
 
   return (
     <>
-      <div ref={viewportRef} className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-black/55 p-6">
+      <div
+        ref={viewportRef}
+        className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-black/55 p-6"
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+      >
         <div
           ref={canvasRef}
           data-testid="fixed-canvas"
@@ -455,9 +469,6 @@ export function BatchFixedCanvasEditor({
           }`}
           style={{ width: canvasSize.width, height: canvasSize.height, touchAction: 'none' }}
           onPointerDown={handlePointerDown}
-          onPointerMove={handlePointerMove}
-          onPointerUp={handlePointerUp}
-          onPointerCancel={handlePointerUp}
         >
           <div className="absolute inset-0 overflow-hidden">
             {showingAiResult ? (
