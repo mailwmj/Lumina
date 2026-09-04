@@ -5,7 +5,7 @@ use image::{DynamicImage, GrayImage, ImageDecoder, ImageReader, Luma, Rgb, RgbIm
 use imageproc::filter::gaussian_blur_f32;
 use serde::{Deserialize, Serialize};
 use std::fs::File;
-use std::io::BufReader;
+use std::io::{BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager};
 use uuid::Uuid;
@@ -16,6 +16,7 @@ const PREVIEW_LONGEST_EDGE: u32 = 2560;
 const THUMBNAIL_LONGEST_EDGE: u32 = 160;
 const PREVIEW_JPEG_QUALITY: u8 = 90;
 const THUMBNAIL_JPEG_QUALITY: u8 = 82;
+const JPEG_WRITE_BUFFER_BYTES: usize = 1024 * 1024;
 const OUTPUT_SHARPEN_SIGMA: f32 = 0.65;
 const OUTPUT_SHARPEN_AMOUNT: f32 = 0.35;
 const OUTPUT_SHARPEN_THRESHOLD: f32 = 3.0;
@@ -229,10 +230,23 @@ fn resize_rgba_for_preview(
 fn write_preview_jpeg(image: &DynamicImage, output_path: &Path, quality: u8) -> Result<(), String> {
     let output =
         File::create(output_path).map_err(|error| format!("Failed to create preview: {error}"))?;
-    let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(output, quality);
-    DynamicImage::ImageRgb8(flatten_to_white(image))
-        .write_with_encoder(encoder)
-        .map_err(|error| format!("Failed to encode preview: {error}"))
+    write_jpeg_to_writer(
+        &DynamicImage::ImageRgb8(flatten_to_white(image)),
+        output,
+        quality,
+    )
+    .map_err(|error| format!("Failed to encode preview: {error}"))
+}
+
+pub(crate) fn write_jpeg_to_writer<W: Write>(
+    image: &DynamicImage,
+    output: W,
+    quality: u8,
+) -> image::ImageResult<()> {
+    let mut output = BufWriter::with_capacity(JPEG_WRITE_BUFFER_BYTES, output);
+    let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut output, quality);
+    image.write_with_encoder(encoder)?;
+    output.flush().map_err(image::ImageError::IoError)
 }
 
 fn write_resized_preview_jpeg(
@@ -605,9 +619,7 @@ fn export_batch_crop_image_sync(
         payload.target_height,
     );
     let output = File::create(&output_path).map_err(|_| "OUTPUT_WRITE_FAILED".to_string())?;
-    let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(output, 100);
-    DynamicImage::ImageRgb8(output_image)
-        .write_with_encoder(encoder)
+    write_jpeg_to_writer(&DynamicImage::ImageRgb8(output_image), output, 100)
         .map_err(|_| "OUTPUT_WRITE_FAILED".to_string())?;
 
     Ok(ExportedBatchCropImage {
@@ -637,6 +649,42 @@ pub fn cleanup_batch_crop_cache(app: AppHandle, batch_id: String) -> Result<(), 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io;
+
+    #[derive(Default)]
+    struct CountingWriter {
+        write_count: usize,
+        bytes: Vec<u8>,
+    }
+
+    impl Write for CountingWriter {
+        fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+            self.write_count += 1;
+            self.bytes.extend_from_slice(buffer);
+            Ok(buffer.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn jpeg_export_flushes_to_the_underlying_writer_once() {
+        let image = DynamicImage::ImageRgb8(RgbImage::from_fn(320, 240, |x, y| {
+            Rgb([
+                ((x * 17 + y * 11) % 255) as u8,
+                ((x * 7 + y * 19) % 255) as u8,
+                ((x * 23 + y * 5) % 255) as u8,
+            ])
+        }));
+        let mut writer = CountingWriter::default();
+
+        write_jpeg_to_writer(&image, &mut writer, 100).unwrap();
+
+        assert_eq!(writer.write_count, 1);
+        assert!(!writer.bytes.is_empty());
+    }
 
     #[test]
     fn centered_crop_keeps_target_ratio() {

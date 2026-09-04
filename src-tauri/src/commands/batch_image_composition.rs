@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use super::batch_image_crop::{
     apply_rotation, available_output_path, batch_cache_dir, flatten_to_white, load_oriented_image,
-    resize_rgba_lanczos3, validate_source_path,
+    resize_rgba_lanczos3, validate_source_path, write_jpeg_to_writer,
 };
 
 const MAX_RENDER_PIXELS: u64 = 120_000_000;
@@ -324,9 +324,7 @@ fn render_payload(payload: &FixedCanvasCompositionPayload) -> Result<RgbImage, S
 
 fn write_jpeg(image: RgbImage, output_path: &Path) -> Result<(), String> {
     let output = File::create(output_path).map_err(|_| "OUTPUT_WRITE_FAILED".to_string())?;
-    let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(output, 100);
-    DynamicImage::ImageRgb8(image)
-        .write_with_encoder(encoder)
+    write_jpeg_to_writer(&DynamicImage::ImageRgb8(image), output, 100)
         .map_err(|_| "OUTPUT_WRITE_FAILED".to_string())
 }
 
