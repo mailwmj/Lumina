@@ -11,6 +11,7 @@ describe('canvas image quality store', () => {
   });
 
   it('retains only the most recently decoded originals', () => {
+    expect(MAX_RETAINED_ORIGINAL_IMAGE_NODES).toBe(1);
     const { retainOriginalNode } = useCanvasImageQualityStore.getState();
     for (let index = 0; index < MAX_RETAINED_ORIGINAL_IMAGE_NODES + 1; index += 1) {
       retainOriginalNode(`image-${index}`);
@@ -24,7 +25,7 @@ describe('canvas image quality store', () => {
     );
   });
 
-  it('refreshes the recency of an already retained original', () => {
+  it('replaces the retained high-detail image with the most recent one', () => {
     const { retainOriginalNode } = useCanvasImageQualityStore.getState();
     retainOriginalNode('image-1');
     retainOriginalNode('image-2');
@@ -32,11 +33,7 @@ describe('canvas image quality store', () => {
     retainOriginalNode('image-1');
     retainOriginalNode('image-4');
 
-    expect(useCanvasImageQualityStore.getState().retainedOriginalNodeIds).toEqual([
-      'image-3',
-      'image-1',
-      'image-4',
-    ]);
+    expect(useCanvasImageQualityStore.getState().retainedOriginalNodeIds).toEqual(['image-4']);
   });
 
   it('drops retained originals that leave the viewport', () => {

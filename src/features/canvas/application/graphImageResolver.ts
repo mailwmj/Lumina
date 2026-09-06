@@ -90,7 +90,7 @@ export class DefaultGraphImageResolver implements GraphImageResolver {
     }
 
     if (isUploadNode(node) || isImageEditNode(node) || isExportImageNode(node)) {
-      const imgUrl = node.data.imageUrl || null;
+      const imgUrl = node.data.referenceImageUrl || node.data.imageUrl || null;
       logger.info('[GraphImageResolver] extractFirstImage from', node.type, ':', imgUrl ? imgUrl.substring(0, 80) + '...' : 'null');
       return imgUrl;
     }
@@ -104,7 +104,8 @@ export class DefaultGraphImageResolver implements GraphImageResolver {
     }
 
     if (isUploadNode(node) || isImageEditNode(node) || isExportImageNode(node)) {
-      return node.data.imageUrl ? [node.data.imageUrl] : [];
+      const imageUrl = node.data.referenceImageUrl || node.data.imageUrl;
+      return imageUrl ? [imageUrl] : [];
     }
 
     return [];

@@ -195,11 +195,13 @@ export async function runImageGenerationNode(
         `Reference images are unavailable: ${workflowInputs.blockingImageNodeIds.join(', ')}`
       );
     }
-    const referenceImageSnapshot = workflowInputs.imageInputs.flatMap((input) => input.imageUrl
-      ? [{ edgeId: input.edgeId, imageUrl: input.imageUrl, previewImageUrl: input.previewImageUrl }]
-      : []
-    );
-    const referenceImages = referenceImageSnapshot.map((input) => input.imageUrl);
+    const referenceImageSnapshot = workflowInputs.imageInputs.flatMap((input) => {
+      const imageUrl = input.referenceImageUrl ?? input.imageUrl;
+      return imageUrl
+        ? [{ edgeId: input.edgeId, imageUrl, previewImageUrl: input.previewImageUrl }]
+        : [];
+    });
+    const referenceImages = workflowInputs.referenceImages;
     const localPrompt = materializeImageReferencePrompt(
       sourceNode.data.prompt ?? '',
       referenceImageSnapshot

@@ -65,6 +65,7 @@ export interface TextModelSelectionData {
 export interface NodeImageData extends NodeDisplayData {
   imageUrl: string | null;
   previewImageUrl?: string | null;
+  referenceImageUrl?: string | null;
   aspectRatio: string;
   isSizeManuallyAdjusted?: boolean;
   [key: string]: unknown;
@@ -144,6 +145,7 @@ export interface StoryboardFrameItem {
   id: string;
   imageUrl: string | null;
   previewImageUrl?: string | null;
+  referenceImageUrl?: string | null;
   aspectRatio?: string;
   note: string;
   order: number;
@@ -195,6 +197,7 @@ export interface StoryboardGenNodeData {
   extraParams?: Record<string, unknown>;
   imageUrl: string | null;
   previewImageUrl?: string | null;
+  referenceImageUrl?: string | null;
   aspectRatio: string;
   isGenerating?: boolean;
   generationStartedAt?: number | null;

@@ -218,7 +218,8 @@ interface CanvasState {
     sourceNodeId: string,
     imageUrl: string,
     aspectRatio: string,
-    previewImageUrl?: string
+    previewImageUrl?: string,
+    referenceImageUrl?: string
   ) => string | null;
   addDerivedExportNode: (
     sourceNodeId: string,
@@ -231,6 +232,7 @@ interface CanvasState {
       aspectRatioStrategy?: 'provided' | 'derivedFromSource';
       sizeStrategy?: 'generated' | 'autoMinEdge' | 'matchSource';
       matchSourceNodeSize?: boolean;
+      referenceImageUrl?: string;
     }
   ) => string | null;
   addStoryboardSplitNode: (
@@ -390,6 +392,7 @@ function normalizeNodes(rawNodes: CanvasNode[]): CanvasNode[] {
           id: frame.id,
           imageUrl: frame.imageUrl ?? null,
           previewImageUrl: frame.previewImageUrl ?? null,
+          referenceImageUrl: frame.referenceImageUrl ?? null,
           aspectRatio:
             typeof frame.aspectRatio === 'string'
               ? frame.aspectRatio
@@ -1572,7 +1575,13 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     }
   },
 
-  addDerivedUploadNode: (sourceNodeId, imageUrl, aspectRatio, previewImageUrl) => {
+  addDerivedUploadNode: (
+    sourceNodeId,
+    imageUrl,
+    aspectRatio,
+    previewImageUrl,
+    referenceImageUrl
+  ) => {
     const state = get();
     const position = getDerivedNodePosition(state.nodes, sourceNodeId);
     const sourceNode = state.nodes.find((node) => node.id === sourceNodeId);
@@ -1580,6 +1589,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     const node = canvasNodeFactory.createNode(CANVAS_NODE_TYPES.upload, position, {
       imageUrl,
       previewImageUrl: previewImageUrl ?? null,
+      referenceImageUrl: referenceImageUrl ?? null,
       aspectRatio: resolvedAspectRatio,
     });
     const derivedSize = resolveGeneratedImageNodeDimensions(resolvedAspectRatio);
@@ -1640,6 +1650,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     const exportNodeData: Partial<CanvasNodeData> = {
       imageUrl,
       previewImageUrl: previewImageUrl ?? null,
+      referenceImageUrl: options?.referenceImageUrl ?? null,
       aspectRatio: resolvedAspectRatio,
     };
     if (options?.defaultTitle) {

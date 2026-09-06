@@ -7,7 +7,10 @@ import {
   type CanvasNodeData,
   type CanvasNodeType,
 } from '@/features/canvas/domain/canvasNodes';
-import { prepareNodeImage } from '@/features/canvas/application/imageData';
+import {
+  CANVAS_IMAGE_PREVIEW_MAX_DIMENSION,
+  prepareNodeImage,
+} from '@/features/canvas/application/imageData';
 import { resolveFittedImageNodeSize, type ImageNodeSize } from '@/features/canvas/application/imageNodeSizing';
 import { convertAudioToMp3, convertVideoToMp4 } from '@/commands/media';
 
@@ -108,7 +111,11 @@ async function prepareCanvasMediaImport(
 
   const displayName = useFileNameAsNodeTitle ? { displayName: fileName } : {};
   if (mediaType === 'image') {
-    const prepared = await prepareNodeImage(path, 512, projectId);
+    const prepared = await prepareNodeImage(
+      path,
+      CANVAS_IMAGE_PREVIEW_MAX_DIMENSION,
+      projectId
+    );
     return {
       path,
       fileName,
@@ -116,6 +123,7 @@ async function prepareCanvasMediaImport(
       data: {
         imageUrl: prepared.imageUrl,
         previewImageUrl: prepared.previewImageUrl,
+        referenceImageUrl: prepared.referenceImageUrl,
         aspectRatio: prepared.aspectRatio,
         sourceFileName: fileName,
         ...displayName,

@@ -19,6 +19,12 @@ function sortInputEdges(edges: readonly CanvasEdge[]): CanvasEdge[] {
 
 function resolveMediaUrl(node: CanvasWorkflowNode, type: SeedanceMediaType): string | null {
   const data = node.data as Record<string, unknown>;
+  if (type === 'image') {
+    const referenceImageUrl = data.referenceImageUrl;
+    if (typeof referenceImageUrl === 'string' && referenceImageUrl.trim()) {
+      return referenceImageUrl;
+    }
+  }
   const key = type === 'image'
     ? 'imageUrl'
     : type === 'video'

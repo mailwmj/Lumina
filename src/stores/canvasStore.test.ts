@@ -101,6 +101,31 @@ describe('canvas store batch connections', () => {
   });
 });
 
+describe('canvas store image derivatives', () => {
+  afterEach(() => {
+    useCanvasStore.getState().setCanvasData([], []);
+  });
+
+  it('keeps a missing reference derivative unset until backfill completes', () => {
+    const source = createNode(CANVAS_NODE_TYPES.storyboardSplit, 'storyboard');
+    useCanvasStore.getState().setCanvasData([source], []);
+
+    const resultId = useCanvasStore.getState().addDerivedExportNode(
+      source.id,
+      'file:///storyboard-4k.png',
+      '16:9',
+      'file:///storyboard-4k.png'
+    );
+    const result = useCanvasStore.getState().nodes.find((node) => node.id === resultId);
+
+    expect(result?.data).toMatchObject({
+      imageUrl: 'file:///storyboard-4k.png',
+      previewImageUrl: 'file:///storyboard-4k.png',
+      referenceImageUrl: null,
+    });
+  });
+});
+
 describe('canvas store image reference cleanup', () => {
   afterEach(() => {
     useCanvasStore.getState().setCanvasData([], []);

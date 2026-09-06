@@ -38,6 +38,7 @@ import {
   DEFAULT_NODE_WIDTH,
 } from '@/features/canvas/domain/canvasNodes';
 import {
+  CANVAS_IMAGE_PREVIEW_MAX_DIMENSION,
   createNodeImagePreview,
   prepareNodeImageFromFile,
 } from '@/features/canvas/application/imageData';
@@ -803,7 +804,11 @@ export function Canvas() {
                 });
               }
 
-              const preview = await createNodeImagePreview(imageWithMetadata, 512, projectId)
+              const preview = await createNodeImagePreview(
+                imageWithMetadata,
+                CANVAS_IMAGE_PREVIEW_MAX_DIMENSION,
+                projectId
+              )
                 .catch((error) => {
                   logger.warn('[GenerationJob] Failed to create image preview, using original image', {
                     nodeId: pendingNode.id,
@@ -815,6 +820,7 @@ export function Canvas() {
               updateNodeData(pendingNode.id, {
                 imageUrl: imageWithMetadata,
                 previewImageUrl: preview?.previewImageUrl ?? imageWithMetadata,
+                referenceImageUrl: preview?.referenceImageUrl ?? imageWithMetadata,
                 aspectRatio: typeof currentData.aspectRatio === 'string'
                   && currentData.aspectRatio.trim().length > 0
                   ? currentData.aspectRatio
@@ -1847,13 +1853,18 @@ export function Canvas() {
 
       for (const file of imageFiles) {
         try {
-          const prepared = await prepareNodeImageFromFile(file, 512, projectId);
+          const prepared = await prepareNodeImageFromFile(
+            file,
+            CANVAS_IMAGE_PREVIEW_MAX_DIMENSION,
+            projectId
+          );
           const newNodeId = addNode(CANVAS_NODE_TYPES.upload, {
             x: currentX,
             y: baseY,
           }, {
             imageUrl: prepared.imageUrl,
             previewImageUrl: prepared.previewImageUrl ?? null,
+            referenceImageUrl: prepared.referenceImageUrl,
             aspectRatio: prepared.aspectRatio,
             ...(useUploadFilenameAsNodeTitle ? { displayName: file.name } : {}),
           });

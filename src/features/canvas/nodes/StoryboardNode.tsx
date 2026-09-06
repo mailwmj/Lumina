@@ -266,6 +266,7 @@ interface FrameCardProps {
 interface IncomingImageItem {
   imageUrl: string;
   previewImageUrl: string | null;
+  referenceImageUrl: string | null;
   displayUrl: string;
   label: string;
 }
@@ -473,7 +474,11 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
       .filter((edge) => edge.target === id)
       .map((edge) => edge.source);
 
-    const dedupedByImageUrl = new Map<string, { imageUrl: string; previewImageUrl: string | null }>();
+    const dedupedByImageUrl = new Map<string, {
+      imageUrl: string;
+      previewImageUrl: string | null;
+      referenceImageUrl: string | null;
+    }>();
     for (const sourceNodeId of sourceNodeIds) {
       const sourceNode = nodeById.get(sourceNodeId);
       if (!sourceNode) {
@@ -490,6 +495,7 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
         dedupedByImageUrl.set(imageUrl, {
           imageUrl,
           previewImageUrl: sourceNode.data.previewImageUrl ?? null,
+          referenceImageUrl: sourceNode.data.referenceImageUrl ?? null,
         });
       }
     }
@@ -502,6 +508,7 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
       incomingImageRefs.map((item, index) => ({
         imageUrl: item.imageUrl,
         previewImageUrl: item.previewImageUrl,
+        referenceImageUrl: item.referenceImageUrl,
         displayUrl: resolveImageDisplayUrl(item.previewImageUrl || item.imageUrl),
         label: `图${index + 1}`,
       })),
@@ -667,6 +674,7 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
           prepared.aspectRatio,
           prepared.previewImageUrl,
           {
+            referenceImageUrl: prepared.referenceImageUrl,
             defaultTitle: frameTitle,
             resultKind: 'storyboardFrameEdit',
           }
@@ -988,6 +996,7 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
       updateStoryboardFrame(id, frameId, {
         imageUrl: matched?.imageUrl ?? imageUrl,
         previewImageUrl: matched?.previewImageUrl ?? matched?.imageUrl ?? imageUrl,
+        referenceImageUrl: matched?.referenceImageUrl ?? matched?.imageUrl ?? imageUrl,
       });
       setPickerState(null);
     },

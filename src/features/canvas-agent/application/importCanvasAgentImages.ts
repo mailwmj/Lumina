@@ -4,7 +4,10 @@ import {
   EXPORT_RESULT_NODE_MIN_WIDTH,
   type CanvasNodeData,
 } from '@/features/canvas/domain/canvasNodes';
-import { prepareNodeImage } from '@/features/canvas/application/imageData';
+import {
+  CANVAS_IMAGE_PREVIEW_MAX_DIMENSION,
+  prepareNodeImage,
+} from '@/features/canvas/application/imageData';
 import { resolveFittedImageNodeSize } from '@/features/canvas/application/imageNodeSizing';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useProjectStore } from '@/stores/projectStore';
@@ -40,7 +43,11 @@ export async function importCanvasAgentImages({
 
   const preparedImages = await Promise.all(images.map(async (image) => ({
     input: image,
-    prepared: await prepareNodeImage(image.source, 512, projectId),
+    prepared: await prepareNodeImage(
+      image.source,
+      CANVAS_IMAGE_PREVIEW_MAX_DIMENSION,
+      projectId
+    ),
   })));
   assertCurrent();
   if (useProjectStore.getState().getCurrentProject()?.id !== projectId) {
@@ -77,6 +84,7 @@ export async function importCanvasAgentImages({
     const data: Partial<CanvasNodeData> = {
       imageUrl: prepared.imageUrl,
       previewImageUrl: prepared.previewImageUrl,
+      referenceImageUrl: prepared.referenceImageUrl,
       aspectRatio: prepared.aspectRatio || '1:1',
       sourceFileName: fileName,
       ...(input.displayName ? { displayName: input.displayName } : {}),

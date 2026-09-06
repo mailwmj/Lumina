@@ -73,10 +73,10 @@ describe('canvas image render policy', () => {
     })).toEqual([visible.id]);
   });
 
-  it('requests originals for sufficiently visible images in inspection mode', () => {
-    const visible = createImageNode('visible', { x: 0, y: 0 }, { width: 200, height: 200 });
-    const secondVisible = createImageNode('second-visible', { x: 220, y: 0 }, { width: 200, height: 200 });
-    const offscreen = createImageNode('offscreen', { x: 1000, y: 0 }, { width: 200, height: 200 });
+  it('requests only the closest sufficiently visible image in inspection mode', () => {
+    const visible = createImageNode('visible', { x: 0, y: 0 }, { width: 384, height: 384 });
+    const secondVisible = createImageNode('second-visible', { x: 100, y: 0 }, { width: 384, height: 384 });
+    const offscreen = createImageNode('offscreen', { x: 1000, y: 0 }, { width: 384, height: 384 });
 
     expect(getRequestedCanvasOriginalNodeIds({
       nodes: [visible, secondVisible, offscreen],
@@ -84,7 +84,7 @@ describe('canvas image render policy', () => {
       viewportSize: { width: 1000, height: 800 },
       isOriginalImageMode: true,
       focusPoint: { x: 160, y: 160 },
-    })).toEqual([visible.id, secondVisible.id]);
+    })).toEqual([visible.id]);
 
     expect(getRequestedCanvasOriginalNodeIds({
       nodes: [visible, secondVisible, offscreen],
@@ -153,7 +153,7 @@ describe('canvas image render policy', () => {
 
     expect(findCanvasImageFocusCandidate({
       nodes: [centered, pointed],
-      viewport: { x: 0, y: 0, zoom: 1 },
+      viewport: { x: 0, y: 0, zoom: 2 },
       viewportSize: { width: 1000, height: 800 },
       focusPoint: { x: 120, y: 180 },
     })).toBe(pointed.id);
@@ -163,12 +163,12 @@ describe('canvas image render policy', () => {
     const belowThreshold = createImageNode(
       'below-threshold',
       { x: 300, y: 250 },
-      { width: 179, height: 179 }
+      { width: 383, height: 383 }
     );
     const resized = createImageNode(
       'resized',
       { x: 300, y: 250 },
-      { width: 180, height: 180 }
+      { width: 384, height: 384 }
     );
 
     expect(findCanvasImageFocusCandidate({
@@ -194,13 +194,13 @@ describe('canvas image render policy', () => {
 
     expect(findCanvasImageFocusCandidate({
       nodes: [distant, centered],
-      viewport: { x: 0, y: 0, zoom: 1 },
+      viewport: { x: 0, y: 0, zoom: 2 },
       viewportSize: { width: 1000, height: 800 },
     })).toBe(centered.id);
   });
 
   it('uses actual physical pixels so high-density displays do not need oversized nodes', () => {
-    const image = createImageNode('image', { x: 300, y: 250 }, { width: 180, height: 180 });
+    const image = createImageNode('image', { x: 100, y: 100 }, { width: 384, height: 384 });
 
     expect(findCanvasImageFocusCandidate({
       nodes: [image],
@@ -250,7 +250,7 @@ describe('canvas image render policy', () => {
 
     expect(findCanvasImageFocusCandidate({
       nodes: [group, child],
-      viewport: { x: 0, y: 0, zoom: 1 },
+      viewport: { x: 0, y: 0, zoom: 2 },
       viewportSize: { width: 1000, height: 800 },
       preferredNodeId: child.id,
     })).toBe(child.id);

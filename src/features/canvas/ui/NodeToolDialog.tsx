@@ -13,7 +13,11 @@ import {
   canvasEventBus,
   canvasToolProcessor,
 } from '@/features/canvas/application/canvasServices';
-import { prepareNodeImage, resolveImageDisplayUrl } from '@/features/canvas/application/imageData';
+import {
+  CANVAS_IMAGE_PREVIEW_MAX_DIMENSION,
+  prepareNodeImage,
+  resolveImageDisplayUrl,
+} from '@/features/canvas/application/imageData';
 import { readStoryboardImageMetadata } from '@/commands/image';
 import { getToolPlugin, type ToolOptions } from '@/features/canvas/tools';
 import { useCanvasStore } from '@/stores/canvasStore';
@@ -225,13 +229,18 @@ export function NodeToolDialog() {
         }
       } else if (result.outputImageUrl) {
         const projectId = useProjectStore.getState().getCurrentProject()?.id;
-        const prepared = await prepareNodeImage(result.outputImageUrl, 512, projectId);
+        const prepared = await prepareNodeImage(
+          result.outputImageUrl,
+          CANVAS_IMAGE_PREVIEW_MAX_DIMENSION,
+          projectId
+        );
         const createdNodeId = addDerivedExportNode(
           sourceNode.id,
           prepared.imageUrl,
           prepared.aspectRatio,
           prepared.previewImageUrl,
           {
+            referenceImageUrl: prepared.referenceImageUrl,
             defaultTitle: resolveResultNodeTitle(activeToolDialog.toolType),
             resultKind: 'generic',
             aspectRatioStrategy: 'provided',

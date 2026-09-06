@@ -7,7 +7,10 @@ import {
   type CanvasImagePreviewJob,
 } from '@/features/canvas/application/canvasImagePreviewBackfill';
 import { useCanvasImageQualityStore } from '@/features/canvas/application/canvasImageQualityStore';
-import { createNodeImagePreview } from '@/features/canvas/application/imageData';
+import {
+  CANVAS_IMAGE_PREVIEW_MAX_DIMENSION,
+  createNodeImagePreview,
+} from '@/features/canvas/application/imageData';
 import type {
   CanvasNodeData,
   CanvasWorkflowNode,
@@ -20,6 +23,7 @@ const BACKFILL_IDLE_DELAY_MS = 700;
 interface PendingPreviewResult {
   job: CanvasImagePreviewJob;
   previewImageUrl: string;
+  referenceImageUrl: string;
 }
 
 interface UseCanvasImagePreviewBackfillInput {
@@ -75,7 +79,7 @@ export function useCanvasImagePreviewBackfill({
                 const patch = createCanvasImagePreviewPatch(
                   node,
                   pending.job,
-                  pending.previewImageUrl
+                  pending
                 );
                 if (patch) {
                   updateNodeDataWithoutHistory(pending.job.nodeId, patch);
@@ -95,7 +99,11 @@ export function useCanvasImagePreviewBackfill({
 
             const key = getCanvasImagePreviewJobKey(job);
             try {
-              const prepared = await createNodeImagePreview(job.imageUrl, 512, projectId);
+              const prepared = await createNodeImagePreview(
+                job.imageUrl,
+                CANVAS_IMAGE_PREVIEW_MAX_DIMENSION,
+                projectId
+              );
               if (cancelled || runToken !== projectRunTokenRef.current) {
                 return;
               }
@@ -103,13 +111,14 @@ export function useCanvasImagePreviewBackfill({
                 pendingResultsRef.current.set(key, {
                   job,
                   previewImageUrl: prepared.previewImageUrl,
+                  referenceImageUrl: prepared.referenceImageUrl,
                 });
                 return;
               }
 
               const node = useCanvasStore.getState().nodes.find((item) => item.id === job.nodeId);
               if (node) {
-                const patch = createCanvasImagePreviewPatch(node, job, prepared.previewImageUrl);
+                const patch = createCanvasImagePreviewPatch(node, job, prepared);
                 if (patch) {
                   updateNodeDataWithoutHistory(job.nodeId, patch);
                 }

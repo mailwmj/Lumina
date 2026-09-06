@@ -16,7 +16,11 @@ describe('Seedance video graph inputs', () => {
   it('preserves connected media order and source/handle provenance for an automatic node', () => {
     const automatic = createNode(CANVAS_NODE_TYPES.seedanceAutoVideo, 'automatic');
     const image = createNode(CANVAS_NODE_TYPES.upload, 'image');
-    image.data = { ...image.data, imageUrl: 'https://media.example/image.png' };
+    image.data = {
+      ...image.data,
+      imageUrl: 'https://media.example/image.png',
+      referenceImageUrl: 'https://media.example/image-reference.jpg',
+    };
     const video = createNode(CANVAS_NODE_TYPES.videoUpload, 'video');
     video.data = { ...video.data, videoUrl: 'https://media.example/video.mp4' };
     const audio = createNode(CANVAS_NODE_TYPES.audioUpload, 'audio');
@@ -47,7 +51,7 @@ describe('Seedance video graph inputs', () => {
         },
         {
           sourceNodeId: 'image', sourceNodeType: CANVAS_NODE_TYPES.upload,
-          targetHandle: 'target', type: 'image', url: 'https://media.example/image.png',
+          targetHandle: 'target', type: 'image', url: 'https://media.example/image-reference.jpg',
         },
         {
           sourceNodeId: 'audio', sourceNodeType: CANVAS_NODE_TYPES.audioUpload,

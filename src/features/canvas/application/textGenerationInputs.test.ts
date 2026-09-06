@@ -124,7 +124,11 @@ describe('text generation inputs', () => {
 
   it('keeps image ordering separate and reports a connected image with no usable result', () => {
     const imageA = createNode(CANVAS_NODE_TYPES.upload, 'image-a') as CanvasNode;
-    imageA.data = { ...imageA.data, imageUrl: 'data:image/png;base64,AAA' };
+    imageA.data = {
+      ...imageA.data,
+      imageUrl: 'file:///original-a.png',
+      referenceImageUrl: 'file:///reference-a.jpg',
+    };
     const imageB = createNode(CANVAS_NODE_TYPES.exportImage, 'image-b') as CanvasNode;
     imageB.data = { ...imageB.data, imageUrl: null };
     const target = createNode(CANVAS_NODE_TYPES.textGeneration, 'target', {
@@ -140,7 +144,7 @@ describe('text generation inputs', () => {
     expect(resolved.imageInputs.map((input) => input.nodeId)).toEqual(['image-b', 'image-a']);
     expect(resolved.imageInputs[0].imageUrl).toBeNull();
     expect(resolved.blockingImageNodeIds).toEqual(['image-b']);
-    expect(resolved.referenceImages).toEqual(['data:image/png;base64,AAA']);
+    expect(resolved.referenceImages).toEqual(['file:///reference-a.jpg']);
   });
 
   it('materializes edge-bound image tags against the same ordered image snapshot sent to the model', () => {

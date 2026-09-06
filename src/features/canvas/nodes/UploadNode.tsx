@@ -35,6 +35,7 @@ import { canvasEventBus } from '@/features/canvas/application/canvasServices';
 import { NodeResizeHandle } from '@/features/canvas/ui/NodeResizeHandle';
 import { resolveNodeSurfaceStateClass } from '@/features/canvas/ui/nodeSurfaceStyles';
 import {
+  CANVAS_IMAGE_PREVIEW_MAX_DIMENSION,
   prepareNodeImageFromFile,
   resolveImageDisplayUrl,
 } from '@/features/canvas/application/imageData';
@@ -148,10 +149,15 @@ export const UploadNode = memo(({ id, data, selected, width, height }: UploadNod
 
       try {
         const projectId = getCurrentProject()?.id;
-        const prepared = await prepareNodeImageFromFile(file, 512, projectId);
+        const prepared = await prepareNodeImageFromFile(
+          file,
+          CANVAS_IMAGE_PREVIEW_MAX_DIMENSION,
+          projectId
+        );
         const nextData: Partial<UploadImageNodeData> = {
           imageUrl: prepared.imageUrl,
           previewImageUrl: prepared.previewImageUrl,
+          referenceImageUrl: prepared.referenceImageUrl,
           aspectRatio: prepared.aspectRatio || '1:1',
           sourceFileName: file.name,
         };
@@ -290,6 +296,7 @@ export const UploadNode = memo(({ id, data, selected, width, height }: UploadNod
     nodeId: id,
     imageUrl: data.imageUrl,
     previewImageUrl: data.previewImageUrl,
+    referenceImageUrl: data.referenceImageUrl,
   });
   const imageSource = transientPreviewUrl ?? stableImageSource;
 

@@ -189,7 +189,7 @@ npm run release -- patch --notes-file docs/releases/v0.2.1.md
 
 - 禁止在拖拽每一帧执行重持久化或重计算。
 - 节点拖拽中不要写盘；拖拽结束再保存（项目已按该策略优化）。
-- 大图片场景避免重复 `dataURL` 转换；节点渲染优先使用 `previewImageUrl`，模型/工具处理使用原图 `imageUrl`。
+- 大图片场景避免重复 `dataURL` 转换；普通画布渲染使用 `previewImageUrl`，放大检查与模型参考优先使用受限高清资产 `referenceImageUrl`，缺失时回退 `imageUrl`；查看器、下载与原图编辑仍使用 `imageUrl`。
 - 项目整量持久化（nodes/edges/history）使用防抖 + 空闲调度（idle callback）队列，避免与交互争用主线程。
 - viewport 持久化走独立轻量队列与独立命令（`update_project_viewport_record`），不要回退到整项目 upsert。
 - 视口更新要做归一化与阈值比较（epsilon），过滤微小抖动写入。
@@ -262,7 +262,7 @@ npm run release -- patch --notes-file docs/releases/v0.2.1.md
 - 前端持久化采用双通道：
   - 整项目快照：`upsert_project_record`（防抖 + idle 调度）。
   - 视口快照：`update_project_viewport_record`（轻量更新、独立防抖）。
-- 图片字段通过 `imagePool + __img_ref__:<index>` 做去重编码；新增图片字段（如 `previewImageUrl`）需同步编码/解码映射。
+- 图片字段通过 `imagePool + __img_ref__:<index>` 做去重编码；`imageUrl`、`previewImageUrl`、`referenceImageUrl` 及分镜帧中的同名字段必须同步编码/解码映射。
 - 变更 SQLite 表结构时：
   - 必须在 `ensure_projects_table` 中做自愈（`PRAGMA table_info` + `ALTER TABLE`）。
   - 开发阶段可不兼容旧的临时草稿格式，但不能破坏当前 `projects.db` 的基本可读性。

@@ -13,7 +13,8 @@ import {
 function createImageNode(
   id: string,
   imageUrl: string,
-  previewImageUrl: string | null
+  previewImageUrl: string | null,
+  referenceImageUrl: string | null = null
 ): CanvasNode {
   return {
     id,
@@ -22,6 +23,7 @@ function createImageNode(
     data: {
       imageUrl,
       previewImageUrl,
+      referenceImageUrl,
       aspectRatio: '1:1',
     },
   };
@@ -33,7 +35,12 @@ describe('canvas image preview backfill', () => {
     const nodes: CanvasWorkflowNode[] = [
       createImageNode('missing-preview', original, null),
       createImageNode('same-preview', 'file:///same.jpg', 'file:///same.jpg'),
-      createImageNode('ready-preview', 'file:///ready.jpg', 'file:///thumb.jpg'),
+      createImageNode(
+        'ready-preview',
+        'file:///ready.jpg',
+        'file:///thumb.jpg',
+        'file:///ready.jpg'
+      ),
     ];
 
     expect(collectCanvasImagePreviewJobs(nodes)).toEqual([
@@ -64,6 +71,7 @@ describe('canvas image preview backfill', () => {
             id: 'frame-2',
             imageUrl: 'file:///frame-2-original.jpg',
             previewImageUrl: 'file:///frame-2-thumb.jpg',
+            referenceImageUrl: 'file:///frame-2-original.jpg',
             aspectRatio: '16:9',
             note: '',
             order: 1,
@@ -79,12 +87,16 @@ describe('canvas image preview backfill', () => {
       frameId: 'frame-1',
       imageUrl: 'file:///frame-original.jpg',
     });
-    expect(createCanvasImagePreviewPatch(node, job, 'file:///frame-thumb.jpg')).toEqual({
+    expect(createCanvasImagePreviewPatch(node, job, {
+      previewImageUrl: 'file:///frame-thumb.jpg',
+      referenceImageUrl: 'file:///frame-reference.jpg',
+    })).toEqual({
       frames: [
         {
           id: 'frame-1',
           imageUrl: 'file:///frame-original.jpg',
           previewImageUrl: 'file:///frame-thumb.jpg',
+          referenceImageUrl: 'file:///frame-reference.jpg',
           aspectRatio: '16:9',
           note: '',
           order: 0,
@@ -93,6 +105,7 @@ describe('canvas image preview backfill', () => {
           id: 'frame-2',
           imageUrl: 'file:///frame-2-original.jpg',
           previewImageUrl: 'file:///frame-2-thumb.jpg',
+          referenceImageUrl: 'file:///frame-2-original.jpg',
           aspectRatio: '16:9',
           note: '',
           order: 1,
@@ -105,12 +118,23 @@ describe('canvas image preview backfill', () => {
     const node = createImageNode('image-1', 'file:///original.jpg', 'file:///original.jpg');
     const [job] = collectCanvasImagePreviewJobs([node]);
 
-    expect(createCanvasImagePreviewPatch(node, job, 'file:///preview.jpg')).toEqual({
+    expect(createCanvasImagePreviewPatch(node, job, {
       previewImageUrl: 'file:///preview.jpg',
+      referenceImageUrl: 'file:///reference.jpg',
+    })).toEqual({
+      previewImageUrl: 'file:///preview.jpg',
+      referenceImageUrl: 'file:///reference.jpg',
     });
     expect(createCanvasImagePreviewPatch({
       ...node,
-      data: { ...node.data, previewImageUrl: 'file:///existing-thumb.jpg' },
-    }, job, 'file:///preview.jpg')).toBeNull();
+      data: {
+        ...node.data,
+        previewImageUrl: 'file:///existing-thumb.jpg',
+        referenceImageUrl: 'file:///existing-reference.jpg',
+      },
+    }, job, {
+      previewImageUrl: 'file:///preview.jpg',
+      referenceImageUrl: 'file:///reference.jpg',
+    })).toBeNull();
   });
 });

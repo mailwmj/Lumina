@@ -8,10 +8,10 @@ import {
 
 export const CANVAS_IMAGE_QUALITY_SETTLE_DELAY_MS = 180;
 export const MIN_ORIGINAL_IMAGE_VISIBLE_RATIO = 0.25;
-// Previews are currently capped at 512px. Start the original-image decode before
-// the preview reaches a one-to-one physical-pixel display, so the transition is
-// not perceived as a blurry intermediate state on high-density screens.
-export const MIN_ORIGINAL_IMAGE_SCREEN_LONG_SIDE_PX = 360;
+export const MAX_REQUESTED_ORIGINAL_IMAGE_NODES = 1;
+// The 1024px preview remains sharp during ordinary canvas work. Decode one
+// bounded high-detail image only when inspection scale makes it worthwhile.
+export const MIN_ORIGINAL_IMAGE_SCREEN_LONG_SIDE_PX = 768;
 
 export interface CanvasImageRenderSourceInput {
   nodeId: string;
@@ -52,7 +52,8 @@ function nonEmptyString(value: unknown): string | null {
 }
 
 function getNodeImageUrl(node: CanvasNode): string | null {
-  return nonEmptyString((node.data as { imageUrl?: unknown }).imageUrl);
+  const data = node.data as { imageUrl?: unknown; referenceImageUrl?: unknown };
+  return nonEmptyString(data.referenceImageUrl) ?? nonEmptyString(data.imageUrl);
 }
 
 function getNodePreviewImageUrl(node: CanvasNode): string | null {
@@ -389,6 +390,7 @@ export function getRequestedCanvasOriginalNodeIds({
       left.distanceFromFocus - right.distanceFromFocus
       || right.screenArea - left.screenArea
     ))
+    .slice(0, MAX_REQUESTED_ORIGINAL_IMAGE_NODES)
     .map((item) => item.nodeId);
 }
 

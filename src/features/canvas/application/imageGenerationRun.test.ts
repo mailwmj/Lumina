@@ -114,6 +114,54 @@ describe('shared image generation execution', () => {
     expect(resultNode?.data.displayName).not.toContain('production prompt');
   });
 
+  it('submits the bounded reference asset while retaining the original node image', async () => {
+    const reference = canvasNodeFactory.createNode(CANVAS_NODE_TYPES.upload, { x: 0, y: 0 }, {
+      imageUrl: 'file:///original-8k.png',
+      previewImageUrl: 'file:///preview-1k.jpg',
+      referenceImageUrl: 'file:///reference-4k.jpg',
+      aspectRatio: '2:3',
+    });
+    const source = canvasNodeFactory.createNode(CANVAS_NODE_TYPES.imageEdit, { x: 300, y: 0 }, {
+      prompt: 'Create a model turnaround.',
+      model: 'ai-media/gpt-image-2',
+      requestAspectRatio: '16:9',
+      outputCount: 1,
+    });
+    useCanvasStore.getState().setCanvasData([reference, source], [{
+      id: 'reference-edge',
+      source: reference.id,
+      target: source.id,
+      data: { valueType: 'image', inputOrder: 0 },
+    }]);
+    useSettingsStore.setState({
+      openAiImageApi: {
+        apiKey: 'test-key',
+        baseUrl: 'https://example.test/v1',
+        modelCatalog: {
+          models: [{ id: 'ai-media/gpt-image-2' }],
+          refreshedAt: 1,
+        },
+        selectedModelIds: ['ai-media/gpt-image-2'],
+      },
+      lastImageModelSelection: {
+        providerId: 'ai-media',
+        modelId: 'ai-media/gpt-image-2',
+      },
+    });
+
+    await runImageGenerationNode(source.id);
+
+    expect(gateway.submitGenerateImageJobs).toHaveBeenCalledWith(
+      expect.objectContaining({
+        referenceImages: ['file:///reference-4k.jpg'],
+      }),
+      1,
+      expect.any(Function),
+      expect.any(Function)
+    );
+    expect(reference.data.imageUrl).toBe('file:///original-8k.png');
+  });
+
   it('registers its result nodes before revalidating the authorized canvas', async () => {
     const source = canvasNodeFactory.createNode(CANVAS_NODE_TYPES.imageEdit, { x: 0, y: 0 }, {
       prompt: 'Create one product image.',

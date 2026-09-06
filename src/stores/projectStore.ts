@@ -125,6 +125,10 @@ function mapNodeImageReferences(
       nextData.previewImageUrl =
         mapImageUrl(nextData.previewImageUrl as string | null | undefined) ?? null;
     }
+    if ('referenceImageUrl' in nextData) {
+      nextData.referenceImageUrl =
+        mapImageUrl(nextData.referenceImageUrl as string | null | undefined) ?? null;
+    }
 
     if (Array.isArray(nextData.frames)) {
       nextData.frames = nextData.frames.map((frame) => {
@@ -142,6 +146,8 @@ function mapNodeImageReferences(
           imageUrl: mapImageUrl(frameRecord.imageUrl as string | null | undefined) ?? null,
           previewImageUrl:
             mapImageUrl(frameRecord.previewImageUrl as string | null | undefined) ?? null,
+          referenceImageUrl:
+            mapImageUrl(frameRecord.referenceImageUrl as string | null | undefined) ?? null,
         };
       });
     }

@@ -198,7 +198,7 @@ function collectMediaIdentities(data: Record<string, unknown>): string[] {
       identities.push(`${hashString(value).toString(16)}:${value.length}`);
     }
   };
-  ['imageUrl', 'previewImageUrl', 'videoUrl', 'previewVideoUrl', 'audioUrl'].forEach((field) => {
+  ['imageUrl', 'previewImageUrl', 'referenceImageUrl', 'videoUrl', 'previewVideoUrl', 'audioUrl'].forEach((field) => {
     add(data[field]);
   });
   if (Array.isArray(data.referenceImages)) {
@@ -210,6 +210,7 @@ function collectMediaIdentities(data: Record<string, unknown>): string[] {
         const record = frame as Record<string, unknown>;
         add(record.imageUrl);
         add(record.previewImageUrl);
+        add(record.referenceImageUrl);
       }
     });
   }

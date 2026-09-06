@@ -59,11 +59,13 @@ export interface StoryboardImageMetadata {
 export interface PrepareNodeImageSourceResult {
   imagePath: string;
   previewImagePath: string;
+  referenceImagePath: string;
   aspectRatio: string;
 }
 
 export interface CreateImagePreviewResult {
   previewImagePath: string;
+  referenceImagePath: string;
   aspectRatio: string;
 }
 
@@ -112,7 +114,7 @@ export async function embedStoryboardImageMetadata(
 
 export async function prepareNodeImageSource(
   source: string,
-  maxPreviewDimension = 512,
+  maxPreviewDimension = 1024,
   projectId?: string
 ): Promise<PrepareNodeImageSourceResult> {
   return await invoke('prepare_node_image_source', {
@@ -125,7 +127,7 @@ export async function prepareNodeImageSource(
 export async function prepareNodeImageBinary(
   bytes: Uint8Array,
   extension?: string,
-  maxPreviewDimension = 512,
+  maxPreviewDimension = 1024,
   projectId?: string
 ): Promise<PrepareNodeImageSourceResult> {
   return await invoke('prepare_node_image_binary', {
@@ -138,7 +140,7 @@ export async function prepareNodeImageBinary(
 
 export async function createImagePreview(
   source: string,
-  maxPreviewDimension = 512,
+  maxPreviewDimension = 1024,
   projectId?: string
 ): Promise<CreateImagePreviewResult> {
   return await invoke('create_image_preview', {

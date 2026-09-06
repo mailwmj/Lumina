@@ -11,6 +11,7 @@ interface CanvasNodeImageSourceInput {
   nodeId: string;
   imageUrl: string | null | undefined;
   previewImageUrl: string | null | undefined;
+  referenceImageUrl: string | null | undefined;
 }
 
 function preloadImage(source: string): Promise<void> {
@@ -33,6 +34,7 @@ export function useCanvasNodeImageSource({
   nodeId,
   imageUrl,
   previewImageUrl,
+  referenceImageUrl,
 }: CanvasNodeImageSourceInput): string | null {
   const isFocused = useCanvasImageQualityStore(
     (state) => state.focusedNodeId === nodeId
@@ -44,9 +46,10 @@ export function useCanvasNodeImageSource({
     (state) => state.requestedOriginalNodeIds.includes(nodeId)
   );
   const retainOriginalNode = useCanvasImageQualityStore((state) => state.retainOriginalNode);
+  const detailImageUrl = referenceImageUrl || imageUrl;
   const originalDisplaySource = useMemo(
-    () => imageUrl ? resolveImageDisplayUrl(imageUrl) : null,
-    [imageUrl]
+    () => detailImageUrl ? resolveImageDisplayUrl(detailImageUrl) : null,
+    [detailImageUrl]
   );
   const previewDisplaySource = useMemo(
     () => previewImageUrl ? resolveImageDisplayUrl(previewImageUrl) : null,
@@ -63,13 +66,13 @@ export function useCanvasNodeImageSource({
   const shouldRequestOriginal = isFocused || isOriginalRequested;
   const preferredSource = useMemo(() => resolveCanvasImageRenderSource({
     nodeId,
-    imageUrl,
+    imageUrl: detailImageUrl,
     previewImageUrl,
     focusedNodeId: isFocused && hasLoadedOriginal ? nodeId : null,
     retainedOriginalNodeIds: isOriginalRetained && hasLoadedOriginal ? [nodeId] : [],
     requestedOriginalNodeIds: isOriginalRequested && hasLoadedOriginal ? [nodeId] : [],
   }), [
-    imageUrl,
+    detailImageUrl,
     hasLoadedOriginal,
     isFocused,
     isOriginalRetained,

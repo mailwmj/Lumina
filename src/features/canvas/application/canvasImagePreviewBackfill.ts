@@ -22,10 +22,15 @@ function nonEmptyString(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
 }
 
-function needsPreview(imageUrl: unknown, previewImageUrl: unknown): imageUrl is string {
+function needsDerivatives(
+  imageUrl: unknown,
+  previewImageUrl: unknown,
+  referenceImageUrl: unknown
+): imageUrl is string {
   const source = nonEmptyString(imageUrl);
   const preview = nonEmptyString(previewImageUrl);
-  return Boolean(source && (!preview || preview === source));
+  const reference = nonEmptyString(referenceImageUrl);
+  return Boolean(source && (!preview || !reference));
 }
 
 function getStoryboardFrames(data: CanvasWorkflowNode['data']): StoryboardFrameItem[] {
@@ -46,7 +51,7 @@ export function collectCanvasImagePreviewJobs(
 
   for (const node of nodes) {
     const data = node.data as Record<string, unknown>;
-    if (needsPreview(data.imageUrl, data.previewImageUrl)) {
+    if (needsDerivatives(data.imageUrl, data.previewImageUrl, data.referenceImageUrl)) {
       jobs.push({
         kind: 'node',
         nodeId: node.id,
@@ -55,7 +60,7 @@ export function collectCanvasImagePreviewJobs(
     }
 
     for (const frame of getStoryboardFrames(node.data)) {
-      if (needsPreview(frame.imageUrl, frame.previewImageUrl)) {
+      if (needsDerivatives(frame.imageUrl, frame.previewImageUrl, frame.referenceImageUrl)) {
         jobs.push({
           kind: 'storyboardFrame',
           nodeId: node.id,
@@ -72,25 +77,32 @@ export function collectCanvasImagePreviewJobs(
 export function createCanvasImagePreviewPatch(
   node: CanvasNode,
   job: CanvasImagePreviewJob,
-  previewImageUrl: string
+  derivatives: { previewImageUrl: string; referenceImageUrl: string }
 ): Partial<CanvasNodeData> | null {
   const data = node.data as Record<string, unknown>;
   if (job.kind === 'node') {
-    if (data.imageUrl !== job.imageUrl || !needsPreview(data.imageUrl, data.previewImageUrl)) {
+    if (
+      data.imageUrl !== job.imageUrl
+      || !needsDerivatives(data.imageUrl, data.previewImageUrl, data.referenceImageUrl)
+    ) {
       return null;
     }
-    return { previewImageUrl } as Partial<CanvasNodeData>;
+    return derivatives as Partial<CanvasNodeData>;
   }
 
   const frames = getStoryboardFrames(node.data);
   const frameIndex = frames.findIndex((frame) => frame.id === job.frameId);
   const frame = frameIndex >= 0 ? frames[frameIndex] : null;
-  if (!frame || frame.imageUrl !== job.imageUrl || !needsPreview(frame.imageUrl, frame.previewImageUrl)) {
+  if (
+    !frame
+    || frame.imageUrl !== job.imageUrl
+    || !needsDerivatives(frame.imageUrl, frame.previewImageUrl, frame.referenceImageUrl)
+  ) {
     return null;
   }
 
   const nextFrames = frames.map((item) => (
-    item.id === job.frameId ? { ...item, previewImageUrl } : item
+    item.id === job.frameId ? { ...item, ...derivatives } : item
   ));
   return { frames: nextFrames } as Partial<CanvasNodeData>;
 }

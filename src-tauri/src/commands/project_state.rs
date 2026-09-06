@@ -139,7 +139,7 @@ fn collect_image_paths_from_nodes(
             None => continue,
         };
 
-        for key in ["imageUrl", "previewImageUrl"] {
+        for key in ["imageUrl", "previewImageUrl", "referenceImageUrl"] {
             if let Some(raw_value) = data.get(key).and_then(|value| value.as_str()) {
                 if let Some(path) = resolve_image_ref(raw_value, image_pool) {
                     paths.insert(path);
@@ -153,7 +153,7 @@ fn collect_image_paths_from_nodes(
                     Some(value) => value,
                     None => continue,
                 };
-                for key in ["imageUrl", "previewImageUrl"] {
+                for key in ["imageUrl", "previewImageUrl", "referenceImageUrl"] {
                     if let Some(raw_value) = frame_obj.get(key).and_then(|value| value.as_str()) {
                         if let Some(path) = resolve_image_ref(raw_value, image_pool) {
                             paths.insert(path);
@@ -515,4 +515,47 @@ pub fn delete_project_record(app: AppHandle, project_id: String) -> Result<(), S
 
     prune_unreferenced_images(&app)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::extract_project_image_paths;
+
+    #[test]
+    fn project_image_paths_include_node_and_storyboard_reference_derivatives() {
+        let nodes_json = r#"[
+            {
+                "data": {
+                    "imageUrl": "__img_ref__:0",
+                    "previewImageUrl": "__img_ref__:1",
+                    "referenceImageUrl": "__img_ref__:2",
+                    "frames": [
+                        {
+                            "imageUrl": "__img_ref__:3",
+                            "previewImageUrl": "__img_ref__:4",
+                            "referenceImageUrl": "__img_ref__:5"
+                        }
+                    ]
+                }
+            }
+        ]"#;
+        let history_json = r#"{
+            "imagePool": [
+                "node-original",
+                "node-preview",
+                "node-reference",
+                "frame-original",
+                "frame-preview",
+                "frame-reference"
+            ],
+            "past": [],
+            "future": []
+        }"#;
+
+        let paths = extract_project_image_paths(nodes_json, history_json);
+
+        assert_eq!(paths.len(), 6);
+        assert!(paths.contains("node-reference"));
+        assert!(paths.contains("frame-reference"));
+    }
 }

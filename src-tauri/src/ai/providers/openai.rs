@@ -9,7 +9,7 @@ use tokio::time::{sleep, Duration};
 use tracing::info;
 use uuid::Uuid;
 
-use super::image_input::{load_reference_image, ReferenceImage};
+use super::image_input::{load_reference_image, normalize_openai_reference_image};
 use crate::ai::error::AIError;
 use crate::ai::generation_recovery::is_retryable_poll_status;
 use crate::ai::{
@@ -20,6 +20,13 @@ const AI_MEDIA_PROVIDER_ID: &str = "ai-media";
 const AI_MEDIA_MODEL_ID: &str = "ai-media/gpt-image-2";
 const AI_MEDIA_DEFAULT_BASE_URL: &str = "https://api.ai-media.vip/v1";
 const AI_MEDIA_DEFAULT_MODEL: &str = "gpt-image-2";
+// Most ai-media gateway nodes truncate multipart bodies around 80 KiB. Target
+// a smaller total body and budget references after prompt and boundary overhead.
+const AI_MEDIA_MULTIPART_SAFE_BODY_BYTES: usize = 64 * 1_024;
+const AI_MEDIA_MULTIPART_FIXED_OVERHEAD_BYTES: usize = 4 * 1_024;
+const AI_MEDIA_MULTIPART_PER_IMAGE_OVERHEAD_BYTES: usize = 512;
+const AI_MEDIA_MIN_REFERENCE_BYTES: usize = 8 * 1_024;
+const DEFAULT_REFERENCE_MAX_BYTES: usize = 12 * 1_024 * 1_024;
 const CHAOMO_PROVIDER_ID: &str = "chaomo";
 const CHAOMO_GPT_IMAGE2_1K_MODEL_ID: &str = "chaomo/gpt-image2-1K";
 const CHAOMO_GPT_IMAGE2_1K_HIGHT_MODEL_ID: &str = "chaomo/gpt-image2-1K-Hight";
@@ -227,6 +234,35 @@ impl OpenAiProvider {
             OpenAiImageProtocol::Chaomo => None,
             OpenAiImageProtocol::Fhl => Some("auto".to_string()),
         }
+    }
+
+    fn reference_max_bytes(
+        &self,
+        request: &GenerateRequest,
+        reference_count: usize,
+    ) -> Result<usize, AIError> {
+        if self.protocol != OpenAiImageProtocol::AiMedia {
+            return Ok(DEFAULT_REFERENCE_MAX_BYTES);
+        }
+        if reference_count == 0 {
+            return Ok(0);
+        }
+
+        let reserved_bytes = AI_MEDIA_MULTIPART_FIXED_OVERHEAD_BYTES
+            .saturating_add(
+                AI_MEDIA_MULTIPART_PER_IMAGE_OVERHEAD_BYTES.saturating_mul(reference_count),
+            )
+            .saturating_add(request.prompt.len());
+        let available_bytes = AI_MEDIA_MULTIPART_SAFE_BODY_BYTES.saturating_sub(reserved_bytes);
+        let per_reference_bytes = available_bytes / reference_count;
+        if per_reference_bytes < AI_MEDIA_MIN_REFERENCE_BYTES {
+            return Err(AIError::InvalidRequest(
+                "AI Media prompt and reference images exceed the gateway multipart budget"
+                    .to_string(),
+            ));
+        }
+
+        Ok(per_reference_bytes)
     }
 
     fn resolve_image_size(resolution: &str, aspect_ratio: &str) -> String {
@@ -552,8 +588,20 @@ impl OpenAiProvider {
         };
 
         let reference_images = request.reference_images.as_deref().unwrap_or(&[]);
+        let reference_max_bytes = self.reference_max_bytes(request, reference_images.len())?;
         for (index, source) in reference_images.iter().enumerate() {
             let image = load_reference_image(&self.client, source).await?;
+            let normalized = normalize_openai_reference_image(image, reference_max_bytes)?;
+            if normalized.original_dimensions != normalized.transmitted_dimensions {
+                info!(
+                    original_width = normalized.original_dimensions.0,
+                    original_height = normalized.original_dimensions.1,
+                    transmitted_width = normalized.transmitted_dimensions.0,
+                    transmitted_height = normalized.transmitted_dimensions.1,
+                    "normalized oversized OpenAI-compatible reference image"
+                );
+            }
+            let image = normalized.image;
             let part = Part::bytes(image.bytes)
                 .file_name(format!("reference-{}.{}", index + 1, image.extension))
                 .mime_str(&image.mime_type)?;
@@ -1076,11 +1124,20 @@ impl AIProvider for OpenAiProvider {
 
 #[cfg(test)]
 mod tests {
-    use super::OpenAiProvider;
+    use super::{
+        OpenAiProvider, AI_MEDIA_MIN_REFERENCE_BYTES, AI_MEDIA_MULTIPART_FIXED_OVERHEAD_BYTES,
+        AI_MEDIA_MULTIPART_PER_IMAGE_OVERHEAD_BYTES, AI_MEDIA_MULTIPART_SAFE_BODY_BYTES,
+        DEFAULT_REFERENCE_MAX_BYTES,
+    };
     use crate::ai::providers::image_input::reference_image;
     use crate::ai::{AIProvider, GenerateRequest, ProviderTaskHandle, ProviderTaskPollResult};
+    use base64::{engine::general_purpose::STANDARD, Engine};
+    use image::{
+        codecs::jpeg::JpegEncoder, DynamicImage, GenericImageView, ImageFormat, Rgb, RgbImage,
+    };
     use serde_json::{json, Value};
     use std::collections::HashMap;
+    use std::io::Cursor;
     use std::path::Path;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::{TcpListener, TcpStream};
@@ -1098,6 +1155,78 @@ mod tests {
             provider_config: None,
             draft_task_id: None,
         }
+    }
+
+    fn test_image_bytes(width: u32, height: u32, format: ImageFormat) -> Vec<u8> {
+        let mut output = Cursor::new(Vec::new());
+        DynamicImage::new_rgb8(width, height)
+            .write_to(&mut output, format)
+            .unwrap();
+        output.into_inner()
+    }
+
+    fn noisy_jpeg_bytes(width: u32, height: u32) -> Vec<u8> {
+        let pixels = RgbImage::from_fn(width, height, |x, y| {
+            let value = x
+                .wrapping_mul(1_664_525)
+                .wrapping_add(y.wrapping_mul(1_013_904_223));
+            Rgb([
+                value as u8,
+                value.rotate_left(9) as u8,
+                value.rotate_left(17) as u8,
+            ])
+        });
+        let mut output = Vec::new();
+        DynamicImage::ImageRgb8(pixels)
+            .write_with_encoder(JpegEncoder::new_with_quality(&mut output, 100))
+            .unwrap();
+        output
+    }
+
+    fn image_data_url(mime_type: &str, bytes: &[u8]) -> String {
+        format!("data:{mime_type};base64,{}", STANDARD.encode(bytes))
+    }
+
+    fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+        haystack
+            .windows(needle.len())
+            .position(|window| window == needle)
+    }
+
+    fn multipart_part<'a>(request: &'a [u8], field_name: &str) -> (&'a str, &'a [u8]) {
+        let request_header_end = find_bytes(request, b"\r\n\r\n")
+            .expect("multipart request should have a header separator");
+        let request_headers = std::str::from_utf8(&request[..request_header_end]).unwrap();
+        let boundary = request_headers
+            .lines()
+            .find(|line| {
+                line.to_ascii_lowercase()
+                    .starts_with("content-type: multipart/form-data")
+            })
+            .and_then(|line| line.split("boundary=").nth(1))
+            .map(|value| value.trim().trim_matches('"'))
+            .expect("multipart request should declare a boundary");
+        let body = &request[request_header_end + 4..];
+        let field_marker = format!("name=\"{field_name}\"");
+        let field_start = find_bytes(body, field_marker.as_bytes())
+            .expect("multipart request should contain the requested field");
+        let part_header_end = field_start
+            + find_bytes(&body[field_start..], b"\r\n\r\n")
+                .expect("multipart part should have a header separator");
+        let content_start = part_header_end + 4;
+        let next_boundary = format!("\r\n--{boundary}");
+        let content_end = content_start
+            + find_bytes(&body[content_start..], next_boundary.as_bytes())
+                .expect("multipart part should end at the next boundary");
+        let part_headers = std::str::from_utf8(&body[field_start..part_header_end]).unwrap();
+
+        (part_headers, &body[content_start..content_end])
+    }
+
+    fn http_request_body(request: &[u8]) -> &[u8] {
+        let header_end =
+            find_bytes(request, b"\r\n\r\n").expect("HTTP request should have a header separator");
+        &request[header_end + 4..]
     }
 
     async fn read_http_request(socket: &mut TcpStream) -> Vec<u8> {
@@ -1162,11 +1291,7 @@ mod tests {
 
     #[test]
     fn reference_image_uses_local_file_extension_when_content_is_unknown() {
-        let image = reference_image(
-            vec![0x00, 0x01],
-            None,
-            Some(Path::new("reference.webp")),
-        );
+        let image = reference_image(vec![0x00, 0x01], None, Some(Path::new("reference.webp")));
 
         assert_eq!(image.mime_type, "image/webp");
         assert_eq!(image.extension, "webp");
@@ -1179,6 +1304,91 @@ mod tests {
         assert_eq!(OpenAiProvider::resolve_image_quality("4K"), Some("high"));
         assert_eq!(OpenAiProvider::resolve_image_quality("auto"), Some("auto"));
         assert_eq!(OpenAiProvider::resolve_image_quality("1024x1024"), None);
+    }
+
+    #[test]
+    fn ai_media_budgets_all_references_inside_the_safe_multipart_body() {
+        let mut request = generate_request("ai-media/gpt-image-2", "4K", "16:9");
+        request.prompt = "generate a model turnaround".to_string();
+        let expected_single_budget = AI_MEDIA_MULTIPART_SAFE_BODY_BYTES
+            - AI_MEDIA_MULTIPART_FIXED_OVERHEAD_BYTES
+            - AI_MEDIA_MULTIPART_PER_IMAGE_OVERHEAD_BYTES
+            - request.prompt.len();
+        assert_eq!(
+            OpenAiProvider::ai_media()
+                .reference_max_bytes(&request, 1)
+                .unwrap(),
+            expected_single_budget
+        );
+        assert_eq!(
+            OpenAiProvider::ai_media()
+                .reference_max_bytes(&request, 2)
+                .unwrap(),
+            (expected_single_budget - AI_MEDIA_MULTIPART_PER_IMAGE_OVERHEAD_BYTES) / 2
+        );
+        assert_eq!(
+            OpenAiProvider::chaomo()
+                .reference_max_bytes(&request, 2)
+                .unwrap(),
+            DEFAULT_REFERENCE_MAX_BYTES
+        );
+        assert_eq!(DEFAULT_REFERENCE_MAX_BYTES, 12 * 1_024 * 1_024);
+
+        request.prompt = "x".repeat(AI_MEDIA_MULTIPART_SAFE_BODY_BYTES);
+        assert!(OpenAiProvider::ai_media()
+            .reference_max_bytes(&request, 1)
+            .unwrap_err()
+            .to_string()
+            .contains("multipart budget"));
+        assert_eq!(AI_MEDIA_MIN_REFERENCE_BYTES, 8 * 1_024);
+    }
+
+    #[tokio::test]
+    async fn ai_media_serializes_prompt_and_multiple_images_within_the_safe_body_limit() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let request = read_http_request(&mut socket).await;
+            write_json_response(&mut socket, "200 OK", "{}").await;
+            request
+        });
+
+        let provider = OpenAiProvider::ai_media();
+        let jpeg = noisy_jpeg_bytes(512, 512);
+        let mut request = generate_request("ai-media/gpt-image-2", "4K", "16:9");
+        request.prompt = "model turnaround with front side and back views. ".repeat(480);
+        request.reference_images = Some(vec![
+            image_data_url("image/jpeg", &jpeg),
+            image_data_url("image/jpeg", &jpeg),
+        ]);
+        let form = provider
+            .build_edit_form(&request, "gpt-image-2", true)
+            .await
+            .unwrap();
+        let response = provider
+            .client
+            .post(format!("http://{address}/v1/images/edits"))
+            .multipart(form)
+            .send()
+            .await
+            .unwrap();
+        assert!(response.status().is_success());
+
+        let request_bytes = server.await.unwrap();
+        let body = http_request_body(&request_bytes);
+        assert!(
+            body.len() <= AI_MEDIA_MULTIPART_SAFE_BODY_BYTES,
+            "multipart body was {} bytes, expected at most {}",
+            body.len(),
+            AI_MEDIA_MULTIPART_SAFE_BODY_BYTES
+        );
+        assert_eq!(
+            String::from_utf8_lossy(body)
+                .matches("name=\"image\"")
+                .count(),
+            2
+        );
     }
 
     #[test]
@@ -1344,22 +1554,14 @@ mod tests {
         let server = tokio::spawn(async move {
             let (mut socket, _) = listener.accept().await.unwrap();
             let request = read_http_request(&mut socket).await;
-            write_json_response(
-                &mut socket,
-                "200 OK",
-                r#"{"data":[{"b64_json":"AQID"}]}"#,
-            )
-            .await;
+            write_json_response(&mut socket, "200 OK", r#"{"data":[{"b64_json":"AQID"}]}"#).await;
             request
         });
 
         let provider = OpenAiProvider::fhl();
         let mut request = generate_request("fhl/gpt-image-2", "4K", "16:9");
         request.provider_config = Some(HashMap::from([
-            (
-                "base_url".to_string(),
-                json!(format!("http://{address}")),
-            ),
+            ("base_url".to_string(), json!(format!("http://{address}"))),
             ("api_key".to_string(), json!("test-key")),
         ]));
 
@@ -1430,27 +1632,19 @@ mod tests {
         let server = tokio::spawn(async move {
             let (mut socket, _) = listener.accept().await.unwrap();
             let request = read_http_request(&mut socket).await;
-            write_json_response(
-                &mut socket,
-                "200 OK",
-                r#"{"data":[{"b64_json":"AQID"}]}"#,
-            )
-            .await;
+            write_json_response(&mut socket, "200 OK", r#"{"data":[{"b64_json":"AQID"}]}"#).await;
             request
         });
 
         let provider = OpenAiProvider::fhl();
         let mut request = generate_request("fhl/gpt-image-2", "4K", "1:1");
         request.provider_config = Some(HashMap::from([
-            (
-                "base_url".to_string(),
-                json!(format!("http://{address}")),
-            ),
+            ("base_url".to_string(), json!(format!("http://{address}"))),
             ("api_key".to_string(), json!("test-key")),
         ]));
         request.reference_images = Some(vec![
-            "data:image/png;base64,AQID".to_string(),
-            "data:image/jpeg;base64,BAUG".to_string(),
+            image_data_url("image/png", &test_image_bytes(2, 2, ImageFormat::Png)),
+            image_data_url("image/jpeg", &test_image_bytes(2, 2, ImageFormat::Jpeg)),
         ]);
 
         let submission = provider.submit_task(request).await.unwrap();
@@ -1569,57 +1763,25 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn edit_form_serializes_detected_jpeg_metadata() {
+    async fn edit_form_serializes_normalized_jpeg_with_matching_metadata() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         let server = tokio::spawn(async move {
             let (mut socket, _) = listener.accept().await.unwrap();
-            let mut request_bytes = Vec::new();
-            let mut buffer = [0_u8; 4096];
-            let (header_end, content_length) = loop {
-                let bytes_read = socket.read(&mut buffer).await.unwrap();
-                assert!(bytes_read > 0, "connection closed before request headers");
-                request_bytes.extend_from_slice(&buffer[..bytes_read]);
-
-                if let Some(header_end) = request_bytes
-                    .windows(4)
-                    .position(|window| window == b"\r\n\r\n")
-                {
-                    let headers = String::from_utf8_lossy(&request_bytes[..header_end]);
-                    let content_length = headers
-                        .lines()
-                        .find_map(|line| {
-                            let (name, value) = line.split_once(':')?;
-                            name.eq_ignore_ascii_case("content-length")
-                                .then(|| value.trim().parse::<usize>().ok())
-                                .flatten()
-                        })
-                        .expect("multipart request should include content-length");
-                    break (header_end + 4, content_length);
-                }
-            };
-
-            while request_bytes.len() < header_end + content_length {
-                let bytes_read = socket.read(&mut buffer).await.unwrap();
-                assert!(bytes_read > 0, "connection closed before request body");
-                request_bytes.extend_from_slice(&buffer[..bytes_read]);
-            }
-
-            socket
-                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}")
-                .await
-                .unwrap();
-            request_bytes
+            let request = read_http_request(&mut socket).await;
+            write_json_response(&mut socket, "200 OK", "{}").await;
+            request
         });
 
         let provider = OpenAiProvider::ai_media();
+        let jpeg = test_image_bytes(8_192, 64, ImageFormat::Jpeg);
         let request = GenerateRequest {
             prompt: "edit the image".to_string(),
             model: "ai-media/gpt-image-2".to_string(),
             provider_id: None,
             size: "4K".to_string(),
             aspect_ratio: "3:2".to_string(),
-            reference_images: Some(vec!["data:image/png;base64,/9j/4A==".to_string()]),
+            reference_images: Some(vec![image_data_url("image/png", &jpeg)]),
             video_content: None,
             extra_params: None,
             provider_config: None,
@@ -1641,11 +1803,19 @@ mod tests {
         let request_bytes = server.await.unwrap();
         let serialized_request = String::from_utf8_lossy(&request_bytes);
         assert!(serialized_request.contains("name=\"image\""));
-        assert!(serialized_request.contains("filename=\"reference-1.jpg\""));
-        assert!(serialized_request.contains("Content-Type: image/jpeg"));
         assert!(serialized_request.contains("name=\"size\""));
         assert!(serialized_request.contains("\r\n\r\n4096x2731\r\n"));
         assert!(serialized_request.contains("name=\"quality\""));
         assert!(serialized_request.contains("\r\n\r\nhigh\r\n"));
+
+        let (image_headers, image_bytes) = multipart_part(&request_bytes, "image");
+        assert!(image_headers.contains("filename=\"reference-1.jpg\""));
+        assert!(image_headers.contains("Content-Type: image/jpeg"));
+        assert!(image_bytes.starts_with(&[0xff, 0xd8, 0xff]));
+        assert_ne!(image_bytes, jpeg);
+        assert_eq!(
+            image::load_from_memory(image_bytes).unwrap().dimensions(),
+            (4_096, 32)
+        );
     }
 }

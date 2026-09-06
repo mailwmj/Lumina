@@ -40,17 +40,25 @@ function greatestCommonDivisor(a: number, b: number): number {
   return x || 1;
 }
 
-const DEFAULT_PREVIEW_MAX_DIMENSION = 512;
+export const CANVAS_IMAGE_PREVIEW_MAX_DIMENSION = 1024;
+const CANVAS_PREVIEW_SOURCE_MAX_BYTES = 4 * 1024 * 1024;
+const CANVAS_PREVIEW_SOURCE_MAX_LONG_EDGE = 2048;
+const CANVAS_PREVIEW_SOURCE_MAX_PIXELS = 2048 * 2048;
+const REFERENCE_SOURCE_MAX_BYTES = 12 * 1024 * 1024;
+const REFERENCE_SOURCE_MAX_LONG_EDGE = 4096;
+const REFERENCE_SOURCE_MAX_PIXELS = 16_000_000;
 const LOCAL_PATH_PREFIX_PATTERN = /^(?:[A-Za-z]:[\\/]|\\\\|\/)/;
 
 export interface PreparedNodeImage {
   imageUrl: string;
   previewImageUrl: string;
+  referenceImageUrl: string;
   aspectRatio: string;
 }
 
 export interface PreparedNodeImagePreview {
   previewImageUrl: string;
+  referenceImageUrl: string;
   aspectRatio: string;
 }
 
@@ -331,7 +339,7 @@ function resolveFileExtension(file: File): string {
 
 export async function prepareNodeImageFromFile(
   file: File,
-  maxPreviewDimension = DEFAULT_PREVIEW_MAX_DIMENSION,
+  maxPreviewDimension = CANVAS_IMAGE_PREVIEW_MAX_DIMENSION,
   projectId?: string
 ): Promise<PreparedNodeImage> {
   const started = performance.now();
@@ -384,6 +392,7 @@ export async function prepareNodeImageFromFile(
     return {
       imageUrl: prepared.imagePath,
       previewImageUrl: prepared.previewImagePath,
+      referenceImageUrl: prepared.referenceImagePath || prepared.imagePath,
       aspectRatio: prepared.aspectRatio,
     };
   }
@@ -417,19 +426,47 @@ function resolvePreviewMimeType(imageUrl: string): string {
   return 'image/jpeg';
 }
 
+function estimateDataUrlBytes(dataUrl: string): number {
+  const commaIndex = dataUrl.indexOf(',');
+  if (commaIndex < 0) {
+    return new Blob([dataUrl]).size;
+  }
+  const payload = dataUrl.slice(commaIndex + 1);
+  const padding = payload.endsWith('==') ? 2 : payload.endsWith('=') ? 1 : 0;
+  return Math.max(0, Math.floor((payload.length * 3) / 4) - padding);
+}
+
+function exceedsImageSourceLimits(
+  sourceBytes: number,
+  width: number,
+  height: number,
+  limits: { maxBytes: number; maxLongEdge: number; maxPixels: number }
+): boolean {
+  return sourceBytes > limits.maxBytes
+    || Math.max(width, height) > limits.maxLongEdge
+    || width * height > limits.maxPixels;
+}
+
 function renderPreviewDataUrl(
   image: HTMLImageElement,
   sourceDataUrl: string,
   maxDimension: number,
   forceReencode = false,
-  outputMimeType?: 'image/jpeg' | 'image/png' | 'image/webp'
+  outputMimeType?: 'image/jpeg' | 'image/png' | 'image/webp',
+  maxPixels = Number.MAX_SAFE_INTEGER,
+  quality = 0.9
 ): string {
   const longestSide = Math.max(image.naturalWidth, image.naturalHeight);
-  if (!forceReencode && longestSide <= maxDimension) {
+  const sourcePixels = image.naturalWidth * image.naturalHeight;
+  if (!forceReencode && longestSide <= maxDimension && sourcePixels <= maxPixels) {
     return sourceDataUrl;
   }
 
-  const scale = Math.min(1, maxDimension / longestSide);
+  const scale = Math.min(
+    1,
+    maxDimension / longestSide,
+    Math.sqrt(maxPixels / Math.max(1, sourcePixels))
+  );
   const targetWidth = Math.max(1, Math.round(image.naturalWidth * scale));
   const targetHeight = Math.max(1, Math.round(image.naturalHeight * scale));
   const canvas = document.createElement('canvas');
@@ -447,14 +484,67 @@ function renderPreviewDataUrl(
 
   const mimeType = outputMimeType ?? resolvePreviewMimeType(sourceDataUrl);
   if (mimeType === 'image/jpeg' || mimeType === 'image/webp') {
-    return canvas.toDataURL(mimeType, 0.82);
+    return canvas.toDataURL(mimeType, quality);
   }
   return canvas.toDataURL(mimeType);
 }
 
+async function createBrowserNodeImageDerivatives(
+  image: HTMLImageElement,
+  normalizedDataUrl: string,
+  originalImageUrl: string,
+  maxPreviewDimension: number,
+  projectId?: string
+): Promise<Pick<PreparedNodeImage, 'previewImageUrl' | 'referenceImageUrl'>> {
+  const sourceBytes = estimateDataUrlBytes(normalizedDataUrl);
+  const width = image.naturalWidth;
+  const height = image.naturalHeight;
+  const needsPreview = exceedsImageSourceLimits(sourceBytes, width, height, {
+    maxBytes: CANVAS_PREVIEW_SOURCE_MAX_BYTES,
+    maxLongEdge: CANVAS_PREVIEW_SOURCE_MAX_LONG_EDGE,
+    maxPixels: CANVAS_PREVIEW_SOURCE_MAX_PIXELS,
+  });
+  const needsReference = exceedsImageSourceLimits(sourceBytes, width, height, {
+    maxBytes: REFERENCE_SOURCE_MAX_BYTES,
+    maxLongEdge: REFERENCE_SOURCE_MAX_LONG_EDGE,
+    maxPixels: REFERENCE_SOURCE_MAX_PIXELS,
+  });
+  const previewDataUrl = needsPreview
+    ? renderPreviewDataUrl(
+      image,
+      normalizedDataUrl,
+      maxPreviewDimension,
+      true,
+      'image/jpeg',
+      maxPreviewDimension * maxPreviewDimension,
+      0.9
+    )
+    : normalizedDataUrl;
+  const referenceDataUrl = needsReference
+    ? renderPreviewDataUrl(
+      image,
+      normalizedDataUrl,
+      REFERENCE_SOURCE_MAX_LONG_EDGE,
+      true,
+      undefined,
+      REFERENCE_SOURCE_MAX_PIXELS,
+      0.95
+    )
+    : normalizedDataUrl;
+
+  return {
+    previewImageUrl: previewDataUrl === normalizedDataUrl
+      ? originalImageUrl
+      : await persistImageLocally(previewDataUrl, projectId),
+    referenceImageUrl: referenceDataUrl === normalizedDataUrl
+      ? originalImageUrl
+      : await persistImageLocally(referenceDataUrl, projectId),
+  };
+}
+
 export async function createPreviewDataUrl(
   imageUrl: string,
-  maxDimension = DEFAULT_PREVIEW_MAX_DIMENSION,
+  maxDimension = CANVAS_IMAGE_PREVIEW_MAX_DIMENSION,
   forceReencode = false,
   outputMimeType?: 'image/jpeg' | 'image/png' | 'image/webp'
 ): Promise<string> {
@@ -472,7 +562,7 @@ export async function createPreviewDataUrl(
 
 export async function createNodeImagePreview(
   imageUrl: string,
-  maxPreviewDimension = DEFAULT_PREVIEW_MAX_DIMENSION,
+  maxPreviewDimension = CANVAS_IMAGE_PREVIEW_MAX_DIMENSION,
   projectId?: string
 ): Promise<PreparedNodeImagePreview> {
   const trimmedImageUrl = imageUrl.trim();
@@ -486,6 +576,7 @@ export async function createNodeImagePreview(
       const prepared = await createImagePreview(trimmedImageUrl, safeMaxDimension, projectId);
       return {
         previewImageUrl: prepared.previewImagePath,
+        referenceImageUrl: prepared.referenceImagePath || trimmedImageUrl,
         aspectRatio: prepared.aspectRatio,
       };
     } catch (error) {
@@ -498,20 +589,23 @@ export async function createNodeImagePreview(
 
   const normalizedDataUrl = await imageUrlToDataUrl(trimmedImageUrl);
   const image = await loadImageElement(normalizedDataUrl);
-  const previewDataUrl = renderPreviewDataUrl(image, normalizedDataUrl, safeMaxDimension);
-  const previewImageUrl = previewDataUrl === normalizedDataUrl
-    ? trimmedImageUrl
-    : await persistImageLocally(previewDataUrl, projectId);
+  const derivatives = await createBrowserNodeImageDerivatives(
+    image,
+    normalizedDataUrl,
+    trimmedImageUrl,
+    safeMaxDimension,
+    projectId
+  );
 
   return {
-    previewImageUrl,
+    ...derivatives,
     aspectRatio: reduceAspectRatio(image.naturalWidth, image.naturalHeight),
   };
 }
 
 export async function prepareNodeImage(
   imageUrl: string,
-  maxPreviewDimension = DEFAULT_PREVIEW_MAX_DIMENSION,
+  maxPreviewDimension = CANVAS_IMAGE_PREVIEW_MAX_DIMENSION,
   projectId?: string
 ): Promise<PreparedNodeImage> {
   const trimmedImageUrl = imageUrl.trim();
@@ -531,6 +625,7 @@ export async function prepareNodeImage(
       return {
         imageUrl: prepared.imagePath,
         previewImageUrl: prepared.previewImagePath,
+        referenceImageUrl: prepared.referenceImagePath || prepared.imagePath,
         aspectRatio: prepared.aspectRatio,
       };
     } catch (error) {
@@ -547,18 +642,20 @@ export async function prepareNodeImage(
     const normalizedDataUrl = await imageUrlToDataUrl(persistedImagePath);
     const image = await loadImageElement(normalizedDataUrl);
     const safeMaxDimension = Math.max(64, Math.floor(maxPreviewDimension));
-    const previewDataUrl = renderPreviewDataUrl(image, normalizedDataUrl, safeMaxDimension);
-    const previewImagePath =
-      previewDataUrl === normalizedDataUrl
-        ? persistedImagePath
-        : await persistImageLocally(previewDataUrl, projectId);
+    const derivatives = await createBrowserNodeImageDerivatives(
+      image,
+      normalizedDataUrl,
+      persistedImagePath,
+      safeMaxDimension,
+      projectId
+    );
 
     logger.info(
       `[upload-perf][imageData] prepareNodeImage browser-fallback total=${Math.round(performance.now() - started)}ms`
     );
     return {
       imageUrl: persistedImagePath,
-      previewImageUrl: previewImagePath,
+      ...derivatives,
       aspectRatio: reduceAspectRatio(image.naturalWidth, image.naturalHeight),
     };
   } catch (error) {

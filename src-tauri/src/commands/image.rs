@@ -5,12 +5,12 @@ use chrono::Local;
 use directories::UserDirs;
 use fast_image_resize as fir;
 use fast_image_resize::images::Image as FirImage;
-use image::{DynamicImage, GenericImageView, ImageReader, Rgba, RgbaImage};
+use image::{DynamicImage, GenericImageView, ImageFormat, ImageReader, Rgba, RgbaImage};
 use imageproc::drawing::{draw_text_mut, text_size};
 use png::{BitDepth, ColorType, Decoder, Encoder};
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
-use std::io::{Cursor, Write};
+use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
@@ -20,9 +20,41 @@ use uuid::Uuid;
 use crate::storage::{source::resolve_media_source, tos};
 
 const STORYBOARD_METADATA_PNG_TEXT_KEY: &str = "StoryboardCopilotMetadata";
-const FAST_PREVIEW_BYPASS_MAX_BYTES: usize = 2_000_000;
-const FAST_PREVIEW_BYPASS_MAX_DIMENSION: u32 = 2048;
+const DEFAULT_NODE_PREVIEW_MAX_DIMENSION: u32 = 1_024;
+const PREVIEW_SOURCE_MAX_BYTES: usize = 4 * 1_024 * 1_024;
+const PREVIEW_SOURCE_MAX_LONG_EDGE: u32 = 2_048;
+const PREVIEW_SOURCE_MAX_PIXELS: u64 = 2_048 * 2_048;
+const REFERENCE_SOURCE_MAX_BYTES: usize = 12 * 1_024 * 1_024;
+const REFERENCE_SOURCE_MAX_LONG_EDGE: u32 = 4_096;
+const REFERENCE_SOURCE_MAX_PIXELS: u64 = 16_000_000;
+const REFERENCE_JPEG_QUALITY: u8 = 95;
 const GENERATED_IMAGE_RANDOM_SUFFIX_LENGTH: usize = 8;
+
+#[derive(Clone, Copy)]
+struct ImageDerivativePolicy {
+    source_max_bytes: usize,
+    source_max_long_edge: u32,
+    source_max_pixels: u64,
+    target_max_long_edge: u32,
+    target_max_pixels: u64,
+}
+
+impl ImageDerivativePolicy {
+    fn should_transform(self, source_bytes: usize, width: u32, height: u32) -> bool {
+        source_bytes > self.source_max_bytes
+            || width.max(height) > self.source_max_long_edge
+            || u64::from(width) * u64::from(height) > self.source_max_pixels
+    }
+
+    fn target_dimensions(self, width: u32, height: u32) -> (u32, u32) {
+        bounded_image_dimensions(
+            width,
+            height,
+            self.target_max_long_edge,
+            self.target_max_pixels,
+        )
+    }
+}
 
 fn normalize_generated_image_filename_segment(value: &str, fallback: &str) -> String {
     let mut normalized = String::new();
@@ -325,6 +357,7 @@ pub struct MergeStoryboardImagesResult {
 pub struct PrepareNodeImageResult {
     pub image_path: String,
     pub preview_image_path: String,
+    pub reference_image_path: String,
     pub aspect_ratio: String,
 }
 
@@ -332,6 +365,7 @@ pub struct PrepareNodeImageResult {
 #[serde(rename_all = "camelCase")]
 pub struct CreateImagePreviewResult {
     pub preview_image_path: String,
+    pub reference_image_path: String,
     pub aspect_ratio: String,
 }
 
@@ -662,6 +696,171 @@ fn clamp_f64(value: f64, min: f64, max: f64) -> f64 {
     value.max(min).min(max)
 }
 
+fn preview_derivative_policy(max_dimension: u32) -> ImageDerivativePolicy {
+    let target_max_long_edge = max_dimension.max(1);
+    ImageDerivativePolicy {
+        source_max_bytes: PREVIEW_SOURCE_MAX_BYTES,
+        source_max_long_edge: PREVIEW_SOURCE_MAX_LONG_EDGE,
+        source_max_pixels: PREVIEW_SOURCE_MAX_PIXELS,
+        target_max_long_edge,
+        target_max_pixels: u64::from(target_max_long_edge) * u64::from(target_max_long_edge),
+    }
+}
+
+fn reference_derivative_policy() -> ImageDerivativePolicy {
+    ImageDerivativePolicy {
+        source_max_bytes: REFERENCE_SOURCE_MAX_BYTES,
+        source_max_long_edge: REFERENCE_SOURCE_MAX_LONG_EDGE,
+        source_max_pixels: REFERENCE_SOURCE_MAX_PIXELS,
+        target_max_long_edge: REFERENCE_SOURCE_MAX_LONG_EDGE,
+        target_max_pixels: REFERENCE_SOURCE_MAX_PIXELS,
+    }
+}
+
+fn bounded_image_dimensions(
+    width: u32,
+    height: u32,
+    max_long_edge: u32,
+    max_pixels: u64,
+) -> (u32, u32) {
+    let width = width.max(1);
+    let height = height.max(1);
+    let long_edge = width.max(height);
+    let pixels = u64::from(width) * u64::from(height);
+    if long_edge <= max_long_edge && pixels <= max_pixels {
+        return (width, height);
+    }
+
+    let edge_scale = f64::from(max_long_edge.max(1)) / f64::from(long_edge);
+    let pixel_scale = (max_pixels.max(1) as f64 / pixels as f64).sqrt();
+    let scale = edge_scale.min(pixel_scale).min(1.0);
+    let mut target_width = (f64::from(width) * scale).floor().max(1.0) as u32;
+    let mut target_height = (f64::from(height) * scale).floor().max(1.0) as u32;
+    if u64::from(target_width) * u64::from(target_height) > max_pixels {
+        if target_width >= target_height {
+            target_width = (max_pixels / u64::from(target_height)).max(1) as u32;
+        } else {
+            target_height = (max_pixels / u64::from(target_width)).max(1) as u32;
+        }
+    }
+    (target_width, target_height)
+}
+
+fn encode_image_at_dimensions(
+    source: &DynamicImage,
+    dimensions: (u32, u32),
+    format: ImageFormat,
+    jpeg_quality: u8,
+    fast_resize: bool,
+) -> Result<Vec<u8>, String> {
+    let resized = if source.dimensions() == dimensions {
+        None
+    } else if fast_resize {
+        Some(DynamicImage::ImageRgba8(
+            resize_image_fast(source, dimensions.0, dimensions.1).unwrap_or_else(|_| {
+                source
+                    .resize_exact(
+                        dimensions.0,
+                        dimensions.1,
+                        image::imageops::FilterType::Triangle,
+                    )
+                    .to_rgba8()
+            }),
+        ))
+    } else {
+        Some(source.resize_exact(
+            dimensions.0,
+            dimensions.1,
+            image::imageops::FilterType::Lanczos3,
+        ))
+    };
+    let output_image = resized.as_ref().unwrap_or(source);
+    let mut output = Cursor::new(Vec::new());
+    if format == ImageFormat::Jpeg {
+        let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(
+            &mut output,
+            jpeg_quality,
+        );
+        output_image
+            .write_with_encoder(encoder)
+            .map_err(|error| format!("Failed to encode JPEG derivative: {}", error))?;
+    } else {
+        output_image
+            .write_to(&mut output, format)
+            .map_err(|error| format!("Failed to encode image derivative: {}", error))?;
+    }
+    Ok(output.into_inner())
+}
+
+fn create_reference_derivative_bytes(
+    source: &DynamicImage,
+    source_bytes: usize,
+) -> Result<Option<(Vec<u8>, &'static str)>, String> {
+    create_reference_derivative_bytes_with_policy(
+        source,
+        source_bytes,
+        reference_derivative_policy(),
+    )
+}
+
+fn create_reference_derivative_bytes_with_policy(
+    source: &DynamicImage,
+    source_bytes: usize,
+    policy: ImageDerivativePolicy,
+) -> Result<Option<(Vec<u8>, &'static str)>, String> {
+    let (width, height) = source.dimensions();
+    if !policy.should_transform(source_bytes, width, height) {
+        return Ok(None);
+    }
+
+    let format = if source.color().has_alpha() {
+        ImageFormat::Png
+    } else {
+        ImageFormat::Jpeg
+    };
+    let extension = if format == ImageFormat::Png { "png" } else { "jpg" };
+    let mut dimensions = policy.target_dimensions(width, height);
+    let mut bytes = encode_image_at_dimensions(
+        source,
+        dimensions,
+        format,
+        REFERENCE_JPEG_QUALITY,
+        false,
+    )?;
+
+    if format == ImageFormat::Jpeg && bytes.len() > policy.source_max_bytes {
+        bytes = encode_image_at_dimensions(source, dimensions, format, 90, false)?;
+    }
+
+    for _ in 0..3 {
+        if bytes.len() <= policy.source_max_bytes || dimensions == (1, 1) {
+            break;
+        }
+        let scale = ((policy.source_max_bytes as f64 / bytes.len() as f64).sqrt() * 0.96)
+            .clamp(0.1, 0.95);
+        let next_dimensions = (
+            (f64::from(dimensions.0) * scale).floor().max(1.0) as u32,
+            (f64::from(dimensions.1) * scale).floor().max(1.0) as u32,
+        );
+        if next_dimensions == dimensions {
+            break;
+        }
+        dimensions = next_dimensions;
+        bytes = encode_image_at_dimensions(source, dimensions, format, 90, false)?;
+    }
+
+    if bytes.len() > policy.source_max_bytes {
+        return Err(format!(
+            "Failed to reduce reference derivative below {} bytes",
+            policy.source_max_bytes
+        ));
+    }
+
+    image::load_from_memory_with_format(&bytes, format)
+        .map_err(|error| format!("Failed to validate reference derivative: {}", error))?;
+    Ok(Some((bytes, extension)))
+}
+
 fn prepare_node_image_from_bytes(
     app: &AppHandle,
     bytes: &[u8],
@@ -690,56 +889,41 @@ fn prepare_node_image_from_bytes(
     image
         .write_with_encoder(encoder)
         .map_err(|e| format!("Failed to encode JPEG: {}", e))?;
-    let image_path = persist_image_bytes(app, jpeg_buffer.get_ref(), "jpg", project_id)?;
+    let persisted_image_bytes = jpeg_buffer.into_inner();
+    let image_path = persist_image_bytes(app, &persisted_image_bytes, "jpg", project_id)?;
     let persist_elapsed = persist_started.elapsed().as_millis();
-    let longest_side = width.max(height);
-    let bypass_preview = longest_side <= safe_max_dimension
-        || (bytes.len() <= FAST_PREVIEW_BYPASS_MAX_BYTES
-            && longest_side <= FAST_PREVIEW_BYPASS_MAX_DIMENSION);
-    if bypass_preview {
-        info!(
-            "prepare_node_image done [{}]: bytes={}, ext={}, size={}x{}, max_preview={}, probe={}ms, decode=0ms, persist_original={}ms, resize=0ms, bypass_preview=true, total={}ms",
-            trace_tag,
-            bytes.len(),
-            extension,
-            width,
-            height,
-            safe_max_dimension,
-            probe_elapsed,
-            persist_elapsed,
-            started.elapsed().as_millis()
-        );
-        return Ok(PrepareNodeImageResult {
-            image_path: image_path.clone(),
-            preview_image_path: image_path,
-            aspect_ratio: reduce_aspect_ratio(width, height),
-        });
-    }
-
-    // Reuse the already-decoded image for preview generation
-    let decode_elapsed = 0i32; // Already decoded above
     let resize_started = Instant::now();
-    let scale = safe_max_dimension as f64 / longest_side as f64;
-    let target_width = ((width as f64) * scale).round().max(1.0) as u32;
-    let target_height = ((height as f64) * scale).round().max(1.0) as u32;
-    let resized_rgba = resize_image_fast(&image, target_width, target_height)
-        .unwrap_or_else(|_| {
-            image
-                .resize(target_width, target_height, image::imageops::FilterType::Triangle)
-                .to_rgba8()
-        });
-    let resized = DynamicImage::ImageRgba8(resized_rgba);
+    let preview_policy = preview_derivative_policy(safe_max_dimension);
+    let preview_image_path = if preview_policy.should_transform(
+        persisted_image_bytes.len(),
+        width,
+        height,
+    ) {
+        let preview_bytes = encode_image_at_dimensions(
+            &image,
+            preview_policy.target_dimensions(width, height),
+            ImageFormat::Jpeg,
+            90,
+            true,
+        )?;
+        persist_image_bytes(app, &preview_bytes, "jpg", project_id)?
+    } else {
+        image_path.clone()
+    };
 
-    let mut preview_buffer = Cursor::new(Vec::new());
-    let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut preview_buffer, 90);
-    resized
-        .write_with_encoder(encoder)
-        .map_err(|e| format!("Failed to encode preview image: {}", e))?;
-    let preview_image_path = persist_image_bytes(app, preview_buffer.get_ref(), "jpg", project_id)?;
+    let reference_image_path = match create_reference_derivative_bytes(
+        &image,
+        persisted_image_bytes.len(),
+    )? {
+        Some((reference_bytes, reference_extension)) => {
+            persist_image_bytes(app, &reference_bytes, reference_extension, project_id)?
+        }
+        None => image_path.clone(),
+    };
     let resize_elapsed = resize_started.elapsed().as_millis();
 
     info!(
-        "prepare_node_image done [{}]: bytes={}, ext={}, size={}x{}, max_preview={}, probe={}ms, decode={}ms, persist_original={}ms, resize={}ms, total={}ms",
+        "prepare_node_image done [{}]: bytes={}, ext={}, size={}x{}, max_preview={}, probe={}ms, persist_original={}ms, derivatives={}ms, preview_derived={}, reference_derived={}, total={}ms",
         trace_tag,
         bytes.len(),
         extension,
@@ -747,15 +931,17 @@ fn prepare_node_image_from_bytes(
         height,
         safe_max_dimension,
         probe_elapsed,
-        decode_elapsed,
         persist_elapsed,
         resize_elapsed,
+        preview_image_path != image_path,
+        reference_image_path != image_path,
         started.elapsed().as_millis()
     );
 
     Ok(PrepareNodeImageResult {
         image_path,
         preview_image_path,
+        reference_image_path,
         aspect_ratio: reduce_aspect_ratio(width, height),
     })
 }
@@ -773,7 +959,9 @@ pub async fn prepare_node_image_source(
         return Err("Image source is empty".to_string());
     }
 
-    let safe_max_dimension = max_preview_dimension.unwrap_or(512).clamp(64, 4096);
+    let safe_max_dimension = max_preview_dimension
+        .unwrap_or(DEFAULT_NODE_PREVIEW_MAX_DIMENSION)
+        .clamp(64, 4096);
     let resolve_started = Instant::now();
     let (bytes, extension) = resolve_source_bytes(trimmed).await?;
     let resolve_elapsed = resolve_started.elapsed().as_millis();
@@ -808,7 +996,9 @@ pub async fn prepare_node_image_binary(
         return Err("Image bytes are empty".to_string());
     }
 
-    let safe_max_dimension = max_preview_dimension.unwrap_or(512).clamp(64, 4096);
+    let safe_max_dimension = max_preview_dimension
+        .unwrap_or(DEFAULT_NODE_PREVIEW_MAX_DIMENSION)
+        .clamp(64, 4096);
     let resolved_extension = extension
         .as_deref()
         .map(normalize_extension)
@@ -843,50 +1033,65 @@ pub async fn create_image_preview(
         return Err("Image source is empty".to_string());
     }
 
-    let safe_max_dimension = max_preview_dimension.unwrap_or(512).clamp(64, 4096);
+    let safe_max_dimension = max_preview_dimension
+        .unwrap_or(DEFAULT_NODE_PREVIEW_MAX_DIMENSION)
+        .clamp(64, 4096);
     let (bytes, _extension) = resolve_source_bytes(trimmed).await?;
-    let (raw_width, raw_height) = ImageReader::new(Cursor::new(&bytes))
+    let reader = ImageReader::new(Cursor::new(&bytes))
         .with_guessed_format()
-        .map_err(|e| format!("Failed to guess image format: {}", e))?
+        .map_err(|e| format!("Failed to guess image format: {}", e))?;
+    let (raw_width, raw_height) = reader
         .into_dimensions()
         .map_err(|e| format!("Failed to parse image dimensions: {}", e))?;
     let width = raw_width.max(1);
     let height = raw_height.max(1);
     let aspect_ratio = reduce_aspect_ratio(width, height);
+    let preview_policy = preview_derivative_policy(safe_max_dimension);
+    let reference_policy = reference_derivative_policy();
+    let needs_preview = preview_policy.should_transform(bytes.len(), width, height);
+    let needs_reference = reference_policy.should_transform(bytes.len(), width, height);
 
-    if width.max(height) <= safe_max_dimension {
+    if !needs_preview && !needs_reference {
         return Ok(CreateImagePreviewResult {
             preview_image_path: trimmed.to_string(),
+            reference_image_path: trimmed.to_string(),
             aspect_ratio,
         });
     }
 
     let image = image::load_from_memory(&bytes)
         .map_err(|e| format!("Failed to decode image: {}", e))?;
-    let scale = safe_max_dimension as f64 / width.max(height) as f64;
-    let target_width = ((width as f64) * scale).round().max(1.0) as u32;
-    let target_height = ((height as f64) * scale).round().max(1.0) as u32;
-    let resized_rgba = resize_image_fast(&image, target_width, target_height)
-        .unwrap_or_else(|_| {
-            image
-                .resize(target_width, target_height, image::imageops::FilterType::Triangle)
-                .to_rgba8()
-        });
-    let resized = DynamicImage::ImageRgba8(resized_rgba);
-    let mut preview_buffer = Cursor::new(Vec::new());
-    let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut preview_buffer, 90);
-    resized
-        .write_with_encoder(encoder)
-        .map_err(|e| format!("Failed to encode preview image: {}", e))?;
-    let preview_image_path = persist_image_bytes(
-        &app,
-        preview_buffer.get_ref(),
-        "jpg",
-        project_id.as_deref(),
-    )?;
+    let preview_image_path = if needs_preview {
+        let preview_bytes = encode_image_at_dimensions(
+            &image,
+            preview_policy.target_dimensions(width, height),
+            ImageFormat::Jpeg,
+            90,
+            true,
+        )?;
+        persist_image_bytes(&app, &preview_bytes, "jpg", project_id.as_deref())?
+    } else {
+        trimmed.to_string()
+    };
+    let reference_image_path = if needs_reference {
+        let (reference_bytes, reference_extension) = create_reference_derivative_bytes(
+            &image,
+            bytes.len(),
+        )?
+        .ok_or_else(|| "Reference derivative was required but not created".to_string())?;
+        persist_image_bytes(
+            &app,
+            &reference_bytes,
+            reference_extension,
+            project_id.as_deref(),
+        )?
+    } else {
+        trimmed.to_string()
+    };
 
     Ok(CreateImagePreviewResult {
         preview_image_path,
+        reference_image_path,
         aspect_ratio,
     })
 }
@@ -2216,13 +2421,83 @@ pub async fn delete_project_upload_file(
 #[cfg(test)]
 mod tests {
     use super::{
-        build_generated_image_filename, decode_asset_url_path, decode_file_url_path,
-        save_generated_image_bytes,
+        bounded_image_dimensions, build_generated_image_filename,
+        create_reference_derivative_bytes_with_policy, decode_asset_url_path, decode_file_url_path,
+        preview_derivative_policy, reference_derivative_policy, save_generated_image_bytes,
+        ImageDerivativePolicy, PREVIEW_SOURCE_MAX_BYTES, REFERENCE_SOURCE_MAX_BYTES,
+        REFERENCE_SOURCE_MAX_LONG_EDGE, REFERENCE_SOURCE_MAX_PIXELS,
     };
     use image::{DynamicImage, Rgba, RgbaImage};
     use std::fs;
     use std::io::Cursor;
     use uuid::Uuid;
+
+    #[test]
+    fn image_derivatives_are_created_only_after_a_source_limit_is_exceeded() {
+        let policy = ImageDerivativePolicy {
+            source_max_bytes: 1_000,
+            source_max_long_edge: 200,
+            source_max_pixels: 30_000,
+            target_max_long_edge: 100,
+            target_max_pixels: 10_000,
+        };
+
+        assert!(!policy.should_transform(1_000, 150, 200));
+        assert!(policy.should_transform(1_001, 150, 200));
+        assert!(policy.should_transform(1_000, 201, 100));
+        assert!(policy.should_transform(1_000, 175, 175));
+    }
+
+    #[test]
+    fn default_preview_policy_keeps_small_files_at_the_threshold() {
+        let policy = preview_derivative_policy(1_024);
+
+        assert!(!policy.should_transform(PREVIEW_SOURCE_MAX_BYTES, 2_048, 2_048));
+        assert!(policy.should_transform(PREVIEW_SOURCE_MAX_BYTES + 1, 1_024, 1_024));
+        assert_eq!(policy.target_dimensions(3_840, 2_160), (1_024, 576));
+    }
+
+    #[test]
+    fn reference_dimensions_apply_edge_and_pixel_limits_without_overcompressing() {
+        let policy = reference_derivative_policy();
+        assert!(!policy.should_transform(REFERENCE_SOURCE_MAX_BYTES, 4_000, 4_000));
+        assert!(policy.should_transform(REFERENCE_SOURCE_MAX_BYTES + 1, 1_024, 1_024));
+        assert!(policy.should_transform(
+            REFERENCE_SOURCE_MAX_BYTES,
+            REFERENCE_SOURCE_MAX_LONG_EDGE + 1,
+            1
+        ));
+        assert!(policy.should_transform(REFERENCE_SOURCE_MAX_BYTES, 4_001, 4_000));
+        assert_eq!(REFERENCE_SOURCE_MAX_PIXELS, 16_000_000);
+        assert_eq!(
+            bounded_image_dimensions(5_464, 8_192, 4_096, 16_000_000),
+            (2_732, 4_096)
+        );
+        assert_eq!(
+            bounded_image_dimensions(3_840, 2_160, 4_096, 16_000_000),
+            (3_840, 2_160)
+        );
+    }
+
+    #[test]
+    fn reference_derivative_fails_when_the_byte_limit_cannot_be_met() {
+        let source =
+            DynamicImage::ImageRgba8(RgbaImage::from_pixel(4, 4, Rgba([12, 34, 56, 128])));
+        let error = create_reference_derivative_bytes_with_policy(
+            &source,
+            2,
+            ImageDerivativePolicy {
+                source_max_bytes: 1,
+                source_max_long_edge: 4,
+                source_max_pixels: 16,
+                target_max_long_edge: 1,
+                target_max_pixels: 1,
+            },
+        )
+        .unwrap_err();
+
+        assert!(error.contains("below 1 bytes"));
+    }
 
     #[test]
     fn generated_image_filename_uses_provider_model_seconds_and_random_suffix() {

@@ -27,6 +27,7 @@ export interface ResolvedImageInput {
   displayName: string;
   imageUrl: string | null;
   previewImageUrl: string | null;
+  referenceImageUrl: string | null;
 }
 
 export interface ResolvedTextGenerationInputs {
@@ -130,11 +131,12 @@ function resolveNodeText(
 
 function extractImageSource(
   node: CanvasWorkflowNode
-): Pick<ResolvedImageInput, 'imageUrl' | 'previewImageUrl'> {
+): Pick<ResolvedImageInput, 'imageUrl' | 'previewImageUrl' | 'referenceImageUrl'> {
   if (isUploadNode(node) || isImageEditNode(node) || isExportImageNode(node) || isStoryboardGenNode(node)) {
     return {
       imageUrl: nonEmptyTrimmedValue(node.data.imageUrl),
       previewImageUrl: nonEmptyTrimmedValue(node.data.previewImageUrl),
+      referenceImageUrl: nonEmptyTrimmedValue(node.data.referenceImageUrl),
     };
   }
 
@@ -145,10 +147,11 @@ function extractImageSource(
     return {
       imageUrl: firstFrame ? nonEmptyTrimmedValue(firstFrame.imageUrl) : null,
       previewImageUrl: firstFrame ? nonEmptyTrimmedValue(firstFrame.previewImageUrl) : null,
+      referenceImageUrl: firstFrame ? nonEmptyTrimmedValue(firstFrame.referenceImageUrl) : null,
     };
   }
 
-  return { imageUrl: null, previewImageUrl: null };
+  return { imageUrl: null, previewImageUrl: null, referenceImageUrl: null };
 }
 
 function resolveImageInputs(
@@ -230,8 +233,13 @@ export function resolveTextGenerationInputs(
     textInputs,
     imageInputs,
     effectivePrompt,
-    referenceImages: imageInputs.flatMap((input) => input.imageUrl ? [input.imageUrl] : []),
-    blockingImageNodeIds: imageInputs.flatMap((input) => input.imageUrl ? [] : [input.nodeId]),
+    referenceImages: imageInputs.flatMap((input) => {
+      const referenceImage = input.referenceImageUrl ?? input.imageUrl;
+      return referenceImage ? [referenceImage] : [];
+    }),
+    blockingImageNodeIds: imageInputs.flatMap((input) => (
+      input.referenceImageUrl || input.imageUrl ? [] : [input.nodeId]
+    )),
   };
 }
 

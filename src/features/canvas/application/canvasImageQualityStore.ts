@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export const MAX_RETAINED_ORIGINAL_IMAGE_NODES = 3;
+export const MAX_RETAINED_ORIGINAL_IMAGE_NODES = 1;
 
 interface CanvasImageQualityState {
   focusedNodeId: string | null;

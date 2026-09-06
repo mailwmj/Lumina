@@ -158,6 +158,7 @@ export const ImageNode = memo(({ id, data, selected, type, width, height }: Imag
     nodeId: id,
     imageUrl: data.imageUrl,
     previewImageUrl: data.previewImageUrl,
+    referenceImageUrl: data.referenceImageUrl,
   });
 
   // 获取原图 URL 用于查看器
