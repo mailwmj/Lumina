@@ -48,9 +48,19 @@ describe('custom image provider protocols', () => {
     expect(normalizeCustomImageRemoteModelId('fhl-images', 'fhl/gpt-image-2')).toBe('gpt-image-2');
   });
 
+  it('routes Chaomo-compatible custom providers to Chaomo without duplicating prefixes', () => {
+    expect(CUSTOM_IMAGE_PROTOCOLS).toContain('chaomo-images');
+    expect(getCustomImageProtocolDefinition('chaomo-images').backendProviderId).toBe('chaomo');
+    expect(normalizeCustomImageRemoteModelId(
+      'chaomo-images',
+      'chaomo/gpt-image-2.5-sunburst-4K-Hight'
+    )).toBe('gpt-image-2.5-sunburst-4K-Hight');
+  });
+
   it('keeps every custom protocol on its existing backend capability boundary', () => {
     expect(getCustomImageProtocolDefinition('openai-images').backendProviderId).toBe('openai');
     expect(getCustomImageProtocolDefinition('fhl-images').backendProviderId).toBe('fhl');
     expect(getCustomImageProtocolDefinition('gemini-native').backendProviderId).toBe('gemini');
+    expect(getCustomImageProtocolDefinition('chaomo-images').backendProviderId).toBe('chaomo');
   });
 });

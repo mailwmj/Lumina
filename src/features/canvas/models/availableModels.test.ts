@@ -173,6 +173,35 @@ describe('available image models', () => {
     );
   });
 
+  it('routes custom Chaomo models through the Chaomo adapter', () => {
+    const settings = createSettings();
+    settings.openAiImageApi.apiKey = '';
+    settings.chaomoImageApi.apiKey = '';
+    settings.customImageApis = [{
+      id: 'custom-openai:chaomo-group',
+      name: 'Chaomo Group',
+      protocol: 'chaomo-images',
+      apiKey: 'custom-key',
+      baseUrl: 'https://zntcode.net/v1',
+      modelCatalog: {
+        models: [{
+          id: 'custom-openai:chaomo-group/gpt-image-2.5-sunburst-4K-Hight',
+        }],
+        refreshedAt: 1,
+      },
+      selectedModelIds: [
+        'custom-openai:chaomo-group/gpt-image-2.5-sunburst-4K-Hight',
+      ],
+    }];
+
+    const [model] = listConfiguredImageModels(settings);
+
+    expect(model.providerId).toBe('custom-openai:chaomo-group');
+    expect(model.resolveRequest({ referenceImageCount: 0 }).requestModel).toBe(
+      'chaomo/gpt-image-2.5-sunburst-4K-Hight'
+    );
+  });
+
   it('does not silently fall back when a configured custom model is unavailable', () => {
     const settings = createSettings();
     settings.customImageApis = [{

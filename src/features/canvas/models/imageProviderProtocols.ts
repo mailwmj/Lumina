@@ -1,8 +1,13 @@
-import { OPENAI_IMAGE_PROVIDER_ID } from './providers/openai';
+import { CHAOMO_IMAGE_PROVIDER_ID, OPENAI_IMAGE_PROVIDER_ID } from './providers/openai';
 
 export const FHL_IMAGE_PROVIDER_ID = 'fhl';
 export const FHL_IMAGE_DEFAULT_BASE_URL = 'https://www.fhl.mom';
-export const CUSTOM_IMAGE_PROTOCOLS = ['openai-images', 'fhl-images', 'gemini-native'] as const;
+export const CUSTOM_IMAGE_PROTOCOLS = [
+  'openai-images',
+  'chaomo-images',
+  'fhl-images',
+  'gemini-native',
+] as const;
 export type CustomImageProtocol = (typeof CUSTOM_IMAGE_PROTOCOLS)[number];
 
 export const DEFAULT_CUSTOM_IMAGE_PROTOCOL: CustomImageProtocol = 'openai-images';
@@ -28,6 +33,14 @@ const CUSTOM_IMAGE_PROTOCOL_DEFINITIONS: Record<
     summaryKey: 'settings.customImageProtocolOpenAiImagesSummary',
     baseUrlPlaceholder: 'https://api.example.com/v1',
     modelIdPlaceholder: 'gpt-image-1',
+  },
+  'chaomo-images': {
+    id: 'chaomo-images',
+    backendProviderId: CHAOMO_IMAGE_PROVIDER_ID,
+    labelKey: 'settings.customImageProtocolChaomoImages',
+    summaryKey: 'settings.customImageProtocolChaomoImagesSummary',
+    baseUrlPlaceholder: 'https://zntcode.net/v1',
+    modelIdPlaceholder: 'gpt-image-2.5-sunburst-4K-Hight',
   },
   'fhl-images': {
     id: 'fhl-images',
@@ -102,9 +115,14 @@ export function normalizeCustomImageRemoteModelId(
   modelId: string
 ): string {
   let normalized = modelId.trim();
-  if (protocol === 'fhl-images') {
-    while (normalized.startsWith('fhl/')) {
-      normalized = normalized.slice('fhl/'.length);
+  const backendPrefix = protocol === 'fhl-images'
+    ? 'fhl/'
+    : protocol === 'chaomo-images'
+      ? 'chaomo/'
+      : null;
+  if (backendPrefix) {
+    while (normalized.startsWith(backendPrefix)) {
+      normalized = normalized.slice(backendPrefix.length);
     }
   }
   if (protocol !== 'gemini-native') {

@@ -90,4 +90,24 @@ describe('image provider runtime', () => {
       },
     });
   });
+
+  it('routes Chaomo-compatible custom providers through the Chaomo backend', () => {
+    const chaomoSettings = {
+      ...settings,
+      customImageApis: [{
+        ...settings.customImageApis[0],
+        protocol: 'chaomo-images' as const,
+        baseUrl: 'https://zntcode.net/v1',
+      }],
+    };
+
+    expect(resolveImageProviderRuntime('custom-openai:internal', chaomoSettings)).toEqual({
+      apiKey: 'custom-key',
+      backendProviderId: 'chaomo',
+      providerConfig: {
+        base_url: 'https://zntcode.net/v1',
+        api_key: 'custom-key',
+      },
+    });
+  });
 });

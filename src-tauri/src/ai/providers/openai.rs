@@ -3,6 +3,7 @@ use reqwest::header::CONTENT_TYPE;
 use reqwest::multipart::{Form, Part};
 use reqwest::{Client, StatusCode};
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio::time::{sleep, Duration};
@@ -737,7 +738,7 @@ impl OpenAiProvider {
             && !Self::chaomo_supports_reference_images(&request.model)
         {
             return Err(AIError::InvalidRequest(format!(
-                "Chaomo model '{}' only supports text-to-image generation and cannot edit reference images",
+                "zntcode model '{}' only supports text-to-image generation and cannot edit reference images",
                 self.resolve_model(request)
             )));
         }
@@ -916,6 +917,103 @@ impl OpenAiProvider {
             format!("{}/{}", base_url.trim_end_matches('/'), endpoint)
         }
     }
+
+    fn provider_config_value(
+        provider_config: Option<&HashMap<String, Value>>,
+        key: &str,
+    ) -> Option<String> {
+        provider_config
+            .and_then(|config| config.get(key))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+    }
+
+    async fn poll_task_with_api_key(
+        &self,
+        handle: ProviderTaskHandle,
+        api_key: String,
+    ) -> Result<ProviderTaskPollResult, AIError> {
+        let base_url = self.normalize_base_url(Some(self.metadata_base_url(&handle)));
+        let endpoint = match self.protocol {
+            OpenAiImageProtocol::Standard | OpenAiImageProtocol::Fhl => {
+                return Err(AIError::Provider(
+                    "Standard OpenAI image requests do not support task polling".to_string(),
+                ));
+            }
+            OpenAiImageProtocol::AiMedia => Self::metadata_status_url(&handle)
+                .map(|value| Self::resolve_endpoint(&base_url, &value))
+                .unwrap_or_else(|| {
+                    format!(
+                        "{}/images/tasks/{}?view=summary",
+                        base_url,
+                        urlencoding::encode(handle.task_id.as_str())
+                    )
+                }),
+            OpenAiImageProtocol::Chaomo => format!(
+                "{}/images/{}",
+                base_url,
+                urlencoding::encode(handle.task_id.as_str())
+            ),
+        };
+        let response = self
+            .client
+            .get(&endpoint)
+            .bearer_auth(&api_key)
+            .send()
+            .await?;
+        let status = response.status();
+        let raw = response.text().await?;
+        if is_retryable_poll_status(status) {
+            return Err(AIError::Transient(format!(
+                "OpenAI-compatible image task poll temporarily unavailable ({})",
+                status
+            )));
+        }
+        let body = serde_json::from_str::<Value>(&raw).map_err(|error| {
+            AIError::Provider(format!(
+                "OpenAI-compatible image task poll returned invalid JSON ({}): {}; body={}",
+                status, error, raw
+            ))
+        })?;
+        if !status.is_success() {
+            return Err(AIError::Provider(format!(
+                "OpenAI-compatible image task poll returned {}: {}",
+                status,
+                Self::response_error_message(&body)
+            )));
+        }
+
+        let task_status = body
+            .get("status")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        match task_status.as_str() {
+            "queued" | "dispatching" | "running" | "pending_confirmation" => {
+                Ok(ProviderTaskPollResult::Running)
+            }
+            "uncertain" => Ok(self
+                .image_from_task_body(&body, &api_key, &base_url)
+                .await?
+                .map(ProviderTaskPollResult::Succeeded)
+                .unwrap_or(ProviderTaskPollResult::Running)),
+            "success" | "succeeded" | "completed" => self
+                .image_from_task_body(&body, &api_key, &base_url)
+                .await?
+                .map(ProviderTaskPollResult::Succeeded)
+                .ok_or_else(|| {
+                    AIError::Provider(
+                        "Completed image task did not include an image asset".to_string(),
+                    )
+                }),
+            "failed" | "cancelled" | "canceled" => Ok(ProviderTaskPollResult::Failed(
+                Self::response_error_message(&body),
+            )),
+            _ => Ok(ProviderTaskPollResult::Running),
+        }
+    }
 }
 
 impl Default for OpenAiProvider {
@@ -1034,84 +1132,21 @@ impl AIProvider for OpenAiProvider {
         let api_key = self.api_key.read().await.clone().ok_or_else(|| {
             AIError::InvalidRequest("OpenAI image API key is not configured".to_string())
         })?;
-        let base_url = self.normalize_base_url(Some(self.metadata_base_url(&handle)));
-        let endpoint = match self.protocol {
-            OpenAiImageProtocol::Standard | OpenAiImageProtocol::Fhl => {
-                return Err(AIError::Provider(
-                    "Standard OpenAI image requests do not support task polling".to_string(),
-                ));
-            }
-            OpenAiImageProtocol::AiMedia => Self::metadata_status_url(&handle)
-                .map(|value| Self::resolve_endpoint(&base_url, &value))
-                .unwrap_or_else(|| {
-                    format!(
-                        "{}/images/tasks/{}?view=summary",
-                        base_url,
-                        urlencoding::encode(handle.task_id.as_str())
-                    )
-                }),
-            OpenAiImageProtocol::Chaomo => format!(
-                "{}/images/{}",
-                base_url,
-                urlencoding::encode(handle.task_id.as_str())
-            ),
-        };
-        let response = self
-            .client
-            .get(&endpoint)
-            .bearer_auth(&api_key)
-            .send()
-            .await?;
-        let status = response.status();
-        let raw = response.text().await?;
-        if is_retryable_poll_status(status) {
-            return Err(AIError::Transient(format!(
-                "OpenAI-compatible image task poll temporarily unavailable ({})",
-                status
-            )));
-        }
-        let body = serde_json::from_str::<Value>(&raw).map_err(|error| {
-            AIError::Provider(format!(
-                "OpenAI-compatible image task poll returned invalid JSON ({}): {}; body={}",
-                status, error, raw
-            ))
-        })?;
-        if !status.is_success() {
-            return Err(AIError::Provider(format!(
-                "OpenAI-compatible image task poll returned {}: {}",
-                status,
-                Self::response_error_message(&body)
-            )));
-        }
+        self.poll_task_with_api_key(handle, api_key).await
+    }
 
-        let task_status = body
-            .get("status")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_ascii_lowercase();
-        match task_status.as_str() {
-            "queued" | "dispatching" | "running" | "pending_confirmation" => {
-                Ok(ProviderTaskPollResult::Running)
-            }
-            "uncertain" => Ok(self
-                .image_from_task_body(&body, &api_key, &base_url)
-                .await?
-                .map(ProviderTaskPollResult::Succeeded)
-                .unwrap_or(ProviderTaskPollResult::Running)),
-            "success" | "succeeded" | "completed" => self
-                .image_from_task_body(&body, &api_key, &base_url)
-                .await?
-                .map(ProviderTaskPollResult::Succeeded)
-                .ok_or_else(|| {
-                    AIError::Provider(
-                        "Completed image task did not include an image asset".to_string(),
-                    )
-                }),
-            "failed" | "cancelled" | "canceled" => Ok(ProviderTaskPollResult::Failed(
-                Self::response_error_message(&body),
-            )),
-            _ => Ok(ProviderTaskPollResult::Running),
-        }
+    async fn poll_task_with_config(
+        &self,
+        handle: ProviderTaskHandle,
+        provider_config: Option<HashMap<String, Value>>,
+    ) -> Result<ProviderTaskPollResult, AIError> {
+        let api_key = match Self::provider_config_value(provider_config.as_ref(), "api_key") {
+            Some(api_key) => api_key,
+            None => self.api_key.read().await.clone().ok_or_else(|| {
+                AIError::InvalidRequest("OpenAI image API key is not configured".to_string())
+            })?,
+        };
+        self.poll_task_with_api_key(handle, api_key).await
     }
 
     async fn generate(&self, request: GenerateRequest) -> Result<String, AIError> {
@@ -1701,6 +1736,21 @@ mod tests {
         assert_eq!(native_body["ratio"], "16:9");
         assert!(native_body.get("quality").is_none());
         assert!(native_body.get("size").is_none());
+    }
+
+    #[test]
+    fn runtime_provider_config_keeps_custom_chaomo_keys_isolated() {
+        let first_config = HashMap::from([("api_key".to_string(), json!("first-key"))]);
+        let second_config = HashMap::from([("api_key".to_string(), json!("second-key"))]);
+
+        assert_eq!(
+            OpenAiProvider::provider_config_value(Some(&first_config), "api_key").as_deref(),
+            Some("first-key")
+        );
+        assert_eq!(
+            OpenAiProvider::provider_config_value(Some(&second_config), "api_key").as_deref(),
+            Some("second-key")
+        );
     }
 
     #[test]

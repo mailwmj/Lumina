@@ -545,6 +545,8 @@ pub struct DiscoverImageModelsRequest {
 pub enum CustomImageProtocol {
     #[serde(rename = "openai-images")]
     OpenAiImages,
+    #[serde(rename = "chaomo-images")]
+    ChaomoImages,
     #[serde(rename = "fhl-images", alias = "fhl")]
     FhlImages,
     GeminiNative,
@@ -757,10 +759,18 @@ mod text_api_endpoint_tests {
             "protocol": "fhl-images"
         }))
         .unwrap();
+        let chaomo_request: DiscoverImageModelsRequest = serde_json::from_value(json!({
+            "provider_id": "custom-openai:chaomo",
+            "base_url": "https://zntcode.net/v1",
+            "api_key": "test-key",
+            "protocol": "chaomo-images"
+        }))
+        .unwrap();
 
         assert_eq!(openai_request.protocol, CustomImageProtocol::OpenAiImages);
         assert_eq!(gemini_request.protocol, CustomImageProtocol::GeminiNative);
         assert_eq!(fhl_request.protocol, CustomImageProtocol::FhlImages);
+        assert_eq!(chaomo_request.protocol, CustomImageProtocol::ChaomoImages);
     }
 
     #[test]

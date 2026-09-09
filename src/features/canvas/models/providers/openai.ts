@@ -6,8 +6,8 @@ export const AI_MEDIA_IMAGE_PROVIDER_ID = 'ai-media';
 export const AI_MEDIA_GPT_IMAGE_2_MODEL_ID = 'ai-media/gpt-image-2';
 export const CHAOMO_IMAGE_PROVIDER_ID = 'chaomo';
 
-// Chaomo exposes the model ID verbatim through its OpenAI-compatible API.
-// Keep the provider prefix in the canvas ID so the runtime can select Chaomo.
+// zntcode exposes the model ID verbatim through its OpenAI-compatible API.
+// Keep the legacy provider prefix in the canvas ID so existing projects remain compatible.
 export const CHAOMO_GPT_IMAGE2_1K_MODEL_ID = 'chaomo/gpt-image2-1K';
 export const CHAOMO_GPT_IMAGE2_1K_HIGHT_MODEL_ID = 'chaomo/gpt-image2-1K-Hight';
 export const CHAOMO_GPT_IMAGE2_2K_HIGHT_MODEL_ID = 'chaomo/gpt-image2-2K-Hight';
@@ -31,7 +31,7 @@ export const CHAOMO_GPT_IMAGE25_SUNBURST_4K_HIGHT_MODEL_ID =
 export const CHAOMO_NANO_BANANA_2_MODEL_ID = 'chaomo/nano-banana-2';
 export const CHAOMO_NANO_BANANA_PRO_MODEL_ID = 'chaomo/nano-banana-pro';
 
-// IDs used by the first Chaomo integration. They remain valid for existing
+// IDs used by the first zntcode integration. They remain valid for existing
 // canvas documents and are resolved to the current model definitions.
 export const CHAOMO_LEGACY_GPT_IMAGE_2_DIRECT_MODEL_ID = 'chaomo/gpt-image-2-direct';
 export const CHAOMO_LEGACY_GPT_IMAGE_2_4K_NATIVE_MODEL_ID = 'chaomo/gpt-image-2-4k-native';
@@ -69,6 +69,6 @@ export const aiMediaProvider: ModelProviderDefinition = {
 
 export const chaomoProvider: ModelProviderDefinition = {
   id: CHAOMO_IMAGE_PROVIDER_ID,
-  name: 'Chaomo',
-  label: 'Chaomo',
+  name: 'zntcode',
+  label: 'zntcode',
 };

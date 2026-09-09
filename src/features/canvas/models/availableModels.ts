@@ -114,6 +114,8 @@ function resolveConfiguredModel(
     toCustomImageRequestModel(protocol, remoteModelId),
     protocol === 'gemini-native'
       ? 'Gemini native image model'
+      : protocol === 'chaomo-images'
+        ? 'zntcode Images API model'
       : protocol === 'fhl-images'
         ? 'FHL Images API model'
         : 'OpenAI-compatible image model'
