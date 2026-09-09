@@ -1,11 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus, FolderOpen, Pencil, Trash2, AlertTriangle, Crop } from '@/components/ui/icons';
+import { Plus, FolderOpen, AlertTriangle, Crop, Loader2 } from '@/components/ui/icons';
 import { useProjectStore } from '@/stores/projectStore';
-import { recordProjectOpenClick } from '@/features/app/projectOpenPaneClickGuard';
 import { UI_CONTENT_OVERLAY_INSET_CLASS } from '@/components/ui/motion';
-import { UiButton, UiModal, UiSelect, UiTooltip } from '@/components/ui';
+import { UiButton, UiInput, UiModal, UiSelect } from '@/components/ui';
 import { RenameDialog } from './RenameDialog';
+import { ProjectCard } from './ProjectCard';
 
 type ProjectSortField = 'name' | 'createdAt' | 'updatedAt';
 type SortDirection = 'asc' | 'desc';
@@ -62,16 +62,32 @@ interface ProjectManagerProps {
 }
 
 export function ProjectManager({ onOpenBatchCrop }: ProjectManagerProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [showRenameDialog, setShowRenameDialog] = useState(false);
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [editingProjectName, setEditingProjectName] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
-  const [sortField, setSortField] = useState<ProjectSortField>('createdAt');
+  const [sortField, setSortField] = useState<ProjectSortField>('updatedAt');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+  const [query, setQuery] = useState('');
+  const [openError, setOpenError] = useState<{ id: string; name: string } | null>(null);
+  const openingTarget = useRef<{ id: string; name: string } | null>(null);
 
   const { projects, isOpeningProject, createProject, deleteProject, renameProject, openProject } =
     useProjectStore();
+
+  useEffect(() => useProjectStore.subscribe((state, previous) => {
+    if (previous.isOpeningProject && !state.isOpeningProject && openingTarget.current) {
+      if (!state.currentProjectId) setOpenError(openingTarget.current);
+      openingTarget.current = null;
+    }
+  }), []);
+
+  const handleOpen = (project: { id: string; name: string }) => {
+    setOpenError(null);
+    openingTarget.current = project;
+    openProject(project.id);
+  };
 
   const handleCreateProject = () => {
     setEditingProjectId(null);
@@ -79,16 +95,10 @@ export function ProjectManager({ onOpenBatchCrop }: ProjectManagerProps) {
     setShowRenameDialog(true);
   };
 
-  const handleRenameClick = (id: string, name: string, e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleRenameClick = (id: string, name: string) => {
     setEditingProjectId(id);
     setEditingProjectName(name);
     setShowRenameDialog(true);
-  };
-
-  const handleDeleteClick = (id: string, name: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setDeleteTarget({ id, name });
   };
 
   const handleConfirmDelete = () => {
@@ -106,17 +116,14 @@ export function ProjectManager({ onOpenBatchCrop }: ProjectManagerProps) {
     }
   };
 
-  const formatDate = (timestamp: number) => {
-    return new Date(timestamp).toLocaleDateString();
-  };
-
   const sortedProjects = useMemo(() => {
-    const list = [...projects];
+    const normalizedQuery = query.trim().toLocaleLowerCase(i18n.language);
+    const list = projects.filter((project) => project.name.toLocaleLowerCase(i18n.language).includes(normalizedQuery));
     const direction = sortDirection === 'asc' ? 1 : -1;
 
     list.sort((a, b) => {
       if (sortField === 'name') {
-        return a.name.localeCompare(b.name, 'zh-Hans-CN', { sensitivity: 'base' }) * direction;
+        return a.name.localeCompare(b.name, i18n.language, { sensitivity: 'base' }) * direction;
       }
 
       const left = sortField === 'createdAt' ? a.createdAt : a.updatedAt;
@@ -125,108 +132,115 @@ export function ProjectManager({ onOpenBatchCrop }: ProjectManagerProps) {
     });
 
     return list;
-  }, [projects, sortDirection, sortField]);
+  }, [projects, query, sortDirection, sortField, i18n.language]);
 
   return (
-    <div className="ui-scrollbar h-full w-full overflow-auto bg-bg-dark px-6 py-5">
+    <div className="ui-scrollbar h-full w-full overflow-auto bg-bg-dark px-4 py-6 sm:px-6 sm:py-8">
       <div className="mx-auto max-w-5xl">
-        <div className="mb-5 flex items-center justify-between gap-4 border-b border-[var(--ui-border-soft)] pb-4">
-          <div className="flex items-center gap-3">
-            <h1 className="text-lg font-semibold text-text-dark">{t('project.title')}</h1>
-            <div className="flex items-center gap-2">
+        <header className="mb-6 flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h1 className="text-xl font-semibold tracking-tight text-text-dark">{t('project.title')}</h1>
+            <p className="mt-1.5 text-sm text-text-muted">{t('project.subtitle')}</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <UiButton type="button" disabled={isOpeningProject} onClick={onOpenBatchCrop} className="gap-2">
+              <Crop className="h-4 w-4" />
+              {t('batchCrop.entry')}
+            </UiButton>
+            <UiButton type="button" disabled={isOpeningProject} variant="primary" onClick={handleCreateProject} className="gap-2">
+              <Plus className="h-4 w-4" />
+              {t('project.newProject')}
+            </UiButton>
+          </div>
+        </header>
+
+        {projects.length > 0 && (
+          <div className="mb-5 flex flex-wrap items-center gap-3 border-b border-[var(--ui-border-soft)] pb-4">
+            <div className="flex min-w-0 flex-1 basis-60 items-center gap-2">
+              <UiInput
+                type="search"
+                aria-label={t('project.search')}
+                placeholder={t('project.search')}
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                className="h-9"
+              />
+              {query && <UiButton size="sm" className="shrink-0" onClick={() => setQuery('')}>{t('project.clearSearch')}</UiButton>}
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
               <UiSelect
                 aria-label={t('project.sortBy')}
                 value={sortField}
                 onChange={(event) => setSortField(event.target.value as ProjectSortField)}
-                className="h-8 w-[112px] text-xs"
+                className="h-9 w-[144px] text-xs"
               >
-                <option value="name">{t('project.sortByName')}</option>
-                <option value="createdAt">{t('project.sortByCreatedAt')}</option>
                 <option value="updatedAt">{t('project.sortByUpdatedAt')}</option>
+                <option value="createdAt">{t('project.sortByCreatedAt')}</option>
+                <option value="name">{t('project.sortByName')}</option>
               </UiSelect>
               <UiSelect
                 aria-label={t('project.sortDirection')}
                 value={sortDirection}
                 onChange={(event) => setSortDirection(event.target.value as SortDirection)}
-                className="h-8 w-[72px] text-xs"
+                className="h-9 w-[128px] text-xs"
               >
-                <option value="asc">{t('project.sortAsc')}</option>
                 <option value="desc">{t('project.sortDesc')}</option>
+                <option value="asc">{t('project.sortAsc')}</option>
               </UiSelect>
             </div>
+            <p role="status" className="w-full text-xs text-text-muted tabular-nums">
+              {t('project.resultCount', { count: sortedProjects.length, total: projects.length })}
+            </p>
           </div>
-          <div className="flex items-center gap-2">
-            <UiButton type="button" onClick={onOpenBatchCrop} className="gap-2">
-              <Crop className="h-4 w-4" />
-              {t('batchCrop.entry')}
-            </UiButton>
-            <UiButton type="button" variant="primary" onClick={handleCreateProject} className="gap-2">
-              <Plus className="h-4 w-4" />
-              {t('project.newProject')}
-            </UiButton>
+        )}
+
+        {openError && (
+          <div role="alert" className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-red-500/25 bg-red-500/5 p-3">
+            <AlertTriangle className="h-4 w-4 shrink-0 text-red-500" />
+            <p className="min-w-0 flex-1 break-words text-sm text-text-dark">{t('project.openFailed', { name: openError.name })}</p>
+            <UiButton size="sm" disabled={isOpeningProject} onClick={() => handleOpen(openError)}>{t('project.retryOpen')}</UiButton>
+            <UiButton size="sm" variant="ghost" onClick={() => setOpenError(null)}>{t('common.close')}</UiButton>
           </div>
-        </div>
+        )}
 
         {projects.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-24 text-text-muted">
-            <FolderOpen className="mb-4 h-10 w-10 opacity-45" />
-            <p className="text-sm font-medium text-text-dark">{t('project.empty')}</p>
-            <p className="mt-1 text-xs">{t('project.emptyHint')}</p>
-          </div>
+          <section className="flex min-h-[320px] flex-col items-center justify-center rounded-lg border border-dashed border-[var(--ui-border-strong)] px-6 py-16 text-center">
+            <FolderOpen className="mb-5 h-9 w-9 text-text-muted" />
+            <h2 className="text-base font-medium text-text-dark">{t('project.empty')}</h2>
+            <p className="mt-2 max-w-md text-sm leading-6 text-text-muted">{t('project.emptyHint')}</p>
+            <UiButton variant="primary" disabled={isOpeningProject} onClick={handleCreateProject} className="mt-6 gap-2">
+              <Plus className="h-4 w-4" />{t('project.createFirst')}
+            </UiButton>
+          </section>
+        ) : sortedProjects.length === 0 ? (
+          <section className="flex flex-col items-center py-16 text-center">
+            <h2 className="text-sm font-medium text-text-dark">{t('project.noSearchResults')}</h2>
+            <p className="mt-2 text-sm text-text-muted">{t('project.searchHint')}</p>
+            <UiButton className="mt-4" onClick={() => setQuery('')}>{t('project.clearSearch')}</UiButton>
+          </section>
         ) : (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div aria-busy={isOpeningProject} className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {sortedProjects.map((project) => (
-              <div
+              <ProjectCard
                 key={project.id}
-                onClick={(event) => {
-                  recordProjectOpenClick(event);
-                  openProject(project.id);
-                }}
-                className="group cursor-pointer rounded-lg border border-[var(--ui-border-soft)] bg-surface-dark p-4 transition-[border-color,background-color,box-shadow] hover:border-accent/35 hover:bg-[var(--ui-surface-elevated)] hover:shadow-[var(--ui-shadow-panel)]"
-              >
-                <div className="flex items-start justify-between mb-2">
-                  <h3 className="flex-1 truncate text-sm font-medium text-text-dark">
-                    {project.name}
-                  </h3>
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <UiTooltip content={t('project.rename')}>
-                      <button
-                        type="button"
-                        aria-label={t('project.rename')}
-                        onClick={(e) => handleRenameClick(project.id, project.name, e)}
-                        className="flex h-7 w-7 items-center justify-center rounded-md text-text-muted hover:bg-[var(--ui-hover)] hover:text-text-dark"
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </button>
-                    </UiTooltip>
-                    <UiTooltip content={t('project.delete')}>
-                      <button
-                        type="button"
-                        aria-label={t('project.delete')}
-                        onClick={(e) => handleDeleteClick(project.id, project.name, e)}
-                        className="flex h-7 w-7 items-center justify-center rounded-md text-text-muted hover:bg-red-500/10 hover:text-red-500"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </UiTooltip>
-                  </div>
-                </div>
-                <div className="font-mono text-[11px] leading-5 text-text-muted">
-                  <p>
-                    {t('project.modified')}: {formatDate(project.updatedAt)}
-                  </p>
-                  <p>
-                    {t('project.created')}: {formatDate(project.createdAt)}
-                  </p>
-                </div>
-              </div>
+                project={project}
+                disabled={isOpeningProject}
+                onOpen={() => handleOpen(project)}
+                onRename={() => handleRenameClick(project.id, project.name)}
+                onDelete={() => setDeleteTarget({ id: project.id, name: project.name })}
+              />
             ))}
           </div>
         )}
       </div>
 
       {isOpeningProject && (
-        <div className={`pointer-events-none fixed ${UI_CONTENT_OVERLAY_INSET_CLASS} bg-black/10`} />
+        <div className={`fixed ${UI_CONTENT_OVERLAY_INSET_CLASS} z-20 flex items-center justify-center bg-bg-dark/60`}>
+          <div role="status" className="flex max-w-[calc(100%-32px)] items-center gap-3 rounded-lg border border-[var(--ui-border-soft)] bg-surface-dark px-5 py-4 text-sm text-text-dark shadow-[var(--ui-shadow-panel)]">
+            <Loader2 className="h-4 w-4 shrink-0 motion-safe:animate-spin" />
+            <span className="min-w-0 break-words">{t('project.opening')}</span>
+          </div>
+        </div>
       )}
 
       <RenameDialog

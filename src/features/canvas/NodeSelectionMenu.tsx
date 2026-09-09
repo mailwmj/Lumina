@@ -1,4 +1,4 @@
-import { useMemo, useCallback, useEffect, useRef, useState } from 'react';
+import { useMemo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Image, Upload, Sparkles, LayoutGrid, Type, Video } from '@/components/ui/icons';
 import { UI_POPOVER_TRANSITION_MS } from '@/components/ui/motion';
@@ -31,6 +31,7 @@ export function NodeSelectionMenu({
   const { t } = useTranslation();
   const menuRef = useRef<HTMLDivElement>(null);
   const [isVisible, setIsVisible] = useState(false);
+  const [boundedPosition, setBoundedPosition] = useState(position);
 
   // Double-column layout for double-click menu (no allowedTypes filter),
   // single-column for drag-connect menu (with allowedTypes filter)
@@ -69,10 +70,28 @@ export function NodeSelectionMenu({
   const rightColumnItems = isDoubleColumn ? menuItems.slice(halfLength) : [];
 
   useEffect(() => {
-    requestAnimationFrame(() => {
+    const frame = requestAnimationFrame(() => {
       setIsVisible(true);
+      menuRef.current?.querySelector('button')?.focus();
     });
+    return () => cancelAnimationFrame(frame);
   }, []);
+
+  useLayoutEffect(() => {
+    const updatePosition = () => {
+      const menu = menuRef.current;
+      const parent = menu?.parentElement;
+      if (!menu || !parent) return;
+      setBoundedPosition({
+        x: Math.max(8, Math.min(position.x, parent.clientWidth - menu.offsetWidth - 8)),
+        y: Math.max(8, Math.min(position.y, parent.clientHeight - menu.offsetHeight - 8)),
+      });
+    };
+    updatePosition();
+    const observer = new ResizeObserver(updatePosition);
+    if (menuRef.current?.parentElement) observer.observe(menuRef.current.parentElement);
+    return () => observer.disconnect();
+  }, [position.x, position.y, menuItems.length, isDoubleColumn]);
 
   const handleClose = useCallback(() => {
     setIsVisible(false);
@@ -97,12 +116,24 @@ export function NodeSelectionMenu({
   return (
     <div
       ref={menuRef}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape' && !event.nativeEvent.isComposing) {
+          event.stopPropagation();
+          handleClose();
+        }
+      }}
       className={`
-        absolute z-50 overflow-hidden rounded-[10px] border border-[var(--ui-border-soft)] bg-[var(--ui-surface-elevated)] p-1 shadow-[var(--ui-shadow-panel)]
+        ui-scrollbar absolute z-50 overflow-y-auto rounded-[10px] border border-[var(--ui-border-soft)] bg-[var(--ui-surface-elevated)] p-1 shadow-[var(--ui-shadow-panel)]
         transition-opacity duration-150
         ${isVisible ? 'opacity-100' : 'opacity-0'}
       `}
-      style={{ left: position.x, top: position.y, minWidth: isDoubleColumn ? 360 : 220 }}
+      style={{
+        left: boundedPosition.x,
+        top: boundedPosition.y,
+        width: isDoubleColumn ? 360 : 220,
+        maxWidth: 'calc(100% - 16px)',
+        maxHeight: 'calc(100% - 16px)',
+      }}
     >
       <div className={`flex ${isDoubleColumn ? '' : ''}`}>
         {/* Left column or single column */}
@@ -120,7 +151,7 @@ export function NodeSelectionMenu({
                 }}
               >
                 <div className="flex h-7 w-7 items-center justify-center rounded-md bg-accent/10">
-                  <Icon className="h-4 w-4 text-accent" />
+                  <Icon className="h-4 w-4 text-text-dark" />
                 </div>
                 <span className="text-sm text-text-dark">{t(item.menuLabelKey)}</span>
               </button>
@@ -143,7 +174,7 @@ export function NodeSelectionMenu({
                   }}
                 >
                   <div className="flex h-7 w-7 items-center justify-center rounded-md bg-accent/10">
-                    <Icon className="h-4 w-4 text-accent" />
+                    <Icon className="h-4 w-4 text-text-dark" />
                   </div>
                   <span className="text-sm text-text-dark">{t(item.menuLabelKey)}</span>
                 </button>

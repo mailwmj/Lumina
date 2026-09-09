@@ -69,8 +69,8 @@
     "addImage": "添加图片",
     "splitStoryboard": "切割",
     "generate": "生成",
-    "emptyHintTitle": "双击鼠标添加节点",
-    "emptyHintSubtitle": "Double-click to add a node",
+    "emptyHintTitle": "从一个节点开始创作",
+    "emptyHintSubtitle": "添加素材、编写提示词，连接节点完成图片与视频创作。",
     "disconnectEdge": "断开连线",
     "minimap": {
       "label": "画布小地图",
@@ -111,7 +111,9 @@
       "copyShortcut": "Ctrl+C",
       "pasteShortcut": "Ctrl+V",
       "deleteShortcut": "Del"
-    }
+    },
+    "addNode": "添加节点",
+    "emptyGestureHint": "也可以双击或右键画布添加节点；按住空格拖动视图。"
   },
   "tool": {
     "crop": "裁剪",
@@ -461,8 +463,20 @@
     "sortDesc": "降序",
     "nodes": "节点数",
     "noProjects": "暂无项目",
-    "empty": "暂无项目",
-    "emptyHint": "点击上方按钮创建新项目"
+    "empty": "从第一个创作项目开始",
+    "emptyHint": "把素材、提示词与生成结果放在同一张画布上，让创作过程随时可以继续。",
+    "subtitle": "继续最近的创作，或从一个新画布开始。",
+    "search": "搜索项目名称",
+    "clearSearch": "清空搜索",
+    "openNamed": "打开项目：{{name}}",
+    "nodeCount": "{{count}} 个节点",
+    "resultCount": "显示 {{count}} / {{total}} 个项目",
+    "noSearchResults": "没有找到匹配的项目",
+    "searchHint": "试试其他名称，或清空搜索查看全部项目。",
+    "createFirst": "创建第一个项目",
+    "opening": "正在打开项目…",
+    "openFailed": "无法打开项目「{{name}}」。请重试；若仍失败，可在日志中查看原因。",
+    "retryOpen": "重试"
   },
   "batchCrop": {
     "entry": "图片裁剪",

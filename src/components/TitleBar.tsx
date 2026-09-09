@@ -111,9 +111,9 @@ export function TitleBar({ onSettingsClick, showBackButton, onBackClick, context
   }, [toggleTheme]);
 
   return (
-    <div className="relative z-50 flex h-10 select-none items-center justify-between border-b border-[var(--ui-border-soft)] bg-[var(--ui-surface-panel)]">
+    <div className="relative z-50 flex h-10 shrink-0 select-none items-center justify-between border-b border-[var(--ui-border-soft)] bg-[var(--ui-surface-panel)]">
       {isMac && appWindow ? (
-        <div className="flex h-full items-center gap-2 pl-3 pr-2" data-no-drag="true">
+        <div className="flex h-full shrink-0 items-center gap-2 pl-3 pr-2" data-no-drag="true">
           <UiTooltip content={t('titleBar.close')}>
             <button
               type="button"
@@ -154,7 +154,7 @@ export function TitleBar({ onSettingsClick, showBackButton, onBackClick, context
       ) : null}
 
       <div
-        className="flex-1 h-full flex items-center px-4 cursor-move"
+        className="flex-1 min-w-0 h-full flex items-center px-4 cursor-move"
         onMouseDown={handleDragStart}
       >
         {showBackButton && onBackClick && (
@@ -170,15 +170,15 @@ export function TitleBar({ onSettingsClick, showBackButton, onBackClick, context
             <ArrowLeft className="h-4 w-4" />
           </TitleBarButton>
         )}
-        <span className="text-sm font-medium text-text-dark">
+        <span className="min-w-0 truncate text-sm font-medium text-text-dark" title={titleText}>
           {titleText}
         </span>
         {!isZh && !currentProjectName && !contextTitle ? (
-          <span className="text-xs text-text-muted ml-2">{t('app.subtitle')}</span>
+          <span className="min-w-0 truncate text-xs text-text-muted ml-2">{t('app.subtitle')}</span>
         ) : null}
       </div>
 
-      <div className="flex h-full items-center gap-0.5 px-1">
+      <div className="flex h-full shrink-0 items-center gap-0.5 px-1">
         <TitleBarButton
           label={i18n.language.startsWith('zh') ? t('titleBar.switchToEnglish') : t('titleBar.switchToChinese')}
           onClick={handleLanguageClick}

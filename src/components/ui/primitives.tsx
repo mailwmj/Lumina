@@ -3,6 +3,7 @@ import {
   forwardRef,
   isValidElement,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -23,6 +24,7 @@ import {
   UI_POPOVER_TRANSITION_MS,
 } from './motion';
 import { useDialogTransition } from './useDialogTransition';
+import { useModalFocus } from './useModalFocus';
 import { UiIcon } from './Icon';
 import { UiTooltip } from './Tooltip';
 import {
@@ -528,36 +530,43 @@ export function UiModal({
   closeOnBackdrop = true,
 }: UiModalProps) {
   const { shouldRender, isVisible } = useDialogTransition(isOpen, UI_DIALOG_TRANSITION_MS);
+  const titleId = useId();
+  const modalRef = useModalFocus(isOpen, shouldRender, onClose);
 
   if (!shouldRender) {
     return null;
   }
 
   return (
-    <div className={`fixed ${UI_CONTENT_OVERLAY_INSET_CLASS} z-50 flex items-center justify-center ${containerClassName}`}>
+    <div className={`fixed ${UI_CONTENT_OVERLAY_INSET_CLASS} z-50 flex items-center justify-center p-3 ${!isOpen ? 'pointer-events-none' : ''} ${containerClassName}`} {...(!isOpen ? { inert: '' } : {})}>
       <div
         data-testid="ui-modal-backdrop"
         className={`absolute inset-0 bg-black/55 transition-opacity duration-200 ${isVisible ? 'opacity-100' : 'opacity-0'}`}
         onClick={closeOnBackdrop ? onClose : undefined}
       />
-      <UiPanel
-        className={`relative transition-opacity duration-200 ${isVisible ? 'opacity-100' : 'opacity-0'} ${widthClassName}`}
+      <div
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+        className={`border ui-panel relative flex max-h-full max-w-full flex-col outline-none transition-opacity duration-200 ${isVisible ? 'opacity-100' : 'opacity-0'} ${widthClassName}`}
       >
-        <div className="flex items-center justify-between border-b border-[var(--ui-border-soft)] px-4 py-3">
-          <h2 className="text-sm font-medium text-text-dark">{title}</h2>
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-[var(--ui-border-soft)] px-4 py-3">
+          <h2 id={titleId} className="min-w-0 break-words text-sm font-medium text-text-dark">{title}</h2>
           <UiIconButton label={closeLabel} className="h-8 w-8" onClick={onClose}>
             <UiIcon icon={Cancel01Icon} className="h-4 w-4" />
           </UiIconButton>
         </div>
 
-        <div className="px-4 py-4">{children}</div>
+        <div className="ui-scrollbar min-h-0 overflow-y-auto px-4 py-4">{children}</div>
 
         {footer && (
-          <div className="flex justify-end gap-2 border-t border-[var(--ui-border-soft)] px-4 py-3">
+          <div className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-[var(--ui-border-soft)] px-4 py-3">
             {footer}
           </div>
         )}
-      </UiPanel>
+      </div>
     </div>
   );
 }

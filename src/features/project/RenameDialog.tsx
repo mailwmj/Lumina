@@ -34,6 +34,7 @@ export function RenameDialog({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
     if (e.key === 'Enter') {
       handleConfirm();
     } else if (e.key === 'Escape') {
@@ -65,7 +66,7 @@ export function RenameDialog({
         onChange={(event) => setName(event.target.value)}
         onKeyDown={handleKeyDown}
         placeholder={t('project.namePlaceholder')}
-        autoFocus
+        aria-label={t('project.name')}
       />
     </UiModal>
   );

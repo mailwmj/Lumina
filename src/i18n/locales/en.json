@@ -69,8 +69,8 @@
     "addImage": "Add Image",
     "splitStoryboard": "Split Storyboard",
     "generate": "Generate",
-    "emptyHintTitle": "Double-click to add a node",
-    "emptyHintSubtitle": "Double-click to add a node",
+    "emptyHintTitle": "Start creating with a node",
+    "emptyHintSubtitle": "Add references, write prompts, and connect nodes to create images and videos.",
     "disconnectEdge": "Disconnect Connection",
     "minimap": {
       "label": "Canvas minimap",
@@ -111,7 +111,9 @@
       "copyShortcut": "Ctrl+C",
       "pasteShortcut": "Ctrl+V",
       "deleteShortcut": "Del"
-    }
+    },
+    "addNode": "Add a node",
+    "emptyGestureHint": "Double-click or right-click to add nodes. Hold Space and drag to pan."
   },
   "tool": {
     "crop": "Crop",
@@ -461,8 +463,24 @@
     "sortDesc": "Descending",
     "nodes": "Nodes",
     "noProjects": "No Projects",
-    "empty": "No Projects",
-    "emptyHint": "Click the button above to create a new project"
+    "empty": "Start your first creative project",
+    "emptyHint": "Keep references, prompts, and generated results together on a canvas you can return to.",
+    "subtitle": "Pick up a recent creation, or start with a new canvas.",
+    "search": "Search projects by name",
+    "clearSearch": "Clear search",
+    "openNamed": "Open project: {{name}}",
+    "nodeCount_one": "{{count}} node",
+    "nodeCount_other": "{{count}} nodes",
+    "resultCount_one": "Showing {{count}} of {{total}} projects",
+    "resultCount_other": "Showing {{count}} of {{total}} projects",
+    "noSearchResults": "No matching projects",
+    "searchHint": "Try another name or clear your search to see all projects.",
+    "createFirst": "Create your first project",
+    "opening": "Opening project…",
+    "openFailed": "Could not open “{{name}}”. Try again; if it still fails, check the logs for details.",
+    "retryOpen": "Try again",
+    "nodeCount": "{{count}} nodes",
+    "resultCount": "Showing {{count}} of {{total}} projects"
   },
   "batchCrop": {
     "entry": "Image Crop",

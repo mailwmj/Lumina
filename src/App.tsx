@@ -177,7 +177,9 @@ function App() {
   if (!isHydrated) {
     return (
       <ReactFlowProvider>
-        <div className="w-full h-full bg-bg-dark" />
+        <div className="flex h-full w-full items-center justify-center bg-bg-dark">
+          <p role="status" className="text-sm text-text-muted">{t('common.loading')}</p>
+        </div>
       </ReactFlowProvider>
     );
   }

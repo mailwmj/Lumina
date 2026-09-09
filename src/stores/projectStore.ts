@@ -44,8 +44,6 @@ const IDLE_PERSIST_TIMEOUT_MS = 1200;
 const FALLBACK_IDLE_DELAY_MS = 64;
 const MAX_PERSISTED_HISTORY_STEPS = 12;
 const MAX_HISTORY_RESTORE_JSON_CHARS = 1_500_000;
-const DELETE_RETRY_DELAY_MS = 80;
-const MAX_DELETE_RETRIES = 10;
 
 const queuedProjectUpserts = new Map<string, Project>();
 const projectUpsertTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -54,6 +52,7 @@ const queuedViewportUpserts = new Map<string, string>();
 const viewportUpsertTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const viewportUpsertsInFlight = new Set<string>();
 const deletingProjectIds = new Set<string>();
+const projectDeletesInFlight = new Set<string>();
 
 export interface ProjectSummary {
   id: string;
@@ -318,9 +317,13 @@ function toProjectSummary(record: ProjectSummaryRecord): ProjectSummary {
 }
 
 function toProjectRecord(project: Project): ProjectRecord {
-  const encodedProject = encodeProject(project);
+  // Trim before encoding so discarded snapshots do not retain images in the pool.
+  const encodedProject = encodeProject({
+    ...project,
+    history: trimHistoryForPersistence(project.history),
+  });
   const persistedNodes = encodedProject.nodes;
-  const persistedHistory = trimHistoryForPersistence(encodedProject.history);
+  const persistedHistory = encodedProject.history;
 
   return {
     id: encodedProject.id,
@@ -447,7 +450,11 @@ interface FlushProjectUpsertOptions {
 }
 
 function flushProjectUpsert(projectId: string, options?: FlushProjectUpsertOptions): void {
-  if (deletingProjectIds.has(projectId) || projectUpsertsInFlight.has(projectId)) {
+  if (
+    deletingProjectIds.has(projectId)
+    || projectUpsertsInFlight.has(projectId)
+    || viewportUpsertsInFlight.has(projectId)
+  ) {
     return;
   }
 
@@ -463,30 +470,31 @@ function flushProjectUpsert(projectId: string, options?: FlushProjectUpsertOptio
     projectUpsertsInFlight.delete(projectId);
 
     if (deletingProjectIds.has(projectId)) {
+      flushProjectDelete(projectId);
       return;
     }
 
     if (queuedProjectUpserts.has(projectId)) {
       flushProjectUpsert(projectId);
+    } else {
+      flushViewportUpsert(projectId);
     }
   };
 
-  const executePersist = () => {
-    if (deletingProjectIds.has(projectId)) {
+  const executePersist = async () => {
+    try {
+      if (!deletingProjectIds.has(projectId)) {
+        await upsertProjectRecord(toProjectRecord(project));
+      }
+    } catch (error) {
+      logger.error('Failed to persist project record', error);
+    } finally {
       settle();
-      return;
     }
-
-    const record = toProjectRecord(project);
-    void upsertProjectRecord(record)
-      .catch((error) => {
-        logger.error('Failed to persist project record', error);
-      })
-      .finally(settle);
   };
 
   if (options?.bypassIdle) {
-    executePersist();
+    void executePersist();
     return;
   }
 
@@ -495,7 +503,9 @@ function flushProjectUpsert(projectId: string, options?: FlushProjectUpsertOptio
 
 function queueProjectUpsert(project: Project, options?: PersistProjectOptions): void {
   const projectId = project.id;
-  deletingProjectIds.delete(projectId);
+  if (deletingProjectIds.has(projectId)) {
+    return;
+  }
   queuedProjectUpserts.set(projectId, project);
 
   const existingTimer = projectUpsertTimers.get(projectId);
@@ -523,7 +533,14 @@ function persistProject(project: Project, options?: PersistProjectOptions): void
 }
 
 function flushViewportUpsert(projectId: string): void {
-  if (deletingProjectIds.has(projectId) || viewportUpsertsInFlight.has(projectId)) {
+  // Full snapshots include a viewport. Serialize both channels per project,
+  // including snapshots waiting for idle time, so older writes cannot win.
+  if (
+    deletingProjectIds.has(projectId)
+    || viewportUpsertsInFlight.has(projectId)
+    || projectUpsertsInFlight.has(projectId)
+    || queuedProjectUpserts.has(projectId)
+  ) {
     return;
   }
 
@@ -543,10 +560,13 @@ function flushViewportUpsert(projectId: string): void {
       viewportUpsertsInFlight.delete(projectId);
 
       if (deletingProjectIds.has(projectId)) {
+        flushProjectDelete(projectId);
         return;
       }
 
-      if (queuedViewportUpserts.has(projectId)) {
+      if (queuedProjectUpserts.has(projectId)) {
+        flushProjectUpsert(projectId);
+      } else if (queuedViewportUpserts.has(projectId)) {
         flushViewportUpsert(projectId);
       }
     });
@@ -557,7 +577,9 @@ function queueViewportUpsert(
   viewport: Viewport,
   options?: PersistViewportOptions
 ): void {
-  deletingProjectIds.delete(projectId);
+  if (deletingProjectIds.has(projectId)) {
+    return;
+  }
   queuedViewportUpserts.set(projectId, JSON.stringify(viewport));
 
   const existingTimer = viewportUpsertTimers.get(projectId);
@@ -579,34 +601,33 @@ function queueViewportUpsert(
   viewportUpsertTimers.set(projectId, timer);
 }
 
+function flushProjectDelete(projectId: string): void {
+  if (
+    !deletingProjectIds.has(projectId)
+    || projectDeletesInFlight.has(projectId)
+    || projectUpsertsInFlight.has(projectId)
+    || viewportUpsertsInFlight.has(projectId)
+  ) {
+    return;
+  }
+
+  projectDeletesInFlight.add(projectId);
+  void deleteProjectRecord(projectId)
+    .catch((error) => {
+      logger.error('Failed to delete project record', error);
+    })
+    .finally(() => {
+      projectDeletesInFlight.delete(projectId);
+      deletingProjectIds.delete(projectId);
+    });
+}
+
 function persistProjectDelete(projectId: string): void {
   deletingProjectIds.add(projectId);
   clearQueuedProjectUpsert(projectId);
   clearQueuedViewportUpsert(projectId);
-
-  const attemptDelete = (retryCount: number): void => {
-    if (projectUpsertsInFlight.has(projectId) || viewportUpsertsInFlight.has(projectId)) {
-      if (retryCount >= MAX_DELETE_RETRIES) {
-        deletingProjectIds.delete(projectId);
-        return;
-      }
-
-      setTimeout(() => {
-        attemptDelete(retryCount + 1);
-      }, DELETE_RETRY_DELAY_MS);
-      return;
-    }
-
-    void deleteProjectRecord(projectId)
-      .catch((error) => {
-        logger.error('Failed to delete project record', error);
-      })
-      .finally(() => {
-        deletingProjectIds.delete(projectId);
-      });
-  };
-
-  attemptDelete(0);
+  // Active writes flush this deletion when they settle, without a timeout race.
+  flushProjectDelete(projectId);
 }
 
 function updateProjectSummary(
@@ -675,6 +696,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   },
 
   createProject: (name) => {
+    openProjectRequestSeq += 1;
     const id = uuidv4();
     const now = Date.now();
     const project: Project = {
@@ -703,6 +725,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   },
 
   deleteProject: (id) => {
+    openProjectRequestSeq += 1;
     set((state) => ({
       projects: state.projects.filter((project) => project.id !== id),
       currentProjectId: state.currentProjectId === id ? null : state.currentProjectId,

@@ -22,6 +22,7 @@ import {
   type Viewport,
 } from '@xyflow/react';
 import { useTranslation } from 'react-i18next';
+import { CanvasEmptyState } from './CanvasEmptyState';
 import { open } from '@tauri-apps/plugin-dialog';
 import '@xyflow/react/dist/style.css';
 
@@ -2700,19 +2701,10 @@ export function Canvas() {
     [connectNodes, pendingConnectStart, reactFlowInstance, scheduleCanvasPersist]
   );
 
-  const emptyHint = useMemo(
-    () => (
-      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-        <div className="flex max-w-3xl flex-col items-center gap-5 px-6 text-center">
-          <div>
-            <div className="mb-2 text-2xl text-text-muted">{t('canvas.emptyHintTitle')}</div>
-            <div className="text-sm text-text-muted opacity-60">{t('canvas.emptyHintSubtitle')}</div>
-          </div>
-        </div>
-      </div>
-    ),
-    [t]
-  );
+  const handleAddFirstNode = useCallback(() => {
+    const bounds = wrapperRef.current?.getBoundingClientRect();
+    if (bounds) openNodeMenuAtClientPosition(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2);
+  }, [openNodeMenuAtClientPosition]);
 
   return (
     <div
@@ -2814,7 +2806,7 @@ export function Canvas() {
         onInteractionModeChange={setInteractionMode}
       />
 
-      {nodes.length === 0 && emptyHint}
+      {nodes.length === 0 && !showNodeMenu && <CanvasEmptyState onAddNode={handleAddFirstNode} />}
       {showNodeMenu && previewConnectionVisual && (
         <svg
           className="pointer-events-none absolute z-40 overflow-visible"
