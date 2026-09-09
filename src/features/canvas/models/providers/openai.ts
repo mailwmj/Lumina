@@ -16,6 +16,18 @@ export const CHAOMO_GPT_IMAGE2_2K_DIRECT_MODEL_ID = 'chaomo/gpt-image2-2K-Direct
 export const CHAOMO_GPT_IMAGE2_4K_STABLE_MODEL_ID = 'chaomo/gpt-image2-4K-Stable';
 export const CHAOMO_GPT_IMAGE2_4K_DIRECT_MODEL_ID = 'chaomo/gpt-image2-4K-Direct';
 export const CHAOMO_GPT_IMAGE2_4K_MODEL_ID = 'chaomo/gpt-image2-4K';
+export const CHAOMO_GPT_IMAGE25_FLARE_1K_HIGHT_MODEL_ID =
+  'chaomo/gpt-image-2.5-flare-1K-Hight';
+export const CHAOMO_GPT_IMAGE25_FLARE_2K_HIGHT_MODEL_ID =
+  'chaomo/gpt-image-2.5-flare-2K-Hight';
+export const CHAOMO_GPT_IMAGE25_FLARE_4K_HIGHT_MODEL_ID =
+  'chaomo/gpt-image-2.5-flare-4K-Hight';
+export const CHAOMO_GPT_IMAGE25_SUNBURST_1K_HIGHT_MODEL_ID =
+  'chaomo/gpt-image-2.5-sunburst-1K-Hight';
+export const CHAOMO_GPT_IMAGE25_SUNBURST_2K_HIGHT_MODEL_ID =
+  'chaomo/gpt-image-2.5-sunburst-2K-Hight';
+export const CHAOMO_GPT_IMAGE25_SUNBURST_4K_HIGHT_MODEL_ID =
+  'chaomo/gpt-image-2.5-sunburst-4K-Hight';
 export const CHAOMO_NANO_BANANA_2_MODEL_ID = 'chaomo/nano-banana-2';
 export const CHAOMO_NANO_BANANA_PRO_MODEL_ID = 'chaomo/nano-banana-pro';
 
@@ -33,6 +45,12 @@ export const CHAOMO_IMAGE_MODEL_IDS = [
   CHAOMO_GPT_IMAGE2_4K_STABLE_MODEL_ID,
   CHAOMO_GPT_IMAGE2_4K_DIRECT_MODEL_ID,
   CHAOMO_GPT_IMAGE2_4K_MODEL_ID,
+  CHAOMO_GPT_IMAGE25_FLARE_1K_HIGHT_MODEL_ID,
+  CHAOMO_GPT_IMAGE25_FLARE_2K_HIGHT_MODEL_ID,
+  CHAOMO_GPT_IMAGE25_FLARE_4K_HIGHT_MODEL_ID,
+  CHAOMO_GPT_IMAGE25_SUNBURST_1K_HIGHT_MODEL_ID,
+  CHAOMO_GPT_IMAGE25_SUNBURST_2K_HIGHT_MODEL_ID,
+  CHAOMO_GPT_IMAGE25_SUNBURST_4K_HIGHT_MODEL_ID,
   CHAOMO_NANO_BANANA_2_MODEL_ID,
   CHAOMO_NANO_BANANA_PRO_MODEL_ID,
 ] as const;

@@ -1230,10 +1230,32 @@ async fn fetch_gemini_native_models(
 
 #[cfg(test)]
 mod image_model_discovery_tests {
-    use super::{fetch_gemini_native_models, gemini_model_list_from_response};
+    use super::{
+        fetch_gemini_native_models, gemini_model_list_from_response, model_list_from_response,
+    };
     use serde_json::json;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::{TcpListener, TcpStream};
+
+    #[test]
+    fn openai_model_list_includes_all_chaomo_image_25_models() {
+        let models = model_list_from_response(&json!({
+            "object": "list",
+            "data": [
+                { "id": "gpt-image-2.5-flare-1K-Hight", "display_name": "Flare 1K" },
+                { "id": "gpt-image-2.5-flare-2K-Hight", "display_name": "Flare 2K" },
+                { "id": "gpt-image-2.5-flare-4K-Hight", "display_name": "Flare 4K" },
+                { "id": "gpt-image-2.5-sunburst-1K-Hight", "display_name": "Sunburst 1K" },
+                { "id": "gpt-image-2.5-sunburst-2K-Hight", "display_name": "Sunburst 2K" },
+                { "id": "gpt-image-2.5-sunburst-4K-Hight", "display_name": "Sunburst 4K" }
+            ]
+        }));
+
+        assert_eq!(models.len(), 6);
+        assert_eq!(models[0].id, "gpt-image-2.5-flare-1K-Hight");
+        assert_eq!(models[0].label.as_deref(), Some("Flare 1K"));
+        assert_eq!(models[5].id, "gpt-image-2.5-sunburst-4K-Hight");
+    }
 
     async fn read_http_request(socket: &mut TcpStream) -> Vec<u8> {
         let mut request_bytes = Vec::new();

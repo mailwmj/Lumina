@@ -88,6 +88,12 @@ describe('available image models', () => {
     expect(models.length).toBeGreaterThan(0);
     expect(models.every((model) => model.providerId === 'chaomo')).toBe(true);
     expect(models.some((model) => model.id === 'chaomo/gpt-image2-4K')).toBe(true);
+    expect(models.some((model) => model.id === 'chaomo/gpt-image-2.5-flare-1K-Hight')).toBe(true);
+    expect(models.some((model) => model.id === 'chaomo/gpt-image-2.5-flare-2K-Hight')).toBe(true);
+    expect(models.some((model) => model.id === 'chaomo/gpt-image-2.5-flare-4K-Hight')).toBe(true);
+    expect(models.some((model) => model.id === 'chaomo/gpt-image-2.5-sunburst-1K-Hight')).toBe(true);
+    expect(models.some((model) => model.id === 'chaomo/gpt-image-2.5-sunburst-2K-Hight')).toBe(true);
+    expect(models.some((model) => model.id === 'chaomo/gpt-image-2.5-sunburst-4K-Hight')).toBe(true);
     expect(resolveConfiguredImageModel(settings, 'ai-media/gpt-image-2')?.providerId).toBe(
       'chaomo'
     );

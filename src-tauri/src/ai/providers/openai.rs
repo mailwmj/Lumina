@@ -36,6 +36,15 @@ const CHAOMO_GPT_IMAGE2_2K_DIRECT_MODEL_ID: &str = "chaomo/gpt-image2-2K-Direct"
 const CHAOMO_GPT_IMAGE2_4K_STABLE_MODEL_ID: &str = "chaomo/gpt-image2-4K-Stable";
 const CHAOMO_GPT_IMAGE2_4K_DIRECT_MODEL_ID: &str = "chaomo/gpt-image2-4K-Direct";
 const CHAOMO_GPT_IMAGE2_4K_MODEL_ID: &str = "chaomo/gpt-image2-4K";
+const CHAOMO_GPT_IMAGE25_FLARE_1K_HIGHT_MODEL_ID: &str = "chaomo/gpt-image-2.5-flare-1K-Hight";
+const CHAOMO_GPT_IMAGE25_FLARE_2K_HIGHT_MODEL_ID: &str = "chaomo/gpt-image-2.5-flare-2K-Hight";
+const CHAOMO_GPT_IMAGE25_FLARE_4K_HIGHT_MODEL_ID: &str = "chaomo/gpt-image-2.5-flare-4K-Hight";
+const CHAOMO_GPT_IMAGE25_SUNBURST_1K_HIGHT_MODEL_ID: &str =
+    "chaomo/gpt-image-2.5-sunburst-1K-Hight";
+const CHAOMO_GPT_IMAGE25_SUNBURST_2K_HIGHT_MODEL_ID: &str =
+    "chaomo/gpt-image-2.5-sunburst-2K-Hight";
+const CHAOMO_GPT_IMAGE25_SUNBURST_4K_HIGHT_MODEL_ID: &str =
+    "chaomo/gpt-image-2.5-sunburst-4K-Hight";
 const CHAOMO_NANO_BANANA_2_MODEL_ID: &str = "chaomo/nano-banana-2";
 const CHAOMO_NANO_BANANA_PRO_MODEL_ID: &str = "chaomo/nano-banana-pro";
 const CHAOMO_LEGACY_DIRECT_MODEL_ID: &str = "chaomo/gpt-image-2-direct";
@@ -98,6 +107,12 @@ impl OpenAiProvider {
                 CHAOMO_GPT_IMAGE2_4K_STABLE_MODEL_ID,
                 CHAOMO_GPT_IMAGE2_4K_DIRECT_MODEL_ID,
                 CHAOMO_GPT_IMAGE2_4K_MODEL_ID,
+                CHAOMO_GPT_IMAGE25_FLARE_1K_HIGHT_MODEL_ID,
+                CHAOMO_GPT_IMAGE25_FLARE_2K_HIGHT_MODEL_ID,
+                CHAOMO_GPT_IMAGE25_FLARE_4K_HIGHT_MODEL_ID,
+                CHAOMO_GPT_IMAGE25_SUNBURST_1K_HIGHT_MODEL_ID,
+                CHAOMO_GPT_IMAGE25_SUNBURST_2K_HIGHT_MODEL_ID,
+                CHAOMO_GPT_IMAGE25_SUNBURST_4K_HIGHT_MODEL_ID,
                 CHAOMO_NANO_BANANA_2_MODEL_ID,
                 CHAOMO_NANO_BANANA_PRO_MODEL_ID,
             ],
@@ -229,7 +244,7 @@ impl OpenAiProvider {
                 Self::resolve_image_quality(&request.size).map(str::to_string)
             }
             OpenAiImageProtocol::Chaomo if self.chaomo_uses_quality(request) => {
-                Some("medium".to_string())
+                Some("high".to_string())
             }
             OpenAiImageProtocol::Chaomo => None,
             OpenAiImageProtocol::Fhl => Some("auto".to_string()),
@@ -684,7 +699,7 @@ impl OpenAiProvider {
                     "async": true,
                 });
                 if self.chaomo_uses_quality(request) {
-                    body["quality"] = Value::String("medium".to_string());
+                    body["quality"] = Value::String("high".to_string());
                 }
                 body
             }
@@ -1676,7 +1691,7 @@ mod tests {
             provider.build_generation_body(&direct_request, "gpt-image2-4K-Direct", true);
 
         assert_eq!(direct_body["ratio"], "4:3");
-        assert_eq!(direct_body["quality"], "medium");
+        assert_eq!(direct_body["quality"], "high");
         assert!(direct_body.get("size").is_none());
         assert_eq!(direct_body["response_format"], "url");
 
@@ -1693,7 +1708,7 @@ mod tests {
         let provider = OpenAiProvider::chaomo();
         let models = provider.list_models();
 
-        assert_eq!(models.len(), 10);
+        assert_eq!(models.len(), 16);
         for model in [
             "chaomo/gpt-image2-1K",
             "chaomo/gpt-image2-1K-Hight",
@@ -1703,6 +1718,12 @@ mod tests {
             "chaomo/gpt-image2-4K-Stable",
             "chaomo/gpt-image2-4K-Direct",
             "chaomo/gpt-image2-4K",
+            "chaomo/gpt-image-2.5-flare-1K-Hight",
+            "chaomo/gpt-image-2.5-flare-2K-Hight",
+            "chaomo/gpt-image-2.5-flare-4K-Hight",
+            "chaomo/gpt-image-2.5-sunburst-1K-Hight",
+            "chaomo/gpt-image-2.5-sunburst-2K-Hight",
+            "chaomo/gpt-image-2.5-sunburst-4K-Hight",
             "chaomo/nano-banana-2",
             "chaomo/nano-banana-pro",
         ] {
@@ -1722,6 +1743,30 @@ mod tests {
             ("chaomo/gpt-image2-4K-Stable", "gpt-image2-4K-Stable"),
             ("chaomo/gpt-image2-4K-Direct", "gpt-image2-4K-Direct"),
             ("chaomo/gpt-image2-4K", "gpt-image2-4K"),
+            (
+                "chaomo/gpt-image-2.5-flare-1K-Hight",
+                "gpt-image-2.5-flare-1K-Hight",
+            ),
+            (
+                "chaomo/gpt-image-2.5-flare-2K-Hight",
+                "gpt-image-2.5-flare-2K-Hight",
+            ),
+            (
+                "chaomo/gpt-image-2.5-flare-4K-Hight",
+                "gpt-image-2.5-flare-4K-Hight",
+            ),
+            (
+                "chaomo/gpt-image-2.5-sunburst-1K-Hight",
+                "gpt-image-2.5-sunburst-1K-Hight",
+            ),
+            (
+                "chaomo/gpt-image-2.5-sunburst-2K-Hight",
+                "gpt-image-2.5-sunburst-2K-Hight",
+            ),
+            (
+                "chaomo/gpt-image-2.5-sunburst-4K-Hight",
+                "gpt-image-2.5-sunburst-4K-Hight",
+            ),
             ("chaomo/nano-banana-pro", "nano-banana-pro"),
         ] {
             let request = generate_request(model, "4K", "16:9");
@@ -1738,6 +1783,18 @@ mod tests {
         assert_eq!(body["model"], "gpt-image2-2K-Hight");
         assert_eq!(body["ratio"], "1:1");
         assert!(body.get("quality").is_none());
+    }
+
+    #[test]
+    fn chaomo_new_hight_models_send_quality_supported_by_the_api() {
+        let provider = OpenAiProvider::chaomo();
+        let request = generate_request("chaomo/gpt-image-2.5-sunburst-4K-Hight", "4K", "16:9");
+        let body =
+            provider.build_generation_body(&request, "gpt-image-2.5-sunburst-4K-Hight", true);
+
+        assert_eq!(body["model"], "gpt-image-2.5-sunburst-4K-Hight");
+        assert_eq!(body["ratio"], "16:9");
+        assert_eq!(body["quality"], "high");
     }
 
     #[test]

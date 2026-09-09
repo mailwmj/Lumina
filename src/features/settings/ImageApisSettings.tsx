@@ -11,6 +11,9 @@ import {
   migrateCustomImageBaseUrlForProtocolChange,
   type CustomImageProtocol,
 } from '@/features/canvas/models/imageProviderProtocols';
+import {
+  resolveDiscoveredImageModelSelection,
+} from '@/features/settings/application/imageModelDiscovery';
 import { ProviderListShell } from '@/features/settings/providers/ProviderListShell';
 import {
   createCustomImageApiConfig,
@@ -277,13 +280,15 @@ export function ImageApisSettings({
         })),
         refreshedAt: Date.now(),
       };
-      const selectedModelIds = new Set(config.selectedModelIds);
+      const nextSelectedModelIds = resolveDiscoveredImageModelSelection(
+        config.modelCatalog,
+        config.selectedModelIds,
+        modelCatalog.models.map((model) => model.id)
+      );
       onChange({
         ...config,
         modelCatalog,
-        selectedModelIds: modelCatalog.models
-          .map((model) => model.id)
-          .filter((modelId) => selectedModelIds.has(modelId)),
+        selectedModelIds: nextSelectedModelIds,
       });
       setDiscoveryByProvider((current) => ({
         ...current,

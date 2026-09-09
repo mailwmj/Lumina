@@ -15,6 +15,12 @@ import { imageModel as chaomoGptImage2DirectModel } from './image/openai/chaomoG
 import { imageModel as chaomoGptImage24kNativeModel } from './image/openai/chaomoGptImage24kNative';
 import { imageModel as chaomoNanoBanana2Model } from './image/openai/chaomoNanoBanana2';
 import { imageModel as chaomoNanoBananaProModel } from './image/openai/chaomoNanoBananaPro';
+import { imageModel as chaomoGptImage25Sunburst4kHightModel } from './image/openai/chaomoGptImage25Sunburst4kHight';
+import { imageModel as chaomoGptImage25Flare1kHightModel } from './image/openai/chaomoGptImage25Flare1kHight';
+import { imageModel as chaomoGptImage25Flare2kHightModel } from './image/openai/chaomoGptImage25Flare2kHight';
+import { imageModel as chaomoGptImage25Flare4kHightModel } from './image/openai/chaomoGptImage25Flare4kHight';
+import { imageModel as chaomoGptImage25Sunburst1kHightModel } from './image/openai/chaomoGptImage25Sunburst1kHight';
+import { imageModel as chaomoGptImage25Sunburst2kHightModel } from './image/openai/chaomoGptImage25Sunburst2kHight';
 import {
   AI_MEDIA_GPT_IMAGE_2_MODEL_ID,
   aiMediaProvider,
@@ -38,6 +44,12 @@ const imageModels: ImageModelDefinition[] = [
   chaomoGptImage24kNativeModel,
   chaomoNanoBanana2Model,
   chaomoNanoBananaProModel,
+  chaomoGptImage25Sunburst4kHightModel,
+  chaomoGptImage25Flare1kHightModel,
+  chaomoGptImage25Flare2kHightModel,
+  chaomoGptImage25Flare4kHightModel,
+  chaomoGptImage25Sunburst1kHightModel,
+  chaomoGptImage25Sunburst2kHightModel,
 ];
 
 const providerMap = new Map<string, ModelProviderDefinition>(
