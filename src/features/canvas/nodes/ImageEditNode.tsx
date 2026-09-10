@@ -1,3 +1,4 @@
+import { CanvasHandle as Handle } from '../ui/CanvasHandle';
 import {
   type KeyboardEvent,
   memo,
@@ -8,7 +9,6 @@ import {
   useRef,
 } from 'react';
 import {
-  Handle,
   Position,
   useReactFlow,
   useUpdateNodeInternals,
@@ -30,11 +30,9 @@ import {
   runImageGenerationNode,
 } from '@/features/canvas/application/imageGenerationRun';
 import {
-  resolveTextGenerationInputs,
-} from '@/features/canvas/application/textGenerationInputs';
-import {
   materializeImageReferencePrompt,
 } from '@/features/canvas/application/imageReferencePrompt';
+import { createTextGenerationInputsResolver } from '@/features/canvas/application/textGenerationInputs';
 import { showErrorDialog } from '@/features/canvas/application/errorDialog';
 import {
   beginCompositionInput,
@@ -71,7 +69,7 @@ import { useCanvasStore } from '@/stores/canvasStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { polishText } from '@/features/canvas/infrastructure/textPolishService';
 import { resolveTextModelSelection } from '@/features/canvas/application/textModelSelection';
-import { selectWorkflowNodes } from '@/features/canvas/application/canvasNodeSelectors';
+import { createNodeInputGraphSelector } from '@/features/canvas/application/canvasNodeSelectors';
 import { locateReferencedNode } from '@/features/canvas/application/referencedNodeLocation';
 import { openSettingsDialog } from '@/features/settings/settingsEvents';
 import { TextGenerationUpstreamContext } from './TextGenerationUpstreamContext';
@@ -106,8 +104,11 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
   const [promptDraft, setPromptDraft] = useState(() => data.prompt ?? '');
   const promptCompositionStateRef = useRef(createCompositionInputState(data.prompt ?? ''));
 
-  const workflowNodes = useCanvasStore(selectWorkflowNodes);
-  const edges = useCanvasStore((state) => state.edges);
+  const inputGraphSelector = useMemo(() => createNodeInputGraphSelector(id), [id]);
+  const inputGraph = useCanvasStore(inputGraphSelector);
+  const workflowNodes = inputGraph.workflowNodes;
+  const edges = inputGraph.edges;
+  const resolveInputs = useMemo(() => createTextGenerationInputsResolver(id), [id]);
   const setSelectedNode = useCanvasStore((state) => state.setSelectedNode);
   const updateNodeData = useCanvasStore((state) => state.updateNodeData);
   const deleteEdge = useCanvasStore((state) => state.deleteEdge);
@@ -131,10 +132,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
     [imagePolishConfig.textApiId, imagePolishConfig.textModelId, textApis]
   );
 
-  const workflowInputs = useMemo(
-    () => resolveTextGenerationInputs(id, workflowNodes, edges),
-    [id, workflowNodes, edges]
-  );
+  const workflowInputs = resolveInputs(workflowNodes, edges);
 
   const imageModels = useMemo(
     () =>
@@ -523,6 +521,12 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
 
         <div className="ml-auto" />
 
+        {!hasConfiguredModel && (
+          <span className="mr-2 max-w-[150px] truncate text-[10px] text-text-muted" role="status" title={t('node.imageEdit.modelRequired')}>
+            {t('node.imageEdit.modelRequired')}
+          </span>
+        )}
+
         <UiButton
           onClick={(event) => {
             event.stopPropagation();
@@ -548,11 +552,15 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
         type="target"
         id="target"
         position={Position.Left}
+        aria-label={t('node.connection.input')}
+        title={t('node.connection.input')}
       />
       <Handle
         type="source"
         id="source"
         position={Position.Right}
+        aria-label={t('node.connection.output')}
+        title={t('node.connection.output')}
       />
       <NodeResizeHandle
         minWidth={layout.minWidth}

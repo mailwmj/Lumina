@@ -233,6 +233,12 @@
     "imageReference": {
       "label": "图片 {{index}}"
     },
+    "connection": {
+      "valid": "松开以连接",
+      "invalid": "无法连接：类型、容量或依赖关系不兼容",
+      "input": "输入端口：拖入连线以引用内容",
+      "output": "输出端口：拖出连线以连接下游节点"
+    },
     "upload": {
       "uploadedAlt": "已上传图片",
       "hint": "点击或拖拽上传图片"
@@ -242,7 +248,8 @@
       "frames": "分镜格",
       "rows": "行数",
       "cols": "列数",
-      "frameIndex": "第 {{index}} 格"
+      "frameIndex": "第 {{index}} 格",
+      "emptyFrame": "空分镜"
     },
     "storyboardGen": {
       "modelRequired": "请先在设置中获取并选择生图模型",

@@ -1,3 +1,4 @@
+import { CanvasHandle as Handle } from '../ui/CanvasHandle';
 import {
   memo,
   useCallback,
@@ -7,7 +8,7 @@ import {
   useState,
   type DragEvent,
 } from 'react';
-import { Handle, Position, useUpdateNodeInternals, type NodeProps } from '@xyflow/react';
+import { Position, useUpdateNodeInternals, type NodeProps } from '@xyflow/react';
 import { Loader2, Music, Video, Wand2 } from '@/components/ui/icons';
 import { useTranslation } from 'react-i18next';
 
@@ -31,7 +32,7 @@ import { showErrorDialog } from '@/features/canvas/application/errorDialog';
 import { polishText } from '@/features/canvas/infrastructure/textPolishService';
 import { resolveTextModelSelection } from '@/features/canvas/application/textModelSelection';
 import { resolveVideoApiConfig } from '@/features/canvas/application/videoApiSelection';
-import { selectWorkflowNodes } from '@/features/canvas/application/canvasNodeSelectors';
+import { createNodeInputGraphSelector } from '@/features/canvas/application/canvasNodeSelectors';
 import {
   buildSeedanceVideoRequestPlan,
   getSeedanceFirstLastModeAvailability,
@@ -112,8 +113,8 @@ interface ReferencePreview {
 export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGenNodeProps) => {
   const { t } = useTranslation();
   const updateNodeInternals = useUpdateNodeInternals();
-  const workflowNodes = useCanvasStore(selectWorkflowNodes);
-  const edges = useCanvasStore((state) => state.edges);
+  const inputGraphSelector = useMemo(() => createNodeInputGraphSelector(id), [id]);
+  const { workflowNodes, edges } = useCanvasStore(inputGraphSelector);
   const updateNodeData = useCanvasStore((state) => state.updateNodeData);
   const reorderNodeInput = useCanvasStore((state) => state.reorderNodeInput);
   const setSelectedNode = useCanvasStore((state) => state.setSelectedNode);

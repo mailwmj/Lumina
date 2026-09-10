@@ -37,6 +37,7 @@
   --node-selected-shadow: 0 0 0 1px rgb(var(--accent-rgb) / 0.4), 0 0 18px rgb(var(--accent-rgb) / 0.1);
   --canvas-selection-accent: var(--accent);
   --canvas-selection-active-bg: rgb(var(--accent-rgb) / 0.16);
+  --canvas-connection-invalid: #dc2626;
   --canvas-handle-fill: var(--edge);
   --canvas-handle-border: #ffffff;
   --canvas-handle-shadow: 0 0 0 2px rgb(var(--edge-rgb) / 0.16);
@@ -278,6 +279,22 @@ html[data-platform='macos'] #root {
 .react-flow__handle.connectingto {
   opacity: 1;
   pointer-events: all;
+}
+
+/* Keep React Flow's translate transform intact so port centers stay aligned. */
+.react-flow__node .react-flow__handle.canvas-handle-candidate {
+  opacity: 1;
+  pointer-events: all;
+}
+.react-flow__handle[data-connection-feedback="valid"],
+.react-flow__handle.valid {
+  background: var(--accent);
+  box-shadow: 0 0 0 4px rgb(var(--accent-rgb) / 0.22);
+}
+.react-flow__handle[data-connection-feedback="invalid"],
+.react-flow__handle.connectingto:not(.valid) {
+  background: var(--canvas-connection-invalid);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--canvas-connection-invalid) 25%, transparent);
 }
 
 .canvas-connection-handle {

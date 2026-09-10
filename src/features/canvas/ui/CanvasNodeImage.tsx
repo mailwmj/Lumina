@@ -1,3 +1,4 @@
+import { useViewportImage } from '../hooks/useViewportImage';
 import {
   memo,
   useCallback,
@@ -64,6 +65,7 @@ export const CanvasNodeImage = memo(({
   src,
   ...props
 }: CanvasNodeImageProps) => {
+  const viewportImage = useViewportImage(props.loading === 'eager');
   const openImageViewer = useCanvasStore((state) => state.openImageViewer);
   const [resolutionHover, setResolutionHover] = useState<{
     width: number;
@@ -188,7 +190,11 @@ export const CanvasNodeImage = memo(({
         // WebKit can retain the previous texture when a transformed canvas node
         // changes image URLs. A new element guarantees the decoded original repaints.
         key={typeof src === 'string' ? src : undefined}
-        src={src}
+        ref={viewportImage.ref}
+        src={viewportImage.visible ? src : undefined}
+        srcSet={viewportImage.visible ? props.srcSet : undefined}
+        loading={props.loading ?? 'lazy'}
+        decoding={props.decoding ?? 'async'}
         data-viewer-src={
           typeof viewerSourceUrl === 'string' && viewerSourceUrl.trim().length > 0
             ? viewerSourceUrl.trim()

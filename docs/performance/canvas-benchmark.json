@@ -1,0 +1,342 @@
+{
+  "date": "2026-09-10T07:02:58.761Z",
+  "environment": {
+    "platform": "darwin",
+    "arch": "arm64",
+    "cpu": "Apple M1 Pro",
+    "browser": "153.0.8010.12",
+    "viewport": "1440x1000",
+    "mode": "Vite development, React Profiler, headless Chromium"
+  },
+  "scenes": [
+    {
+      "count": 50,
+      "readyMsIncludingSettle": 918,
+      "nodeDragVerified": true,
+      "panFrameMs": {
+        "count": 85,
+        "median": 16.600000023841858,
+        "p95": 17.5,
+        "max": 18.30000001192093
+      },
+      "graphBaselineMs": {
+        "count": 100,
+        "median": 0,
+        "p95": 0.10000002384185791,
+        "max": 0.19999998807907104
+      },
+      "graphOptimizedMs": {
+        "count": 100,
+        "median": 0,
+        "p95": 0.10000002384185791,
+        "max": 0.10000002384185791
+      },
+      "unrelatedInvalidations": 0,
+      "overview": {
+        "nodes": 50,
+        "loadedImages": 10,
+        "metrics": {
+          "node-render:uploadNode": {
+            "count": 33,
+            "totalMs": 1.300000011920929,
+            "maxMs": 0.30000001192092896,
+            "averageMs": 0.039393939755179665
+          },
+          "storyboard-frame-sort": {
+            "count": 6,
+            "totalMs": 0,
+            "maxMs": 0,
+            "averageMs": 0
+          },
+          "node-render:storyboardNode": {
+            "count": 27,
+            "totalMs": 3.1999999284744263,
+            "maxMs": 0.699999988079071,
+            "averageMs": 0.11851851586942319
+          },
+          "text-input-resolution": {
+            "count": 11,
+            "totalMs": 0,
+            "maxMs": 0,
+            "averageMs": 0
+          },
+          "node-render:imageNode": {
+            "count": 18,
+            "totalMs": 3.1000000834465027,
+            "maxMs": 0.800000011920929,
+            "averageMs": 0.17222222685813904
+          },
+          "node-render:exportImageNode": {
+            "count": 18,
+            "totalMs": 0.9999998807907104,
+            "maxMs": 0.3999999761581421,
+            "averageMs": 0.05555554893281725
+          },
+          "node-render:videoSingleNode": {
+            "count": 18,
+            "totalMs": 6,
+            "maxMs": 1.5999999642372131,
+            "averageMs": 0.3333333333333333
+          },
+          "node-render:textGenerationNode": {
+            "count": 15,
+            "totalMs": 3.8000000715255737,
+            "maxMs": 1,
+            "averageMs": 0.25333333810170494
+          },
+          "node-render:videoFrameNode": {
+            "count": 15,
+            "totalMs": 4.899999976158142,
+            "maxMs": 1.0999999642372131,
+            "averageMs": 0.3266666650772095
+          },
+          "node-render:seedanceAutoVideoNode": {
+            "count": 15,
+            "totalMs": 7.599999904632568,
+            "maxMs": 3.799999952316284,
+            "averageMs": 0.5066666603088379
+          },
+          "node-render:textAnnotationNode": {
+            "count": 10,
+            "totalMs": 2.299999952316284,
+            "maxMs": 0.5999999642372131,
+            "averageMs": 0.22999999523162842
+          },
+          "node-render:exportVideoNode": {
+            "count": 15,
+            "totalMs": 0.699999988079071,
+            "maxMs": 0.19999998807907104,
+            "averageMs": 0.046666665871938066
+          }
+        },
+        "profiledNodes": 50
+      }
+    },
+    {
+      "count": 100,
+      "readyMsIncludingSettle": 913,
+      "nodeDragVerified": true,
+      "panFrameMs": {
+        "count": 85,
+        "median": 16.69999998807907,
+        "p95": 17.5,
+        "max": 18
+      },
+      "graphBaselineMs": {
+        "count": 100,
+        "median": 0.10000002384185791,
+        "p95": 0.20000004768371582,
+        "max": 0.20000004768371582
+      },
+      "graphOptimizedMs": {
+        "count": 100,
+        "median": 0,
+        "p95": 0.10000002384185791,
+        "max": 0.10000002384185791
+      },
+      "unrelatedInvalidations": 0,
+      "overview": {
+        "nodes": 80,
+        "loadedImages": 16,
+        "metrics": {
+          "node-render:uploadNode": {
+            "count": 48,
+            "totalMs": 1.7999999523162842,
+            "maxMs": 0.3999999761581421,
+            "averageMs": 0.037499999006589256
+          },
+          "storyboard-frame-sort": {
+            "count": 9,
+            "totalMs": 0,
+            "maxMs": 0,
+            "averageMs": 0
+          },
+          "node-render:storyboardNode": {
+            "count": 39,
+            "totalMs": 3,
+            "maxMs": 0.5999999642372131,
+            "averageMs": 0.07692307692307693
+          },
+          "text-input-resolution": {
+            "count": 17,
+            "totalMs": 0,
+            "maxMs": 0,
+            "averageMs": 0
+          },
+          "node-render:imageNode": {
+            "count": 27,
+            "totalMs": 3.7000001072883606,
+            "maxMs": 0.800000011920929,
+            "averageMs": 0.13703704101068
+          },
+          "node-render:exportImageNode": {
+            "count": 33,
+            "totalMs": 1.6000000834465027,
+            "maxMs": 0.19999998807907104,
+            "averageMs": 0.04848485101353039
+          },
+          "node-render:videoSingleNode": {
+            "count": 27,
+            "totalMs": 8.099999904632568,
+            "maxMs": 1.4000000357627869,
+            "averageMs": 0.2999999964678729
+          },
+          "node-render:textGenerationNode": {
+            "count": 24,
+            "totalMs": 4.900000035762787,
+            "maxMs": 1,
+            "averageMs": 0.20416666815678278
+          },
+          "node-render:videoFrameNode": {
+            "count": 24,
+            "totalMs": 7.3000001311302185,
+            "maxMs": 1.4000000357627869,
+            "averageMs": 0.30416667213042575
+          },
+          "node-render:seedanceAutoVideoNode": {
+            "count": 24,
+            "totalMs": 7.000000059604645,
+            "maxMs": 1.199999988079071,
+            "averageMs": 0.2916666691501935
+          },
+          "node-render:textAnnotationNode": {
+            "count": 16,
+            "totalMs": 2.400000035762787,
+            "maxMs": 0.6000000238418579,
+            "averageMs": 0.15000000223517418
+          },
+          "node-render:exportVideoNode": {
+            "count": 24,
+            "totalMs": 1.100000023841858,
+            "maxMs": 0.30000001192092896,
+            "averageMs": 0.04583333432674408
+          }
+        },
+        "profiledNodes": 80
+      }
+    },
+    {
+      "count": 300,
+      "readyMsIncludingSettle": 2233,
+      "nodeDragVerified": true,
+      "panFrameMs": {
+        "count": 85,
+        "median": 16.69999998807907,
+        "p95": 17.5,
+        "max": 18.899999976158142
+      },
+      "graphBaselineMs": {
+        "count": 100,
+        "median": 0.6000000238418579,
+        "p95": 0.9000000357627869,
+        "max": 1.199999988079071
+      },
+      "graphOptimizedMs": {
+        "count": 100,
+        "median": 0,
+        "p95": 0.10000002384185791,
+        "max": 0.19999998807907104
+      },
+      "unrelatedInvalidations": 0,
+      "overview": {
+        "nodes": 80,
+        "loadedImages": 16,
+        "metrics": {
+          "node-render:uploadNode": {
+            "count": 48,
+            "totalMs": 2.0000000596046448,
+            "maxMs": 0.40000003576278687,
+            "averageMs": 0.0416666679084301
+          },
+          "storyboard-frame-sort": {
+            "count": 9,
+            "totalMs": 0,
+            "maxMs": 0,
+            "averageMs": 0
+          },
+          "node-render:storyboardNode": {
+            "count": 39,
+            "totalMs": 3.300000011920929,
+            "maxMs": 0.6000000238418579,
+            "averageMs": 0.08461538492104946
+          },
+          "text-input-resolution": {
+            "count": 17,
+            "totalMs": 0.10000002384185791,
+            "maxMs": 0.10000002384185791,
+            "averageMs": 0.0058823543436387
+          },
+          "node-render:imageNode": {
+            "count": 27,
+            "totalMs": 3.600000023841858,
+            "maxMs": 0.699999988079071,
+            "averageMs": 0.13333333421636512
+          },
+          "node-render:exportImageNode": {
+            "count": 33,
+            "totalMs": 1.199999988079071,
+            "maxMs": 0.19999998807907104,
+            "averageMs": 0.036363636002396095
+          },
+          "node-render:videoSingleNode": {
+            "count": 27,
+            "totalMs": 9.50000011920929,
+            "maxMs": 1.9000000357627869,
+            "averageMs": 0.3518518562670107
+          },
+          "node-render:textGenerationNode": {
+            "count": 24,
+            "totalMs": 4.800000011920929,
+            "maxMs": 0.8999999761581421,
+            "averageMs": 0.20000000049670538
+          },
+          "node-render:videoFrameNode": {
+            "count": 24,
+            "totalMs": 7.900000035762787,
+            "maxMs": 1.5,
+            "averageMs": 0.3291666681567828
+          },
+          "node-render:seedanceAutoVideoNode": {
+            "count": 24,
+            "totalMs": 10.300000011920929,
+            "maxMs": 4.799999952316284,
+            "averageMs": 0.42916666716337204
+          },
+          "node-render:textAnnotationNode": {
+            "count": 16,
+            "totalMs": 2.900000035762787,
+            "maxMs": 1,
+            "averageMs": 0.18125000223517418
+          },
+          "node-render:exportVideoNode": {
+            "count": 24,
+            "totalMs": 1.300000011920929,
+            "maxMs": 0.20000004768371582,
+            "averageMs": 0.05416666716337204
+          }
+        },
+        "profiledNodes": 80
+      }
+    }
+  ],
+  "checks": {
+    "viewportImages": {
+      "beforeImages": 3,
+      "afterImages": 0
+    },
+    "storyboard": {
+      "totalFrames": 300,
+      "mountedFrames": 15,
+      "editSurvivesUnmount": true,
+      "hoverDoesNotWrite": true,
+      "dropCommits": true,
+      "cancellationPreservesOrder": true,
+      "zoomPreservesGeometry": true
+    },
+    "connections": {
+      "validConnect": true,
+      "duplicateRejected": true
+    },
+    "browserErrors": []
+  }
+}

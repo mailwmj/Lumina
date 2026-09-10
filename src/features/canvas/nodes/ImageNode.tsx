@@ -1,6 +1,6 @@
+import { CanvasHandle as Handle } from '../ui/CanvasHandle';
 import { memo, useEffect, useMemo, useState } from 'react';
 import {
-  Handle,
   Position,
   useUpdateNodeInternals,
   type NodeProps,

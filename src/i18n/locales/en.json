@@ -233,6 +233,12 @@
     "imageReference": {
       "label": "Image {{index}}"
     },
+    "connection": {
+      "valid": "Release to connect",
+      "invalid": "Cannot connect: incompatible type, capacity or dependency",
+      "input": "Input: connect a source to reference its content",
+      "output": "Output: drag a connection to a downstream node"
+    },
     "upload": {
       "uploadedAlt": "Uploaded image",
       "hint": "Click or drag to upload image"
@@ -242,7 +248,8 @@
       "frames": "Frames",
       "rows": "Rows",
       "cols": "Columns",
-      "frameIndex": "Frame {{index}}"
+      "frameIndex": "Frame {{index}}",
+      "emptyFrame": "Empty frame"
     },
     "storyboardGen": {
       "modelRequired": "Fetch and select an image model in Settings first",

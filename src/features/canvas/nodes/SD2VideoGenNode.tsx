@@ -1,3 +1,4 @@
+import { CanvasHandle as Handle } from '../ui/CanvasHandle';
 import {
   memo,
   useCallback,
@@ -10,7 +11,6 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  Handle,
   Position,
   useUpdateNodeInternals,
   type NodeProps,
@@ -24,7 +24,7 @@ import {
   type SD2GenerationMode,
 } from '@/features/canvas/domain/canvasNodes';
 import { useCanvasStore } from '@/stores/canvasStore';
-import { selectWorkflowNodes } from '@/features/canvas/application/canvasNodeSelectors';
+import { createNodeInputGraphSelector } from '@/features/canvas/application/canvasNodeSelectors';
 import { NodeResizeHandle } from '@/features/canvas/ui/NodeResizeHandle';
 import { resolveNodeSurfaceStateClass } from '@/features/canvas/ui/nodeSurfaceStyles';
 import { resolveImageDisplayUrl, resolveVideoDisplayUrl, resolveAudioDisplayUrl } from '@/features/canvas/application/imageData';
@@ -222,8 +222,8 @@ export const SD2VideoGenNode = memo(({ id, data, selected, width, height }: SD2V
   const { t } = useTranslation();
   const updateNodeInternals = useUpdateNodeInternals();
   const updateNodeData = useCanvasStore((state) => state.updateNodeData);
-  const workflowNodes = useCanvasStore(selectWorkflowNodes);
-  const edges = useCanvasStore((state) => state.edges);
+  const inputGraphSelector = useMemo(() => createNodeInputGraphSelector(id), [id]);
+  const { workflowNodes, edges } = useCanvasStore(inputGraphSelector);
 
   const resolvedWidth = Math.max(MIN_WIDTH, Math.round(width ?? DEFAULT_WIDTH));
   const resolvedHeight = Math.max(MIN_HEIGHT, Math.round(height ?? DEFAULT_HEIGHT));

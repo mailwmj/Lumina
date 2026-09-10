@@ -1,3 +1,4 @@
+import { CanvasHandle as Handle } from '../ui/CanvasHandle';
 import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
@@ -10,7 +11,7 @@ import {
   useRef,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { Handle, Position, useStore, useUpdateNodeInternals } from '@xyflow/react';
+import { Position, useStore, useUpdateNodeInternals } from '@xyflow/react';
 import { Loader2, Minus, Plus, Sparkles, Wand2 } from '@/components/ui/icons';
 import { useTranslation } from 'react-i18next';
 
@@ -70,7 +71,7 @@ import {
 import { ModelParamsControls } from '@/features/canvas/ui/ModelParamsControls';
 import { resolveImageProviderRuntime } from '@/features/canvas/application/imageProviderRuntime';
 import { resolveTextModelSelection } from '@/features/canvas/application/textModelSelection';
-import { selectWorkflowNodes } from '@/features/canvas/application/canvasNodeSelectors';
+import { createNodeInputGraphSelector } from '@/features/canvas/application/canvasNodeSelectors';
 import { CanvasNodeImage } from '@/features/canvas/ui/CanvasNodeImage';
 import {
   UiButton,
@@ -581,8 +582,8 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
   const zoom = useStore((state) => state.transform[2]);
   const updateNodeInternals = useUpdateNodeInternals();
   const setSelectedNode = useCanvasStore((state) => state.setSelectedNode);
-  const workflowNodes = useCanvasStore(selectWorkflowNodes);
-  const edges = useCanvasStore((state) => state.edges);
+  const inputGraphSelector = useMemo(() => createNodeInputGraphSelector(id), [id]);
+  const { workflowNodes, edges } = useCanvasStore(inputGraphSelector);
   const updateNodeData = useCanvasStore((state) => state.updateNodeData);
   const addNode = useCanvasStore((state) => state.addNode);
   const addEdge = useCanvasStore((state) => state.addEdge);

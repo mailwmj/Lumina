@@ -1,4 +1,11 @@
 import {
+  clamp, sanitizePathSegment, sanitizeExportLabel, toCssAspectRatio, resolveExportOptions,
+  applyStoryboardTextOverlay, type IncomingImageItem, type PanelAnchor,
+} from '../application/storyboardPresentation';
+import { CanvasHandle as Handle } from '../ui/CanvasHandle';
+import { VirtualStoryboardGrid } from '../ui/VirtualStoryboardGrid';
+import { StoryboardFrameCard } from '../ui/StoryboardFrameCard';
+import {
   memo,
   useEffect,
   useMemo,
@@ -8,25 +15,23 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  Handle,
   Position,
   useUpdateNodeInternals,
   type NodeProps,
 } from '@xyflow/react';
-import { Download, FolderOpen, ImagePlus, SlidersHorizontal, SquareArrowOutUpRight } from '@/components/ui/icons';
+import { Download, FolderOpen, SlidersHorizontal } from '@/components/ui/icons';
 import { open } from '@tauri-apps/plugin-dialog';
 import { openPath, revealItemInDir } from '@tauri-apps/plugin-opener';
 import { join } from '@tauri-apps/api/path';
-import { useTranslation } from 'react-i18next';
 
 import {
   embedStoryboardImageMetadata,
   mergeStoryboardImages,
   saveImageSourceToDirectory,
-  type MergeStoryboardImagesResult,
 } from '@/commands/image';
 import { NodeResizeHandle } from '@/features/canvas/ui/NodeResizeHandle';
 import { resolveNodeSurfaceStateClass } from '@/features/canvas/ui/nodeSurfaceStyles';
+import { measureCanvasPhase } from '@/features/canvas/application/canvasPerformance';
 import { CanvasNodeImage } from '@/features/canvas/ui/CanvasNodeImage';
 import type {
   StoryboardExportOptions,
@@ -40,14 +45,13 @@ import {
 } from '@/features/canvas/domain/canvasNodes';
 import { EXPORT_RESULT_DISPLAY_NAME } from '@/features/canvas/domain/nodeDisplay';
 import {
-  canvasToDataUrl,
   loadImageElement,
   prepareNodeImage,
   persistImageLocally,
   reduceAspectRatio,
   resolveImageDisplayUrl,
 } from '@/features/canvas/application/imageData';
-import { UiButton, UiCheckbox, UiChipButton, UiInput, UiPanel, UiSelect, UiTooltip } from '@/components/ui';
+import { UiButton, UiCheckbox, UiChipButton, UiInput, UiPanel, UiSelect } from '@/components/ui';
 import {
   NODE_CONTROL_CHIP_CLASS,
   NODE_CONTROL_ICON_CLASS,
@@ -57,7 +61,7 @@ import { useCanvasStore } from '@/stores/canvasStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { logger } from '@/lib/logger';
-import { selectWorkflowNodes } from '@/features/canvas/application/canvasNodeSelectors';
+import { createNodeInputGraphSelector } from '@/features/canvas/application/canvasNodeSelectors';
 
 type StoryboardNodeProps = NodeProps & {
   id: string;
@@ -71,337 +75,6 @@ const STORYBOARD_GRID_GAP_PX = 1;
 const EXPORT_MAX_DIMENSION = 4096;
 const EXPORT_TRACE_PREFIX = '[StoryboardExport]';
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
-}
-
-function sanitizePathSegment(raw: string, fallback: string): string {
-  const trimmed = raw.trim();
-  if (!trimmed) {
-    return fallback;
-  }
-
-  const sanitized = Array.from(trimmed)
-    .filter((ch) => !/[<>:"/\\|?*]/.test(ch) && ch >= ' ')
-    .join('')
-    .trim()
-    .replace(/\.+$/g, '');
-
-  return sanitized || fallback;
-}
-
-function sanitizeExportLabel(raw: string, maxLength = 50): string {
-  const compact = sanitizePathSegment(raw, '').replace(/\s+/g, ' ').trim();
-  if (!compact) {
-    return '';
-  }
-  return compact.slice(0, maxLength);
-}
-
-function toCssAspectRatio(aspectRatio: string): string {
-  const [rawWidth = '1', rawHeight = '1'] = aspectRatio.split(':');
-  const width = Number(rawWidth);
-  const height = Number(rawHeight);
-
-  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
-    return '1 / 1';
-  }
-
-  return `${width} / ${height}`;
-}
-
-function createDefaultExportOptions(): StoryboardExportOptions {
-  return {
-    showFrameIndex: false,
-    showFrameNote: false,
-    notePlacement: 'overlay',
-    imageFit: 'cover',
-    frameIndexPrefix: 'S',
-    cellGap: 8,
-    outerPadding: 0,
-    fontSize: 4,
-    backgroundColor: '#0f1115',
-    textColor: '#f8fafc',
-  };
-}
-
-function resolveExportOptions(options: StoryboardSplitNodeData['exportOptions']): StoryboardExportOptions {
-  const merged = {
-    ...createDefaultExportOptions(),
-    ...(options ?? {}),
-  };
-
-  const rawFontSize = Number.isFinite(merged.fontSize) ? merged.fontSize : 4;
-  const normalizedFontPercent = rawFontSize > 20
-    ? Math.round(rawFontSize / 6)
-    : rawFontSize;
-
-  return {
-    ...merged,
-    fontSize: clamp(Math.round(normalizedFontPercent), 1, 20),
-  };
-}
-
-function trimTextToWidth(
-  context: CanvasRenderingContext2D,
-  text: string,
-  maxWidth: number
-): string {
-  const safeText = text.trim();
-  if (!safeText) {
-    return '';
-  }
-
-  if (context.measureText(safeText).width <= maxWidth) {
-    return safeText;
-  }
-
-  let content = safeText;
-  while (content.length > 1) {
-    content = content.slice(0, -1);
-    const withEllipsis = `${content}...`;
-    if (context.measureText(withEllipsis).width <= maxWidth) {
-      return withEllipsis;
-    }
-  }
-
-  return '...';
-}
-
-async function applyStoryboardTextOverlay(
-  imageSource: string,
-  frames: StoryboardFrameItem[],
-  options: StoryboardExportOptions,
-  rows: number,
-  cols: number,
-  layout: MergeStoryboardImagesResult
-): Promise<string> {
-  if (!options.showFrameIndex && !options.showFrameNote) {
-    return imageSource;
-  }
-
-  const image = await loadImageElement(imageSource);
-  const canvas = document.createElement('canvas');
-  canvas.width = layout.canvasWidth;
-  canvas.height = layout.canvasHeight;
-
-  const context = canvas.getContext('2d');
-  if (!context) {
-    throw new Error('导出画布初始化失败');
-  }
-
-  context.drawImage(image, 0, 0, canvas.width, canvas.height);
-  context.textBaseline = 'middle';
-  context.textAlign = 'left';
-  context.font = `${Math.max(500, Math.round(layout.fontSize * 1.2))} ${layout.fontSize}px sans-serif`;
-
-  for (let index = 0; index < frames.length; index += 1) {
-    const frame = frames[index];
-    const row = Math.floor(index / Math.max(1, cols));
-    const col = index % Math.max(1, cols);
-    if (row >= rows) {
-      break;
-    }
-
-    const x = layout.padding + col * (layout.cellWidth + layout.gap);
-    const y = layout.padding + row * (layout.cellHeight + layout.noteHeight + layout.gap);
-
-    if (options.showFrameIndex) {
-      const label = `${options.frameIndexPrefix || 'S'}${index + 1}`;
-      const badgePaddingX = Math.max(6, Math.round(layout.fontSize * 0.35));
-      const badgeHeight = Math.max(18, Math.round(layout.fontSize * 1.15));
-      const textWidth = context.measureText(label).width;
-      const badgeWidth = Math.round(textWidth + badgePaddingX * 2);
-
-      context.fillStyle = 'rgba(0,0,0,0.65)';
-      context.fillRect(x + 6, y + 6, badgeWidth, badgeHeight);
-      context.fillStyle = options.textColor;
-      context.fillText(label, x + 6 + badgePaddingX, y + 6 + badgeHeight / 2);
-    }
-
-    if (options.showFrameNote) {
-      const note = trimTextToWidth(
-        context,
-        frame.note || '',
-        Math.max(20, layout.cellWidth - 14)
-      );
-
-      if (!note) {
-        continue;
-      }
-
-      if (options.notePlacement === 'overlay') {
-        const overlayHeight = Math.max(18, Math.round(layout.fontSize * 1.35));
-        const overlayY = y + layout.cellHeight - overlayHeight;
-        context.fillStyle = 'rgba(0, 0, 0, 0.6)';
-        context.fillRect(x, overlayY, layout.cellWidth, overlayHeight);
-        context.fillStyle = options.textColor;
-        context.fillText(note, x + 7, overlayY + overlayHeight / 2);
-      } else if (layout.noteHeight > 0) {
-        const noteY = y + layout.cellHeight + layout.noteHeight / 2;
-        context.fillStyle = options.textColor;
-        context.fillText(note, x + 4, noteY);
-      }
-    }
-  }
-
-  return canvasToDataUrl(canvas);
-}
-
-interface FrameCardProps {
-  nodeId: string;
-  frame: StoryboardFrameItem;
-  index: number;
-  frameAspectRatioCss: string;
-  imageFit: StoryboardExportOptions['imageFit'];
-  viewerImageList: string[];
-  draggedFrameId: string | null;
-  dropTargetFrameId: string | null;
-  onSortStart: (frameId: string) => void;
-  onSortHover: (frameId: string) => void;
-  onTogglePicker: (frameId: string, x: number, y: number) => void;
-  onEditFrame: (frame: StoryboardFrameItem) => void;
-}
-
-interface IncomingImageItem {
-  imageUrl: string;
-  previewImageUrl: string | null;
-  referenceImageUrl: string | null;
-  displayUrl: string;
-  label: string;
-}
-
-interface PanelAnchor {
-  left: number;
-  top: number;
-}
-
-const FrameCard = memo(
-  ({
-    nodeId,
-    frame,
-    index,
-    frameAspectRatioCss,
-    imageFit,
-    viewerImageList,
-    draggedFrameId,
-    dropTargetFrameId,
-    onSortStart,
-    onSortHover,
-    onTogglePicker,
-    onEditFrame,
-  }: FrameCardProps) => {
-    const { t } = useTranslation();
-    const updateStoryboardFrame = useCanvasStore((state) => state.updateStoryboardFrame);
-
-    const imageSource = useMemo(() => {
-      const picked = frame.previewImageUrl || frame.imageUrl;
-      return picked ? resolveImageDisplayUrl(picked) : null;
-    }, [frame.imageUrl, frame.previewImageUrl]);
-    const viewerSource = useMemo(() => {
-      const picked = frame.imageUrl || frame.previewImageUrl;
-      return picked ? resolveImageDisplayUrl(picked) : null;
-    }, [frame.imageUrl, frame.previewImageUrl]);
-
-    const dragging = draggedFrameId === frame.id;
-    const asDropTarget = dropTargetFrameId === frame.id && !dragging;
-
-    return (
-      <div
-        onPointerEnter={(event) => {
-          event.stopPropagation();
-          onSortHover(frame.id);
-        }}
-        onPointerMove={(event) => {
-          event.stopPropagation();
-          onSortHover(frame.id);
-        }}
-        onMouseDown={(event) => event.stopPropagation()}
-        className={`nodrag relative bg-bg-dark/85 transition-colors ${dragging
-          ? 'z-10 opacity-55 ring-1 ring-accent/65'
-          : asDropTarget
-            ? 'z-10 ring-1 ring-emerald-400/70'
-            : ''
-          }`}
-      >
-        <div
-          className={`group/frame relative overflow-hidden bg-surface-dark ${dragging ? 'cursor-grabbing' : 'cursor-grab'}`}
-          style={{ aspectRatio: frameAspectRatioCss }}
-          onPointerDown={(event) => {
-            if (event.button !== 0) {
-              return;
-            }
-            event.preventDefault();
-            event.stopPropagation();
-            onSortStart(frame.id);
-          }}
-        >
-          {frame.imageUrl || frame.previewImageUrl ? (
-            <CanvasNodeImage
-              src={imageSource ?? ''}
-              alt={`Frame ${index + 1}`}
-              viewerSourceUrl={viewerSource}
-              viewerImageList={viewerImageList}
-              className={`h-full w-full ${imageFit === 'contain' ? 'object-contain' : 'object-cover'}`}
-              draggable={false}
-            />
-          ) : (
-            <div className="flex h-full w-full items-center justify-center text-[11px] text-text-muted">
-              空分镜
-            </div>
-          )}
-
-          <UiTooltip content={t('common.edit')}>
-            <button
-              type="button"
-              aria-label={t('common.edit')}
-              className="absolute right-1 top-1 rounded bg-black/60 p-1 text-white opacity-0 transition-all duration-150 hover:bg-black/75 group-hover/frame:opacity-100"
-              onPointerDown={(event) => event.stopPropagation()}
-              onClick={(event) => {
-                event.stopPropagation();
-                onEditFrame(frame);
-              }}
-            >
-              <SquareArrowOutUpRight className="h-3 w-3" />
-            </button>
-          </UiTooltip>
-
-          <UiTooltip content={t('common.replace')}>
-            <button
-              type="button"
-              aria-label={t('common.replace')}
-              className="absolute bottom-1 right-1 rounded bg-black/60 p-1 text-white opacity-0 transition-all duration-150 hover:bg-black/75 group-hover/frame:opacity-100"
-              onPointerDown={(event) => event.stopPropagation()}
-              onClick={(event) => {
-                event.stopPropagation();
-                onTogglePicker(frame.id, event.clientX, event.clientY);
-              }}
-            >
-              <ImagePlus className="h-3 w-3" />
-            </button>
-          </UiTooltip>
-        </div>
-
-        <textarea
-          value={frame.note}
-          onChange={(event) => {
-            const nextValue = event.target.value;
-            updateStoryboardFrame(nodeId, frame.id, {
-              note: nextValue,
-            });
-          }}
-          onMouseDown={(event) => event.stopPropagation()}
-          onWheelCapture={(event) => event.stopPropagation()}
-          placeholder={t('node.storyboardGen.framePlaceholder', { index: String(index + 1).padStart(2, '0') })}
-          className="ui-scrollbar nodrag nowheel h-10 w-full resize-none overflow-y-auto border-0 border-t border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] px-2 py-1 text-[10px] text-text-dark outline-none focus:border-accent"
-        />
-      </div>
-    );
-  }
-);
-
-FrameCard.displayName = 'FrameCard';
-
 export const StoryboardNode = memo(({ id, data, selected, width, height }: StoryboardNodeProps) => {
   const updateNodeInternals = useUpdateNodeInternals();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -409,8 +82,10 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
   const exportSettingsTriggerRef = useRef<HTMLDivElement>(null);
   const exportSettingsPanelRef = useRef<HTMLDivElement>(null);
   const setSelectedNode = useCanvasStore((state) => state.setSelectedNode);
-  const workflowNodes = useCanvasStore(selectWorkflowNodes);
-  const edges = useCanvasStore((state) => state.edges);
+  const inputGraphSelector = useMemo(() => createNodeInputGraphSelector(id), [id]);
+  const inputGraph = useCanvasStore(inputGraphSelector);
+  const workflowNodes = inputGraph.workflowNodes;
+  const edges = inputGraph.edges;
   const reorderStoryboardFrame = useCanvasStore((state) => state.reorderStoryboardFrame);
   const addDerivedExportNode = useCanvasStore((state) => state.addDerivedExportNode);
   const addEdge = useCanvasStore((state) => state.addEdge);
@@ -433,7 +108,9 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
   const [packRevealFilePath, setPackRevealFilePath] = useState<string>('');
 
   const orderedFrames = useMemo(
-    () => [...data.frames].sort((a, b) => a.order - b.order),
+    () => measureCanvasPhase('storyboard-frame-sort', () =>
+      [...data.frames].sort((a, b) => a.order - b.order)
+    ),
     [data.frames]
   );
 
@@ -644,13 +321,14 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
     document.body.style.cursor = 'grabbing';
 
     window.addEventListener('pointerup', handlePointerUp);
-    window.addEventListener('pointercancel', handlePointerUp);
+    const cancelSort = () => { setDraggedFrameId(null); setDropTargetFrameId(null); };
+    window.addEventListener('pointercancel', cancelSort);
 
     return () => {
       document.body.style.userSelect = previousUserSelect;
       document.body.style.cursor = previousCursor;
       window.removeEventListener('pointerup', handlePointerUp);
-      window.removeEventListener('pointercancel', handlePointerUp);
+      window.removeEventListener('pointercancel', cancelSort);
     };
   }, [draggedFrameId, finalizeSort]);
 
@@ -1013,38 +691,21 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
       style={{ width: `${resolvedNodeWidth}px`, height: `${resolvedNodeHeight}px` }}
       onClick={() => setSelectedNode(id)}
     >
-      <div
-        className="ui-scrollbar nowheel min-h-0 flex-1 overflow-auto"
-        onWheelCapture={(event) => event.stopPropagation()}
-      >
-        <div
-          className="grid overflow-hidden rounded-lg border border-[var(--ui-border-soft)] bg-[var(--ui-border-soft)]"
-          style={{
-            gap: `${STORYBOARD_GRID_GAP_PX}px`,
-            gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))`,
-          }}
-        >
-          {orderedFrames.map((frame, index) => (
-            <FrameCard
-              key={frame.id}
-              nodeId={id}
-              frame={frame}
-              index={index}
-              frameAspectRatioCss={frameAspectRatioCss}
-              imageFit={exportOptions.imageFit}
-              viewerImageList={frameViewerImageList}
-              draggedFrameId={draggedFrameId}
-              dropTargetFrameId={dropTargetFrameId}
-              onSortStart={handleSortStart}
-              onSortHover={handleSortHover}
-              onTogglePicker={handleTogglePicker}
-              onEditFrame={(targetFrame) => {
-                void handleEditFrame(targetFrame);
-              }}
-            />
-          ))}
-        </div>
-      </div>
+      <VirtualStoryboardGrid
+        count={orderedFrames.length} columns={gridCols} aspectRatio={frameAspectRatio}
+        gap={STORYBOARD_GRID_GAP_PX}
+        draggedIndex={orderedFrames.findIndex(frame => frame.id === draggedFrameId)}
+        renderFrame={index => {
+          const frame = orderedFrames[index];
+          return <StoryboardFrameCard key={frame.id} nodeId={id} frame={frame} index={index}
+            frameAspectRatioCss={frameAspectRatioCss} imageFit={exportOptions.imageFit}
+            viewerImageList={frameViewerImageList}
+            dragging={draggedFrameId === frame.id}
+            asDropTarget={dropTargetFrameId === frame.id && draggedFrameId !== frame.id}
+            onSortStart={handleSortStart} onSortHover={handleSortHover}
+            onTogglePicker={handleTogglePicker} onEditFrame={handleEditFrame} />;
+        }}
+      />
 
       {pickerState && typeof document !== 'undefined'
         ? createPortal(

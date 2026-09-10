@@ -1,3 +1,4 @@
+import { CanvasHandle as Handle } from '../ui/CanvasHandle';
 import {
   memo,
   useCallback,
@@ -8,7 +9,6 @@ import {
   type DragEvent,
 } from 'react';
 import {
-  Handle,
   Position,
   useUpdateNodeInternals,
   type NodeProps,

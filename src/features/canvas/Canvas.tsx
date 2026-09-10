@@ -1,3 +1,4 @@
+import { CanvasConnectionLine } from './ui/CanvasConnectionLine';
 import {
   useState,
   useCallback,
@@ -2757,6 +2758,7 @@ export function Canvas() {
         edgeTypes={edgeTypes}
         defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
         connectionLineStyle={CONNECTION_LINE_STYLE}
+        connectionLineComponent={CanvasConnectionLine}
         defaultViewport={DEFAULT_VIEWPORT}
         minZoom={0.1}
         maxZoom={5}

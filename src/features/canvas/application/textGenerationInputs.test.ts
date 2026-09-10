@@ -1,7 +1,9 @@
+import { createNodeInputGraphSelector } from './canvasNodeSelectors';
 import { describe, expect, it } from 'vitest';
 
 import { canvasNodeFactory } from './canvasServices';
 import {
+  createTextGenerationInputsResolver,
   getTextGenerationEffectiveText,
   resolveEffectivePromptForNode,
   resolveTextGenerationInputs,
@@ -203,5 +205,29 @@ describe('text generation inputs', () => {
       [upstream, imageTarget],
       edges
     )).toBe('generated upstream\n\nlocal image prompt');
+  });
+});
+
+describe('scoped cached input resolution', () => {
+  it('matches the full graph for nested sources, generated results, ordering, and detach', () => {
+    const nodes = [
+      createNode(CANVAS_NODE_TYPES.textGeneration, 'first', { inputText: 'First' }),
+      createNode(CANVAS_NODE_TYPES.textGeneration, 'second', { inputText: 'Second' }),
+      createNode(CANVAS_NODE_TYPES.textGeneration, 'target', { inputText: 'Local' }),
+      createNode(CANVAS_NODE_TYPES.textGeneration, 'unrelated', { inputText: 'Ignore me' }),
+    ];
+    const edges = [inputEdge('a', 'first', 'second', 'text', 0), inputEdge('b', 'second', 'target', 'text', 0)];
+    const select = createNodeInputGraphSelector('target');
+    const resolve = createTextGenerationInputsResolver('target');
+    const initial = select({ nodes, edges });
+    const result = resolve(initial.workflowNodes, initial.edges);
+    expect(result.effectivePrompt).toBe('First\n\nSecond\n\nLocal');
+    expect(result).toEqual(resolveTextGenerationInputs('target', nodes, edges));
+    expect(resolve(initial.workflowNodes, initial.edges)).toBe(result);
+    const updated = nodes.map(n => n.id === 'second' ? { ...n, data: { ...n.data, generatedText: 'Result' } } : n);
+    const graph = select({ nodes: updated, edges });
+    expect(resolve(graph.workflowNodes, graph.edges).effectivePrompt).toBe('Result\n\nLocal');
+    const detached = select({ nodes: updated, edges: [] });
+    expect(resolve(detached.workflowNodes, detached.edges).effectivePrompt).toBe('Local');
   });
 });

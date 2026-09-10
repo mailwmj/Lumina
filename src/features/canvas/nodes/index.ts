@@ -1,4 +1,5 @@
 import type { NodeTypes } from '@xyflow/react';
+import { profileCanvasNodes } from '../ui/profileCanvasNodes';
 
 import { GroupNode } from './GroupNode';
 import { ImageEditNode } from './ImageEditNode';
@@ -14,7 +15,7 @@ import { UploadNode } from './UploadNode';
 import { VideoGenNode } from './VideoGenNode';
 import { VideoResultNode } from './VideoResultNode';
 
-export const nodeTypes: NodeTypes = {
+export const nodeTypes: NodeTypes = profileCanvasNodes({
   exportImageNode: ImageNode,
   exportVideoNode: VideoResultNode,
   groupNode: GroupNode,
@@ -32,6 +33,6 @@ export const nodeTypes: NodeTypes = {
   videoFrameNode: VideoGenNode,
   videoSingleNode: VideoGenNode,
   seedanceAutoVideoNode: VideoGenNode,
-};
+});
 
 export { AudioUploadNode, GroupNode, ImageEditNode, ImageNode, SD2VideoGenNode, StoryboardGenNode, StoryboardNode, TextAnnotationNode, TextGenerationNode, UploadNode, VideoGenNode, VideoResultNode, VideoUploadNode };
