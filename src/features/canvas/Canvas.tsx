@@ -818,6 +818,14 @@ export function Canvas() {
                   return null;
                 });
 
+              const latestImageNode = useCanvasStore.getState().nodes.find(
+                (node) => node.id === pendingNode.id
+              );
+              const latestImageData = latestImageNode?.data as Record<string, unknown> | undefined;
+              if (latestImageData?.generationJobId !== jobId || latestImageData.isGenerating !== true) {
+                break;
+              }
+
               updateNodeData(pendingNode.id, {
                 imageUrl: imageWithMetadata,
                 previewImageUrl: preview?.previewImageUrl ?? imageWithMetadata,
@@ -1097,6 +1105,15 @@ export function Canvas() {
                 updateData.seed = status.seed;
                 logger.info('[VideoJob] Received seed from API:', status.seed);
               }
+
+              const latestVideoNode = useCanvasStore.getState().nodes.find(
+                (node) => node.id === pendingNode.id
+              );
+              const latestVideoData = latestVideoNode?.data as Record<string, unknown> | undefined;
+              if (latestVideoData?.generationJobId !== jobId || latestVideoData.isGenerating !== true) {
+                break;
+              }
+
               updateNodeData(pendingNode.id, updateData);
               break;
             }
