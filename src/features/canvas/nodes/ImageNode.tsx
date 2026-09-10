@@ -110,7 +110,7 @@ export const ImageNode = memo(({ id, data, selected, type, width, height }: Imag
 
     const timer = window.setInterval(() => {
       setNow(Date.now());
-    }, 120);
+    }, 300);
 
     return () => {
       window.clearInterval(timer);
@@ -183,6 +183,7 @@ export const ImageNode = memo(({ id, data, selected, type, width, height }: Imag
       `}
       style={{ width: resolvedWidth, height: resolvedHeight }}
       onClick={() => setSelectedNode(id)}
+      aria-busy={isGenerating}
     >
       <div
         className={`relative h-full w-full overflow-hidden rounded-[var(--node-radius)] ${hasGenerationError ? 'bg-[rgba(127,29,29,0.2)]' : 'bg-bg-dark'}`}

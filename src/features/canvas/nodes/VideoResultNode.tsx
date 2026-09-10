@@ -254,7 +254,7 @@ export const VideoResultNode = memo(({ id, data, selected, width, height }: Vide
 
     const timer = window.setInterval(() => {
       setNow(Date.now());
-    }, 120);
+    }, 300);
 
     return () => {
       window.clearInterval(timer);
@@ -311,6 +311,7 @@ export const VideoResultNode = memo(({ id, data, selected, width, height }: Vide
       `}
       style={{ width: `${resolvedWidth}px`, height: `${resolvedHeight}px` }}
       onClick={() => setSelectedNode(id)}
+      aria-busy={isGenerating}
     >
       {/* Details toggle button - positioned at top right of video area */}
       {hasGenerationInfo && data.videoUrl && !isGenerating && (
