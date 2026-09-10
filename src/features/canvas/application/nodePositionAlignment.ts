@@ -1,6 +1,6 @@
 import type { NodeBase, NodeChange, NodePositionChange, XYPosition } from '@xyflow/system';
 
-export const NODE_ALIGNMENT_SNAP_DISTANCE = 12;
+export const NODE_ALIGNMENT_SNAP_DISTANCE = 6;
 
 interface AlignableNode extends NodeBase {
   position: XYPosition;
@@ -8,6 +8,13 @@ interface AlignableNode extends NodeBase {
 }
 
 type NodeDimension = 'width' | 'height';
+
+interface NodeAlignmentOptions {
+  zoom?: number;
+  snapToGrid?: boolean;
+}
+
+const NODE_ALIGNMENT_NEIGHBOR_DISTANCE = 160;
 
 export function resolveCenterPreservingPositionY(
   currentY: number,
@@ -66,30 +73,42 @@ function closestAlignedCoordinate(
   return nearest;
 }
 
-/**
- * Makes a single dragged node magnetically align corresponding outer edges or
- * center lines with a sibling node. Grid snapping remains independent; this
- * also works when the grid is hidden and aligns directly to visible geometry.
- */
+/** Align a single drop to nearby siblings; never resist the pointer during a drag. */
 export function snapNodePositionChanges<NodeType extends AlignableNode>(
   changes: NodeChange<NodeType>[],
   nodes: NodeType[],
-  distance = NODE_ALIGNMENT_SNAP_DISTANCE
+  { zoom = 1, snapToGrid = false }: NodeAlignmentOptions = {}
 ): NodeChange<NodeType>[] {
+  if (snapToGrid) return changes;
   const positionChanges = changes.filter(isPositionChange);
   if (positionChanges.length !== 1) {
     return changes;
   }
 
   const [positionChange] = positionChanges;
+  // Programmatic moves and active drags must retain their exact coordinates.
+  if (positionChange.dragging !== false) return changes;
+  const scale = Number.isFinite(zoom) && zoom > 0 ? zoom : 1;
+  const distance = NODE_ALIGNMENT_SNAP_DISTANCE / scale;
+  const neighborDistance = NODE_ALIGNMENT_NEIGHBOR_DISTANCE / scale;
   const movingNode = nodes.find((node) => node.id === positionChange.id);
   if (!movingNode) {
     return changes;
   }
 
-  const siblingNodes = nodes.filter(
-    (node) => node.id !== movingNode.id && node.parentId === movingNode.parentId
-  );
+  const movingWidth = resolveNodeDimension(movingNode, 'width') ?? 0;
+  const movingHeight = resolveNodeDimension(movingNode, 'height') ?? 0;
+  const { x, y } = positionChange.position;
+  const siblingNodes = nodes.filter((node) => {
+    if (node.id === movingNode.id || node.parentId !== movingNode.parentId || node.hidden) {
+      return false;
+    }
+    const width = resolveNodeDimension(node, 'width') ?? 0;
+    const height = resolveNodeDimension(node, 'height') ?? 0;
+    const gapX = Math.max(0, node.position.x - x - movingWidth, x - node.position.x - width);
+    const gapY = Math.max(0, node.position.y - y - movingHeight, y - node.position.y - height);
+    return Math.hypot(gapX, gapY) <= neighborDistance;
+  });
   const alignedX = closestAlignedCoordinate(
     positionChange.position.x,
     resolveNodeDimension(movingNode, 'width'),

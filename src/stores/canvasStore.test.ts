@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { snapNodePositionChanges } from '@/features/canvas/application/nodePositionAlignment';
 import { canvasNodeFactory } from '@/features/canvas/application/canvasServices';
 import { createImageReferencePromptToken } from '@/features/canvas/application/imageReferencePrompt';
 import {
@@ -639,5 +640,34 @@ describe('new image generation node defaults', () => {
       extraParams: { thinking_level: 'low' },
       prompt: 'Keep this prompt local.',
     });
+  });
+});
+
+
+describe('canvas drag history', () => {
+  afterEach(() => useCanvasStore.getState().setCanvasData([], []));
+
+  it('undoes a continuous drag and its final alignment as one operation', () => {
+    const moving = createNode(CANVAS_NODE_TYPES.textAnnotation, 'moving');
+    const target = { ...createNode(CANVAS_NODE_TYPES.textAnnotation, 'target'), position: { x: 100, y: 100 } };
+    const store = useCanvasStore.getState();
+    store.setCanvasData([moving, target], []);
+    for (let x = 85; x <= 104; x++) {
+      store.onNodesChange(snapNodePositionChanges([
+        { id: moving.id, type: 'position', position: { x, y: 100 }, dragging: true },
+      ], useCanvasStore.getState().nodes));
+      expect(useCanvasStore.getState().nodes[0].position.x).toBe(x);
+      expect(useCanvasStore.getState().history.past).toHaveLength(0);
+    }
+    store.onNodesChange(snapNodePositionChanges([
+      { id: moving.id, type: 'position', position: { x: 104, y: 100 }, dragging: false },
+    ], useCanvasStore.getState().nodes));
+    expect(useCanvasStore.getState().nodes[0].position).toEqual({ x: 100, y: 100 });
+    expect(useCanvasStore.getState().history.past).toHaveLength(1);
+    expect(useCanvasStore.getState().dragHistorySnapshot).toBeNull();
+    expect(store.undo()).toBe(true);
+    expect(useCanvasStore.getState().nodes[0].position).toEqual(moving.position);
+    expect(store.redo()).toBe(true);
+    expect(useCanvasStore.getState().nodes[0].position).toEqual({ x: 100, y: 100 });
   });
 });

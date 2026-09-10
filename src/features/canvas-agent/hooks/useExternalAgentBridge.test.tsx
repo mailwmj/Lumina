@@ -8,6 +8,8 @@ import { canvasNodeFactory } from '@/features/canvas/application/canvasServices'
 import { CANVAS_NODE_TYPES } from '@/features/canvas/domain/canvasNodes';
 import { buildCanvasAgentSnapshot } from '@/features/canvas-agent/application/canvasAgentSnapshot';
 import type { CanvasAgentEvent } from '@/features/canvas-agent/infrastructure/canvasAgentBridge';
+import { selectSelectedNodeIds } from '@/features/canvas/application/canvasNodeSelectors';
+import { buildSelectedImagePreviews } from '@/features/canvas-agent/application/selectedImagePreviews';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useExternalAgentBridge } from './useExternalAgentBridge';
@@ -22,7 +24,19 @@ const bridgeMocks = vi.hoisted(() => ({
   importImages: vi.fn(),
   runNodes: vi.fn(),
   getNodeImages: vi.fn(),
+  enqueue: vi.fn(),
 }));
+
+
+vi.mock('@/features/canvas-agent/application/canvasAgentSnapshot', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/features/canvas-agent/application/canvasAgentSnapshot')>();
+  return { ...actual, buildCanvasAgentSnapshot: vi.fn(actual.buildCanvasAgentSnapshot) };
+});
+
+vi.mock('@/features/canvas-agent/application/selectedImagePreviews', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/features/canvas-agent/application/selectedImagePreviews')>();
+  return { ...actual, buildSelectedImagePreviews: vi.fn(async () => []) };
+});
 
 vi.mock('@/commands/canvasAgent', () => ({
   isCanvasAgentManagedByLumina: () => false,
@@ -72,18 +86,19 @@ vi.mock('@/features/canvas-agent/infrastructure/canvasAgentBridge', async (impor
 
 vi.mock('@/features/canvas-agent/infrastructure/canvasAgentSnapshotPublisher', () => ({
   CanvasAgentSnapshotPublisher: class CanvasAgentSnapshotPublisher {
-    enqueue() {}
+    enqueue = bridgeMocks.enqueue;
   },
 }));
 
-function BridgeHarness() {
+function BridgeHarness({ projectId = 'project-1' }: { projectId?: string }) {
   const canvas = useCanvasStore();
+  const selectedNodeIds = useCanvasStore(selectSelectedNodeIds);
   useExternalAgentBridge({
-    projectId: 'project-1',
+    projectId,
     projectName: 'Project',
     nodes: canvas.nodes,
     edges: canvas.edges,
-    selectedNodeIds: [],
+    selectedNodeIds,
     viewport: canvas.currentViewport,
   });
   return null;
@@ -126,6 +141,7 @@ describe('useExternalAgentBridge direct apply', () => {
       url: 'http://127.0.0.1:17372',
       token: '',
     });
+    vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
@@ -318,4 +334,83 @@ describe('useExternalAgentBridge direct apply', () => {
       })
     ));
   });
+
+  it('does no snapshot or preview work while the connection is disabled', async () => {
+    vi.useFakeTimers();
+    useSettingsStore.getState().setExternalAgentConnection({ ...useSettingsStore.getState().externalAgentConnection, enabled: false });
+    const image = canvasNodeFactory.createNode(CANVAS_NODE_TYPES.upload, { x: 0, y: 0 }, {
+      imageUrl: 'data:image/png;base64,test',
+    });
+    useCanvasStore.setState({ nodes: [{ ...image, selected: true }] });
+    await act(async () => root.render(<BridgeHarness />));
+    for (let x = 1; x <= 20; x++) {
+      act(() => useCanvasStore.getState().onNodesChange([
+        { id: image.id, type: 'position', position: { x, y: 0 }, dragging: true },
+      ]));
+    }
+    await act(async () => vi.advanceTimersByTimeAsync(6000));
+    expect(buildCanvasAgentSnapshot).not.toHaveBeenCalled();
+    expect(buildSelectedImagePreviews).not.toHaveBeenCalled();
+    expect(bridgeMocks.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('coalesces drag frames and publishes the final position after settling', async () => {
+    vi.useFakeTimers();
+    await act(async () => root.render(<BridgeHarness />));
+    await act(async () => vi.advanceTimersByTimeAsync(100));
+    vi.mocked(buildCanvasAgentSnapshot).mockClear();
+    bridgeMocks.enqueue.mockClear();
+    const id = useCanvasStore.getState().nodes[0].id;
+    for (let x = 1; x <= 20; x++) {
+      act(() => useCanvasStore.getState().onNodesChange([
+        { id, type: 'position', position: { x, y: 0 }, dragging: true },
+      ]));
+      await act(async () => vi.advanceTimersByTimeAsync(16));
+    }
+    expect(buildCanvasAgentSnapshot).not.toHaveBeenCalled();
+    expect(bridgeMocks.enqueue).not.toHaveBeenCalled();
+    act(() => useCanvasStore.getState().onNodesChange([
+      { id, type: 'position', position: { x: 20, y: 0 }, dragging: false },
+    ]));
+    await act(async () => vi.advanceTimersByTimeAsync(100));
+    expect(buildCanvasAgentSnapshot).toHaveBeenCalledTimes(1);
+    expect(bridgeMocks.enqueue).toHaveBeenLastCalledWith(expect.objectContaining({
+      snapshot: expect.objectContaining({ nodes: [expect.objectContaining({ position: { x: 20, y: 0 } })] }),
+    }));
+    await act(async () => vi.advanceTimersByTimeAsync(5000));
+    expect(buildCanvasAgentSnapshot).toHaveBeenCalledTimes(1);
+    expect(bridgeMocks.enqueue).toHaveBeenCalledTimes(2);
+  });
+
+  it('cancels pending publication on disable and sends current data on re-enable', async () => {
+    vi.useFakeTimers();
+    await act(async () => root.render(<BridgeHarness />));
+    vi.mocked(buildCanvasAgentSnapshot).mockClear();
+    bridgeMocks.enqueue.mockClear();
+    act(() => useSettingsStore.getState().setExternalAgentConnection({ ...useSettingsStore.getState().externalAgentConnection, enabled: false }));
+    const id = useCanvasStore.getState().nodes[0].id;
+    act(() => useCanvasStore.getState().onNodesChange([
+      { id, type: 'position', position: { x: 200, y: 0 }, dragging: false },
+    ]));
+    await act(async () => vi.advanceTimersByTimeAsync(6000));
+    expect(buildCanvasAgentSnapshot).not.toHaveBeenCalled();
+    expect(bridgeMocks.enqueue).not.toHaveBeenCalled();
+    await act(async () => useSettingsStore.getState().setExternalAgentConnection({ ...useSettingsStore.getState().externalAgentConnection, enabled: true }));
+    expect(bridgeMocks.enqueue).toHaveBeenLastCalledWith(expect.objectContaining({
+      snapshot: expect.objectContaining({ nodes: [expect.objectContaining({ position: { x: 200, y: 0 } })] }),
+    }));
+  });
+
+  it('publishes only the latest project when it changes during the debounce', async () => {
+    vi.useFakeTimers();
+    await act(async () => root.render(<BridgeHarness />));
+    bridgeMocks.enqueue.mockClear();
+    await act(async () => root.render(<BridgeHarness projectId="project-2" />));
+    await act(async () => vi.advanceTimersByTimeAsync(100));
+    expect(bridgeMocks.enqueue).toHaveBeenCalledTimes(1);
+    expect(bridgeMocks.enqueue).toHaveBeenCalledWith(expect.objectContaining({
+      snapshot: expect.objectContaining({ projectId: 'project-2' }),
+    }));
+  });
+
 });

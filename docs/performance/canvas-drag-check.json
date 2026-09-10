@@ -1,0 +1,46 @@
+{
+  "browser": "153.0.8010.12",
+  "mode": "Vite development, headless Chromium, synthetic images",
+  "scenes": [
+    {
+      "count": 50,
+      "pointerSamples": 60,
+      "snapshotBuilds": 0,
+      "unrelatedNodeRenders": 0,
+      "dragFrameMs": {
+        "count": 60,
+        "median": 16.699999999999818,
+        "p95": 16.800000000000182
+      }
+    },
+    {
+      "count": 100,
+      "pointerSamples": 60,
+      "snapshotBuilds": 0,
+      "unrelatedNodeRenders": 0,
+      "dragFrameMs": {
+        "count": 59,
+        "median": 16.699999999999818,
+        "p95": 16.700000000000728
+      }
+    },
+    {
+      "count": 300,
+      "pointerSamples": 60,
+      "snapshotBuilds": 0,
+      "unrelatedNodeRenders": 0,
+      "dragFrameMs": {
+        "count": 59,
+        "median": 16.699999999999818,
+        "p95": 16.700000000000728
+      }
+    }
+  ],
+  "checks": {
+    "dropAlignmentAndUndo": true,
+    "distantNodesIgnored": true,
+    "gridPreserved": true,
+    "multiSelectionPreserved": true,
+    "browserErrors": []
+  }
+}

@@ -1165,8 +1165,11 @@ export function Canvas() {
 
   const handleNodesChange = useCallback(
     (changes: NodeChange<CanvasNode>[]) => {
-      const currentNodes = useCanvasStore.getState().nodes;
-      applyNodesChange(snapNodePositionChanges(changes, currentNodes));
+      const canvas = useCanvasStore.getState();
+      applyNodesChange(snapNodePositionChanges(changes, canvas.nodes, {
+        zoom: canvas.currentViewport.zoom,
+        snapToGrid: useSettingsStore.getState().snapToGridEnabled,
+      }));
 
       const hasDragMove = changes.some(
         (change) =>
