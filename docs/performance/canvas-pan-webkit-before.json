@@ -1,0 +1,116 @@
+{
+  "engine": "webkit",
+  "label": "before-multi",
+  "version": "26.6",
+  "scenes": [
+    {
+      "kind": "images",
+      "count": 80,
+      "zoom": 1,
+      "multi": 3,
+      "counters": {
+        "canvasRenders": 90,
+        "viewportWrites": 90,
+        "nodeWrites": 0,
+        "historyWrites": 0,
+        "qualityWrites": 0,
+        "rectReads": 962,
+        "imageSources": 3,
+        "imageMounts": 3
+      },
+      "viewport": {
+        "x": -455,
+        "y": 188,
+        "zoom": 1
+      },
+      "images": 12,
+      "nodes": 12,
+      "selected": 3,
+      "multiActive": true,
+      "frames": {
+        "count": 90,
+        "median": 17,
+        "p95": 17,
+        "max": 18
+      },
+      "initial": {
+        "x": 0,
+        "y": 0,
+        "zoom": 1
+      }
+    },
+    {
+      "kind": "images",
+      "count": 80,
+      "zoom": 0.4,
+      "multi": 20,
+      "counters": {
+        "canvasRenders": 90,
+        "viewportWrites": 90,
+        "nodeWrites": 0,
+        "historyWrites": 0,
+        "qualityWrites": 0,
+        "rectReads": 5010,
+        "imageSources": 7,
+        "imageMounts": 7
+      },
+      "viewport": {
+        "x": -455,
+        "y": 188,
+        "zoom": 0.4
+      },
+      "images": 48,
+      "nodes": 48,
+      "selected": 20,
+      "multiActive": true,
+      "frames": {
+        "count": 101,
+        "median": 19,
+        "p95": 30,
+        "max": 51
+      },
+      "initial": {
+        "x": 0,
+        "y": 0,
+        "zoom": 0.4
+      }
+    },
+    {
+      "kind": "images",
+      "count": 80,
+      "zoom": 0.4,
+      "multi": 40,
+      "counters": {
+        "canvasRenders": 90,
+        "viewportWrites": 90,
+        "nodeWrites": 0,
+        "historyWrites": 0,
+        "qualityWrites": 0,
+        "rectReads": 9689,
+        "imageSources": 7,
+        "imageMounts": 7
+      },
+      "viewport": {
+        "x": -455,
+        "y": 188,
+        "zoom": 0.4
+      },
+      "images": 48,
+      "nodes": 48,
+      "selected": 40,
+      "multiActive": true,
+      "frames": {
+        "count": 95,
+        "median": 20,
+        "p95": 31,
+        "max": 39
+      },
+      "initial": {
+        "x": 0,
+        "y": 0,
+        "zoom": 0.4
+      }
+    }
+  ],
+  "errors": []
+}

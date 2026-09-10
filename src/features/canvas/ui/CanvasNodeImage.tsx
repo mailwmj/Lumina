@@ -1,4 +1,5 @@
 import { useViewportImage } from '../hooks/useViewportImage';
+import { getImageDimensions } from '../application/imageDimensions';
 import {
   memo,
   useCallback,
@@ -40,16 +41,6 @@ function normalizeViewerList(
   }
 
   return deduped.length > 0 ? deduped : [currentImageUrl];
-}
-
-/** Load image dimensions from a URL */
-function loadImageDimensions(url: string): Promise<{ width: number; height: number }> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
-    img.onerror = reject;
-    img.src = url;
-  });
 }
 
 export const CanvasNodeImage = memo(({
@@ -113,8 +104,7 @@ export const CanvasNodeImage = memo(({
       return;
     }
 
-    // If we have a viewerSourceUrl (original image), load it to get dimensions
-    // This takes priority over thumbnail dimensions
+    // Read original dimensions through the shared header probe, without decoding pixels.
     if (viewerSourceUrl && viewerSourceUrl.trim()) {
       // Debounce to avoid multiple rapid loads
       if (loadTimeoutRef.current) {
@@ -123,8 +113,8 @@ export const CanvasNodeImage = memo(({
       loadTimeoutRef.current = setTimeout(async () => {
         if (!isHoveringRef.current) return; // Mouse left before timeout fired
         try {
-          const dims = await loadImageDimensions(viewerSourceUrl.trim());
-          if (!isHoveringRef.current) return; // Mouse left during load
+          const dims = await getImageDimensions(viewerSourceUrl.trim());
+          if (!isHoveringRef.current || !dims) return; // Mouse left or metadata is unavailable
           setResolutionHover({
             width: dims.width,
             height: dims.height,
@@ -139,7 +129,7 @@ export const CanvasNodeImage = memo(({
 
   const handleImageLoad = useCallback((event: SyntheticEvent<HTMLImageElement>) => {
     onLoad?.(event);
-    if (!showResolutionPreview) return;
+    if (!showResolutionPreview || !isHoveringRef.current) return;
     const img = event.currentTarget;
     const anchorRect = img.getBoundingClientRect();
 

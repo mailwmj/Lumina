@@ -349,7 +349,7 @@ export const UploadNode = memo(({ id, data, selected, width, height }: UploadNod
       {selected && (transientPreviewUrl || data.imageUrl) && (
         <SelectedImageMetadata
           filename={metadataFileName}
-          imageSource={transientPreviewUrl ?? resolveImageDisplayUrl(data.imageUrl ?? '')}
+          imageSource={data.imageUrl ?? ''}
         />
       )}
 

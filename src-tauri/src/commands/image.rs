@@ -1504,7 +1504,7 @@ fn extension_from_path_like(value: &str) -> Option<String> {
     Some(ext)
 }
 
-fn decode_file_url_path(value: &str) -> String {
+pub(crate) fn decode_file_url_path(value: &str) -> String {
     let raw = value.trim_start_matches("file://");
     let decoded = urlencoding::decode(raw)
         .map(|result| result.into_owned())
@@ -1521,7 +1521,7 @@ fn decode_file_url_path(value: &str) -> String {
     }
 }
 
-fn decode_asset_url_path(value: &str) -> Result<PathBuf, String> {
+pub(crate) fn decode_asset_url_path(value: &str) -> Result<PathBuf, String> {
     let path_part = value
         .strip_prefix("asset://localhost/")
         .or_else(|| value.strip_prefix("asset:///"))

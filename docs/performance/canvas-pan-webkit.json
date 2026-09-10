@@ -1,0 +1,191 @@
+{
+  "engine": "webkit",
+  "label": "verified",
+  "version": "26.6",
+  "scenes": [
+    {
+      "kind": "mixed",
+      "count": 50,
+      "zoom": 1,
+      "counters": {
+        "canvasRenders": 0,
+        "viewportWrites": 90,
+        "nodeWrites": 0,
+        "historyWrites": 0,
+        "qualityWrites": 0,
+        "rectReads": 102,
+        "imageSources": 3,
+        "imageMounts": 3
+      },
+      "viewport": {
+        "x": -455,
+        "y": 188,
+        "zoom": 1
+      },
+      "images": 4,
+      "nodes": 8,
+      "selected": 0,
+      "multiActive": false,
+      "frames": {
+        "count": 90,
+        "median": 17,
+        "p95": 20,
+        "max": 23
+      },
+      "initial": {
+        "x": 0,
+        "y": 0,
+        "zoom": 1
+      }
+    },
+    {
+      "kind": "mixed",
+      "count": 300,
+      "zoom": 1,
+      "counters": {
+        "canvasRenders": 0,
+        "viewportWrites": 90,
+        "nodeWrites": 0,
+        "historyWrites": 0,
+        "qualityWrites": 0,
+        "rectReads": 102,
+        "imageSources": 3,
+        "imageMounts": 3
+      },
+      "viewport": {
+        "x": -455,
+        "y": 188,
+        "zoom": 1
+      },
+      "images": 4,
+      "nodes": 8,
+      "selected": 0,
+      "multiActive": false,
+      "frames": {
+        "count": 91,
+        "median": 17,
+        "p95": 20,
+        "max": 23
+      },
+      "initial": {
+        "x": 0,
+        "y": 0,
+        "zoom": 1
+      }
+    },
+    {
+      "kind": "images",
+      "count": 80,
+      "zoom": 0.4,
+      "multi": 20,
+      "counters": {
+        "canvasRenders": 0,
+        "viewportWrites": 90,
+        "nodeWrites": 0,
+        "historyWrites": 0,
+        "qualityWrites": 0,
+        "rectReads": 132,
+        "imageSources": 7,
+        "imageMounts": 7
+      },
+      "viewport": {
+        "x": -455,
+        "y": 188,
+        "zoom": 0.4
+      },
+      "images": 48,
+      "nodes": 48,
+      "selected": 20,
+      "multiActive": true,
+      "frames": {
+        "count": 92,
+        "median": 17,
+        "p95": 22,
+        "max": 29
+      },
+      "initial": {
+        "x": 0,
+        "y": 0,
+        "zoom": 0.4
+      }
+    },
+    {
+      "kind": "images",
+      "count": 80,
+      "zoom": 0.4,
+      "multi": 40,
+      "counters": {
+        "canvasRenders": 0,
+        "viewportWrites": 90,
+        "nodeWrites": 0,
+        "historyWrites": 0,
+        "qualityWrites": 0,
+        "rectReads": 132,
+        "imageSources": 7,
+        "imageMounts": 7
+      },
+      "viewport": {
+        "x": -455,
+        "y": 188,
+        "zoom": 0.4
+      },
+      "images": 48,
+      "nodes": 48,
+      "selected": 40,
+      "multiActive": true,
+      "frames": {
+        "count": 97,
+        "median": 17,
+        "p95": 30,
+        "max": 32
+      },
+      "initial": {
+        "x": 0,
+        "y": 0,
+        "zoom": 0.4
+      }
+    }
+  ],
+  "errors": [],
+  "largeImage": {
+    "originalBytes": 26160728,
+    "selected": 20,
+    "originalImageAssignments": 0
+  },
+  "multiConnector": {
+    "positions": [
+      {
+        "zoom": 0.4,
+        "button": {
+          "x": 204,
+          "y": 165,
+          "width": 32,
+          "height": 32
+        }
+      },
+      {
+        "zoom": 1,
+        "button": {
+          "x": 444,
+          "y": 384,
+          "width": 32,
+          "height": 32
+        }
+      }
+    ],
+    "cancellation": true,
+    "invalidTarget": true,
+    "edges": [
+      {
+        "source": "source-a",
+        "target": "target",
+        "targetHandle": "target"
+      },
+      {
+        "source": "source-b",
+        "target": "target",
+        "targetHandle": "target"
+      }
+    ]
+  }
+}

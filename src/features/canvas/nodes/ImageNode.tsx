@@ -265,7 +265,7 @@ export const ImageNode = memo(({ id, data, selected, type, width, height }: Imag
       {selected && originalImageUrl && (
         <SelectedImageMetadata
           filename={metadataFileName}
-          imageSource={originalImageUrl}
+          imageSource={data.imageUrl ?? ''}
         />
       )}
 

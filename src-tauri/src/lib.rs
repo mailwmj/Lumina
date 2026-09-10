@@ -11,6 +11,7 @@ use commands::ai as ai_commands;
 use commands::batch_image_crop;
 use commands::batch_image_composition;
 use commands::image;
+use commands::image_metadata;
 use commands::logging;
 use commands::project_state;
 use commands::system;
@@ -190,6 +191,7 @@ pub fn run() {
             image::read_storyboard_image_metadata,
             image::embed_storyboard_image_metadata,
             image::load_image,
+            image_metadata::read_image_dimensions,
             image::persist_image_source,
             image::persist_image_binary,
             image::save_image_source_to_downloads,

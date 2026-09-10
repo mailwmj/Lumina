@@ -34,3 +34,14 @@ it('only assigns image sources near the viewport and releases them on exit, incl
   act(() => root.unmount());
   expect(unobserve).toHaveBeenCalledWith(image);
 });
+
+it('does not show a resolution tooltip or measure layout merely because an image loaded', async () => {
+  container = document.createElement('div'); document.body.append(container);
+  root = createRoot(container);
+  await act(async () => root.render(<CanvasNodeImage src="preview.png" loading="eager" resolutionOverride={{ width: 6000, height: 4000 }} />));
+  const image = container.querySelector('img')!;
+  const measure = vi.spyOn(image, 'getBoundingClientRect');
+  await act(async () => image.dispatchEvent(new Event('load')));
+  expect(measure).not.toHaveBeenCalled();
+  expect(document.body.textContent).not.toContain('6000 × 4000');
+});

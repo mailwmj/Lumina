@@ -107,7 +107,7 @@ import { NodeContextMenu } from './ui/NodeContextMenu';
 import { resolveCanvasConnectionRadius } from './application/connectionSnap';
 import { useCanvasImagePreviewBackfill } from './hooks/useCanvasImagePreviewBackfill';
 import { logger } from '@/lib/logger';
-import { useExternalAgentBridge } from '@/features/canvas-agent/hooks/useExternalAgentBridge';
+import { CanvasExternalAgentBridge } from '@/features/canvas-agent/hooks/CanvasExternalAgentBridge';
 
 const DEFAULT_VIEWPORT: Viewport = { x: 0, y: 0, zoom: 1 };
 const DEFAULT_EDGE_OPTIONS = { type: 'disconnectableEdge' };
@@ -396,7 +396,7 @@ export function Canvas() {
   const closeToolDialog = useCanvasStore((state) => state.closeToolDialog);
   const setViewportState = useCanvasStore((state) => state.setViewportState);
   const setCanvasViewportSize = useCanvasStore((state) => state.setCanvasViewportSize);
-  const currentViewport = useCanvasStore((state) => state.currentViewport);
+  const currentZoom = useCanvasStore((state) => state.currentViewport.zoom);
   const imageViewer = useCanvasStore((state) => state.imageViewer);
   const closeImageViewer = useCanvasStore((state) => state.closeImageViewer);
   const navigateImageViewer = useCanvasStore((state) => state.navigateImageViewer);
@@ -441,14 +441,6 @@ export function Canvas() {
   const setRequestedCanvasImageOriginals = useCanvasImageQualityStore(
     (state) => state.setRequestedOriginalNodes
   );
-  useExternalAgentBridge({
-    projectId: currentProjectId ?? '',
-    projectName: currentProjectName,
-    nodes,
-    edges,
-    selectedNodeIds,
-    viewport: currentViewport,
-  });
 
   useCanvasImagePreviewBackfill({
     projectId: currentProjectId,
@@ -2747,7 +2739,7 @@ export function Canvas() {
         onConnectStart={handleConnectStart}
         onConnectEnd={handleConnectEnd}
         isValidConnection={isValidConnection}
-        connectionRadius={resolveCanvasConnectionRadius(currentViewport.zoom)}
+        connectionRadius={resolveCanvasConnectionRadius(currentZoom)}
         onNodeDragStart={handleNodeDragStart}
         onNodeDrag={handleNodeDrag}
         onNodeDragStop={handleNodeDragStop}
@@ -2788,13 +2780,18 @@ export function Canvas() {
         <SelectedNodeOverlay />
       </ReactFlow>
 
+      <CanvasExternalAgentBridge
+        projectId={currentProjectId ?? ''}
+        projectName={currentProjectName}
+        nodes={nodes}
+        edges={edges}
+        selectedNodeIds={selectedNodeIds}
+      />
+
       <MultiSelectionConnector
         enabled={hasMultiSelectionConnector}
-        nodes={nodes}
         selectedNodeIds={selectedNodeIds}
         sourceNodeIds={selectedConnectSourceNodeIds}
-        viewport={currentViewport}
-        wrapperRef={wrapperRef}
         onConnectEnd={handleMultiConnectEnd}
       />
 
