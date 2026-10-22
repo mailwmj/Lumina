@@ -584,6 +584,9 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
   const workflowNodes = useCanvasStore(selectWorkflowNodes);
   const edges = useCanvasStore((state) => state.edges);
   const updateNodeData = useCanvasStore((state) => state.updateNodeData);
+  const updateNodeDataWithoutHistory = useCanvasStore(
+    (state) => state.updateNodeDataWithoutHistory
+  );
   const addNode = useCanvasStore((state) => state.addNode);
   const addEdge = useCanvasStore((state) => state.addEdge);
   const findNodePosition = useCanvasStore((state) => state.findNodePosition);
@@ -876,16 +879,24 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
     if (!hasConfiguredModel) {
       return;
     }
+    // Normalizing to the configured model is not a user edit. Recording it as
+    // history made undo restore the stale value, which this effect rewrote and
+    // cleared redo, so the user could never undo past it.
+    const patch: Partial<typeof nodeData> = {};
     if (nodeData.model !== selectedModel.id) {
-      updateNodeData(id, { model: selectedModel.id });
+      patch.model = selectedModel.id;
     }
 
     if (nodeData.size !== selectedResolution.value) {
-      updateNodeData(id, { size: selectedResolution.value as ImageSize });
+      patch.size = selectedResolution.value as ImageSize;
     }
 
     if (nodeData.requestAspectRatio !== selectedAspectRatio.value) {
-      updateNodeData(id, { requestAspectRatio: selectedAspectRatio.value });
+      patch.requestAspectRatio = selectedAspectRatio.value;
+    }
+
+    if (Object.keys(patch).length > 0) {
+      updateNodeDataWithoutHistory(id, patch);
     }
   }, [
     id,
@@ -894,7 +905,7 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
     selectedModel.id,
     selectedResolution.value,
     selectedAspectRatio.value,
-    updateNodeData,
+    updateNodeDataWithoutHistory,
   ]);
 
   useEffect(() => {
@@ -1000,8 +1011,9 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
       }
     }
 
-    updateNodeData(id, { frames: newFrames });
-  }, [id, nodeData.frames, totalFrames, updateNodeData]);
+    // Derived from the grid edit, which already recorded the undo step.
+    updateNodeDataWithoutHistory(id, { frames: newFrames });
+  }, [id, nodeData.frames, totalFrames, updateNodeDataWithoutHistory]);
 
   // Build prompt from frames
   const buildPrompt = useCallback((): string => {

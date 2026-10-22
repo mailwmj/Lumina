@@ -309,6 +309,10 @@ export function Canvas() {
     timestamp: number;
   } | null>(null);
   const activeGenerationPollNodeIdsRef = useRef(new Set<string>());
+  // Poll loops outlive the effect that starts them. Stop them when the canvas
+  // unmounts; otherwise reopening the project starts a second loop for the
+  // same job and both save the result.
+  const isCanvasMountedRef = useRef(true);
   const duplicateNodesRef = useRef<((sourceNodeIds: string[]) => string | null) | null>(null);
   const altDragCopyRef = useRef<{
     sourceNodeIds: string[];
@@ -549,6 +553,13 @@ export function Canvas() {
   ]);
 
   useEffect(() => {
+    isCanvasMountedRef.current = true;
+    return () => {
+      isCanvasMountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
     const unsubscribeOpen = canvasEventBus.subscribe('tool-dialog/open', (payload) => {
       openToolDialog(payload);
     });
@@ -639,6 +650,9 @@ export function Canvas() {
         try {
           const projectId = getCurrentProject()?.id;
           while (true) {
+            if (!isCanvasMountedRef.current) {
+              break;
+            }
             const currentNode = useCanvasStore.getState().nodes.find((node) => node.id === pendingNode.id);
             if (!currentNode) {
               break;
@@ -691,6 +705,9 @@ export function Canvas() {
               });
               return null;
             });
+            if (!isCanvasMountedRef.current) {
+              break;
+            }
             if (!status) {
               await sleep(GENERATION_JOB_POLL_INTERVAL_MS);
               continue;
@@ -847,6 +864,9 @@ export function Canvas() {
           let pollFailureCount = 0;
           const MAX_POLL_FAILURES = 5;
           while (true) {
+            if (!isCanvasMountedRef.current) {
+              break;
+            }
             const currentNode = useCanvasStore.getState().nodes.find((node) => node.id === pendingNode.id);
             if (!currentNode) {
               break;
@@ -895,6 +915,9 @@ export function Canvas() {
               });
               return null;
             });
+            if (!isCanvasMountedRef.current) {
+              break;
+            }
             if (!status) {
               pollFailureCount++;
               if (pollFailureCount >= MAX_POLL_FAILURES) {
@@ -1210,13 +1233,6 @@ export function Canvas() {
       setCanvasImageInteractionActive,
       setViewportState,
     ]
-  );
-
-  const handleMove = useCallback(
-    (_event: unknown, viewport: Viewport) => {
-      setViewportState(viewport);
-    },
-    [setViewportState]
   );
 
   const handleMoveStart = useCallback(() => {
@@ -2644,7 +2660,6 @@ export function Canvas() {
         onNodeContextMenu={handleNodeContextMenu}
         onPaneClick={handlePaneClick}
         onPaneContextMenu={handlePaneContextMenu}
-        onMove={handleMove}
         onMoveStart={handleMoveStart}
         onMoveEnd={handleMoveEnd}
         nodeTypes={nodeTypes}
@@ -2682,7 +2697,6 @@ export function Canvas() {
         nodes={nodes}
         selectedNodeIds={selectedNodeIds}
         sourceNodeIds={selectedConnectSourceNodeIds}
-        viewport={currentViewport}
         wrapperRef={wrapperRef}
         onConnectEnd={handleMultiConnectEnd}
       />
