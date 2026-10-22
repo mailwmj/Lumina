@@ -61,8 +61,20 @@ fn normalize_media_extension(file_name: &str, fallback: &str) -> String {
 }
 
 #[tauri::command]
-pub fn persist_media_bytes_to_project(
+pub async fn persist_media_bytes_to_project(
     app: AppHandle,
+    bytes: Vec<u8>,
+    file_name: String,
+    project_id: String,
+    kind: String,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || persist_media_bytes_to_project_sync(&app, bytes, file_name, project_id, kind))
+        .await
+        .map_err(|error| format!("Persist media task failed: {error}"))?
+}
+
+fn persist_media_bytes_to_project_sync(
+    app: &AppHandle,
     bytes: Vec<u8>,
     file_name: String,
     project_id: String,
@@ -81,7 +93,7 @@ pub fn persist_media_bytes_to_project(
         "audios" => ("audios", "mp3"),
         _ => return Err("不支持的媒体类型".to_string()),
     };
-    let output_dir = resolve_project_upload_dir(&app, &project_id, directory_kind)?;
+    let output_dir = resolve_project_upload_dir(app, &project_id, directory_kind)?;
     let extension = normalize_media_extension(&file_name, fallback_extension);
     let output_path = output_dir.join(build_output_filename(Path::new(&file_name), &extension));
     std::fs::write(&output_path, bytes)
@@ -108,15 +120,25 @@ fn run_ffmpeg_convert(source: &Path, target: &Path, args: &[&str]) -> Result<(),
 }
 
 #[tauri::command]
-pub fn convert_video_to_mp4(
+pub async fn convert_video_to_mp4(
     app: AppHandle,
+    source_path: String,
+    project_id: String,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || convert_video_to_mp4_sync(&app, source_path, project_id))
+        .await
+        .map_err(|error| format!("Convert video task failed: {error}"))?
+}
+
+fn convert_video_to_mp4_sync(
+    app: &AppHandle,
     source_path: String,
     project_id: String,
 ) -> Result<String, String> {
     let source = resolve_source_path(&source_path);
     ensure_file_exists(&source)?;
 
-    let output_dir = resolve_project_upload_dir(&app, &project_id, "videos")?;
+    let output_dir = resolve_project_upload_dir(app, &project_id, "videos")?;
     let output_path = output_dir.join(build_output_filename(&source, "mp4"));
 
     let is_mp4 = source
@@ -151,15 +173,25 @@ pub fn convert_video_to_mp4(
 }
 
 #[tauri::command]
-pub fn convert_audio_to_mp3(
+pub async fn convert_audio_to_mp3(
     app: AppHandle,
+    source_path: String,
+    project_id: String,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || convert_audio_to_mp3_sync(&app, source_path, project_id))
+        .await
+        .map_err(|error| format!("Convert audio task failed: {error}"))?
+}
+
+fn convert_audio_to_mp3_sync(
+    app: &AppHandle,
     source_path: String,
     project_id: String,
 ) -> Result<String, String> {
     let source = resolve_source_path(&source_path);
     ensure_file_exists(&source)?;
 
-    let output_dir = resolve_project_upload_dir(&app, &project_id, "audios")?;
+    let output_dir = resolve_project_upload_dir(app, &project_id, "audios")?;
     let output_path = output_dir.join(build_output_filename(&source, "mp3"));
 
     let is_mp3 = source

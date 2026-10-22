@@ -1212,13 +1212,6 @@ export function Canvas() {
     ]
   );
 
-  const handleMove = useCallback(
-    (_event: unknown, viewport: Viewport) => {
-      setViewportState(viewport);
-    },
-    [setViewportState]
-  );
-
   const handleMoveStart = useCallback(() => {
     if (!isRestoringCanvasRef.current) {
       setCanvasImageInteractionActive(true);
@@ -2644,7 +2637,6 @@ export function Canvas() {
         onNodeContextMenu={handleNodeContextMenu}
         onPaneClick={handlePaneClick}
         onPaneContextMenu={handlePaneContextMenu}
-        onMove={handleMove}
         onMoveStart={handleMoveStart}
         onMoveEnd={handleMoveEnd}
         nodeTypes={nodeTypes}
@@ -2682,7 +2674,6 @@ export function Canvas() {
         nodes={nodes}
         selectedNodeIds={selectedNodeIds}
         sourceNodeIds={selectedConnectSourceNodeIds}
-        viewport={currentViewport}
         wrapperRef={wrapperRef}
         onConnectEnd={handleMultiConnectEnd}
       />

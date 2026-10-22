@@ -101,19 +101,22 @@ export function useExternalAgentBridge({
   const selectedImagePreviews = imagePreviewState.sources === selectedImagePreviewSources
     ? imagePreviewState.previews
     : EMPTY_IMAGE_PREVIEWS;
+  // Building the snapshot hashes the whole canvas; skip it while no agent is connected.
   const baseSnapshot = useMemo(
-    () => buildCanvasAgentSnapshot({
-      projectId,
-      projectName,
-      nodes,
-      edges,
-      selectedNodeIds,
-      viewport,
-      selectedImagePreviews,
-    }),
-    [edges, nodes, projectId, projectName, selectedImagePreviews, selectedNodeIds, viewport]
+    () => (endpoint
+      ? buildCanvasAgentSnapshot({
+        projectId,
+        projectName,
+        nodes,
+        edges,
+        selectedNodeIds,
+        viewport,
+        selectedImagePreviews,
+      })
+      : null),
+    [edges, endpoint, nodes, projectId, projectName, selectedImagePreviews, selectedNodeIds, viewport]
   );
-  const snapshotRef = useRef<CanvasAgentSnapshot>(baseSnapshot);
+  const snapshotRef = useRef<CanvasAgentSnapshot | null>(baseSnapshot);
   snapshotRef.current = baseSnapshot;
   const previewMarker = useMemo(() => ({
     selection: selectedImagePreviewSources,
@@ -214,10 +217,14 @@ export function useExternalAgentBridge({
     activeEndpoint: CanvasAgentEndpoint,
     forcePreviews = false
   ) => {
+    const snapshot = snapshotRef.current;
+    if (!snapshot) {
+      return;
+    }
     snapshotPublisherRef.current?.enqueue({
       endpoint: activeEndpoint,
       clientId: clientIdRef.current,
-      snapshot: snapshotRef.current,
+      snapshot,
       previewMarker: previewMarkerRef.current,
       forcePreviews,
     });

@@ -9,11 +9,13 @@ import {
   type EdgeProps,
 } from '@xyflow/react';
 
-import { CANVAS_NODE_TYPES } from '@/features/canvas/domain/canvasNodes';
+import { CANVAS_NODE_TYPES, type CanvasNode } from '@/features/canvas/domain/canvasNodes';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { buildOrthogonalRoute } from './edgeRouting';
 import { UiIcon, UiTooltip } from '@/components/ui';
+
+const EMPTY_NODES: CanvasNode[] = [];
 
 export const DisconnectableEdge = memo(function DisconnectableEdge(props: EdgeProps) {
   const {
@@ -32,8 +34,10 @@ export const DisconnectableEdge = memo(function DisconnectableEdge(props: EdgePr
   } = props;
   const { t } = useTranslation();
   const deleteEdge = useCanvasStore((state) => state.deleteEdge);
-  const nodes = useCanvasStore((state) => state.nodes);
   const canvasEdgeRoutingMode = useSettingsStore((state) => state.canvasEdgeRoutingMode);
+  const nodes = useCanvasStore((state) =>
+    canvasEdgeRoutingMode === 'smartOrthogonal' ? state.nodes : EMPTY_NODES
+  );
 
   const { edgePath, labelX, labelY } = useMemo(() => {
     if (canvasEdgeRoutingMode === 'spline') {
@@ -82,9 +86,9 @@ export const DisconnectableEdge = memo(function DisconnectableEdge(props: EdgePr
     targetY,
   ]);
 
-  const isProcessingEdge = useMemo(() => {
-    const sourceNode = nodes.find((node) => node.id === source);
-    const targetNode = nodes.find((node) => node.id === target);
+  const isProcessingEdge = useCanvasStore((state) => {
+    const sourceNode = state.nodes.find((node) => node.id === source);
+    const targetNode = state.nodes.find((node) => node.id === target);
 
     if (!sourceNode || !targetNode || targetNode.type !== CANVAS_NODE_TYPES.exportImage) {
       return false;
@@ -101,13 +105,13 @@ export const DisconnectableEdge = memo(function DisconnectableEdge(props: EdgePr
       (targetNode.data as { isGenerating?: boolean } | undefined)?.isGenerating === true;
 
     return isTargetGenerating;
-  }, [nodes, source, target]);
+  });
 
-  const isConnectedToSelectedNode = useMemo(() => {
-    const sourceNode = nodes.find((node) => node.id === source);
-    const targetNode = nodes.find((node) => node.id === target);
+  const isConnectedToSelectedNode = useCanvasStore((state) => {
+    const sourceNode = state.nodes.find((node) => node.id === source);
+    const targetNode = state.nodes.find((node) => node.id === target);
     return (sourceNode?.selected || targetNode?.selected) ?? false;
-  }, [nodes, source, target]);
+  });
 
   const edgeStroke = 'rgb(var(--edge-rgb) / 0.68)';
   const processingStroke = 'rgb(var(--edge-rgb) / 0.84)';

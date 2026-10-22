@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
-import type { Viewport } from '@xyflow/react';
+import { useStore } from '@xyflow/react';
 import { useTranslation } from 'react-i18next';
 import { UiTooltip } from '@/components/ui';
 
@@ -29,7 +29,6 @@ interface MultiSelectionConnectorProps {
   nodes: CanvasNode[];
   selectedNodeIds: string[];
   sourceNodeIds: string[];
-  viewport: Viewport;
   wrapperRef: RefObject<HTMLDivElement | null>;
   onConnectEnd: (
     sourceNodeIds: string[],
@@ -50,11 +49,13 @@ export const MultiSelectionConnector = memo(({
   nodes,
   selectedNodeIds,
   sourceNodeIds,
-  viewport,
   wrapperRef,
   onConnectEnd,
 }: MultiSelectionConnectorProps) => {
   const { t } = useTranslation();
+  // Read the live transform from React Flow so panning does not have to
+  // re-render the whole canvas; stays constant while the connector is hidden.
+  const viewportKey = useStore((state) => (enabled ? state.transform.join(',') : ''));
   const [geometry, setGeometry] = useState<SelectionGeometry | null>(null);
   const [preview, setPreview] = useState<DragPreview | null>(null);
   const dragRef = useRef<{
@@ -134,7 +135,7 @@ export const MultiSelectionConnector = memo(({
       setGeometry(measureGeometry());
     });
     return () => cancelAnimationFrame(frameId);
-  }, [enabled, measureGeometry, nodes, selectedKey, sourceKey, viewport.x, viewport.y, viewport.zoom]);
+  }, [enabled, measureGeometry, nodes, selectedKey, sourceKey, viewportKey]);
 
   useEffect(() => {
     const handlePointerMove = (event: PointerEvent) => {
