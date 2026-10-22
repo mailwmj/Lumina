@@ -112,6 +112,9 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
   const edges = useCanvasStore((state) => state.edges);
   const setSelectedNode = useCanvasStore((state) => state.setSelectedNode);
   const updateNodeData = useCanvasStore((state) => state.updateNodeData);
+  const updateNodeDataWithoutHistory = useCanvasStore(
+    (state) => state.updateNodeDataWithoutHistory
+  );
   const deleteEdge = useCanvasStore((state) => state.deleteEdge);
   const reorderNodeInput = useCanvasStore((state) => state.reorderNodeInput);
   const openAiImageApi = useSettingsStore((state) => state.openAiImageApi);
@@ -255,16 +258,24 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
     if (!hasConfiguredModel) {
       return;
     }
+    // Normalizing to the configured model is not a user edit. Recording it as
+    // history made undo restore the stale value, which this effect rewrote and
+    // cleared redo, so the user could never undo past it.
+    const patch: Partial<typeof data> = {};
     if (data.model !== selectedModel.id) {
-      updateNodeData(id, { model: selectedModel.id });
+      patch.model = selectedModel.id;
     }
 
     if (data.size !== selectedResolution.value) {
-      updateNodeData(id, { size: selectedResolution.value as ImageSize });
+      patch.size = selectedResolution.value as ImageSize;
     }
 
     if (data.requestAspectRatio !== selectedAspectRatio.value) {
-      updateNodeData(id, { requestAspectRatio: selectedAspectRatio.value });
+      patch.requestAspectRatio = selectedAspectRatio.value;
+    }
+
+    if (Object.keys(patch).length > 0) {
+      updateNodeDataWithoutHistory(id, patch);
     }
   }, [
     data.model,
@@ -275,7 +286,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
     selectedAspectRatio.value,
     selectedModel.id,
     selectedResolution.value,
-    updateNodeData,
+    updateNodeDataWithoutHistory,
   ]);
 
   const unavailableReferenceIds = workflowInputs.blockingImageNodeIds.join(',');
