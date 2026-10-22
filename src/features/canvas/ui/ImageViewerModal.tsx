@@ -1,3 +1,5 @@
+import { ImageViewerActions } from './ImageViewerActions';
+import { isCanvasTypingTarget } from '../application/imageClipboard';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronLeft, ChevronRight, RotateCcw, X } from '@/components/ui/icons';
@@ -9,6 +11,7 @@ export interface ImageViewerModalProps {
   open: boolean;
   imageUrl: string;
   imageList: string[];
+  nodeId?: string | null;
   currentIndex: number;
   onClose: () => void;
   onNavigate: (direction: 'prev' | 'next') => void;
@@ -19,6 +22,7 @@ export function ImageViewerModal({
   imageUrl,
   imageList,
   currentIndex,
+  nodeId,
   onClose,
   onNavigate,
 }: ImageViewerModalProps): JSX.Element | null {
@@ -104,6 +108,7 @@ export function ImageViewerModal({
   useEffect(() => {
     if (!open) return;
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (isCanvasTypingTarget(e.target)) return;
       if (e.key === 'ArrowLeft') {
         onNavigate('prev');
       } else if (e.key === 'ArrowRight') {
@@ -194,11 +199,11 @@ export function ImageViewerModal({
           )}
 
           <div className="flex items-center gap-4">
-            {imageList.length > 1 && (
-              <div className={viewerControlClass}>
-                {currentIndex + 1} / {imageList.length}
-              </div>
-            )}
+            <div className={viewerControlClass}>
+              {t('viewer.position', { index: currentIndex + 1, total: imageList.length || 1 })}
+            </div>
+            <ImageViewerActions imageUrl={imageUrl} nodeId={nodeId} onClose={onClose}
+              className={`${viewerControlClass} gap-1.5 transition-colors hover:bg-[var(--ui-surface-elevated)]`} />
             <div
               ref={scaleDisplayRef}
               className={`${viewerControlClass} min-w-[74px]`}

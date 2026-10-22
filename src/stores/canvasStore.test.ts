@@ -72,6 +72,20 @@ describe('canvas store batch connections', () => {
     expect(useCanvasStore.getState().edges).toHaveLength(2);
   });
 
+  it('restores all nodes and edges with one undo after clearing the canvas', () => {
+    const source = createNode(CANVAS_NODE_TYPES.upload, 'clear-source');
+    const target = createNode(CANVAS_NODE_TYPES.imageEdit, 'clear-target');
+    const edge = imageInputEdge('clear-edge', source.id, target.id, 0);
+    useCanvasStore.getState().setCanvasData([source, target], [edge]);
+    const before = useCanvasStore.getState();
+    before.clearCanvas();
+    expect(useCanvasStore.getState().nodes).toEqual([]);
+    expect(useCanvasStore.getState().edges).toEqual([]);
+    expect(useCanvasStore.getState().undo()).toBe(true);
+    expect(useCanvasStore.getState().nodes).toEqual(before.nodes);
+    expect(useCanvasStore.getState().edges).toEqual(before.edges);
+  });
+
   it('creates and connects a node batch as one undoable history step', () => {
     const source = createNode(CANVAS_NODE_TYPES.imageEdit, 'source');
     const store = useCanvasStore.getState();

@@ -51,7 +51,7 @@ export interface ImageReferencePromptInputProps {
 }
 
 export interface ImageReferencePromptInputHandle {
-  insertReference: (edgeId: string) => void;
+  insertReference: (edgeId: string, options?: { reuseExisting: boolean }) => void;
 }
 
 const CARET_ANCHOR_CHARACTER = '\u200B';
@@ -490,13 +490,19 @@ export const ImageReferencePromptInput = forwardRef<ImageReferencePromptInputHan
   }, [closePicker, emitValue, imageInputs, pickerSelection, value]);
 
   useImperativeHandle(ref, () => ({
-    insertReference: (edgeId: string) => {
+    insertReference: (edgeId: string, options?: { reuseExisting: boolean }) => {
+      const existing = options?.reuseExisting && findImageReferencePromptTokens(value).find((token) => token.edgeId === edgeId);
+      if (existing) {
+        rootRef.current?.focus();
+        if (rootRef.current) setSelectionOffset(rootRef.current, existing.end, 'after');
+        return;
+      }
       const index = imageInputs.findIndex((item) => item.edgeId === edgeId);
       if (index >= 0) {
         insertReference(index);
       }
     },
-  }), [imageInputs, insertReference]);
+  }), [imageInputs, insertReference, value]);
 
   const openPicker = useCallback((requestedOffset?: number) => {
     const root = rootRef.current;

@@ -6,6 +6,7 @@ export interface ProjectSummaryRecord {
   createdAt: number;
   updatedAt: number;
   nodeCount: number;
+  thumbnailUrl?: string | null;
 }
 
 export interface ProjectRecord {
@@ -14,6 +15,7 @@ export interface ProjectRecord {
   createdAt: number;
   updatedAt: number;
   nodeCount: number;
+  thumbnailUrl?: string | null;
   nodesJson: string;
   edgesJson: string;
   viewportJson: string;

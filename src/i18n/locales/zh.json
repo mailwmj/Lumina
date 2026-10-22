@@ -78,6 +78,7 @@
       "hide": "隐藏画布小地图"
     },
     "toolbar": {
+      "more": "更多",
       "selectMode": "选择工具 (V)",
       "panMode": "托手工具 (H)",
       "zoomIn": "放大",
@@ -90,7 +91,7 @@
     },
     "clearConfirm": {
       "title": "清空画布",
-      "message": "此操作不可撤销，所有节点和连线都将被删除。"
+      "message": "将删除所有节点和连线，可通过撤销（{{shortcut}}）恢复。"
     },
     "multiConnect": {
       "dragHandle": "拖动以批量连接",
@@ -129,7 +130,24 @@
     "cropResultTitle": "裁剪结果",
     "annotateResultTitle": "标注结果"
   },
+  "generationRecord": {
+    "title": "生成信息",
+    "model": "模型",
+    "size": "尺寸",
+    "ratio": "比例",
+    "outputs": "数量",
+    "references": "参考图数量",
+    "time": "生成时间",
+    "copyPrompt": "复制提示词",
+    "restore": "填回上游节点",
+    "restored": "已填回上游节点",
+    "modelUnavailable": "原模型当前不可用，已保留当前模型",
+    "copyFailed": "复制提示词失败"
+  },
   "nodeToolbar": {
+    "copyImage": "复制图片",
+    "copyImageFailed": "复制图片失败：{{message}}",
+    "continueFromImage": "以此图继续生成",
     "reupload": "重新上传",
     "copy": "复制",
     "copyText": "复制文本",
@@ -218,7 +236,13 @@
       "recoveringResult": "网络连接异常，正在重新查询原任务",
       "requeryRequired": "暂时无法自动查询结果",
       "requeryTask": "重新查询原任务",
-      "requeryTaskHint": "该操作只查询已有任务，不会重新生成或重复计费。"
+      "requeryTaskHint": "该操作只查询已有任务，不会重新生成或重复计费。",
+      "retry": "重试",
+      "retrySourceMissing": "上游生图节点已删除或断开连接，无法重试",
+      "sourceBusy": "上游生图节点正在提交，请稍后重试",
+      "retryUnavailable": "当前结果无法重试，请检查上游节点后再试",
+      "errorDetails": "详情",
+      "jobNotFound": "未找到图片生成任务"
     },
     "imageEdit": {
       "promptRequired": "请输入提示词",
@@ -228,7 +252,9 @@
       "submitting": "提交中",
       "promptLabel": "提示词",
       "promptPlaceholder": "描述任何你想要生成或编辑的内容",
-      "polishPrompt": "润色提示词"
+      "polishPrompt": "润色提示词",
+      "polishInputRequired": "请填写提示词后再润色",
+      "polishFailed": "润色失败"
     },
     "imageReference": {
       "label": "图片 {{index}}"
@@ -256,7 +282,8 @@
       "requestAspectRatio": "请求比例",
       "framePlaceholder": "分镜 {{index}} 描述",
       "gridPreviewTitle": "网格预览",
-      "globalPromptPlaceholder": "整体提示词（可选）：如画风、情节、氛围等描述"
+      "globalPromptPlaceholder": "整体提示词（可选）：如画风、情节、氛围等描述",
+      "polishInputRequired": "请先填写分镜内容后再润色"
     },
     "textAnnotation": {
       "placeholder": "输入 Markdown 文本，取消选中后会渲染预览",
@@ -417,6 +444,8 @@
     }
   },
   "viewer": {
+    "position": "第 {{index}} / 共 {{total}} 张",
+    "downloadFailed": "下载失败，请重试",
     "imageAlt": "图片",
     "prev": "上一张",
     "next": "下一张",
@@ -476,7 +505,9 @@
     "createFirst": "创建第一个项目",
     "opening": "正在打开项目…",
     "openFailed": "无法打开项目「{{name}}」。请重试；若仍失败，可在日志中查看原因。",
-    "retryOpen": "重试"
+    "retryOpen": "重试",
+    "saveFailed": "项目保存失败，最近的修改可能未保存",
+    "retrySave": "重试保存"
   },
   "batchCrop": {
     "entry": "图片裁剪",

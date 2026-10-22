@@ -299,6 +299,10 @@ export const TextGenerationNode = memo(({
     applyResultDraftTransition(commitCompositionInputOnBlur(resultCompositionStateRef.current, value));
   }, [applyResultDraftTransition]);
 
+  useEffect(() => {
+    setNodeError(null);
+  }, [inputDraft]);
+
   const polishInput = useCallback(async () => {
     if (inputCompositionStateRef.current.isComposing || isRunning) {
       return;
@@ -315,13 +319,11 @@ export const TextGenerationNode = memo(({
       inputs.imageInputs
     ).trim();
     if (!prompt) {
-      void showErrorDialog(
-        t('node.textGeneration.polishInputRequired'),
-        t('node.textGeneration.polishPrompt')
-      );
+      setNodeError({ message: t('node.textGeneration.polishInputRequired') });
       return;
     }
 
+    setNodeError(null);
     setIsPolishing(true);
     try {
       const result = await polishText({

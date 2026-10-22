@@ -1,3 +1,4 @@
+import { selectProjectThumbnail } from '@/features/project/application/projectThumbnail';
 import { logger } from '@/lib/logger';
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
@@ -48,6 +49,7 @@ const MAX_HISTORY_RESTORE_JSON_CHARS = 1_500_000;
 const queuedProjectUpserts = new Map<string, Project>();
 const projectUpsertTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const projectUpsertsInFlight = new Set<string>();
+const immediateProjectUpserts = new Set<string>();
 const queuedViewportUpserts = new Map<string, string>();
 const viewportUpsertTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const viewportUpsertsInFlight = new Set<string>();
@@ -60,6 +62,7 @@ export interface ProjectSummary {
   createdAt: number;
   updatedAt: number;
   nodeCount: number;
+  thumbnailUrl?: string | null;
 }
 
 export interface Project extends ProjectSummary {
@@ -313,10 +316,12 @@ function toProjectSummary(record: ProjectSummaryRecord): ProjectSummary {
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
     nodeCount: record.nodeCount,
+    thumbnailUrl: record.thumbnailUrl ?? null,
   };
 }
 
 function toProjectRecord(project: Project): ProjectRecord {
+  const thumbnailUrl = selectProjectThumbnail(project.nodes);
   // Trim before encoding so discarded snapshots do not retain images in the pool.
   const encodedProject = encodeProject({
     ...project,
@@ -331,6 +336,7 @@ function toProjectRecord(project: Project): ProjectRecord {
     createdAt: encodedProject.createdAt,
     updatedAt: encodedProject.updatedAt,
     nodeCount: encodedProject.nodeCount,
+    thumbnailUrl,
     nodesJson: JSON.stringify(persistedNodes),
     edgesJson: JSON.stringify(encodedProject.edges),
     viewportJson: JSON.stringify(encodedProject.viewport),
@@ -372,6 +378,7 @@ function fromProjectRecord(record: ProjectRecord): Project {
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
     nodeCount: record.nodeCount,
+    thumbnailUrl: record.thumbnailUrl ?? null,
     nodes: parsedNodes,
     edges: parsedEdges,
     viewport: parsedViewport ?? DEFAULT_VIEWPORT,
@@ -434,6 +441,7 @@ function clearQueuedProjectUpsert(projectId: string): void {
     projectUpsertTimers.delete(projectId);
   }
   queuedProjectUpserts.delete(projectId);
+  immediateProjectUpserts.delete(projectId);
 }
 
 function clearQueuedViewportUpsert(projectId: string): void {
@@ -464,6 +472,7 @@ function flushProjectUpsert(projectId: string, options?: FlushProjectUpsertOptio
   }
 
   queuedProjectUpserts.delete(projectId);
+  const bypassIdle = immediateProjectUpserts.delete(projectId) || options?.bypassIdle;
   projectUpsertsInFlight.add(projectId);
 
   const settle = () => {
@@ -485,15 +494,23 @@ function flushProjectUpsert(projectId: string, options?: FlushProjectUpsertOptio
     try {
       if (!deletingProjectIds.has(projectId)) {
         await upsertProjectRecord(toProjectRecord(project));
+        if (useProjectStore.getState().persistError?.projectId === projectId) {
+          useProjectStore.setState({ persistError: null });
+        }
       }
     } catch (error) {
       logger.error('Failed to persist project record', error);
+      if (useProjectStore.getState().currentProjectId === projectId) {
+        useProjectStore.setState({
+          persistError: { projectId, message: error instanceof Error ? error.message : String(error) },
+        });
+      }
     } finally {
       settle();
     }
   };
 
-  if (options?.bypassIdle) {
+  if (bypassIdle) {
     void executePersist();
     return;
   }
@@ -507,6 +524,7 @@ function queueProjectUpsert(project: Project, options?: PersistProjectOptions): 
     return;
   }
   queuedProjectUpserts.set(projectId, project);
+  if (options?.immediate) immediateProjectUpserts.add(projectId);
 
   const existingTimer = projectUpsertTimers.get(projectId);
   if (existingTimer) {
@@ -643,6 +661,8 @@ interface ProjectState {
   projects: ProjectSummary[];
   currentProjectId: string | null;
   currentProject: Project | null;
+  persistError: { projectId: string; message: string } | null;
+  retryCurrentProjectPersist: () => void;
   isHydrated: boolean;
   isOpeningProject: boolean;
 
@@ -665,6 +685,7 @@ interface ProjectState {
 
 export const useProjectStore = create<ProjectState>((set, get) => ({
   projects: [],
+  persistError: null,
   currentProjectId: null,
   currentProject: null,
   isHydrated: false,
@@ -713,6 +734,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
     set((state) => ({
       projects: [{ ...project }, ...state.projects],
+      persistError: null,
       currentProjectId: id,
       currentProject: project,
       isOpeningProject: false,
@@ -728,6 +750,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     openProjectRequestSeq += 1;
     set((state) => ({
       projects: state.projects.filter((project) => project.id !== id),
+      persistError: state.persistError?.projectId === id ? null : state.persistError,
       currentProjectId: state.currentProjectId === id ? null : state.currentProjectId,
       currentProject: state.currentProject?.id === id ? null : state.currentProject,
       isOpeningProject: false,
@@ -792,6 +815,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
         const project = fromProjectRecord(record);
         set((state) => ({
+          persistError: null,
           currentProjectId: id,
           currentProject: project,
           isOpeningProject: false,
@@ -801,6 +825,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
             createdAt: project.createdAt,
             updatedAt: project.updatedAt,
             nodeCount: project.nodeCount,
+            thumbnailUrl: project.thumbnailUrl ?? null,
           }),
         }));
       } catch (error) {
@@ -837,6 +862,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         createdAt: nextProject.createdAt,
         updatedAt: nextProject.updatedAt,
         nodeCount: nextProject.nodeCount,
+        thumbnailUrl: selectProjectThumbnail(nextProject.nodes),
       };
       persistProject(nextProject, { immediate: true });
     }
@@ -845,6 +871,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       projects: persistedSummary
         ? updateProjectSummary(state.projects, persistedSummary)
         : state.projects,
+      persistError: null,
       currentProjectId: null,
       currentProject: null,
       isOpeningProject: false,
@@ -893,6 +920,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       viewport: nextViewport,
       history: nextHistory,
       nodeCount: nextNodeCount,
+      thumbnailUrl: selectProjectThumbnail(nodes),
       updatedAt: Date.now(),
     };
 
@@ -904,9 +932,32 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         createdAt: nextProject.createdAt,
         updatedAt: nextProject.updatedAt,
         nodeCount: nextProject.nodeCount,
+        thumbnailUrl: selectProjectThumbnail(nextProject.nodes),
       }),
     }));
     persistProject(nextProject);
+  },
+
+  retryCurrentProjectPersist: () => {
+    const project = get().getCurrentProject();
+    if (!project) return;
+    const canvas = useCanvasStore.getState();
+    const snapshot = {
+      ...project,
+      nodes: canvas.nodes,
+      edges: canvas.edges,
+      history: canvas.history,
+      viewport: canvas.currentViewport ?? project.viewport,
+      nodeCount: canvas.nodes.length,
+      thumbnailUrl: selectProjectThumbnail(canvas.nodes),
+      updatedAt: Date.now(),
+    };
+    set((state) => ({
+      currentProject: snapshot,
+      projects: state.projects.map((summary) => summary.id === snapshot.id
+        ? { ...summary, thumbnailUrl: snapshot.thumbnailUrl } : summary),
+    }));
+    persistProject(snapshot, { immediate: true });
   },
 
   saveCurrentProjectViewport: (viewport) => {

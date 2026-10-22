@@ -320,6 +320,7 @@ export const UploadNode = memo(({ id, data, selected, width, height }: UploadNod
           className="block h-full w-full overflow-hidden rounded-[var(--node-radius)] bg-bg-dark"
         >
           <CanvasNodeImage
+                viewerNodeId={id}
             src={imageSource ?? ''}
             viewerSourceUrl={data.imageUrl ? resolveImageDisplayUrl(data.imageUrl) : null}
             alt={t('node.upload.uploadedAlt')}

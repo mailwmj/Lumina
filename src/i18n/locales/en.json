@@ -78,6 +78,7 @@
       "hide": "Hide canvas minimap"
     },
     "toolbar": {
+      "more": "More",
       "selectMode": "Select Tool (V)",
       "panMode": "Hand Tool (H)",
       "zoomIn": "Zoom In",
@@ -90,7 +91,7 @@
     },
     "clearConfirm": {
       "title": "Clear Canvas",
-      "message": "This cannot be undone. All nodes and connections will be deleted."
+      "message": "All nodes and connections will be deleted. You can restore them with Undo ({{shortcut}})."
     },
     "multiConnect": {
       "dragHandle": "Drag to connect selection",
@@ -129,7 +130,24 @@
     "cropResultTitle": "Crop Result",
     "annotateResultTitle": "Annotation Result"
   },
+  "generationRecord": {
+    "title": "Generation info",
+    "model": "Model",
+    "size": "Size",
+    "ratio": "Aspect ratio",
+    "outputs": "Outputs",
+    "references": "Reference images",
+    "time": "Created",
+    "copyPrompt": "Copy prompt",
+    "restore": "Restore to source",
+    "restored": "Parameters restored to source",
+    "modelUnavailable": "The original model is unavailable. The current model was kept.",
+    "copyFailed": "Could not copy the prompt"
+  },
   "nodeToolbar": {
+    "copyImage": "Copy image",
+    "copyImageFailed": "Could not copy image: {{message}}",
+    "continueFromImage": "Generate from this image",
     "reupload": "Reupload",
     "copy": "Copy",
     "copyText": "Copy Text",
@@ -218,7 +236,13 @@
       "recoveringResult": "Network issue. Re-querying the original task",
       "requeryRequired": "Unable to query the result automatically",
       "requeryTask": "Re-query task",
-      "requeryTaskHint": "This only queries the existing task; it does not generate again or charge twice."
+      "requeryTaskHint": "This only queries the existing task; it does not generate again or charge twice.",
+      "retry": "Retry",
+      "retrySourceMissing": "The upstream image generation node is missing or disconnected. Reconnect it to retry.",
+      "sourceBusy": "The upstream node is submitting. Please retry shortly.",
+      "retryUnavailable": "This result cannot be retried. Check the upstream node and try again.",
+      "errorDetails": "Details",
+      "jobNotFound": "Image generation job not found"
     },
     "imageEdit": {
       "promptRequired": "Please enter a prompt",
@@ -228,7 +252,9 @@
       "submitting": "Submitting",
       "promptLabel": "Prompt",
       "promptPlaceholder": "Describe anything you want to generate or edit",
-      "polishPrompt": "Polish prompt"
+      "polishPrompt": "Polish prompt",
+      "polishInputRequired": "Enter a prompt before polishing.",
+      "polishFailed": "Prompt polishing failed"
     },
     "imageReference": {
       "label": "Image {{index}}"
@@ -256,7 +282,8 @@
       "requestAspectRatio": "Request ratio",
       "framePlaceholder": "Frame {{index}} description",
       "gridPreviewTitle": "Grid Preview",
-      "globalPromptPlaceholder": "Global prompt (optional): e.g., art style, plot, mood"
+      "globalPromptPlaceholder": "Global prompt (optional): e.g., art style, plot, mood",
+      "polishInputRequired": "Enter storyboard content before polishing."
     },
     "textAnnotation": {
       "placeholder": "Write Markdown text. It will render when unselected.",
@@ -417,6 +444,8 @@
     }
   },
   "viewer": {
+    "position": "Image {{index}} of {{total}}",
+    "downloadFailed": "Download failed. Please try again.",
     "imageAlt": "Image",
     "prev": "Previous",
     "next": "Next",
@@ -480,7 +509,9 @@
     "openFailed": "Could not open “{{name}}”. Try again; if it still fails, check the logs for details.",
     "retryOpen": "Try again",
     "nodeCount": "{{count}} nodes",
-    "resultCount": "Showing {{count}} of {{total}} projects"
+    "resultCount": "Showing {{count}} of {{total}} projects",
+    "saveFailed": "Project save failed. Recent changes may not be saved.",
+    "retrySave": "Retry save"
   },
   "batchCrop": {
     "entry": "Image Crop",

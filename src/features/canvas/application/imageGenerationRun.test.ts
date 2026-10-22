@@ -1,7 +1,9 @@
+import { completeImageGenerationResult } from './completeImageGenerationResult';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { canvasNodeFactory } from '@/features/canvas/application/canvasServices';
 import { CANVAS_NODE_TYPES } from '@/features/canvas/domain/canvasNodes';
+import { retryImageGenerationResult } from './imageGenerationRetry';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import {
@@ -368,4 +370,154 @@ describe('shared image generation execution', () => {
     expect(gateway.setApiKey).toHaveBeenCalledWith('gemini', 'first-key');
     expect(gateway.setApiKey).toHaveBeenCalledWith('gemini', 'second-key');
   });
+  function setupRetryFixture(outputCount: 1 | 2 = 1) {
+    const source = canvasNodeFactory.createNode(CANVAS_NODE_TYPES.imageEdit, { x: 0, y: 0 }, {
+      prompt: 'Current edited prompt', model: 'ai-media/gpt-image-2',
+      requestAspectRatio: '16:9', size: '2K', outputCount,
+    });
+    const failed = canvasNodeFactory.createNode(CANVAS_NODE_TYPES.exportImage, { x: 400, y: 300 }, {
+      generationError: 'previous failure', generationErrorDetails: 'old details',
+      generationDebugContext: { sourceType: 'imageEdit' },
+      generationJobId: 'old-job', generationRecoveryState: 'attention_required',
+      isGenerating: false, imageUrl: null,
+    });
+    const success = canvasNodeFactory.createNode(CANVAS_NODE_TYPES.exportImage, { x: 400, y: 0 }, {
+      imageUrl: 'file:///success.png', isGenerating: false, generationError: 'stale error',
+    });
+    useCanvasStore.getState().setCanvasData([source, failed, success], [
+      { id: 'failed-edge', source: source.id, target: failed.id },
+      { id: 'success-edge', source: source.id, target: success.id },
+    ]);
+    useSettingsStore.setState({
+      openAiImageApi: {
+        apiKey: 'test-key', baseUrl: 'https://example.test/v1',
+        modelCatalog: { models: [{ id: 'ai-media/gpt-image-2' }], refreshedAt: 1 },
+        selectedModelIds: ['ai-media/gpt-image-2'],
+      },
+      lastImageModelSelection: { providerId: 'ai-media', modelId: 'ai-media/gpt-image-2' },
+    });
+    return { source, failed, success };
+  }
+
+  it('retries a failed result in place with current source parameters and a new job ID', async () => {
+    const { source, failed, success } = setupRetryFixture(2);
+    const reference = canvasNodeFactory.createNode(CANVAS_NODE_TYPES.upload, { x: 0, y: -300 }, {
+      imageUrl: 'file:///current-original.png', referenceImageUrl: 'file:///current-reference.jpg',
+    });
+    useCanvasStore.getState().setCanvasData([source, failed, success, reference], [
+      ...useCanvasStore.getState().edges,
+      { id: 'new-reference', source: reference.id, target: source.id, data: { valueType: 'image' } },
+    ]);
+    useCanvasStore.getState().updateNodeData(source.id, { prompt: 'New prompt before retry', extraParams: { seed: 42 } });
+    gateway.submitGenerateImageJobs.mockImplementationOnce(async (payload, count, onSettled, beforeSubmit) => {
+      beforeSubmit();
+      const pending = useCanvasStore.getState().nodes.find((node) => node.id === failed.id)!;
+      expect(pending.data).toMatchObject({ isGenerating: true, generationError: null, generationJobId: null,
+        generationErrorDetails: null, generationRecoveryState: null, aspectRatio: '16:9' });
+      expect(pending.position).toEqual(failed.position);
+      expect(count).toBe(1);
+      expect(payload).toMatchObject({ size: '2K', aspectRatio: '16:9',
+        referenceImages: ['file:///current-reference.jpg'], extraParams: { seed: 42 } });
+      expect(payload.prompt).toContain('New prompt before retry');
+      onSettled({ status: 'fulfilled', jobId: 'new-retry-job' }, 0);
+      return [];
+    });
+    const result = await retryImageGenerationResult(failed.id);
+    expect(result.sourceNodeId).toBe(source.id);
+    expect(result.resultNodeIds).toEqual([failed.id]);
+    expect(useCanvasStore.getState().nodes.find((node) => node.id === failed.id)?.data.generationRecord).toMatchObject({ prompt: 'New prompt before retry', extraParams: { seed: 42 } });
+    expect(useCanvasStore.getState().nodes).toHaveLength(4);
+    expect(useCanvasStore.getState().nodes.find((node) => node.id === failed.id)?.data).toMatchObject({
+      isGenerating: true, generationJobId: 'new-retry-job', generationError: null,
+    });
+    expect(useCanvasStore.getState().nodes.find((node) => node.id === success.id)).toEqual(success);
+    expect(useCanvasStore.getState().history.past.some((snapshot) =>
+      snapshot.nodes.find((node) => node.id === failed.id)?.data.generationError === 'previous failure'
+    )).toBe(true);
+  });
+
+  it('reuses one failed downstream result and creates only one additional output for count two', async () => {
+    const { source, failed, success } = setupRetryFixture(2);
+    const result = await runImageGenerationNode(source.id, { reuseFailedResults: true });
+    expect(result.resultNodeIds).toHaveLength(2);
+    expect(result.resultNodeIds[0]).toBe(failed.id);
+    expect(result.resultNodeIds).not.toContain(success.id);
+    expect(useCanvasStore.getState().nodes).toHaveLength(4);
+    expect(useCanvasStore.getState().nodes.find((node) => node.id === failed.id)?.position).toEqual(failed.position);
+    expect(useCanvasStore.getState().nodes.find((node) => node.id === success.id)).toEqual(success);
+  });
+
+  it('never reuses a failed storyboard output manually connected to an image generator', async () => {
+    const { source, failed } = setupRetryFixture();
+    useCanvasStore.getState().updateNodeData(failed.id, {
+      resultKind: 'storyboardGenOutput', generationDebugContext: { sourceType: 'storyboardGen' },
+    });
+    const before = useCanvasStore.getState().nodes.find((node) => node.id === failed.id);
+    const result = await runImageGenerationNode(source.id, { reuseFailedResults: true });
+    expect(result.resultNodeIds).not.toContain(failed.id);
+    expect(useCanvasStore.getState().nodes.find((node) => node.id === failed.id)).toEqual(before);
+  });
+
+  it('records raw and readable prompts on Agent submission and preserves them through polling success', async () => {
+    const { source } = setupRetryFixture();
+    const reference = canvasNodeFactory.createNode(CANVAS_NODE_TYPES.upload, { x: -300, y: 0 }, { imageUrl: '/reference.png' });
+    useCanvasStore.getState().setCanvasData([...useCanvasStore.getState().nodes, reference], [
+      ...useCanvasStore.getState().edges, { id: 'reference-edge', source: reference.id, target: source.id, data: { valueType: 'image' } },
+    ]);
+    useCanvasStore.getState().updateNodeData(source.id, { prompt: 'Use {{image-ref:reference-edge}}', extraParams: { seed: 42 } });
+    const batch = await runImageGenerationNodes([source.id]);
+    const run = batch.runs[0];
+    expect(run.status).toBe('started');
+    if (run.status !== 'started') throw new Error('Submission did not start');
+    const id = run.resultNodeIds[0];
+    const before = useCanvasStore.getState().nodes.find((node) => node.id === id)!.data.generationRecord;
+    expect(before).toMatchObject({ prompt: 'Use {{image-ref:reference-edge}}', displayPrompt: 'Use 图片 1', modelId: 'ai-media/gpt-image-2',
+      size: '2K', requestAspectRatio: '16:9', resolvedAspectRatio: '16:9', outputCount: 1, extraParams: { seed: 42 }, referenceImageCount: 1, createdAt: expect.any(Number), modelName: expect.any(String), providerName: expect.any(String) });
+    completeImageGenerationResult(id, { imageUrl: '/result.png', previewImageUrl: '/preview.jpg', referenceImageUrl: '/reference.jpg' });
+    const finished = useCanvasStore.getState().nodes.find((node) => node.id === id)!;
+    expect(finished.data.isGenerating).toBe(false);
+    expect(finished.data.generationDebugContext).toBeUndefined();
+    expect(finished.data.generationRecord).toEqual(before);
+  });
+
+  it('retains generation parameters when a submission fails', async () => {
+    const { source } = setupRetryFixture();
+    gateway.submitGenerateImageJobs.mockImplementationOnce(async (_payload, _count, settled, beforeSubmit) => {
+      beforeSubmit(); settled({ status: 'rejected', error: new Error('Provider failure') }, 0); return [];
+    });
+    const result = await runImageGenerationNode(source.id);
+    expect(result.submissions[0].status).toBe('failed');
+    const output = useCanvasStore.getState().nodes.find((node) => node.id === result.resultNodeIds[0])!;
+    expect(output.data.generationRecord).toMatchObject({ prompt: 'Current edited prompt', modelId: 'ai-media/gpt-image-2', size: '2K', outputCount: 1 });
+  });
+
+  it('preserves the default Agent behavior of creating new results', async () => {
+    const { source, failed } = setupRetryFixture(2);
+    const result = await runImageGenerationNodes([source.id]);
+    expect(result.runs[0]).toMatchObject({ status: 'started' });
+    expect(useCanvasStore.getState().nodes).toHaveLength(5);
+    expect(useCanvasStore.getState().nodes.find((node) => node.id === failed.id)).toEqual(failed);
+  });
+
+  it('returns SOURCE_NODE_NOT_FOUND without submitting when a retry source is missing or disconnected', async () => {
+    const { failed } = setupRetryFixture();
+    useCanvasStore.getState().setCanvasData([failed], []);
+    await expect(retryImageGenerationResult(failed.id)).rejects.toMatchObject({ code: 'SOURCE_NODE_NOT_FOUND' });
+    expect(gateway.setApiKey).not.toHaveBeenCalled();
+    expect(gateway.submitGenerateImageJobs).not.toHaveBeenCalled();
+  });
+
+  it('shares the source submission lock between retry and normal generation', async () => {
+    const { source, failed } = setupRetryFixture();
+    let finishSetup!: () => void;
+    gateway.setApiKey.mockImplementationOnce(() => new Promise<void>((resolve) => { finishSetup = resolve; }));
+    const retry = retryImageGenerationResult(failed.id);
+    await vi.waitFor(() => expect(gateway.setApiKey).toHaveBeenCalled());
+    await expect(runImageGenerationNode(source.id, { reuseFailedResults: true })).rejects.toMatchObject({ code: 'ALREADY_RUNNING' });
+    await expect(retryImageGenerationResult(failed.id)).rejects.toMatchObject({ code: 'ALREADY_RUNNING' });
+    finishSetup();
+    await retry;
+    expect(gateway.submitGenerateImageJobs).toHaveBeenCalledOnce();
+  });
+
 });

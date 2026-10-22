@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { Moon, Sun, Languages } from '@/components/ui/icons';
 import { useThemeStore } from '@/stores/themeStore';
 import { useProjectStore } from '@/stores/projectStore';
-import { UiTooltip } from '@/components/ui';
+import { UiButton, UiTooltip } from '@/components/ui';
 import closeNormalIcon from '@/assets/macos-traffic-lights/1-close-1-normal.svg';
 import closeHoverIcon from '@/assets/macos-traffic-lights/2-close-2-hover.svg';
 import minimizeNormalIcon from '@/assets/macos-traffic-lights/2-minimize-1-normal.svg';
@@ -58,6 +58,11 @@ export function TitleBar({ onSettingsClick, showBackButton, onBackClick, context
   const { t, i18n } = useTranslation();
   const { theme, toggleTheme } = useThemeStore();
   const currentProjectName = useProjectStore((state) => state.currentProject?.name);
+
+  const persistError = useProjectStore((state) =>
+    state.persistError?.projectId === state.currentProjectId ? state.persistError : null
+  );
+  const retryPersist = useProjectStore((state) => state.retryCurrentProjectPersist);
 
   const appWindow = isTauri() ? getCurrentWindow() : null;
   const isZh = i18n.language.startsWith('zh');
@@ -173,6 +178,14 @@ export function TitleBar({ onSettingsClick, showBackButton, onBackClick, context
         <span className="min-w-0 truncate text-sm font-medium text-text-dark" title={titleText}>
           {titleText}
         </span>
+        {persistError && (
+          <div role="alert" data-no-drag="true" className="ml-3 flex min-w-0 items-center gap-2 text-xs text-red-500">
+            <span className="truncate" title={t('project.saveFailed')}>{t('project.saveFailed')}</span>
+            <UiButton size="sm" variant="muted" className="shrink-0" onClick={retryPersist}>
+              {t('project.retrySave')}
+            </UiButton>
+          </div>
+        )}
         {!isZh && !currentProjectName && !contextTitle ? (
           <span className="min-w-0 truncate text-xs text-text-muted ml-2">{t('app.subtitle')}</span>
         ) : null}

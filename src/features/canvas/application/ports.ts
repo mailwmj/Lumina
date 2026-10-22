@@ -152,6 +152,7 @@ export interface ToolProcessor {
 }
 
 export interface CanvasEventMap {
+  'generation-record/open': { nodeId: string };
   'tool-dialog/open': {
     nodeId: string;
     toolType: NodeToolType;

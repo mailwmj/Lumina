@@ -1,5 +1,7 @@
+import { useState } from 'react';
+import { resolveImageDisplayUrl } from '@/features/canvas/application/imageData';
 import { useTranslation } from 'react-i18next';
-import { ArrowRight, FolderOpen, Pencil, Trash2 } from '@/components/ui/icons';
+import { ArrowRight, Image, Pencil, Trash2 } from '@/components/ui/icons';
 import { UiIconButton } from '@/components/ui';
 import type { ProjectSummary } from '@/stores/projectStore';
 import { recordProjectOpenClick } from '@/features/app/projectOpenPaneClickGuard';
@@ -14,6 +16,9 @@ interface ProjectCardProps {
 
 export function ProjectCard({ project, disabled, onOpen, onRename, onDelete }: ProjectCardProps) {
   const { t, i18n } = useTranslation();
+  const [failedThumbnail, setFailedThumbnail] = useState<string | null>(null);
+  const thumbnail = project.thumbnailUrl && failedThumbnail !== project.thumbnailUrl
+    ? resolveImageDisplayUrl(project.thumbnailUrl) : null;
   const date = new Date(project.updatedAt);
 
   return (
@@ -29,7 +34,14 @@ export function ProjectCard({ project, disabled, onOpen, onRename, onDelete }: P
         className="flex w-full flex-col gap-5 rounded-lg p-4 text-left transition-colors hover:bg-[var(--ui-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 disabled:cursor-wait disabled:opacity-50"
       >
         <span className="flex w-full items-center justify-between text-text-muted">
-          <FolderOpen className="h-5 w-5" />
+          <span className="relative flex aspect-video w-full items-center justify-center overflow-hidden rounded-md bg-[var(--ui-hover)]">
+            {thumbnail ? <img src={thumbnail} alt={project.name} loading="lazy"
+              className="absolute inset-0 h-full w-full object-cover"
+              onError={() => setFailedThumbnail(project.thumbnailUrl ?? null)} />
+              : <Image className="h-8 w-8 text-text-muted" aria-hidden="true" />}
+          </span>
+        </span>
+        <span className="flex w-full items-center justify-between text-text-muted">
           <span className="text-xs tabular-nums">{t('project.nodeCount', { count: project.nodeCount })}</span>
         </span>
         <span className="flex w-full min-w-0 items-center gap-3">

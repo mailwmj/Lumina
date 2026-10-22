@@ -86,7 +86,24 @@ export type GenerationRecoveryState =
   | 'attention_required'
   | 'retry_requested';
 
+/** Durable generation parameters; contains no reference-image assets or media URL fields. */
+export interface ImageGenerationRecord {
+  prompt: string;
+  displayPrompt: string;
+  modelId: string;
+  modelName: string;
+  providerName: string;
+  size: ImageSize;
+  requestAspectRatio: string;
+  resolvedAspectRatio: string;
+  outputCount: ImageOutputCount;
+  extraParams: Record<string, unknown>;
+  referenceImageCount: number;
+  createdAt: number;
+}
+
 export interface ExportImageNodeData extends NodeImageData {
+  generationRecord?: ImageGenerationRecord;
   resultKind?: ExportImageNodeResultKind;
   /** Stable identity shared by all result nodes from one image generation run. */
   generationBatchId?: string;

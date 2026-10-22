@@ -1,3 +1,6 @@
+import { copyCanvasSelection, handleCanvasPasteShortcut, handleCanvasImagePaste } from './application/canvasClipboard';
+import { CanvasImageClipboardSession, isCanvasTypingTarget } from './application/imageClipboard';
+import { completeImageGenerationResult } from './application/completeImageGenerationResult';
 import {
   useState,
   useCallback,
@@ -32,7 +35,6 @@ import { useSettingsStore } from '@/stores/settingsStore';
 import { canvasAiGateway, canvasEventBus } from '@/features/canvas/application/canvasServices';
 import {
   CANVAS_NODE_TYPES,
-  DEFAULT_ASPECT_RATIO,
   type CanvasEdge,
   type CanvasNode,
   type CanvasNodeType,
@@ -43,10 +45,6 @@ import {
   createNodeImagePreview,
   prepareNodeImageFromFile,
 } from '@/features/canvas/application/imageData';
-import {
-  buildGenerationErrorReport,
-  CURRENT_RUNTIME_SESSION_ID,
-} from '@/features/canvas/application/generationErrorReport';
 import {
   resolveGenerationPollDelay,
   resolveImageGenerationRecoveryState,
@@ -217,45 +215,7 @@ function cloneNodeData<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
-function isTypingTarget(target: EventTarget | null): boolean {
-  const element = target as HTMLElement | null;
-  if (!element) {
-    return false;
-  }
-  const tagName = element.tagName.toLowerCase();
-  return tagName === 'input' || tagName === 'textarea' || element.isContentEditable;
-}
-
-function resolveClipboardImageFile(event: ClipboardEvent): File | null {
-  const clipboardItems = event.clipboardData?.items;
-  if (!clipboardItems) {
-    return null;
-  }
-
-  for (const item of Array.from(clipboardItems)) {
-    if (!item.type.startsWith('image/')) {
-      continue;
-    }
-
-    const file = item.getAsFile();
-    if (!file) {
-      continue;
-    }
-
-    const existingName = typeof file.name === 'string' ? file.name.trim() : '';
-    if (existingName) {
-      return file;
-    }
-
-    const subtype = item.type.split('/')[1]?.split('+')[0] || 'png';
-    return new File([file], `pasted-image.${subtype}`, {
-      type: file.type || item.type,
-      lastModified: Date.now(),
-    });
-  }
-
-  return null;
-}
+const isTypingTarget = isCanvasTypingTarget;
 
 function resolveAllowedNodeTypes(handleType: HandleType, fixedNodeType?: CanvasNodeType): CanvasNodeType[] {
   const filterCompatibleTypes = (candidateTypes: CanvasNodeType[]): CanvasNodeType[] => {
@@ -341,6 +301,7 @@ export function Canvas() {
   const copiedSnapshotRef = useRef<ClipboardSnapshot | null>(null);
   const pasteIterationRef = useRef(0);
   const pasteImageHandledRef = useRef(false);
+  const imageClipboardSession = useRef(new CanvasImageClipboardSession());
   const nodeContextMenuSequenceRef = useRef(0);
   const imageQualitySettleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestZoomFocusPointRef = useRef<{
@@ -818,46 +779,16 @@ export function Canvas() {
                   return null;
                 });
 
-              updateNodeData(pendingNode.id, {
+              completeImageGenerationResult(pendingNode.id, {
                 imageUrl: imageWithMetadata,
                 previewImageUrl: preview?.previewImageUrl ?? imageWithMetadata,
                 referenceImageUrl: preview?.referenceImageUrl ?? imageWithMetadata,
-                aspectRatio: typeof currentData.aspectRatio === 'string'
-                  && currentData.aspectRatio.trim().length > 0
-                  ? currentData.aspectRatio
-                  : DEFAULT_ASPECT_RATIO,
-                isGenerating: false,
-                generationStartedAt: null,
-                generationJobId: null,
-                generationProviderId: null,
-                generationProviderName: null,
-                generationModelName: null,
-                generationClientSessionId: null,
-                generationStoryboardMetadata: undefined,
-                generationError: null,
-                generationErrorDetails: null,
-                generationDebugContext: undefined,
-                generationRecoveryState: null,
-                generationRetryCount: 0,
-                generationNextRetryAt: null,
-                generationRetryError: null,
+                aspectRatio: typeof currentData.aspectRatio === 'string' ? currentData.aspectRatio : undefined,
               });
               break;
             }
 
-            const errorMessage = status.error ?? (status.status === 'not_found' ? 'generation job not found' : 'generation failed');
-            const generationClientSessionId = typeof currentData.generationClientSessionId === 'string'
-              ? currentData.generationClientSessionId
-              : '';
-            const shouldShowDialog = generationClientSessionId === CURRENT_RUNTIME_SESSION_ID;
-            if (shouldShowDialog) {
-              const reportText = buildGenerationErrorReport({
-                errorMessage,
-                errorDetails: status.error ?? undefined,
-                context: currentData.generationDebugContext,
-              });
-              void showErrorDialog(errorMessage, t('common.error'), status.error ?? undefined, reportText);
-            }
+            const errorMessage = status.error ?? (status.status === 'not_found' ? t('node.imageNode.jobNotFound') : t('ai.error'));
             updateNodeData(pendingNode.id, {
               isGenerating: false,
               generationStartedAt: null,
@@ -1582,6 +1513,7 @@ export function Canvas() {
       return false;
     }
 
+    imageClipboardSession.current.clear();
     copiedSnapshotRef.current = {
       nodes: copiedNodes,
       edges: state.edges.filter(
@@ -1607,28 +1539,23 @@ export function Canvas() {
   }, [deleteNode, deleteNodes, scheduleCanvasPersist]);
 
   useEffect(() => {
-    const handlePaste = (event: ClipboardEvent) => {
-      pasteImageHandledRef.current = false;
-      if (!selectedUploadNodeId || isTypingTarget(event.target)) {
-        return;
-      }
+    const handlePaste = (event: ClipboardEvent) => handleCanvasImagePaste(event, imageClipboardSession.current, {
+      selectedUploadNodeId, imageHandled: pasteImageHandledRef,
+      hasCopiedNodes: () => Boolean(copiedSnapshotRef.current?.nodes.length),
+      pasteNodes: () => { void duplicateNodesRef.current?.(copiedSnapshotRef.current!.nodes.map((node) => node.id)); },
+      pasteImage: (file) => canvasEventBus.publish('upload-node/paste-image', { nodeId: selectedUploadNodeId!, file }),
+    });
 
-      const imageFile = resolveClipboardImageFile(event);
-      if (!imageFile) {
-        return;
-      }
-
-      event.preventDefault();
-      pasteImageHandledRef.current = true;
-      canvasEventBus.publish('upload-node/paste-image', {
-        nodeId: selectedUploadNodeId,
-        file: imageFile,
-      });
-    };
-
+    const clearImageOwnership = () => imageClipboardSession.current.clear();
+    window.addEventListener('blur', clearImageOwnership);
+    document.addEventListener('copy', clearImageOwnership);
+    document.addEventListener('cut', clearImageOwnership);
     document.addEventListener('paste', handlePaste);
     return () => {
       document.removeEventListener('paste', handlePaste);
+      window.removeEventListener('blur', clearImageOwnership);
+      document.removeEventListener('copy', clearImageOwnership);
+      document.removeEventListener('cut', clearImageOwnership);
     };
   }, [selectedUploadNodeId]);
 
@@ -1660,34 +1587,18 @@ export function Canvas() {
         if (selectedNodeIds.length === 0) {
           return;
         }
-        event.preventDefault();
-        copyNodesToClipboard(selectedNodeIds);
+        const state = useCanvasStore.getState();
+        copyCanvasSelection(event, state.nodes.filter((node) => selectedNodeIds.includes(node.id)), imageClipboardSession.current,
+          () => { copyNodesToClipboard(selectedNodeIds); });
         return;
       }
 
       if (isPaste) {
-        if (selectedUploadNodeId) {
-          pasteImageHandledRef.current = false;
-          window.setTimeout(() => {
-            if (pasteImageHandledRef.current) {
-              pasteImageHandledRef.current = false;
-              return;
-            }
-
-            if (!copiedSnapshotRef.current || copiedSnapshotRef.current.nodes.length === 0) {
-              return;
-            }
-
-            void duplicateNodesRef.current?.(copiedSnapshotRef.current.nodes.map((node) => node.id));
-          }, 0);
-          return;
-        }
-
-        if (!copiedSnapshotRef.current || copiedSnapshotRef.current.nodes.length === 0) {
-          return;
-        }
-        event.preventDefault();
-        void duplicateNodesRef.current?.(copiedSnapshotRef.current.nodes.map((node) => node.id));
+        handleCanvasPasteShortcut(event, {
+          selectedUploadNodeId, imageHandled: pasteImageHandledRef,
+          hasCopiedNodes: () => Boolean(copiedSnapshotRef.current?.nodes.length),
+          pasteNodes: () => { void duplicateNodesRef.current?.(copiedSnapshotRef.current!.nodes.map((node) => node.id)); },
+        });
         return;
       }
 
@@ -2852,6 +2763,7 @@ export function Canvas() {
         imageUrl={imageViewer.currentImageUrl || ''}
         imageList={imageViewer.imageList}
         currentIndex={imageViewer.currentIndex}
+        nodeId={imageViewer.currentNodeId}
         onClose={closeImageViewer}
         onNavigate={navigateImageViewer}
       />

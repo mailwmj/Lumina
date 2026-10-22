@@ -23,6 +23,7 @@ import {
   type ImageEditNodeData,
   type ImageSize,
 } from '@/features/canvas/domain/canvasNodes';
+import { useContinueFromImageFocus } from '@/features/canvas/ui/useContinueFromImageFocus';
 import { NodeResizeHandle } from '@/features/canvas/ui/NodeResizeHandle';
 import { resolveNodeSurfaceStateClass } from '@/features/canvas/ui/nodeSurfaceStyles';
 import {
@@ -103,6 +104,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
   const rootRef = useRef<HTMLDivElement>(null);
   const generationSubmissionInFlightRef = useRef(false);
   const promptReferenceInputRef = useRef<ImageReferencePromptInputHandle | null>(null);
+  useContinueFromImageFocus(id, promptReferenceInputRef);
   const [promptDraft, setPromptDraft] = useState(() => data.prompt ?? '');
   const promptCompositionStateRef = useRef(createCompositionInputState(data.prompt ?? ''));
 
@@ -276,6 +278,11 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
     updateNodeData,
   ]);
 
+  const unavailableReferenceIds = workflowInputs.blockingImageNodeIds.join(',');
+  useEffect(() => {
+    setError(null);
+  }, [promptDraft, workflowInputs.effectivePrompt, unavailableReferenceIds]);
+
   const handlePolish = useCallback(async () => {
     if (!selectedPolishModel) {
       void showErrorDialog(t('node.textModel.required'), t('settings.polishPrompt'));
@@ -286,9 +293,10 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
       workflowInputs.imageInputs
     ).trim();
     if (!prompt) {
-      void showErrorDialog('请填写提示词后再润色', '润色提示');
+      setError(t('node.imageEdit.polishInputRequired'));
       return;
     }
+    setError(null);
     setIsPolishing(true);
     try {
       const result = await polishText({
@@ -305,8 +313,8 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
       setPromptDraft(nextState.draft);
       updateNodeData(id, { prompt: result.polished });
     } catch (err) {
-      const message = err instanceof Error ? err.message : '润色失败';
-      void showErrorDialog(message, '润色失败');
+      const message = err instanceof Error ? err.message : t('node.imageEdit.polishFailed');
+      void showErrorDialog(message, t('node.imageEdit.polishFailed'));
     } finally {
       setIsPolishing(false);
     }
@@ -315,7 +323,6 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
   const handleGenerate = useCallback(async () => {
     if (!hasConfiguredModel) {
       const errorMessage = t('node.imageEdit.modelRequired');
-      setError(errorMessage);
       void showErrorDialog(errorMessage, t('common.error'));
       return;
     }
@@ -328,20 +335,11 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
 
     try {
       setError(null);
-      const result = await runImageGenerationNode(id, {
+      await runImageGenerationNode(id, {
+        reuseFailedResults: true,
         fallbackResultTitle: t('node.imageEdit.resultTitle'),
         fallbackErrorMessage: t('ai.error'),
       });
-      const firstFailure = result.submissions.find((submission) => submission.status === 'failed');
-      if (firstFailure?.errorMessage) {
-        setError(firstFailure.errorMessage);
-        void showErrorDialog(
-          firstFailure.errorMessage,
-          t('common.error'),
-          firstFailure.errorDetails,
-          firstFailure.errorReport
-        );
-      }
     } catch (generationError) {
       let message = generationError instanceof Error
         ? generationError.message
@@ -364,8 +362,13 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
             : t('node.textGeneration.imageUnavailable');
         }
       }
-      setError(message);
-      void showErrorDialog(message, t('common.error'));
+      if (generationError instanceof ImageGenerationRunError && (
+        generationError.code === 'PROMPT_REQUIRED' || generationError.code === 'REFERENCE_IMAGES_UNAVAILABLE'
+      )) {
+        setError(message);
+      } else if (!(generationError instanceof ImageGenerationRunError && generationError.code === 'ALREADY_RUNNING')) {
+        void showErrorDialog(message, t('common.error'));
+      }
     } finally {
       generationSubmissionInFlightRef.current = false;
       setIsGenerationSubmitting(false);

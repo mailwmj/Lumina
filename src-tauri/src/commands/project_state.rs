@@ -14,6 +14,7 @@ pub struct ProjectSummaryRecord {
     pub created_at: i64,
     pub updated_at: i64,
     pub node_count: i64,
+    pub thumbnail_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -24,6 +25,7 @@ pub struct ProjectRecord {
     pub created_at: i64,
     pub updated_at: i64,
     pub node_count: i64,
+    pub thumbnail_url: Option<String>,
     pub nodes_json: String,
     pub edges_json: String,
     pub viewport_json: String,
@@ -54,7 +56,8 @@ fn ensure_projects_table(conn: &Connection) -> Result<(), String> {
           nodes_json TEXT NOT NULL,
           edges_json TEXT NOT NULL,
           viewport_json TEXT NOT NULL,
-          history_json TEXT NOT NULL
+          history_json TEXT NOT NULL,
+          thumbnail_url TEXT
         );
         CREATE INDEX IF NOT EXISTS idx_projects_updated_at ON projects(updated_at DESC);
         CREATE TABLE IF NOT EXISTS project_image_refs (
@@ -68,6 +71,7 @@ fn ensure_projects_table(conn: &Connection) -> Result<(), String> {
     .map_err(|e| format!("Failed to initialize projects table: {}", e))?;
 
     let mut has_node_count = false;
+    let mut has_thumbnail_url = false;
     let mut stmt = conn
         .prepare("PRAGMA table_info(projects)")
         .map_err(|e| format!("Failed to inspect projects schema: {}", e))?;
@@ -80,7 +84,9 @@ fn ensure_projects_table(conn: &Connection) -> Result<(), String> {
             name_result.map_err(|e| format!("Failed to read projects column name: {}", e))?;
         if column_name == "node_count" {
             has_node_count = true;
-            break;
+        }
+        if column_name == "thumbnail_url" {
+            has_thumbnail_url = true;
         }
     }
 
@@ -90,6 +96,11 @@ fn ensure_projects_table(conn: &Connection) -> Result<(), String> {
             [],
         )
         .map_err(|e| format!("Failed to add node_count column: {}", e))?;
+    }
+
+    if !has_thumbnail_url {
+        conn.execute("ALTER TABLE projects ADD COLUMN thumbnail_url TEXT", [])
+            .map_err(|e| format!("Failed to add thumbnail_url column: {}", e))?;
     }
 
     Ok(())
@@ -270,7 +281,8 @@ pub fn list_project_summaries(app: AppHandle) -> Result<Vec<ProjectSummaryRecord
               name,
               created_at,
               updated_at,
-              node_count
+              node_count,
+              thumbnail_url
             FROM projects
             ORDER BY updated_at DESC
             "#,
@@ -285,6 +297,7 @@ pub fn list_project_summaries(app: AppHandle) -> Result<Vec<ProjectSummaryRecord
                 created_at: row.get(2)?,
                 updated_at: row.get(3)?,
                 node_count: row.get(4)?,
+                thumbnail_url: row.get(5)?,
             })
         })
         .map_err(|e| format!("Failed to query project summaries: {}", e))?;
@@ -314,7 +327,8 @@ pub fn get_project_record(
               nodes_json,
               edges_json,
               viewport_json,
-              history_json
+              history_json,
+              thumbnail_url
             FROM projects
             WHERE id = ?1
             LIMIT 1
@@ -333,6 +347,7 @@ pub fn get_project_record(
             edges_json: row.get(6)?,
             viewport_json: row.get(7)?,
             history_json: row.get(8)?,
+            thumbnail_url: row.get(9)?,
         })
     });
 
@@ -362,9 +377,10 @@ pub fn upsert_project_record(app: AppHandle, record: ProjectRecord) -> Result<()
           nodes_json,
           edges_json,
           viewport_json,
-          history_json
+          history_json,
+          thumbnail_url
         )
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
         ON CONFLICT(id) DO UPDATE SET
           name = excluded.name,
           created_at = excluded.created_at,
@@ -373,7 +389,8 @@ pub fn upsert_project_record(app: AppHandle, record: ProjectRecord) -> Result<()
           nodes_json = excluded.nodes_json,
           edges_json = excluded.edges_json,
           viewport_json = excluded.viewport_json,
-          history_json = excluded.history_json
+          history_json = excluded.history_json,
+          thumbnail_url = excluded.thumbnail_url
         "#,
         params![
             record.id,
@@ -385,6 +402,7 @@ pub fn upsert_project_record(app: AppHandle, record: ProjectRecord) -> Result<()
             record.edges_json,
             record.viewport_json,
             record.history_json,
+            record.thumbnail_url,
         ],
     )
     .map_err(|e| format!("Failed to upsert project: {}", e))?;
@@ -520,6 +538,25 @@ pub fn delete_project_record(app: AppHandle, project_id: String) -> Result<(), S
 #[cfg(test)]
 mod tests {
     use super::extract_project_image_paths;
+
+    #[test]
+    fn thumbnail_migration_preserves_legacy_project_data() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE projects (
+            id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL, nodes_json TEXT NOT NULL, edges_json TEXT NOT NULL,
+            viewport_json TEXT NOT NULL, history_json TEXT NOT NULL);
+            INSERT INTO projects VALUES ('legacy', 'Old project', 1, 2, '[]', '[]', '{}', '{}');").unwrap();
+        super::ensure_projects_table(&conn).unwrap();
+        super::ensure_projects_table(&conn).unwrap();
+        let (name, thumbnail, count): (String, Option<String>, i64) = conn.query_row(
+            "SELECT name, thumbnail_url, node_count FROM projects WHERE id = 'legacy'", [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        ).unwrap();
+        assert_eq!(name, "Old project");
+        assert_eq!(thumbnail, None);
+        assert_eq!(count, 0);
+    }
 
     #[test]
     fn project_image_paths_include_node_and_storyboard_reference_derivatives() {

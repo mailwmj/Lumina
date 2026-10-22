@@ -151,6 +151,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
   const [promptDraft, setPromptDraft] = useState(data.prompt || '');
   const [isPolishing, setIsPolishing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [polishError, setPolishError] = useState<string | null>(null);
   const promptDraftRef = useRef(promptDraft);
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const promptHighlightRef = useRef<HTMLDivElement>(null);
@@ -331,6 +332,10 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
     promptHighlightRef.current.scrollLeft = promptRef.current.scrollLeft;
   }, []);
 
+  useEffect(() => {
+    setPolishError(null);
+  }, [promptDraft, seedanceGraphInputs]);
+
   const handlePolish = useCallback(async () => {
     if (!selectedPolishModel) {
       void showErrorDialog(t('node.textModel.required'), t('settings.polishPrompt'));
@@ -341,7 +346,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
       (input) => input.type === 'image' && input.url ? [input.url] : []
     );
     if (isFirstLastMode && connectedImages.length === 0) {
-      void showErrorDialog(t('node.videoGen.polishImageRequired'), t('node.videoGen.polishTitle'));
+      setPolishError(t('node.videoGen.polishImageRequired'));
       return;
     }
 
@@ -370,6 +375,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
       textToPolish = '请生成一个适合AI视频的提示词。';
     }
 
+    setPolishError(null);
     setIsPolishing(true);
     try {
       const effectivePolishPrompt = selectedVideoApi?.polishPrompt
@@ -764,9 +770,9 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
       </section>
 
       {/* Error */}
-      {error && (
+      {(polishError || error) && (
         <div className="shrink-0 rounded bg-destructive/10 px-2 py-1 text-xs text-destructive">
-          {error}
+          {polishError || error}
         </div>
       )}
 

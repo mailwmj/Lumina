@@ -1,3 +1,5 @@
+import { ImageCopyButton } from './ImageCopyButton';
+import { downloadImage } from '../application/imageDownload';
 import {
   memo,
   useCallback,
@@ -15,6 +17,7 @@ import {
   PenLine,
   RefreshCw,
   Scissors,
+  Sparkles,
   Unlink2,
 } from '@/components/ui/icons';
 import { save } from '@tauri-apps/plugin-dialog';
@@ -33,13 +36,12 @@ import {
   type CanvasWorkflowNode,
   type NodeToolType,
 } from '@/features/canvas/domain/canvasNodes';
+import { canContinueFromImage, continueFromImage } from '@/features/canvas/application/continueFromImage';
 import { canvasEventBus } from '@/features/canvas/application/canvasServices';
 import { getNodeToolPlugins } from '@/features/canvas/tools';
 import type { ToolIconKey } from '@/features/canvas/tools';
 import { UiChipButton, UiPanel } from '@/components/ui';
 import {
-  saveImageSourceToDirectory,
-  saveImageSourceToPath,
   saveVideoSourceToPath,
 } from '@/commands/image';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -47,11 +49,7 @@ import { useCanvasStore } from '@/stores/canvasStore';
 import { UI_POPOVER_TRANSITION_MS } from '@/components/ui/motion';
 import { sanitizeStoryboardText } from '@/features/canvas/application/storyboardText';
 import { buildGenerationErrorReport } from '@/features/canvas/application/generationErrorReport';
-import {
-  resolveImageFileExtension,
-  resolveImageFileName,
-  resolveImageFileStem,
-} from '@/features/canvas/application/imageMetadata';
+
 import { logger } from '@/lib/logger';
 import {
   NODE_TOOLBAR_ALIGN,
@@ -104,19 +102,6 @@ export const NodeActionToolbar = memo(({ node }: NodeActionToolbarProps) => {
     return null;
   }, [node]);
   const canHandleImage = Boolean(imageSource);
-  const imageFileName = useMemo(
-    () => resolveImageFileName(imageSource, `node-${node.id}`),
-    [imageSource, node.id]
-  );
-  const imageFileStem = useMemo(
-    () => resolveImageFileStem(imageFileName),
-    [imageFileName]
-  );
-  const imageFileExtension = useMemo(
-    () => resolveImageFileExtension(imageFileName),
-    [imageFileName]
-  );
-
   // Video source for export video nodes
   const videoSource = useMemo(() => {
     if (isExportVideoNode(node)) {
@@ -287,52 +272,11 @@ export const NodeActionToolbar = memo(({ node }: NodeActionToolbarProps) => {
   }, [canCopyGenerationError, generationErrorReport]);
 
   const handleDownloadSaveAs = useCallback(async () => {
-    if (!imageSource) {
-      return;
-    }
-
-    try {
-      const downloadPath = lastDownloadDirectory || await downloadDir();
-      const defaultFilePath = await join(downloadPath, imageFileName);
-      const selectedPath = await save({
-        defaultPath: defaultFilePath,
-        filters: imageFileExtension
-          ? [{ name: 'Image', extensions: [imageFileExtension] }]
-          : [{ name: 'Image', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
-      });
-      if (!selectedPath || Array.isArray(selectedPath)) {
-        return;
-      }
-      await saveImageSourceToPath(imageSource, selectedPath);
-      setLastDownloadDirectory(await dirname(selectedPath));
-      closeDownloadMenu();
-    } catch (error) {
-      logger.error('Failed to save image with save-as', error);
-    }
-  }, [
-    closeDownloadMenu,
-    imageFileExtension,
-    imageFileName,
-    imageSource,
-    lastDownloadDirectory,
-    setLastDownloadDirectory,
-  ]);
-
-  const handleDownloadToPreset = useCallback(
-    async (targetDir: string) => {
-      if (!imageSource) {
-        return;
-      }
-      try {
-        await saveImageSourceToDirectory(imageSource, targetDir, imageFileStem);
-        setLastDownloadDirectory(targetDir);
-        closeDownloadMenu();
-      } catch (error) {
-        logger.error('Failed to save image to preset dir', error);
-      }
-    },
-    [closeDownloadMenu, imageFileStem, imageSource, setLastDownloadDirectory]
-  );
+    if (imageSource && await downloadImage(imageSource, { nodeId: node.id }) === 'saved') closeDownloadMenu();
+  }, [imageSource, node.id, closeDownloadMenu]);
+  const handleDownloadToPreset = useCallback(async (targetDir: string) => {
+    if (imageSource && await downloadImage(imageSource, { nodeId: node.id, targetDir }) === 'saved') closeDownloadMenu();
+  }, [imageSource, node.id, closeDownloadMenu]);
 
   // Video download handlers
   const handleVideoDownloadSaveAs = useCallback(async () => {
@@ -393,6 +337,25 @@ export const NodeActionToolbar = memo(({ node }: NodeActionToolbarProps) => {
       className={NODE_TOOLBAR_CLASS}
     >
       <UiPanel className="no-scrollbar flex h-12 max-w-[calc(100vw-24px)] items-center gap-0.5 overflow-x-auto rounded-full px-1.5 py-1 shadow-[var(--ui-shadow-toolbar)]">
+        {isExportImageNode(node) && node.data.generationRecord && node.data.imageUrl && !node.data.isGenerating && !node.data.generationError && (
+          <UiChipButton className={`h-8 ${TOOLBAR_BUTTON_RADIUS_CLASS} px-2.5 text-xs ${TOOLBAR_NEUTRAL_BUTTON_CLASS}`}
+            onClick={() => canvasEventBus.publish('generation-record/open', { nodeId: node.id })}>
+            <PenLine className="h-3.5 w-3.5" />{t('generationRecord.title')}
+          </UiChipButton>
+        )}
+        {(isUploadNode(node) || isExportImageNode(node)) && node.data.imageUrl && (
+          <ImageCopyButton source={node.data.imageUrl}
+            className={`inline-flex h-8 items-center gap-1.5 ${TOOLBAR_BUTTON_RADIUS_CLASS} px-2.5 text-xs ${TOOLBAR_NEUTRAL_BUTTON_CLASS}`} />
+        )}
+        {canContinueFromImage(node) && (
+          <UiChipButton
+            className={`h-8 ${TOOLBAR_BUTTON_RADIUS_CLASS} px-2.5 text-xs ${TOOLBAR_NEUTRAL_BUTTON_CLASS}`}
+            onClick={() => continueFromImage(node.id)}
+          >
+            <Sparkles className="h-3.5 w-3.5" />
+            {t('nodeToolbar.continueFromImage')}
+          </UiChipButton>
+        )}
         {!isImageEdit && tools.map((tool) => {
           const Icon = toolIconMap[tool.icon] ?? Crop;
 

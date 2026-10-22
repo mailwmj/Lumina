@@ -7,12 +7,12 @@ import {
   ZoomOut,
   Maximize2,
   Grid3X3,
-  Trash2,
 } from '@/components/ui/icons';
 import { useReactFlow } from '@xyflow/react';
 
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { CanvasMoreMenu } from './ui/CanvasMoreMenu';
 import { UiButton, UiModal, UiTooltip } from '@/components/ui';
 
 interface CanvasToolbarProps {
@@ -70,6 +70,9 @@ export const CanvasToolbar = memo(({
   const snapToGridEnabled = useSettingsStore((state) => state.snapToGridEnabled);
   const setSnapToGridEnabled = useSettingsStore((state) => state.setSnapToGridEnabled);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const isMac = typeof navigator !== 'undefined'
+    && /(Mac|iPhone|iPad|iPod)/i.test(`${navigator.platform} ${navigator.userAgent}`);
+  const undoShortcut = isMac ? '⌘+Z' : 'Ctrl+Z';
 
   const handleClearClick = useCallback(() => {
     if (isLocked) return;
@@ -143,14 +146,7 @@ export const CanvasToolbar = memo(({
           <Grid3X3 className="h-4 w-4" />
         </CanvasToolbarButton>
 
-        <CanvasToolbarButton
-          label={t('canvas.toolbar.clear')}
-          onClick={handleClearClick}
-          disabled={isLocked}
-          danger
-        >
-          <Trash2 className="h-4 w-4" />
-        </CanvasToolbarButton>
+        <CanvasMoreMenu isLocked={isLocked} onClear={handleClearClick} />
       </div>
 
       <UiModal
@@ -166,7 +162,7 @@ export const CanvasToolbar = memo(({
           </>
         )}
       >
-        <p className="text-sm leading-6 text-text-muted">{t('canvas.clearConfirm.message')}</p>
+        <p className="text-sm leading-6 text-text-muted">{t('canvas.clearConfirm.message', { shortcut: undoShortcut })}</p>
       </UiModal>
     </>
   );

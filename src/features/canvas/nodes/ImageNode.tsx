@@ -1,4 +1,5 @@
-import { memo, useEffect, useMemo, useState } from 'react';
+import { buildGenerationBatchViewerItems } from '../application/imageViewerState';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Handle,
   Position,
@@ -32,6 +33,7 @@ import { NodeResizeHandle } from '@/features/canvas/ui/NodeResizeHandle';
 import { resolveNodeSurfaceStateClass } from '@/features/canvas/ui/nodeSurfaceStyles';
 import { CanvasNodeImage } from '@/features/canvas/ui/CanvasNodeImage';
 import { SelectedImageMetadata } from '@/features/canvas/ui/SelectedImageMetadata';
+import { ImageGenerationFailureActions } from '@/features/canvas/ui/ImageGenerationFailureActions';
 import { useCanvasStore } from '@/stores/canvasStore';
 
 type ImageNodeProps = NodeProps & {
@@ -50,6 +52,8 @@ function resolveNodeDimension(value: number | undefined, fallback: number): numb
 export const ImageNode = memo(({ id, data, selected, type, width, height }: ImageNodeProps) => {
   const { t } = useTranslation();
   const updateNodeInternals = useUpdateNodeInternals();
+  const viewerImages = useCallback(() => buildGenerationBatchViewerItems(id, useCanvasStore.getState().nodes)
+    .map((item) => ({ ...item, url: resolveImageDisplayUrl(item.url) })), [id]);
   const setSelectedNode = useCanvasStore((state) => state.setSelectedNode);
   const updateNodeDataWithoutHistory = useCanvasStore(
     (state) => state.updateNodeDataWithoutHistory
@@ -192,6 +196,8 @@ export const ImageNode = memo(({ id, data, selected, type, width, height }: Imag
             src={imageSource ?? ''}
             alt={isExportResultNode ? t('node.imageNode.resultAlt') : t('node.imageNode.generatedAlt')}
             viewerSourceUrl={originalImageUrl}
+            viewerImageList={viewerImages}
+            viewerNodeId={id}
             className="h-full w-full object-contain"
             showResolutionPreview={false}
           />
@@ -204,6 +210,7 @@ export const ImageNode = memo(({ id, data, selected, type, width, height }: Imag
             <span className="max-h-[88px] overflow-y-auto break-words text-center text-[11px] leading-5 text-red-200/90">
               {generationError}
             </span>
+            <ImageGenerationFailureActions id={id} data={data as ExportImageNodeData} />
           </div>
         ) : requiresManualRequery ? (
           <div className="flex h-full w-full flex-col items-center justify-center gap-2 px-4 text-amber-200">

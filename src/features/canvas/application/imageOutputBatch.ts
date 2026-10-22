@@ -10,6 +10,7 @@ import {
   type CanvasNodeData,
   type CanvasNodeType,
   type ImageOutputCount,
+  type ExportImageNodeData,
 } from '@/features/canvas/domain/canvasNodes';
 import { resolveFittedImageNodeSize } from '@/features/canvas/application/imageNodeSizing';
 import {
@@ -35,6 +36,8 @@ interface CreateImageOutputBatchInput {
   generationDurationMs: number;
   existingNodes: readonly CanvasNode[];
   existingEdges: readonly CanvasEdge[];
+  targetResultNodeIds?: readonly string[];
+  updateNodeData?: (nodeId: string, data: Partial<CanvasNodeData>) => void;
   addNodeBatch: (
     nodes: Array<{
       type: CanvasNodeType;
@@ -71,6 +74,8 @@ export function createImageOutputBatchNodes({
   existingEdges,
   addNodeBatch,
   addEdge,
+  targetResultNodeIds = [],
+  updateNodeData,
 }: CreateImageOutputBatchInput): ImageOutputBatchNode[] {
   const outputSize = resolveFittedImageNodeSize(
     aspectRatio,
@@ -83,43 +88,56 @@ export function createImageOutputBatchNodes({
       minHeight: EXPORT_RESULT_NODE_MIN_HEIGHT,
     }
   );
-  const placements = resolveImageResultBatchPositions({
+  const newCount = outputCount - targetResultNodeIds.length;
+  const placements = newCount > 0 ? resolveImageResultBatchPositions({
     sourceNodeId,
     nodes: existingNodes,
     edges: existingEdges,
     resultSize: outputSize,
-    resultCount: outputCount,
+    resultCount: newCount,
     resultNodeType: CANVAS_NODE_TYPES.exportImage,
-  });
+  }) : [];
   const generationBatchId = `${sourceNodeId}:generation:${generationStartedAt}`;
 
-  const nodeIds = addNodeBatch(
-    placements.map(({ position, laneSlot }, outputIndex) => ({
+  const buildData = (outputIndex: number): Partial<CanvasNodeData> => ({
+    aspectRatio,
+    isGenerating: true,
+    generationStartedAt,
+    generationDurationMs,
+    generationJobId: null,
+    generationError: null,
+    generationErrorDetails: null,
+    generationDebugContext: undefined,
+    generationProviderId: null,
+    generationProviderName: null,
+    generationModelName: null,
+    generationClientSessionId: null,
+    generationRecoveryState: null,
+    generationRetryCount: 0,
+    generationNextRetryAt: null,
+    generationRetryError: null,
+    resultKind: 'generic',
+    displayName: outputCount === 1
+      ? resultNodeTitle
+      : `${resultNodeTitle} · ${outputIndex + 1}/${outputCount}`,
+    generationBatchIndex: outputIndex,
+    generationBatchSize: outputCount,
+    generationBatchId,
+  });
+  targetResultNodeIds.forEach((nodeId, outputIndex) => {
+    updateNodeData?.(nodeId, buildData(outputIndex));
+  });
+  const nodeIds = placements.length > 0 ? addNodeBatch(
+    placements.map(({ position, laneSlot }, index) => ({
       type: CANVAS_NODE_TYPES.exportImage,
       width: outputSize.width,
       height: outputSize.height,
       position,
-      data: {
-        aspectRatio,
-        isGenerating: true,
-        generationStartedAt,
-        generationDurationMs,
-        resultKind: 'generic',
-        displayName: outputCount === 1
-          ? resultNodeTitle
-          : `${resultNodeTitle} · ${outputIndex + 1}/${outputCount}`,
-        generationBatchIndex: outputIndex,
-        generationBatchSize: outputCount,
-        generationBatchId,
-        generationLaneSlot: laneSlot,
-      },
+      data: { ...buildData(targetResultNodeIds.length + index), generationLaneSlot: laneSlot },
     }))
-  );
-
-  return nodeIds.map((nodeId, outputIndex) => {
-    addEdge(sourceNodeId, nodeId);
-    return { nodeId, outputIndex };
-  });
+  ) : [];
+  nodeIds.forEach((nodeId) => addEdge(sourceNodeId, nodeId));
+  return [...targetResultNodeIds, ...nodeIds].map((nodeId, outputIndex) => ({ nodeId, outputIndex }));
 }
 
 export function markImageOutputNodeFailed({
@@ -147,4 +165,28 @@ export function markImageOutputNodeFailed({
     generationRetryError: null,
   });
   return { resolvedError, generationDebugContext };
+}
+
+export function isImageGenerationOutput(data: ExportImageNodeData): boolean {
+  // A generic export may also come from other tools; only explicit provenance is retryable.
+  const context = data.generationDebugContext;
+  return typeof context === 'object' && context !== null
+    && 'sourceType' in context && context.sourceType === 'imageEdit';
+}
+
+export function isReusableFailedImageOutput(node: CanvasNode): boolean {
+  const data = node.data as Record<string, unknown>;
+  return node.type === CANVAS_NODE_TYPES.exportImage
+    && isImageGenerationOutput(node.data as ExportImageNodeData)
+    && typeof data.generationError === 'string' && data.generationError.trim().length > 0
+    && !data.imageUrl && !data.isGenerating;
+}
+
+export function findReusableImageOutputs(
+  sourceNodeId: string,
+  nodes: readonly CanvasNode[],
+  edges: readonly CanvasEdge[]
+): string[] {
+  const targets = new Set(edges.filter((edge) => edge.source === sourceNodeId).map((edge) => edge.target));
+  return nodes.filter((node) => targets.has(node.id) && isReusableFailedImageOutput(node)).map((node) => node.id);
 }

@@ -1,3 +1,4 @@
+import { GenerationRecordPopover } from './GenerationRecordPopover';
 import { memo, useMemo } from 'react';
 
 import {
@@ -30,19 +31,11 @@ export const SelectedNodeOverlay = memo(() => {
     [selectedNodeIds, workflowNodesById]
   );
 
-  if (selectedNodes.length > 1) {
-    return <MultiSelectionActionToolbar selectedNodes={selectedNodes} />;
-  }
-
-  if (!selectedNode) {
-    return null;
-  }
-
-  if (!canShowNodeActionToolbar(selectedNode)) {
-    return null;
-  }
-
-  return <NodeActionToolbar node={selectedNode} />;
+  return <>
+    <GenerationRecordPopover />
+    {selectedNodes.length > 1 ? <MultiSelectionActionToolbar selectedNodes={selectedNodes} />
+      : selectedNode && canShowNodeActionToolbar(selectedNode) ? <NodeActionToolbar node={selectedNode} /> : null}
+  </>;
 });
 
 SelectedNodeOverlay.displayName = 'SelectedNodeOverlay';

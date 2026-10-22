@@ -617,6 +617,7 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
   const imagePolishConfig = useSettingsStore((state) => state.imagePolishConfig);
 
   const [error, setError] = useState<string | null>(null);
+  const [polishError, setPolishError] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const activeFrameTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [showImagePicker, setShowImagePicker] = useState(false);
@@ -1081,6 +1082,10 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
     selectedAspectRatio.value,
   ]);
 
+  useEffect(() => {
+    setPolishError(null);
+  }, [frameDescriptionDrafts]);
+
   const handlePolishFrame = useCallback(async (frameIndex: number) => {
     if (!selectedPolishModel) {
       void showErrorDialog(t('node.textModel.required'), t('settings.polishPrompt'));
@@ -1091,9 +1096,10 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
     const frameDescription = frameDescriptionDraftsRef.current[frame.id] ?? frame.description;
 
     if (!frameDescription.trim()) {
-      void showErrorDialog('请先填写分镜内容后再润色', '润色提示');
+      setPolishError(t('node.storyboardGen.polishInputRequired'));
       return;
     }
+    setPolishError(null);
     setPolishingFrameIndex(frameIndex);
     try {
       const result = await polishText({
@@ -1111,8 +1117,8 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
       }));
       updateNodeData(id, { frames: newFrames });
     } catch (err) {
-      const message = err instanceof Error ? err.message : '润色失败';
-      void showErrorDialog(message, '润色失败');
+      const message = err instanceof Error ? err.message : t('node.imageEdit.polishFailed');
+      void showErrorDialog(message, t('node.imageEdit.polishFailed'));
     } finally {
       setPolishingFrameIndex(null);
     }
@@ -1945,7 +1951,7 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
         document.body
       )}
 
-      {error && <div className="mb-1.5 shrink-0 text-[10px] text-red-400">{error}</div>}
+      {(polishError || error) && <div className="mb-1.5 shrink-0 text-[10px] text-red-400">{polishError || error}</div>}
 
       {/* AI Parameters */}
       <div

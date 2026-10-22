@@ -1,7 +1,10 @@
+import { buildGenerationRecord } from './generationRecordSnapshot';
 import {
   AUTO_REQUEST_ASPECT_RATIO,
   DEFAULT_IMAGE_OUTPUT_COUNT,
   isImageEditNode,
+  type ImageOutputCount,
+  type ImageSize,
 } from '@/features/canvas/domain/canvasNodes';
 import { resolveNodeDisplayName } from '@/features/canvas/domain/nodeDisplay';
 import {
@@ -22,6 +25,7 @@ import {
 } from '@/features/canvas/application/generationErrorReport';
 import {
   createImageOutputBatchNodes,
+  findReusableImageOutputs,
   markImageOutputNodeFailed,
 } from '@/features/canvas/application/imageOutputBatch';
 import {
@@ -61,6 +65,8 @@ export interface ImageGenerationBatchRunResult {
 }
 
 export type ImageGenerationRunErrorCode =
+  | 'SOURCE_NODE_NOT_FOUND'
+  | 'RESULT_NOT_RETRYABLE'
   | 'ALREADY_RUNNING'
   | 'NODE_NOT_FOUND'
   | 'MODEL_REQUIRED'
@@ -78,7 +84,9 @@ export class ImageGenerationRunError extends Error {
   }
 }
 
-interface RunImageGenerationNodeOptions {
+export interface RunImageGenerationNodeOptions {
+  targetResultNodeIds?: readonly string[];
+  reuseFailedResults?: boolean;
   fallbackResultTitle?: string;
   fallbackErrorMessage?: string;
   diagnostics?: ReturnType<typeof getRuntimeDiagnostics>;
@@ -233,7 +241,9 @@ export async function runImageGenerationNode(
     const requestResolution = configuredModel.resolveRequest({
       referenceImageCount: referenceImages.length,
     });
-    const outputCount = sourceNode.data.outputCount ?? DEFAULT_IMAGE_OUTPUT_COUNT;
+    const outputCount = options.targetResultNodeIds?.length
+      ? options.targetResultNodeIds.length as ImageOutputCount
+      : sourceNode.data.outputCount ?? DEFAULT_IMAGE_OUTPUT_COUNT;
     const effectiveExtraParams = { ...(sourceNode.data.extraParams ?? {}) };
     const resolvedRequestAspectRatio = await resolveRequestAspectRatio(
       sourceNode.data.requestAspectRatio,
@@ -270,7 +280,16 @@ export async function runImageGenerationNode(
       }
       assertAuthorized(options.assertCurrent);
       const latestCanvas = useCanvasStore.getState();
+      const reusableIds = options.targetResultNodeIds || options.reuseFailedResults
+        ? findReusableImageOutputs(sourceNodeId, latestCanvas.nodes, latestCanvas.edges)
+        : [];
+      if (options.targetResultNodeIds?.some((nodeId) => !reusableIds.includes(nodeId))) {
+        throw new ImageGenerationRunError('RESULT_NOT_RETRYABLE', 'The result is no longer available for retry.');
+      }
       resultNodes = createImageOutputBatchNodes({
+        targetResultNodeIds: options.targetResultNodeIds
+          ?? (options.reuseFailedResults ? reusableIds.slice(0, outputCount) : []),
+        updateNodeData: latestCanvas.updateNodeData,
         sourceNodeId,
         outputCount,
         aspectRatio: resolvedRequestAspectRatio,
@@ -285,6 +304,15 @@ export async function runImageGenerationNode(
         addNodeBatch: latestCanvas.addNodeBatch,
         addEdge: latestCanvas.addEdge,
       });
+      const generationRecord = buildGenerationRecord({
+        prompt: sourceNode.data.prompt ?? '', displayPrompt: userPrompt,
+        modelId: configuredModel.id, modelName: configuredModel.displayName,
+        providerName: getModelProvider(configuredModel.providerId, configuredModel.providerName).name,
+        size: selectedResolution.value as ImageSize, requestAspectRatio: sourceNode.data.requestAspectRatio ?? AUTO_REQUEST_ASPECT_RATIO,
+        resolvedAspectRatio: resolvedRequestAspectRatio, outputCount,
+        extraParams: effectiveExtraParams, referenceImageCount: referenceImages.length, createdAt: generationStartedAt,
+      });
+      resultNodes.forEach(({ nodeId }) => latestCanvas.updateNodeDataWithoutHistory(nodeId, { generationRecord }));
       assertAuthorized(
         options.assertCurrent,
         resultNodes.map((resultNode) => resultNode.nodeId)

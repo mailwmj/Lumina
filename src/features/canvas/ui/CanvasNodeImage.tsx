@@ -1,3 +1,4 @@
+import { normalizeViewerItems, type ImageViewerItem } from '../application/imageViewerState';
 import {
   memo,
   useCallback,
@@ -14,31 +15,12 @@ import { useCanvasStore } from '@/stores/canvasStore';
 
 export interface CanvasNodeImageProps extends ImgHTMLAttributes<HTMLImageElement> {
   viewerSourceUrl?: string | null;
-  viewerImageList?: Array<string | null | undefined>;
+  viewerImageList?: Array<string | ImageViewerItem | null | undefined> | (() => ImageViewerItem[]);
+  viewerNodeId?: string;
   disableViewer?: boolean;
   showResolutionPreview?: boolean;
   /** Override resolution - use this when displaying a thumbnail but needing to show original dimensions */
   resolutionOverride?: { width: number; height: number } | null;
-}
-
-function normalizeViewerList(
-  imageList: Array<string | null | undefined> | undefined,
-  currentImageUrl: string
-): string[] {
-  const deduped: string[] = [];
-  for (const rawItem of imageList ?? []) {
-    const item = typeof rawItem === 'string' ? rawItem.trim() : '';
-    if (!item || deduped.includes(item)) {
-      continue;
-    }
-    deduped.push(item);
-  }
-
-  if (!deduped.includes(currentImageUrl)) {
-    deduped.unshift(currentImageUrl);
-  }
-
-  return deduped.length > 0 ? deduped : [currentImageUrl];
 }
 
 /** Load image dimensions from a URL */
@@ -54,6 +36,7 @@ function loadImageDimensions(url: string): Promise<{ width: number; height: numb
 export const CanvasNodeImage = memo(({
   viewerSourceUrl,
   viewerImageList,
+  viewerNodeId,
   disableViewer = false,
   showResolutionPreview = true,
   resolutionOverride = null,
@@ -91,8 +74,8 @@ export const CanvasNodeImage = memo(({
     }
 
     event.stopPropagation();
-    openImageViewer(resolvedSource, normalizeViewerList(viewerImageList, resolvedSource));
-  }, [disableViewer, onDoubleClick, openImageViewer, src, viewerImageList, viewerSourceUrl]);
+    openImageViewer(resolvedSource, normalizeViewerItems(typeof viewerImageList === 'function' ? viewerImageList() : viewerImageList ?? [], { url: resolvedSource, nodeId: viewerNodeId }), viewerNodeId);
+  }, [disableViewer, onDoubleClick, openImageViewer, src, viewerImageList, viewerSourceUrl, viewerNodeId]);
 
   const handleMouseEnter = useCallback((event: MouseEvent<HTMLImageElement>) => {
     onMouseEnter?.(event);

@@ -1,3 +1,4 @@
+import { closedImageViewer, openedImageViewer, navigatedImageViewer, type ImageViewerItem, type ImageViewerState } from '@/features/canvas/application/imageViewerState';
 import { create } from 'zustand';
 import { logger } from '@/lib/logger';
 import {
@@ -181,12 +182,7 @@ interface CanvasState {
   dragHistorySnapshot: CanvasHistorySnapshot | null;
   currentViewport: Viewport;
   canvasViewportSize: { width: number; height: number };
-  imageViewer: {
-    isOpen: boolean;
-    currentImageUrl: string | null;
-    imageList: string[];
-    currentIndex: number;
-  };
+  imageViewer: ImageViewerState;
 
   onNodesChange: (changes: NodeChange<CanvasNode>[]) => void;
   onEdgesChange: (changes: EdgeChange<CanvasEdge>[]) => void;
@@ -279,7 +275,7 @@ interface CanvasState {
   closeToolDialog: () => void;
   setViewportState: (viewport: Viewport) => void;
   setCanvasViewportSize: (size: { width: number; height: number }) => void;
-  openImageViewer: (imageUrl: string, imageList?: string[]) => void;
+  openImageViewer: (imageUrl: string, imageList?: Array<string | ImageViewerItem>, nodeId?: string) => void;
   closeImageViewer: () => void;
   navigateImageViewer: (direction: 'prev' | 'next') => void;
 
@@ -745,12 +741,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   dragHistorySnapshot: null,
   currentViewport: { x: 0, y: 0, zoom: 1 },
   canvasViewportSize: { width: 0, height: 0 },
-  imageViewer: {
-    isOpen: false,
-    currentImageUrl: null,
-    imageList: [],
-    currentIndex: 0,
-  },
+  imageViewer: closedImageViewer(),
 
   onNodesChange: (changes) => {
     set((state) => {
@@ -1073,52 +1064,12 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     set({ canvasViewportSize: size });
   },
 
-  openImageViewer: (imageUrl, imageList = []) => {
-    const list = imageList.length > 0 ? imageList : [imageUrl];
-    const index = list.indexOf(imageUrl);
-    set({
-      imageViewer: {
-        isOpen: true,
-        currentImageUrl: imageUrl,
-        imageList: list,
-        currentIndex: index >= 0 ? index : 0,
-      },
-    });
+  openImageViewer: (imageUrl, imageList = [], nodeId) => {
+    set({ imageViewer: openedImageViewer(imageUrl, imageList, nodeId) });
   },
-
-  closeImageViewer: () => {
-    set({
-      imageViewer: {
-        isOpen: false,
-        currentImageUrl: null,
-        imageList: [],
-        currentIndex: 0,
-      },
-    });
-  },
-
+  closeImageViewer: () => { set({ imageViewer: closedImageViewer() }); },
   navigateImageViewer: (direction) => {
-    const state = get();
-    const { currentIndex, imageList } = state.imageViewer;
-    if (direction === 'prev' && currentIndex > 0) {
-      const newIndex = currentIndex - 1;
-      set({
-        imageViewer: {
-          ...state.imageViewer,
-          currentIndex: newIndex,
-          currentImageUrl: imageList[newIndex],
-        },
-      });
-    } else if (direction === 'next' && currentIndex < imageList.length - 1) {
-      const newIndex = currentIndex + 1;
-      set({
-        imageViewer: {
-          ...state.imageViewer,
-          currentIndex: newIndex,
-          currentImageUrl: imageList[newIndex],
-        },
-      });
-    }
+    set((state) => ({ imageViewer: navigatedImageViewer(state.imageViewer, direction) }));
   },
 
   addNode: (type, position, data = {}) => {
