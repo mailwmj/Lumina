@@ -30,7 +30,11 @@ import { useCanvasNodeImageSource } from '@/features/canvas/hooks/useCanvasNodeI
 import { resolveImageFileName } from '@/features/canvas/application/imageMetadata';
 import { resolveNodeDisplayName } from '@/features/canvas/domain/nodeDisplay';
 import { NodeResizeHandle } from '@/features/canvas/ui/NodeResizeHandle';
-import { resolveNodeSurfaceStateClass } from '@/features/canvas/ui/nodeSurfaceStyles';
+import {
+  resolveNodeStatusSurfaceClass,
+  resolveNodeSurfaceStateClass,
+} from '@/features/canvas/ui/nodeSurfaceStyles';
+import { NodeProgressOverlay } from '@/features/canvas/ui/NodeProgressOverlay';
 import { CanvasNodeImage } from '@/features/canvas/ui/CanvasNodeImage';
 import { SelectedImageMetadata } from '@/features/canvas/ui/SelectedImageMetadata';
 import { ImageGenerationFailureActions } from '@/features/canvas/ui/ImageGenerationFailureActions';
@@ -176,20 +180,16 @@ export const ImageNode = memo(({ id, data, selected, type, width, height }: Imag
       className={`
         group relative overflow-visible rounded-[var(--node-radius)] border bg-surface-dark/85 p-0 transition-colors duration-150
         ${hasGenerationError
-          ? (selected
-            ? 'border-red-400 shadow-[0_0_0_1px_rgba(248,113,113,0.42)]'
-            : 'border-red-500/70 bg-[rgba(127,29,29,0.12)] hover:border-red-400/80 dark:border-red-500/70 dark:hover:border-red-400/80')
+          ? resolveNodeStatusSurfaceClass('danger', selected)
           : requiresManualRequery
-            ? (selected
-              ? 'border-amber-400 shadow-[0_0_0_1px_rgba(251,191,36,0.34)]'
-              : 'border-amber-500/65 bg-[rgba(120,83,13,0.12)] hover:border-amber-400/80')
-          : resolveNodeSurfaceStateClass(selected)}
+            ? resolveNodeStatusSurfaceClass('warning', selected)
+            : resolveNodeSurfaceStateClass(selected)}
       `}
       style={{ width: resolvedWidth, height: resolvedHeight }}
       onClick={() => setSelectedNode(id)}
     >
       <div
-        className={`relative h-full w-full overflow-hidden rounded-[var(--node-radius)] ${hasGenerationError ? 'bg-[rgba(127,29,29,0.2)]' : 'bg-bg-dark'}`}
+        className={`relative h-full w-full overflow-hidden rounded-[var(--node-radius)] ${hasGenerationError ? 'bg-transparent' : 'bg-bg-dark'}`}
       >
         {data.imageUrl ? (
           <CanvasNodeImage
@@ -202,24 +202,24 @@ export const ImageNode = memo(({ id, data, selected, type, width, height }: Imag
             showResolutionPreview={false}
           />
         ) : hasGenerationError ? (
-          <div className="flex h-full w-full flex-col items-center justify-center gap-2 px-4 text-red-300">
+          <div className="flex h-full w-full flex-col items-center justify-center gap-2 px-4 text-danger">
             <AlertTriangle className="h-7 w-7 opacity-90" />
-            <span className="text-center text-[12px] font-medium leading-5 text-red-200">
+            <span className="text-center text-xs font-medium leading-5 text-danger">
               {t('node.imageNode.generationFailed')}
             </span>
-            <span className="max-h-[88px] overflow-y-auto break-words text-center text-[11px] leading-5 text-red-200/90">
+            <span className="max-h-[88px] overflow-y-auto break-words text-center text-node-sm text-danger/90">
               {generationError}
             </span>
             <ImageGenerationFailureActions id={id} data={data as ExportImageNodeData} />
           </div>
         ) : requiresManualRequery ? (
-          <div className="flex h-full w-full flex-col items-center justify-center gap-2 px-4 text-amber-200">
+          <div className="flex h-full w-full flex-col items-center justify-center gap-2 px-4 text-warning">
             <AlertTriangle className="h-7 w-7 opacity-90" />
-            <span className="text-center text-[12px] font-medium leading-5">
+            <span className="text-center text-xs font-medium leading-5">
               {t('node.imageNode.requeryRequired')}
             </span>
             {generationRetryError && (
-              <span className="max-h-[44px] overflow-y-auto break-words text-center text-[11px] leading-4 text-amber-100/80">
+              <span className="max-h-[44px] overflow-y-auto break-words text-center text-node-sm text-warning/80">
                 {generationRetryError}
               </span>
             )}
@@ -227,7 +227,7 @@ export const ImageNode = memo(({ id, data, selected, type, width, height }: Imag
               type="button"
               size="sm"
               variant="muted"
-              className="nodrag nowheel z-10 gap-1.5 border-amber-300/30 bg-amber-200/10 text-amber-100 hover:bg-amber-200/20"
+              className="nodrag nowheel z-10 gap-1.5 border-warning/35 bg-warning/10 text-warning hover:bg-warning/20"
               onClick={(event) => {
                 event.stopPropagation();
                 updateNodeDataWithoutHistory(id, {
@@ -240,7 +240,7 @@ export const ImageNode = memo(({ id, data, selected, type, width, height }: Imag
               <RefreshCw className="h-3.5 w-3.5" />
               {t('node.imageNode.requeryTask')}
             </UiButton>
-            <span className="text-center text-[10px] leading-4 text-amber-100/65">
+            <span className="text-center text-node-xs text-warning/70">
               {t('node.imageNode.requeryTaskHint')}
             </span>
           </div>
@@ -258,13 +258,7 @@ export const ImageNode = memo(({ id, data, selected, type, width, height }: Imag
         )}
 
         {isGenerating && !requiresManualRequery && (
-          <div className="pointer-events-none absolute inset-0 overflow-hidden">
-            <div className="absolute inset-0 bg-bg-dark/55" />
-            <div
-              className="absolute left-0 top-0 h-full bg-gradient-to-r from-[rgba(255,255,255,0.4)] to-[rgba(255,255,255,0.06)] transition-[width] duration-100 ease-linear"
-              style={{ width: `${simulatedProgress * 100}%` }}
-            />
-          </div>
+          <NodeProgressOverlay progress={simulatedProgress} />
         )}
       </div>
 

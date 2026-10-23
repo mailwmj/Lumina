@@ -21,7 +21,11 @@ import {
   resolveVideoResultNodeSize,
 } from '@/features/canvas/application/videoOutput';
 import { NodeResizeHandle } from '@/features/canvas/ui/NodeResizeHandle';
-import { resolveNodeSurfaceStateClass } from '@/features/canvas/ui/nodeSurfaceStyles';
+import {
+  resolveNodeStatusSurfaceClass,
+  resolveNodeSurfaceStateClass,
+} from '@/features/canvas/ui/nodeSurfaceStyles';
+import { NodeProgressOverlay } from '@/features/canvas/ui/NodeProgressOverlay';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { submitGenerateImageJob } from '@/commands/ai';
@@ -299,14 +303,10 @@ export const VideoResultNode = memo(({ id, data, selected, width, height }: Vide
       className={`
         group relative overflow-visible rounded-[var(--node-radius)] border bg-surface-dark/90 p-0 transition-colors duration-150
         ${hasGenerationError
-          ? (selected
-            ? 'border-red-400 shadow-[0_0_0_1px_rgba(248,113,113,0.42)]'
-            : 'border-red-500/70 bg-[rgba(127,29,29,0.12)] hover:border-red-400/80 dark:border-red-500/70 dark:hover:border-red-400/80')
+          ? resolveNodeStatusSurfaceClass('danger', selected)
           : requiresManualRequery
-            ? (selected
-              ? 'border-amber-400 shadow-[0_0_0_1px_rgba(251,191,36,0.34)]'
-              : 'border-amber-500/65 bg-[rgba(120,83,13,0.12)] hover:border-amber-400/80')
-          : resolveNodeSurfaceStateClass(selected)}
+            ? resolveNodeStatusSurfaceClass('warning', selected)
+            : resolveNodeSurfaceStateClass(selected)}
       `}
       style={{ width: `${resolvedWidth}px`, height: `${resolvedHeight}px` }}
       onClick={() => setSelectedNode(id)}
@@ -336,7 +336,7 @@ export const VideoResultNode = memo(({ id, data, selected, width, height }: Vide
       )}
 
       <div
-        className={`group relative w-full overflow-hidden rounded-[var(--node-radius)] ${hasGenerationError ? 'bg-[rgba(127,29,29,0.2)]' : 'bg-bg-dark'}`}
+        className={`group relative w-full overflow-hidden rounded-[var(--node-radius)] ${hasGenerationError ? 'bg-transparent' : 'bg-bg-dark'}`}
         style={{ height: data.draftTaskId && data.videoUrl && !isGenerating ? 'calc(100% - 36px)' : '100%' }}
       >
         {data.videoUrl ? (
@@ -347,13 +347,13 @@ export const VideoResultNode = memo(({ id, data, selected, width, height }: Vide
             playsInline
           />
         ) : hasGenerationError ? (
-          <div className="flex h-full w-full flex-col items-center justify-center gap-2 px-4 text-red-300">
+          <div className="flex h-full w-full flex-col items-center justify-center gap-2 px-4 text-danger">
             <AlertTriangle className="h-7 w-7 opacity-90" />
-            <span className="text-center text-[12px] font-medium leading-5 text-red-200">
+            <span className="text-center text-xs font-medium leading-5 text-danger">
               {t('node.videoGen.generationFailed')}
             </span>
             <div className="relative max-h-[68px] w-full overflow-y-auto">
-              <span className="block break-words text-center text-[11px] leading-5 text-red-200/90">
+              <span className="block break-words text-center text-node-sm text-danger/90">
                 {generationError}
               </span>
               <UiTooltip content={isCopySuccess ? t('common.copied') : t('common.copy')}>
@@ -361,25 +361,25 @@ export const VideoResultNode = memo(({ id, data, selected, width, height }: Vide
                   type="button"
                   aria-label={isCopySuccess ? t('common.copied') : t('common.copy')}
                   onClick={handleCopyError}
-                  className="absolute right-1 top-1 rounded bg-red-900/50 p-1 opacity-0 transition-opacity hover:bg-red-900 group-hover:opacity-100"
+                  className="absolute right-1 top-1 rounded bg-danger/15 p-1 opacity-0 transition-opacity hover:bg-danger/25 group-hover:opacity-100"
                 >
                   {isCopySuccess ? (
-                    <Check className="h-3 w-3 text-green-400" />
+                    <Check className="h-3 w-3 text-success" />
                   ) : (
-                    <Copy className="h-3 w-3 text-red-300" />
+                    <Copy className="h-3 w-3 text-danger" />
                   )}
                 </button>
               </UiTooltip>
             </div>
           </div>
         ) : requiresManualRequery ? (
-          <div className="flex h-full w-full flex-col items-center justify-center gap-2 px-4 text-amber-200">
+          <div className="flex h-full w-full flex-col items-center justify-center gap-2 px-4 text-warning">
             <AlertTriangle className="h-7 w-7 opacity-90" />
-            <span className="text-center text-[12px] font-medium leading-5">
+            <span className="text-center text-xs font-medium leading-5">
               {t('node.videoGen.requeryRequired')}
             </span>
             {generationRetryError && (
-              <span className="max-h-[44px] overflow-y-auto break-words text-center text-[11px] leading-4 text-amber-100/80">
+              <span className="max-h-[44px] overflow-y-auto break-words text-center text-node-sm text-warning/80">
                 {generationRetryError}
               </span>
             )}
@@ -387,7 +387,7 @@ export const VideoResultNode = memo(({ id, data, selected, width, height }: Vide
               type="button"
               size="sm"
               variant="muted"
-              className="nodrag nowheel z-10 gap-1.5 border-amber-300/30 bg-amber-200/10 text-amber-100 hover:bg-amber-200/20"
+              className="nodrag nowheel z-10 gap-1.5 border-warning/35 bg-warning/10 text-warning hover:bg-warning/20"
               onClick={(event) => {
                 event.stopPropagation();
                 updateNodeDataWithoutHistory(id, {
@@ -400,7 +400,7 @@ export const VideoResultNode = memo(({ id, data, selected, width, height }: Vide
               <RefreshCw className="h-3.5 w-3.5" />
               {t('node.videoGen.requeryTask')}
             </UiButton>
-            <span className="text-center text-[10px] leading-4 text-amber-100/65">
+            <span className="text-center text-node-xs text-warning/70">
               {t('node.videoGen.requeryTaskHint')}
             </span>
           </div>
@@ -414,13 +414,7 @@ export const VideoResultNode = memo(({ id, data, selected, width, height }: Vide
         )}
 
         {isGenerating && !requiresManualRequery && (
-          <div className="pointer-events-none absolute inset-0 overflow-hidden">
-            <div className="absolute inset-0 bg-bg-dark/55" />
-            <div
-              className="absolute left-0 top-0 h-full bg-gradient-to-r from-[rgba(255,255,255,0.4)] to-[rgba(255,255,255,0.06)] transition-[width] duration-100 ease-linear"
-              style={{ width: `${simulatedProgress * 100}%` }}
-            />
-          </div>
+          <NodeProgressOverlay progress={simulatedProgress} />
         )}
 
         </div>

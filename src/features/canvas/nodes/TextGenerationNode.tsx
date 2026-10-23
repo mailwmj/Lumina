@@ -562,7 +562,7 @@ export const TextGenerationNode = memo(({
         <button
           type="button"
           onClick={() => setShowErrorDetails(true)}
-          className="nodrag nowheel absolute right-2 top-2 z-20 flex max-w-[65%] items-center gap-1 rounded-md border border-red-400/40 bg-red-950/85 px-2 py-1 text-left text-[10px] text-red-200 shadow-sm"
+          className="nodrag nowheel absolute right-2 top-2 z-20 flex max-w-[65%] items-center gap-1 rounded-md border border-danger/40 bg-surface-dark px-2 py-1 text-left text-node-xs text-danger shadow-sm"
         >
           <AlertTriangle className="h-3 w-3 shrink-0" />
           <span className="truncate">{nodeError.message}</span>

@@ -44,7 +44,7 @@ function CanvasToolbarButton({
         aria-label={label}
         className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/45 disabled:cursor-not-allowed disabled:opacity-40 ${
           active
-            ? 'bg-accent/18 text-accent'
+            ? 'bg-accent/25 text-[var(--accent-foreground)] dark:bg-accent/18 dark:text-accent'
             : danger
               ? 'text-text-muted hover:bg-red-500/10 hover:text-red-400'
               : 'text-text-muted hover:bg-[var(--ui-hover)] hover:text-text-dark'

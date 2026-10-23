@@ -31,6 +31,16 @@ export default {
           dark: withOpacity('--text-muted-rgb'),
         },
         accent: withOpacity('--accent-rgb'),
+        danger: withOpacity('--danger-rgb'),
+        warning: withOpacity('--warning-rgb'),
+        success: withOpacity('--success-rgb'),
+      },
+      fontSize: {
+        'node-xs': ['10px', '14px'],
+        'node-sm': ['11px', '16px'],
+      },
+      transitionTimingFunction: {
+        'ui-out': 'var(--ui-ease-out)',
       },
       fontFamily: {
         sans: ['Geist Variable', 'Noto Sans SC', 'PingFang SC', 'system-ui', 'sans-serif'],

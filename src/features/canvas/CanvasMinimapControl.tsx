@@ -25,7 +25,7 @@ export const CanvasMinimapControl = memo(() => {
         />
       )}
 
-      <div className="nopan nowheel pointer-events-auto absolute bottom-3 left-3 z-[100]">
+      <div className="nopan nowheel pointer-events-auto absolute bottom-3 left-3 z-[100] flex h-11 items-center rounded-full border border-[var(--ui-border-soft)] bg-[var(--ui-surface-panel)] px-1.5 shadow-[var(--ui-shadow-toolbar)]">
         <UiTooltip content={label}>
           <button
             type="button"
@@ -35,7 +35,7 @@ export const CanvasMinimapControl = memo(() => {
             onClick={() => setIsOpen((current) => !current)}
             className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/45 ${
               isOpen
-                ? 'bg-accent/18 text-accent'
+                ? 'bg-accent/25 text-[var(--accent-foreground)] dark:bg-accent/18 dark:text-accent'
                 : 'text-text-muted hover:bg-[var(--ui-hover)] hover:text-text-dark'
             }`}
           >

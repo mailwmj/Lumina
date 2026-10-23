@@ -112,7 +112,7 @@ import { useExternalAgentBridge } from '@/features/canvas-agent/hooks/useExterna
 const DEFAULT_VIEWPORT: Viewport = { x: 0, y: 0, zoom: 1 };
 const DEFAULT_EDGE_OPTIONS = { type: 'disconnectableEdge' };
 const CONNECTION_LINE_STYLE: CSSProperties = {
-  stroke: 'var(--accent)',
+  stroke: 'var(--edge)',
   strokeWidth: 2.5,
   strokeDasharray: '10 7',
   strokeLinecap: 'round',
@@ -2628,7 +2628,7 @@ export function Canvas() {
             end: { x: endX, y: endY },
             handleType: pendingConnectStart.handleType,
           }),
-          stroke: 'var(--accent)',
+          stroke: 'var(--edge)',
           strokeWidth: 2.5,
           strokeLinecap: 'round',
           left: 0,

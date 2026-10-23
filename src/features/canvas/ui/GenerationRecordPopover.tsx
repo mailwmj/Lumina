@@ -50,7 +50,7 @@ export function GenerationRecordPopover() {
       <UiPanel className="w-96 max-w-[calc(100vw-24px)] rounded-xl p-3 shadow-[var(--ui-shadow-panel)]">
         <div className="mb-2 flex items-center justify-between gap-2">
           <span className="text-sm font-medium text-text-dark">{t('generationRecord.title')}</span>
-          <button type="button" aria-label={t('common.close')} onClick={() => setNodeId(null)}><X className="h-4 w-4" /></button>
+          <button type="button" aria-label={t('common.close')} onClick={() => setNodeId(null)} className="flex h-6 w-6 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-[var(--ui-hover)] hover:text-text-dark focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/45"><X className="h-4 w-4" /></button>
         </div>
         <p className="nowheel max-h-40 select-text overflow-auto whitespace-pre-wrap break-words text-sm text-text-dark">{record.displayPrompt}</p>
         <dl className="my-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs text-text-muted">

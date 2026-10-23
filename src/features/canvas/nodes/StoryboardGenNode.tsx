@@ -86,6 +86,7 @@ import {
   NODE_CONTROL_PARAMS_CHIP_CLASS,
   NODE_CONTROL_PRIMARY_BUTTON_CLASS,
 } from '@/features/canvas/ui/nodeControlStyles';
+import { NodeInlineError } from '@/features/canvas/ui/NodeInlineError';
 import { openSettingsDialog } from '@/features/settings/settingsEvents';
 
 type StoryboardGenNodeProps = {
@@ -1963,7 +1964,7 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
         document.body
       )}
 
-      {(polishError || error) && <div className="mb-1.5 shrink-0 text-[10px] text-red-400">{polishError || error}</div>}
+      {(polishError || error) && <NodeInlineError message={polishError || error || ''} className="mb-1.5" />}
 
       {/* AI Parameters */}
       <div

@@ -66,6 +66,7 @@ import {
   NODE_CONTROL_PARAMS_CHIP_CLASS,
   NODE_CONTROL_PRIMARY_BUTTON_CLASS,
 } from '@/features/canvas/ui/nodeControlStyles';
+import { NodeInlineError } from '@/features/canvas/ui/NodeInlineError';
 import { ModelParamsControls } from '@/features/canvas/ui/ModelParamsControls';
 import { UiButton, UiTooltip } from '@/components/ui';
 import { useCanvasStore } from '@/stores/canvasStore';
@@ -556,7 +557,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
         </UiButton>
       </div>
 
-      {error && <div className="mt-1 shrink-0 text-xs text-red-400">{error}</div>}
+      {error && <NodeInlineError message={error} className="mt-1" />}
 
       <Handle
         type="target"

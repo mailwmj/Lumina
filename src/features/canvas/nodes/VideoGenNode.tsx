@@ -55,6 +55,7 @@ import {
   NODE_CONTROL_ICON_CLASS,
   NODE_CONTROL_PRIMARY_BUTTON_CLASS,
 } from '@/features/canvas/ui/nodeControlStyles';
+import { NodeInlineError } from '@/features/canvas/ui/NodeInlineError';
 import { UiButton, UiSelect, UiTooltip } from '@/components/ui';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useProjectStore } from '@/stores/projectStore';
@@ -770,9 +771,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
 
       {/* Error */}
       {(polishError || error) && (
-        <div className="shrink-0 rounded bg-destructive/10 px-2 py-1 text-xs text-destructive">
-          {polishError || error}
-        </div>
+        <NodeInlineError message={polishError || error || ''} />
       )}
 
       {/* Footer (32px) */}

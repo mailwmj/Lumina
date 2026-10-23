@@ -22,6 +22,10 @@
   --accent-foreground: #09090b;
   --edge: #7c3aed;
   --edge-rgb: 124 58 237;
+  --danger-rgb: 220 38 38;
+  --warning-rgb: 180 83 9;
+  --success-rgb: 5 150 105;
+  --ui-ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
   --canvas-bg: #f4f4f5;
   --canvas-grid-dot: rgba(9, 9, 11, 0.2);
   --canvas-grid-line: rgba(9, 9, 11, 0.06);
@@ -61,6 +65,10 @@
   --text-muted-rgb: 161 161 170;
   --edge: #8b5cf6;
   --edge-rgb: 139 92 246;
+  --danger-rgb: 248 113 113;
+  --warning-rgb: 251 191 36;
+  --success-rgb: 52 211 153;
+  --canvas-handle-border: #18181b;
   --canvas-bg: #030303;
   --canvas-grid-dot: rgba(255, 255, 255, 0.2);
   --canvas-grid-line: rgba(255, 255, 255, 0.043);
@@ -285,6 +293,14 @@ html[data-platform='macos'] #root {
   flex: none;
 }
 
+/* Marquee and multi-select frame: accent instead of xyflow's default blue. */
+.react-flow .react-flow__selection,
+.react-flow .react-flow__nodesselection-rect {
+  background: rgb(var(--accent-rgb) / 0.07);
+  border: 1px solid rgb(var(--accent-rgb) / 0.55);
+  border-radius: var(--ui-radius-control);
+}
+
 .ui-panel {
   background: var(--ui-surface-panel);
   border-color: var(--ui-border-soft);
@@ -344,9 +360,9 @@ html[data-platform='macos'] #root {
 
 .canvas-minimap .react-flow__minimap-mask {
   cursor: grab;
-  stroke: rgba(160, 160, 160, 0.92);
+  stroke: rgb(var(--text-muted-rgb) / 0.85);
   stroke-width: 1.4px;
-  fill: rgba(90, 90, 90, 0.2);
+  fill: rgb(var(--text-muted-rgb) / 0.16);
 }
 
 .canvas-minimap .react-flow__minimap-mask:active {

@@ -124,13 +124,13 @@ export function NodeSelectionMenu({
       }}
       className={`
         ui-scrollbar absolute z-50 overflow-y-auto rounded-[10px] border border-[var(--ui-border-soft)] bg-[var(--ui-surface-elevated)] p-1 shadow-[var(--ui-shadow-panel)]
-        transition-opacity duration-150
-        ${isVisible ? 'opacity-100' : 'opacity-0'}
+        transition-[opacity,transform] duration-150 ease-ui-out
+        ${isVisible ? 'translate-y-0 opacity-100' : '-translate-y-1 opacity-0'}
       `}
       style={{
         left: boundedPosition.x,
         top: boundedPosition.y,
-        width: isDoubleColumn ? 360 : 220,
+        width: isDoubleColumn ? 440 : 220,
         maxWidth: 'calc(100% - 16px)',
         maxHeight: 'calc(100% - 16px)',
       }}
@@ -138,13 +138,12 @@ export function NodeSelectionMenu({
       <div className={`flex ${isDoubleColumn ? '' : ''}`}>
         {/* Left column or single column */}
         <div className={`flex-1 ${isDoubleColumn ? '' : ''}`}>
-          {leftColumnItems.map((item, index) => {
+          {leftColumnItems.map((item) => {
             const Icon = iconMap[item.menuIcon] ?? Image;
             return (
               <button
                 key={item.type}
-                className="flex h-11 w-full items-center gap-2.5 rounded-md px-2.5 text-left transition-colors hover:bg-[var(--ui-hover)]"
-                style={{ transitionDelay: isVisible ? `${index * 30}ms` : '0ms' }}
+                className="flex h-11 w-full items-center gap-2.5 rounded-lg px-2.5 text-left transition-colors hover:bg-[var(--ui-hover)]"
                 onClick={() => {
                   handleClose();
                   setTimeout(() => onSelect(item.type), UI_POPOVER_TRANSITION_MS + 10);
@@ -161,13 +160,12 @@ export function NodeSelectionMenu({
         {/* Right column - only for double column layout */}
         {isDoubleColumn && rightColumnItems.length > 0 && (
                   <div className="flex-1 border-l border-[var(--ui-border-soft)] pl-1">
-            {rightColumnItems.map((item, index) => {
+            {rightColumnItems.map((item) => {
               const Icon = iconMap[item.menuIcon] ?? Image;
               return (
                 <button
                   key={item.type}
-                  className="flex h-11 w-full items-center gap-2.5 rounded-md px-2.5 text-left transition-colors hover:bg-[var(--ui-hover)]"
-                  style={{ transitionDelay: isVisible ? `${(halfLength + index) * 30}ms` : '0ms' }}
+                  className="flex h-11 w-full items-center gap-2.5 rounded-lg px-2.5 text-left transition-colors hover:bg-[var(--ui-hover)]"
                   onClick={() => {
                     handleClose();
                     setTimeout(() => onSelect(item.type), UI_POPOVER_TRANSITION_MS + 10);

@@ -53,6 +53,7 @@ import {
   NODE_CONTROL_ICON_CLASS,
   NODE_CONTROL_PRIMARY_BUTTON_CLASS,
 } from '@/features/canvas/ui/nodeControlStyles';
+import { NodeInlineError } from '@/features/canvas/ui/NodeInlineError';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -1279,7 +1280,7 @@ export const StoryboardNode = memo(({ id, data, selected, width, height }: Story
         document.body
       )}
 
-      {exportError && <div className="mt-2 shrink-0 text-xs text-red-400">{exportError}</div>}
+      {exportError && <NodeInlineError message={exportError} className="mt-2" />}
 
       <Handle
         type="target"

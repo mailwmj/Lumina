@@ -14,7 +14,7 @@ interface NodeContextMenuProps {
 }
 
 const MENU_ACTION_CLASS =
-  'flex h-10 w-full items-center justify-between gap-4 rounded-[6px] px-3 text-left text-sm font-medium text-text-dark transition-colors hover:bg-[var(--ui-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/45';
+  'flex h-10 w-full items-center justify-between gap-4 rounded-lg px-3 text-left text-sm font-medium text-text-dark transition-colors hover:bg-[var(--ui-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/45';
 
 export function NodeContextMenu({
   position,
