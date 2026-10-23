@@ -1,9 +1,8 @@
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { UiSelect } from '@/components/ui';
+import { UiCheckbox, UiSelect } from '@/components/ui';
 import { DEFAULT_ACCENT_COLOR } from '@/features/settings/application/accentColor';
-import { SettingsCheckboxCard } from '@/features/settings/SettingsCheckboxCard';
 import { SettingsPageSection } from '@/features/settings/SettingsPageSection';
 import { SettingsSegmented } from '@/features/settings/SettingsSegmented';
 import { SettingsTextInput } from '@/features/settings/SettingsTextField';
@@ -12,7 +11,7 @@ import { useThemeStore } from '@/stores/themeStore';
 
 function SettingsRow({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
   return (
-    <div className="flex items-start justify-between gap-6">
+    <div className={`flex justify-between gap-6 ${description ? 'items-start' : 'items-center'}`}>
       <div className="min-w-0">
         <h4 className="text-sm font-medium text-text-dark">{title}</h4>
         {description && <p className="mt-1 text-xs text-text-muted">{description}</p>}
@@ -63,7 +62,6 @@ export function CanvasAppearanceSettings() {
 
         <div>
           <h4 className="text-sm font-medium text-text-dark">{t('settings.accentColor')}</h4>
-          <p className="mt-1 text-xs text-text-muted">{t('settings.accentColorDesc')}</p>
           <div className="mt-3 flex items-center gap-2">
             <input
               type="color"
@@ -90,30 +88,28 @@ export function CanvasAppearanceSettings() {
       </SettingsPageSection>
 
       <SettingsPageSection title={t('settings.sectionCanvas')}>
-        <div>
-          <h4 className="text-sm font-medium text-text-dark">{t('settings.edgeRoutingMode')}</h4>
-          <p className="mt-1 text-xs text-text-muted">{t('settings.edgeRoutingModeDesc')}</p>
-          <div className="mt-3">
-            <UiSelect
-              value={canvasEdgeRoutingMode}
-              onChange={(event) =>
-                setCanvasEdgeRoutingMode(event.target.value as typeof canvasEdgeRoutingMode)
-              }
-              className="h-9 text-sm"
-            >
-              <option value="spline">{t('settings.edgeRoutingSpline')}</option>
-              <option value="orthogonal">{t('settings.edgeRoutingOrthogonal')}</option>
-              <option value="smartOrthogonal">{t('settings.edgeRoutingSmartOrthogonal')}</option>
-            </UiSelect>
-          </div>
-        </div>
+        <SettingsRow title={t('settings.edgeRoutingMode')}>
+          <UiSelect
+            aria-label={t('settings.edgeRoutingMode')}
+            value={canvasEdgeRoutingMode}
+            onChange={(event) =>
+              setCanvasEdgeRoutingMode(event.target.value as typeof canvasEdgeRoutingMode)
+            }
+            className="h-9 w-[200px] text-sm"
+          >
+            <option value="spline">{t('settings.edgeRoutingSpline')}</option>
+            <option value="orthogonal">{t('settings.edgeRoutingOrthogonal')}</option>
+            <option value="smartOrthogonal">{t('settings.edgeRoutingSmartOrthogonal')}</option>
+          </UiSelect>
+        </SettingsRow>
 
-        <SettingsCheckboxCard
-          checked={snapToGridEnabled}
-          onCheckedChange={setSnapToGridEnabled}
-          title={t('settings.snapToGrid')}
-          description={t('settings.snapToGridDesc')}
-        />
+        <SettingsRow title={t('settings.snapToGrid')}>
+          <UiCheckbox
+            aria-label={t('settings.snapToGrid')}
+            checked={snapToGridEnabled}
+            onCheckedChange={setSnapToGridEnabled}
+          />
+        </SettingsRow>
       </SettingsPageSection>
     </div>
   );

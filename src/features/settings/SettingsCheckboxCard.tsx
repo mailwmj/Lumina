@@ -24,7 +24,7 @@ export function SettingsCheckboxCard({
           onCheckedChange(!checked);
         }
       }}
-      className="w-full border-b border-[var(--ui-border-soft)] py-3 text-left transition-colors hover:bg-[var(--ui-hover)]"
+      className="w-full border-b border-[var(--ui-border-soft)] py-3 text-left transition-colors hover:bg-[var(--ui-hover)] last:border-b-0"
     >
       <div className="flex items-start gap-3">
         <UiCheckbox
