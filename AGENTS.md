@@ -137,6 +137,7 @@
 - 设置页改动即时写入 store（无保存按钮）；文本输入统一用 `SettingsTextInput` / `SettingsTextArea`（失焦、回车或卸载时提交），因为 store setter 会 trim/规范化，逐键写入会改写用户正在输入的内容。
 - 明暗主题要可读，避免高饱和蓝色抢占焦点（导航图已优化为灰黑系）。
 - 快捷键应避开输入态（`input/textarea/contentEditable`）避免误触。
+- Avoid unnecessary secondary labels and descriptions. Let the layout do the explaining.
 
 ## 6. 命令与验证
 
