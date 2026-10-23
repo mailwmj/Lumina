@@ -1,17 +1,23 @@
 import { useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { ArrowLeft, Plus, Trash2 } from '@/components/ui/icons';
+import { ArrowLeft, Plus, Trash2, Undo2 } from '@/components/ui/icons';
+import type { ProviderHealth } from '@/features/settings/application/settingsHealth';
+import { ProviderHealthBadge } from '@/features/settings/providers/ProviderDetailParts';
+
+const UNDO_WINDOW_MS = 6_000;
 
 export interface ProviderListShellProps<TItem> {
   items: TItem[];
   getItemId: (item: TItem) => string;
   getItemTitle: (item: TItem) => string;
-  getItemSubtitle?: (item: TItem) => string;
+  getItemHealth?: (item: TItem) => ProviderHealth;
   getItemMeta?: (item: TItem) => string | undefined;
   isBuiltIn?: (item: TItem) => boolean;
   onAdd: () => string;
   onRemove: (id: string) => void;
+  /** Re-inserts a removed item; `index` is its former position in `items`. */
+  onRestore?: (item: TItem, index: number) => void;
   onDetailChange?: (isOpen: boolean) => void;
   renderDetail: (item: TItem) => ReactNode;
   addLabel: string;
@@ -19,15 +25,22 @@ export interface ProviderListShellProps<TItem> {
   emptyLabel: string;
 }
 
+interface RemovedItem<TItem> {
+  item: TItem;
+  index: number;
+  title: string;
+}
+
 export function ProviderListShell<TItem>({
   items,
   getItemId,
   getItemTitle,
-  getItemSubtitle,
+  getItemHealth,
   getItemMeta,
   isBuiltIn,
   onAdd,
   onRemove,
+  onRestore,
   onDetailChange,
   renderDetail,
   addLabel,
@@ -36,6 +49,7 @@ export function ProviderListShell<TItem>({
 }: ProviderListShellProps<TItem>) {
   const { t } = useTranslation();
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [removed, setRemoved] = useState<RemovedItem<TItem> | null>(null);
 
   const idSet = useMemo(
     () => new Set(items.map((item) => getItemId(item))),
@@ -49,6 +63,14 @@ export function ProviderListShell<TItem>({
       setSelectedId(null);
     }
   }, [selectedId, idSet]);
+
+  useEffect(() => {
+    if (!removed) {
+      return;
+    }
+    const timer = window.setTimeout(() => setRemoved(null), UNDO_WINDOW_MS);
+    return () => window.clearTimeout(timer);
+  }, [removed]);
 
   const selectedItem = useMemo(() => {
     if (selectedId === null) {
@@ -84,11 +106,23 @@ export function ProviderListShell<TItem>({
   };
 
   const handleRemove = () => {
-    if (selectedId === null) {
+    if (selectedId === null || !selectedItem) {
       return;
     }
+    setRemoved({
+      item: selectedItem,
+      index: items.indexOf(selectedItem),
+      title: getItemTitle(selectedItem),
+    });
     onRemove(selectedId);
     setSelectedId(null);
+  };
+
+  const handleUndo = () => {
+    if (removed && onRestore) {
+      onRestore(removed.item, removed.index);
+    }
+    setRemoved(null);
   };
 
   return (
@@ -97,6 +131,19 @@ export function ProviderListShell<TItem>({
       {!showDetail && (
         <div>
           <div className="flex items-center justify-end gap-3 py-3">
+            {removed && onRestore && (
+              <div className="mr-auto flex min-w-0 items-center gap-2 text-xs text-text-muted">
+                <span className="truncate">{t('settings.providerRemoved', { name: removed.title })}</span>
+                <button
+                  type="button"
+                  onClick={handleUndo}
+                  className="inline-flex shrink-0 items-center font-medium text-accent hover:underline"
+                >
+                  <Undo2 className="mr-1 h-3.5 w-3.5" />
+                  {t('settings.undoRemove')}
+                </button>
+              </div>
+            )}
             <button
               type="button"
               onClick={handleAdd}
@@ -114,7 +161,7 @@ export function ProviderListShell<TItem>({
               {items.map((item) => {
                 const id = getItemId(item);
                 const title = getItemTitle(item);
-                const subtitle = getItemSubtitle?.(item);
+                const health = getItemHealth?.(item);
                 const meta = getItemMeta?.(item);
                 const builtIn = isBuiltIn?.(item) ?? false;
                 return (
@@ -133,8 +180,10 @@ export function ProviderListShell<TItem>({
                           </span>
                         )}
                       </div>
-                      {subtitle && (
-                        <p className="mt-0.5 truncate text-xs text-text-muted">{subtitle}</p>
+                      {health && (
+                        <div className="mt-1">
+                          <ProviderHealthBadge health={health} />
+                        </div>
                       )}
                     </div>
                     {meta && (
@@ -163,6 +212,7 @@ export function ProviderListShell<TItem>({
             <div className="min-w-0 flex-1 truncate text-center text-sm font-medium text-text-dark">
               {getItemTitle(selectedItem)}
             </div>
+            {getItemHealth && <ProviderHealthBadge health={getItemHealth(selectedItem)} />}
             {!(isBuiltIn?.(selectedItem) ?? false) && (
               <button
                 type="button"

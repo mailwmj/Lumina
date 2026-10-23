@@ -9,8 +9,9 @@ import {
   type CanvasAgentRuntimeInfo,
 } from '@/commands/canvasAgent';
 import { Check, Copy } from '@/components/ui/icons';
-import { UiIconButton, UiInput } from '@/components/ui';
+import { UiIconButton } from '@/components/ui';
 import { SettingsCheckboxCard } from '@/features/settings/SettingsCheckboxCard';
+import { SettingsTextInput } from '@/features/settings/SettingsTextField';
 import type { ExternalAgentConnectionConfig } from '@/stores/settingsStore';
 
 interface ExternalAgentSettingsProps {
@@ -181,13 +182,13 @@ export function ExternalAgentSettings({
             <p className="mt-1 text-xs text-text-muted">
               {t('settings.externalAgentUrlDesc')}
             </p>
-            <UiInput
+            <SettingsTextInput
               id="external-agent-url"
               value={value.url}
               spellCheck={false}
               className="mt-3 h-9 font-mono text-xs"
               placeholder="http://127.0.0.1:17372"
-              onChange={(event) => onChange({ ...value, url: event.target.value })}
+              onCommit={(url) => onChange({ ...value, url })}
             />
           </section>
 
@@ -198,7 +199,7 @@ export function ExternalAgentSettings({
             <p className="mt-1 text-xs text-text-muted">
               {t('settings.externalAgentTokenDesc')}
             </p>
-            <UiInput
+            <SettingsTextInput
               id="external-agent-token"
               type="password"
               value={value.token}
@@ -206,7 +207,7 @@ export function ExternalAgentSettings({
               spellCheck={false}
               className="mt-3 h-9 font-mono text-xs"
               placeholder={t('settings.externalAgentTokenPlaceholder')}
-              onChange={(event) => onChange({ ...value, token: event.target.value })}
+              onCommit={(token) => onChange({ ...value, token })}
             />
           </section>
         </>

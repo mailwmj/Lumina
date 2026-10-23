@@ -497,7 +497,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
             className={`nodrag nowheel shrink-0 ${NODE_CONTROL_CHIP_CLASS}`}
             onClick={(event) => {
               event.stopPropagation();
-              openSettingsDialog({ category: 'imageApis' });
+              openSettingsDialog({ category: 'services', providerKind: 'image' });
             }}
           >
             {t('modelParams.configureImageModel')}

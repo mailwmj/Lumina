@@ -26,7 +26,7 @@ import {
 } from './features/app/errorDialogEvents';
 import {
   subscribeOpenSettingsDialog,
-  type SettingsCategory,
+  type OpenSettingsEventDetail,
 } from './features/settings/settingsEvents';
 import {
   getAccentForeground,
@@ -43,7 +43,7 @@ function App() {
   const enableUpdateDialog = useSettingsStore((state) => state.enableUpdateDialog);
   const setEnableUpdateDialog = useSettingsStore((state) => state.setEnableUpdateDialog);
   const [showSettings, setShowSettings] = useState(false);
-  const [settingsInitialCategory, setSettingsInitialCategory] = useState<SettingsCategory>('general');
+  const [settingsTarget, setSettingsTarget] = useState<OpenSettingsEventDetail>({});
   const [showUpdateDialog, setShowUpdateDialog] = useState(false);
   const [latestVersion, setLatestVersion] = useState<string>('');
   const [currentVersion, setCurrentVersion] = useState<string>('');
@@ -88,8 +88,8 @@ function App() {
   }, []);
 
   useEffect(() => {
-    const unsubscribe = subscribeOpenSettingsDialog(({ category }) => {
-      setSettingsInitialCategory(category ?? 'general');
+    const unsubscribe = subscribeOpenSettingsDialog((detail) => {
+      setSettingsTarget(detail);
       setShowSettings(true);
     });
     return unsubscribe;
@@ -189,7 +189,7 @@ function App() {
       <div className="w-full h-full flex flex-col bg-bg-dark">
         <TitleBar
           onSettingsClick={() => {
-            setSettingsInitialCategory('general');
+            setSettingsTarget({});
             setShowSettings(true);
           }}
           showBackButton={Boolean(currentProjectId || activeHomeTool)}
@@ -213,7 +213,8 @@ function App() {
         <SettingsDialog
           isOpen={showSettings}
           onClose={() => setShowSettings(false)}
-          initialCategory={settingsInitialCategory}
+          initialCategory={settingsTarget.category}
+          initialProviderKind={settingsTarget.providerKind}
         />
         <UpdateAvailableDialog
           isOpen={showUpdateDialog}

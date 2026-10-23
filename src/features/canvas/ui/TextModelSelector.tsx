@@ -60,7 +60,7 @@ export function TextModelSelector({
         onMouseDown={(event) => event.stopPropagation()}
         onClick={(event) => {
           event.stopPropagation();
-          openSettingsDialog({ category: 'textApis' });
+          openSettingsDialog({ category: 'services', providerKind: 'text' });
         }}
       >
         {t('node.textModel.configure')}

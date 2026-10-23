@@ -134,6 +134,7 @@
 - 节点工具条（NodeToolbar）位置、对齐、偏移统一从 `src/features/canvas/ui/nodeToolbarConfig.ts` 引用；禁止通过 `left/translate` 等绝对定位覆盖跟随逻辑。
 - 选中覆盖层 `SelectedNodeOverlay` 只承载轻量通用覆盖能力（如工具条），节点核心业务输入区应内聚到节点组件本体（例如 `ImageEditNode`）。
 - 对话框支持“打开/关闭”过渡，避免突兀闪烁。
+- 设置页改动即时写入 store（无保存按钮）；文本输入统一用 `SettingsTextInput` / `SettingsTextArea`（失焦、回车或卸载时提交），因为 store setter 会 trim/规范化，逐键写入会改写用户正在输入的内容。
 - 明暗主题要可读，避免高饱和蓝色抢占焦点（导航图已优化为灰黑系）。
 - 快捷键应避开输入态（`input/textarea/contentEditable`）避免误触。
 

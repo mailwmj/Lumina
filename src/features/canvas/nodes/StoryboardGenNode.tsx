@@ -2011,7 +2011,7 @@ export const StoryboardGenNode = memo(({ id, data, selected, width, height }: St
           <UiButton
             variant="muted"
             size="sm"
-            onClick={() => openSettingsDialog({ category: 'imageApis' })}
+            onClick={() => openSettingsDialog({ category: 'services', providerKind: 'image' })}
           >
             {t('modelParams.configureImageModel')}
           </UiButton>

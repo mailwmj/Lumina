@@ -1,16 +1,18 @@
-export type SettingsCategory =
-  | 'imageApis'
-  | 'appearance'
-  | 'general'
-  | 'experimental'
-  | 'logging'
-  | 'textApis'
-  | 'promptPolish'
-  | 'videoApis'
-  | 'externalAgent';
+import type { SettingsProviderKind } from '@/features/settings/application/settingsHealth';
 
-interface OpenSettingsEventDetail {
+export type SettingsCategory =
+  | 'overview'
+  | 'services'
+  | 'generation'
+  | 'canvasAppearance'
+  | 'files'
+  | 'integration'
+  | 'advanced';
+
+export interface OpenSettingsEventDetail {
   category?: SettingsCategory;
+  /** With `category: 'services'`, which provider tab to show. */
+  providerKind?: SettingsProviderKind;
 }
 
 const OPEN_SETTINGS_EVENT = 'storyboard:open-settings-dialog';

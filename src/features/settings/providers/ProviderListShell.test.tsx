@@ -58,4 +58,49 @@ describe('ProviderListShell', () => {
     expect(detail?.closest('[class*="opacity-"]')).toBeNull();
     expect(onDetailChange).toHaveBeenLastCalledWith(true);
   });
+
+  it('restores a deleted provider at its old position when the user clicks undo', async () => {
+    let items = [
+      { id: 'a', name: 'Provider A' },
+      { id: 'b', name: 'Provider B' },
+      { id: 'c', name: 'Provider C' },
+    ];
+    const render = () => root.render(
+      <ProviderListShell
+        items={items}
+        getItemId={(item) => item.id}
+        getItemTitle={(item) => item.name}
+        onAdd={() => 'd'}
+        onRemove={(id) => { items = items.filter((item) => item.id !== id); render(); }}
+        onRestore={(item, index) => {
+          const next = [...items];
+          next.splice(index, 0, item);
+          items = next;
+          render();
+        }}
+        renderDetail={(item) => <div>{item.name}</div>}
+        addLabel="Add"
+        removeLabel="Remove"
+        emptyLabel="Empty"
+      />
+    );
+    const click = async (element: Element | null | undefined) => {
+      expect(element).toBeTruthy();
+      await act(async () => element?.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    };
+    const buttonWithText = (text: string) => Array.from(container.querySelectorAll('button'))
+      .find((button) => button.textContent?.includes(text));
+
+    await act(async () => render());
+    await click(buttonWithText('Provider B'));
+    await click(container.querySelector('[aria-label="Remove"]'));
+
+    expect(items.map((item) => item.id)).toEqual(['a', 'c']);
+    expect(container.textContent).toContain('已删除「Provider B」');
+
+    await click(buttonWithText('撤销'));
+
+    expect(items.map((item) => item.id)).toEqual(['a', 'b', 'c']);
+    expect(container.textContent).not.toContain('已删除');
+  });
 });

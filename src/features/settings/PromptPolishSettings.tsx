@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { UiSelect } from '@/components/ui';
 import { listConfiguredTextModels } from '@/features/canvas/application/textModelSelection';
+import { SettingsTextArea } from '@/features/settings/SettingsTextField';
 import {
   TEXT_REASONING_EFFORTS,
   type TextReasoningEffort,
@@ -10,21 +11,16 @@ import {
 import {
   DEFAULT_IMAGE_POLISH_PROMPT,
   DEFAULT_TEXT_POLISH_PROMPT,
-  DEFAULT_VIDEO_SD10_POLISH_PROMPT,
-  DEFAULT_VIDEO_SD15_PROMPT,
   type PromptPolishConfig,
   type TextApiConfig,
-  type VideoApiConfig,
 } from '@/stores/settingsStore';
 
 interface PromptPolishSettingsProps {
   textApis: TextApiConfig[];
   imagePolishConfig: PromptPolishConfig;
   textPolishConfig: PromptPolishConfig;
-  videoApis: VideoApiConfig[];
   onImagePolishConfigChange: (config: PromptPolishConfig) => void;
   onTextPolishConfigChange: (config: PromptPolishConfig) => void;
-  onVideoApisChange: (apis: VideoApiConfig[]) => void;
 }
 
 interface PolishProfileSectionProps {
@@ -40,15 +36,6 @@ interface PolishProfileSectionProps {
 
 function textModelValue(apiId: string, modelId: string): string {
   return JSON.stringify([apiId, modelId]);
-}
-
-function defaultVideoPolishPrompt(api: VideoApiConfig): string {
-  if (api.defaultPolishPrompt) {
-    return api.defaultPolishPrompt;
-  }
-  return api.modelId.includes('1-5-pro')
-    ? DEFAULT_VIDEO_SD15_PROMPT
-    : DEFAULT_VIDEO_SD10_POLISH_PROMPT;
 }
 
 function PolishProfileSection({
@@ -156,11 +143,10 @@ function PolishProfileSection({
           {t('common.restoreDefault')}
         </button>
       </div>
-      <textarea
+      <SettingsTextArea
         value={config.prompt}
-        onChange={(event) => onChange({ ...config, prompt: event.target.value })}
+        onCommit={(prompt) => onChange({ ...config, prompt })}
         rows={7}
-        className="w-full resize-y rounded border border-border-dark bg-surface-dark px-3 py-2 text-sm text-text-dark"
       />
     </section>
   );
@@ -170,24 +156,10 @@ export function PromptPolishSettings({
   textApis,
   imagePolishConfig,
   textPolishConfig,
-  videoApis,
   onImagePolishConfigChange,
   onTextPolishConfigChange,
-  onVideoApisChange,
 }: PromptPolishSettingsProps) {
   const { t } = useTranslation();
-  const [selectedVideoApiId, setSelectedVideoApiId] = useState(videoApis[0]?.id ?? '');
-
-  useEffect(() => {
-    if (!videoApis.some((api) => api.id === selectedVideoApiId)) {
-      setSelectedVideoApiId(videoApis[0]?.id ?? '');
-    }
-  }, [selectedVideoApiId, videoApis]);
-
-  const selectedVideoApi = videoApis.find((api) => api.id === selectedVideoApiId) ?? null;
-  const updateVideoApi = (next: VideoApiConfig) => {
-    onVideoApisChange(videoApis.map((api) => api.id === next.id ? next : api));
-  };
 
   return (
     <>
@@ -213,51 +185,7 @@ export function PromptPolishSettings({
         onChange={onTextPolishConfigChange}
       />
 
-      <section className="py-4">
-        <div className="mb-3 flex items-end justify-between gap-3">
-          <label className="min-w-0 flex-1">
-            <span className="mb-1 block text-sm font-medium text-text-dark">
-              {t('settings.videoPolishPromptTemplate')}
-            </span>
-            <UiSelect
-              value={selectedVideoApiId}
-              onChange={(event) => setSelectedVideoApiId(event.target.value)}
-              disabled={videoApis.length === 0}
-              className="h-9 w-full text-sm disabled:opacity-50"
-            >
-              {videoApis.length === 0 && <option value="">-</option>}
-              {videoApis.map((api) => (
-                <option key={api.id} value={api.id}>{api.name} / {api.modelId}</option>
-              ))}
-            </UiSelect>
-          </label>
-          <button
-            type="button"
-            disabled={!selectedVideoApi}
-            onClick={() => selectedVideoApi && updateVideoApi({
-              ...selectedVideoApi,
-              polishPrompt: defaultVideoPolishPrompt(selectedVideoApi),
-            })}
-            className="mb-2 shrink-0 text-xs text-accent hover:underline disabled:opacity-50"
-          >
-            {t('common.restoreDefault')}
-          </button>
-        </div>
-        {selectedVideoApi ? (
-          <textarea
-            value={selectedVideoApi.polishPrompt ?? ''}
-            onChange={(event) => updateVideoApi({
-              ...selectedVideoApi,
-              polishPrompt: event.target.value,
-            })}
-            rows={8}
-            placeholder={t('settings.videoPolishPromptPlaceholder')}
-            className="w-full resize-y rounded border border-border-dark bg-surface-dark px-3 py-2 text-sm text-text-dark placeholder:text-text-muted"
-          />
-        ) : (
-          <p className="text-xs text-text-muted">{t('settings.noVideoApisConfigured')}</p>
-        )}
-      </section>
+      <p className="py-4 text-xs text-text-muted">{t('settings.videoPolishMovedHint')}</p>
     </>
   );
 }

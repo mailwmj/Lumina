@@ -14,7 +14,15 @@ import {
 import {
   resolveDiscoveredImageModelSelection,
 } from '@/features/settings/application/imageModelDiscovery';
+import { imageProviderHealth } from '@/features/settings/application/settingsHealth';
+import {
+  ConnectionTestRow,
+  ProviderDetailSection,
+  StaleModelsNotice,
+  type ConnectionTestState,
+} from '@/features/settings/providers/ProviderDetailParts';
 import { ProviderListShell } from '@/features/settings/providers/ProviderListShell';
+import { SettingsTextInput } from '@/features/settings/SettingsTextField';
 import {
   createCustomImageApiConfig,
   isCustomImageProviderId,
@@ -34,7 +42,8 @@ export interface ImageApisSettingsValue {
 
 interface ImageApisSettingsProps {
   value: ImageApisSettingsValue;
-  onChange: (value: ImageApisSettingsValue) => void;
+  /** Receives only the parts that changed, so an async result never overwrites another provider's edit. */
+  onChange: (patch: Partial<ImageApisSettingsValue>) => void;
   onDetailChange?: (isOpen: boolean) => void;
 }
 
@@ -62,12 +71,14 @@ function ImageModelSelectionPanel({
   catalog,
   selectedModelIds,
   state,
+  isStale,
   onRefresh,
   onSelectionChange,
 }: {
   catalog: ImageModelCatalog | null;
   selectedModelIds: string[];
   state: DiscoveryState;
+  isStale: boolean;
   onRefresh: () => void;
   onSelectionChange: (modelId: string, selected: boolean) => void;
 }) {
@@ -75,7 +86,7 @@ function ImageModelSelectionPanel({
   const selectedModelIdSet = new Set(selectedModelIds);
 
   return (
-    <div className="border-t border-[var(--ui-border-soft)] pt-3">
+    <div>
       <div className="flex items-center justify-between gap-3">
         <span className="text-xs font-medium text-text-dark">{t('settings.imageModelsSelect')}</span>
         <button
@@ -91,6 +102,7 @@ function ImageModelSelectionPanel({
         </button>
       </div>
 
+      {isStale && !state.error && <StaleModelsNotice />}
       {state.error && <p className="mt-2 text-xs text-red-400">{state.error}</p>}
       {!state.error && (!catalog || catalog.models.length === 0) && (
         <p className="mt-2 text-xs text-text-muted">{t('settings.imageModelsEmpty')}</p>
@@ -123,10 +135,14 @@ function ImageModelSelectionPanel({
 interface ImageDetailFormProps<TConfig extends ImageProviderApiConfig> {
   config: TConfig;
   discoveryState: DiscoveryState;
+  testState: ConnectionTestState;
+  isModelCatalogStale: boolean;
   isApiKeyRevealed: boolean;
   onApiKeyRevealToggle: () => void;
   onChange: (config: TConfig) => void;
+  onConnectionChange: () => void;
   onDiscover: () => void;
+  onTest: () => void;
   nameField?: ReactNode;
   protocolField?: ReactNode;
   manualModelField?: ReactNode;
@@ -136,39 +152,40 @@ interface ImageDetailFormProps<TConfig extends ImageProviderApiConfig> {
 function ImageDetailForm<TConfig extends ImageProviderApiConfig>({
   config,
   discoveryState,
+  testState,
+  isModelCatalogStale,
   isApiKeyRevealed,
   onApiKeyRevealToggle,
   onChange,
+  onConnectionChange,
   onDiscover,
+  onTest,
   nameField,
   protocolField,
   manualModelField,
   baseUrlPlaceholder = 'https://api.example.com/v1',
 }: ImageDetailFormProps<TConfig>) {
   const { t } = useTranslation();
+  // Keep the catalog and selection when the connection changes; the user decides whether to refetch.
   const updateConnection = (patch: Partial<Pick<TConfig, 'apiKey' | 'baseUrl'>>) => {
-    onChange({
-      ...config,
-      ...patch,
-      modelCatalog: null,
-      selectedModelIds: [],
-    });
+    onChange({ ...config, ...patch });
+    onConnectionChange();
   };
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-5">
+      <ProviderDetailSection title={t('settings.providerSectionConnection')}>
       {nameField}
       {protocolField}
       <label className="block">
         <span className="mb-1 block text-xs font-medium text-text-dark">
           {t('settings.openAiImageBaseUrl')}
         </span>
-        <input
+        <SettingsTextInput
           type="url"
           value={config.baseUrl}
-          onChange={(event) => updateConnection({ baseUrl: event.target.value })}
+          onCommit={(baseUrl) => updateConnection({ baseUrl })}
           placeholder={baseUrlPlaceholder}
-          className="w-full rounded border border-border-dark bg-surface-dark px-3 py-2 text-sm text-text-dark placeholder:text-text-muted"
         />
       </label>
 
@@ -177,12 +194,12 @@ function ImageDetailForm<TConfig extends ImageProviderApiConfig>({
           {t('settings.openAiImageApiKey')}
         </span>
         <div className="relative">
-          <input
+          <SettingsTextInput
             type={isApiKeyRevealed ? 'text' : 'password'}
             value={config.apiKey}
-            onChange={(event) => updateConnection({ apiKey: event.target.value })}
+            onCommit={(apiKey) => updateConnection({ apiKey })}
             placeholder={t('settings.enterApiKey')}
-            className="w-full rounded border border-border-dark bg-surface-dark px-3 py-2 pr-10 text-sm text-text-dark placeholder:text-text-muted"
+            className="pr-10"
           />
           <UiTooltip content={isApiKeyRevealed ? t('settings.hideApiKey') : t('settings.showApiKey')}>
             <button
@@ -200,12 +217,22 @@ function ImageDetailForm<TConfig extends ImageProviderApiConfig>({
           </UiTooltip>
         </div>
       </label>
+      <ConnectionTestRow
+        state={testState}
+        disabledReason={!config.apiKey.trim() || !config.baseUrl.trim()
+          ? t('settings.connectionTestNeedsFields')
+          : undefined}
+        onTest={onTest}
+      />
+      </ProviderDetailSection>
 
+      <ProviderDetailSection title={t('settings.providerSectionModels')}>
       {manualModelField}
       <ImageModelSelectionPanel
         catalog={config.modelCatalog}
         selectedModelIds={config.selectedModelIds}
         state={discoveryState}
+        isStale={isModelCatalogStale}
         onRefresh={onDiscover}
         onSelectionChange={(modelId, selected) =>
           onChange({
@@ -216,6 +243,7 @@ function ImageDetailForm<TConfig extends ImageProviderApiConfig>({
           })
         }
       />
+      </ProviderDetailSection>
     </div>
   );
 }
@@ -231,19 +259,70 @@ export function ImageApisSettings({
   const [revealedProviderIds, setRevealedProviderIds] = useState<Set<string>>(() => new Set());
   const [manualModelIds, setManualModelIds] = useState<Record<string, string>>({});
   const [pendingProtocolChange, setPendingProtocolChange] = useState<PendingProtocolChange | null>(null);
+  const [testByProvider, setTestByProvider] = useState<Record<string, ConnectionTestState>>({});
+  const [staleProviderIds, setStaleProviderIds] = useState<Set<string>>(() => new Set());
 
   const updateOpenAiImageApi = useCallback((config: OpenAiImageApiConfig) => {
-    onChange({ ...value, openAiImageApi: config });
-  }, [onChange, value]);
+    onChange({ openAiImageApi: config });
+  }, [onChange]);
   const updateChaomoImageApi = useCallback((config: ChaomoImageApiConfig) => {
-    onChange({ ...value, chaomoImageApi: config });
-  }, [onChange, value]);
+    onChange({ chaomoImageApi: config });
+  }, [onChange]);
   const updateCustomImageApis = useCallback((configs: CustomImageApiConfig[]) => {
-    onChange({ ...value, customImageApis: configs });
-  }, [onChange, value]);
+    onChange({ customImageApis: configs });
+  }, [onChange]);
 
   const discoveryState = (providerId: string): DiscoveryState =>
     discoveryByProvider[providerId] ?? { isLoading: false, error: null };
+  const testState = (providerId: string): ConnectionTestState =>
+    testByProvider[providerId] ?? { status: 'idle' };
+
+  const markConnectionChanged = (providerId: string, config: ImageProviderApiConfig) => {
+    setTestByProvider((current) => ({ ...current, [providerId]: { status: 'idle' } }));
+    if (config.modelCatalog) {
+      setStaleProviderIds((current) => new Set(current).add(providerId));
+    }
+  };
+
+  const clearStale = (providerId: string) => {
+    setStaleProviderIds((current) => {
+      if (!current.has(providerId)) return current;
+      const next = new Set(current);
+      next.delete(providerId);
+      return next;
+    });
+  };
+
+  const handleTest = useCallback(async (
+    providerId: ImageProviderId,
+    config: ImageProviderApiConfig,
+    protocol?: CustomImageProtocol
+  ) => {
+    setTestByProvider((current) => ({ ...current, [providerId]: { status: 'testing' } }));
+    try {
+      const models = await discoverImageModels({
+        provider_id: providerId,
+        base_url: config.baseUrl,
+        api_key: config.apiKey,
+        ...(protocol ? { protocol } : {}),
+      });
+      setTestByProvider((current) => ({
+        ...current,
+        [providerId]: {
+          status: 'ok',
+          message: t('settings.connectionTestSucceededModels', { count: models.length }),
+        },
+      }));
+    } catch (error) {
+      setTestByProvider((current) => ({
+        ...current,
+        [providerId]: {
+          status: 'error',
+          message: error instanceof Error ? error.message : t('settings.connectionTestFailed'),
+        },
+      }));
+    }
+  }, [t]);
 
   const toggleApiKey = (providerId: string) => {
     setRevealedProviderIds((current) => {
@@ -294,6 +373,7 @@ export function ImageApisSettings({
         ...current,
         [providerId]: { isLoading: false, error: null },
       }));
+      clearStale(providerId);
     } catch (error) {
       setDiscoveryByProvider((current) => ({
         ...current,
@@ -323,6 +403,8 @@ export function ImageApisSettings({
       modelCatalog: null,
       selectedModelIds: [],
     });
+    setTestByProvider((current) => ({ ...current, [config.id]: { status: 'idle' } }));
+    clearStale(config.id);
   };
 
   const requestCustomProtocolChange = (
@@ -389,8 +471,8 @@ export function ImageApisSettings({
     return entry.config.name || t('settings.customImageApiUntitled');
   };
 
-  const getEntrySubtitle = (entry: ImageProviderEntry) =>
-    entry.config.baseUrl || '—';
+  const getEntryHealth = (entry: ImageProviderEntry) =>
+    imageProviderHealth(getEntryId(entry), entry.config, value);
 
   const getEntryMeta = (entry: ImageProviderEntry) => {
     const count = entry.config.selectedModelIds.length;
@@ -406,10 +488,14 @@ export function ImageApisSettings({
         <ImageDetailForm
           config={entry.config}
           discoveryState={discoveryState(providerId)}
+          testState={testState(providerId)}
+          isModelCatalogStale={staleProviderIds.has(providerId)}
           isApiKeyRevealed={revealedProviderIds.has(providerId)}
           onApiKeyRevealToggle={() => toggleApiKey(providerId)}
           onChange={updateOpenAiImageApi}
+          onConnectionChange={() => markConnectionChanged(providerId, entry.config)}
           onDiscover={() => void handleDiscover(providerId, entry.config, updateOpenAiImageApi)}
+          onTest={() => void handleTest(providerId, entry.config)}
         />
       );
     }
@@ -420,10 +506,14 @@ export function ImageApisSettings({
         <ImageDetailForm
           config={entry.config}
           discoveryState={discoveryState(providerId)}
+          testState={testState(providerId)}
+          isModelCatalogStale={staleProviderIds.has(providerId)}
           isApiKeyRevealed={revealedProviderIds.has(providerId)}
           onApiKeyRevealToggle={() => toggleApiKey(providerId)}
           onChange={updateChaomoImageApi}
+          onConnectionChange={() => markConnectionChanged(providerId, entry.config)}
           onDiscover={() => void handleDiscover(providerId, entry.config, updateChaomoImageApi)}
+          onTest={() => void handleTest(providerId, entry.config)}
         />
       );
     }
@@ -435,28 +525,28 @@ export function ImageApisSettings({
         <ImageDetailForm
           config={config}
           discoveryState={discoveryState(config.id)}
+          testState={testState(config.id)}
+          isModelCatalogStale={staleProviderIds.has(config.id)}
           isApiKeyRevealed={revealedProviderIds.has(config.id)}
           onApiKeyRevealToggle={() => toggleApiKey(config.id)}
           onChange={(next) => updateCustomProvider(config.id, next)}
+          onConnectionChange={() => markConnectionChanged(config.id, config)}
           onDiscover={() => void handleDiscover(
             config.id,
             config,
             (next) => updateCustomProvider(config.id, next),
             config.protocol
           )}
+          onTest={() => void handleTest(config.id, config, config.protocol)}
           nameField={(
             <label className="block">
               <span className="mb-1 block text-xs font-medium text-text-dark">
                 {t('settings.customImageApiName')}
               </span>
-              <input
+              <SettingsTextInput
                 value={config.name}
-                onChange={(event) => updateCustomProvider(config.id, {
-                  ...config,
-                  name: event.target.value,
-                })}
+                onCommit={(name) => updateCustomProvider(config.id, { ...config, name })}
                 placeholder={t('settings.customImageApiNamePlaceholder')}
-                className="w-full rounded border border-border-dark bg-surface-dark px-3 py-2 text-sm text-text-dark placeholder:text-text-muted"
               />
             </label>
           )}
@@ -554,7 +644,7 @@ export function ImageApisSettings({
       items={entries}
       getItemId={getEntryId}
       getItemTitle={getEntryTitle}
-      getItemSubtitle={getEntrySubtitle}
+      getItemHealth={getEntryHealth}
       getItemMeta={getEntryMeta}
       isBuiltIn={isEntryBuiltIn}
       onAdd={() => {
@@ -565,6 +655,13 @@ export function ImageApisSettings({
       onRemove={(id) => updateCustomImageApis(
         customImageApis.filter((config) => config.id !== id)
       )}
+      onRestore={(entry, index) => {
+        if (entry.kind !== 'custom') return;
+        const next = [...customImageApis];
+        // Built-in entries occupy the first slots of the list.
+        next.splice(Math.max(0, index - 2), 0, entry.config);
+        updateCustomImageApis(next);
+      }}
       onDetailChange={onDetailChange}
       renderDetail={renderDetail}
       addLabel={t('settings.addCustomImageApi')}
