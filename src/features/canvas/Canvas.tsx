@@ -52,7 +52,10 @@ import {
 import { resolveVideoApiConfig } from '@/features/canvas/application/videoApiSelection';
 import { showErrorDialog } from '@/features/canvas/application/errorDialog';
 import { shouldSuppressKeyboardCommand } from '@/features/canvas/application/compositionInputState';
-import { snapNodePositionChanges } from '@/features/canvas/application/nodePositionAlignment';
+import {
+  snapDragEndPositionsToGrid,
+  snapNodePositionChanges,
+} from '@/features/canvas/application/nodePositionAlignment';
 import {
   selectSelectedNodeIds,
   selectWorkflowNodes,
@@ -310,6 +313,7 @@ export function Canvas() {
   } | null>(null);
   const activeGenerationPollNodeIdsRef = useRef(new Set<string>());
   const duplicateNodesRef = useRef<((sourceNodeIds: string[]) => string | null) | null>(null);
+  const nodeDragActiveRef = useRef(false);
   const altDragCopyRef = useRef<{
     sourceNodeIds: string[];
     startPositions: Map<string, { x: number; y: number }>;
@@ -1078,9 +1082,6 @@ export function Canvas() {
 
   const handleNodesChange = useCallback(
     (changes: NodeChange<CanvasNode>[]) => {
-      const currentNodes = useCanvasStore.getState().nodes;
-      applyNodesChange(snapNodePositionChanges(changes, currentNodes));
-
       const hasDragMove = changes.some(
         (change) =>
           change.type === 'position' &&
@@ -1093,6 +1094,20 @@ export function Canvas() {
           'dragging' in change &&
           change.dragging === false
       );
+
+      // Keyboard nudges also emit `dragging: false`; only a finished pointer drag snaps to the grid.
+      let nextChanges = changes;
+      if (hasDragMove) {
+        nodeDragActiveRef.current = true;
+      } else if (hasDragEnd && nodeDragActiveRef.current) {
+        nodeDragActiveRef.current = false;
+        if (snapToGridEnabled) {
+          nextChanges = snapDragEndPositionsToGrid(changes, snapGridSize);
+        }
+      }
+      const { nodes: currentNodes, currentViewport: viewport } = useCanvasStore.getState();
+      applyNodesChange(snapNodePositionChanges(nextChanges, currentNodes, viewport.zoom));
+
       const hasResizeMove = changes.some(
         (change) =>
           change.type === 'dimensions' &&
@@ -1138,6 +1153,8 @@ export function Canvas() {
       scheduleCanvasImageFocus,
       scheduleCanvasPersist,
       setCanvasImageInteractionActive,
+      snapGridSize,
+      snapToGridEnabled,
     ]
   );
 
@@ -1433,7 +1450,7 @@ export function Canvas() {
         return;
       }
 
-      setFlowPosition(reactFlowInstance.screenToFlowPosition(clientPosition));
+      setFlowPosition(reactFlowInstance.screenToFlowPosition(clientPosition, { snapToGrid: snapToGridEnabled }));
       setMenuPosition({
         x: clientPosition.x - containerRect.left,
         y: clientPosition.y - containerRect.top,
@@ -1446,7 +1463,7 @@ export function Canvas() {
       suppressNextPaneClickRef.current = true;
       setShowNodeMenu(true);
     },
-    [connectNodesBatch, reactFlowInstance, scheduleCanvasPersist, t]
+    [connectNodesBatch, reactFlowInstance, scheduleCanvasPersist, snapToGridEnabled, t]
   );
 
   const selectedUploadNodeId = useMemo(() => {
@@ -1665,7 +1682,7 @@ export function Canvas() {
     const flowPos = reactFlowInstance.screenToFlowPosition({
       x: clientX,
       y: clientY,
-    });
+    }, { snapToGrid: snapToGridEnabled });
 
     setFlowPosition(flowPos);
     setMenuPosition({
@@ -1678,7 +1695,7 @@ export function Canvas() {
     setPreviewConnectionVisual(null);
     setNodeContextMenu(null);
     setShowNodeMenu(true);
-  }, [reactFlowInstance]);
+  }, [reactFlowInstance, snapToGridEnabled]);
 
   const importCanvasMedia = useCallback(async (position: { x: number; y: number }) => {
     let selected: string | string[] | null;
@@ -1756,7 +1773,7 @@ export function Canvas() {
       const flowPos = reactFlowInstance.screenToFlowPosition({
         x: event.clientX - containerRect.left,
         y: event.clientY - containerRect.top,
-      });
+      }, { snapToGrid: snapToGridEnabled });
 
       let currentX = flowPos.x;
       const baseY = flowPos.y;
@@ -1833,7 +1850,7 @@ export function Canvas() {
         }
       }
     },
-    [addNode, getCurrentProject, nodes, reactFlowInstance, useUploadFilenameAsNodeTitle]
+    [addNode, getCurrentProject, nodes, reactFlowInstance, snapToGridEnabled, useUploadFilenameAsNodeTitle]
   );
 
   const handleCanvasDragOver = useCallback((event: ReactDragEvent<HTMLDivElement>) => {
@@ -2444,7 +2461,12 @@ export function Canvas() {
           dragging: false;
         } => Boolean(change));
 
-      const allChanges = [...restoreSourceChanges, ...finalizeCopyChanges];
+      const allChanges = [
+        ...restoreSourceChanges,
+        ...(snapToGridEnabled
+          ? snapDragEndPositionsToGrid<CanvasNode>(finalizeCopyChanges, snapGridSize)
+          : finalizeCopyChanges),
+      ];
       if (allChanges.length > 0) {
         applyNodesChange(allChanges);
       }
@@ -2459,6 +2481,8 @@ export function Canvas() {
       scheduleCanvasPersist,
       setCanvasImageInteractionActive,
       setSelectedNode,
+      snapGridSize,
+      snapToGridEnabled,
     ]
   );
 
@@ -2598,7 +2622,7 @@ export function Canvas() {
         });
       }
 
-      const flowPos = reactFlowInstance.screenToFlowPosition(clientPosition);
+      const flowPos = reactFlowInstance.screenToFlowPosition(clientPosition, { snapToGrid: snapToGridEnabled });
       setFlowPosition(flowPos);
       setMenuPosition({
         x: clientPosition.x - containerRect.left,
@@ -2609,7 +2633,7 @@ export function Canvas() {
       suppressNextPaneClickRef.current = true;
       setShowNodeMenu(true);
     },
-    [connectNodes, pendingConnectStart, reactFlowInstance, scheduleCanvasPersist]
+    [connectNodes, pendingConnectStart, reactFlowInstance, scheduleCanvasPersist, snapToGridEnabled]
   );
 
   const handleAddFirstNode = useCallback(() => {
@@ -2655,7 +2679,6 @@ export function Canvas() {
         minZoom={0.1}
         maxZoom={5}
         snapGrid={snapGrid}
-        snapToGrid={snapToGridEnabled}
         panOnDrag={interactionMode === 'pan'}
         panActivationKeyCode="Space"
         selectionOnDrag={interactionMode === 'select'}

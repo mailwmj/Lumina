@@ -1,6 +1,8 @@
 import type { NodeBase, NodeChange, NodePositionChange, XYPosition } from '@xyflow/system';
 
-export const NODE_ALIGNMENT_SNAP_DISTANCE = 12;
+// Both distances are in screen pixels and get converted with the viewport zoom.
+export const NODE_ALIGNMENT_SNAP_DISTANCE = 6;
+export const NODE_ALIGNMENT_NEIGHBOR_RANGE = 240;
 
 interface AlignableNode extends NodeBase {
   position: XYPosition;
@@ -23,6 +25,25 @@ function isPositionChange<NodeType extends NodeBase>(
   return change.type === 'position' && Boolean(change.position);
 }
 
+function offsetPositionChange(
+  change: NodePositionChange & { position: XYPosition },
+  delta: XYPosition
+): NodePositionChange {
+  return {
+    ...change,
+    position: {
+      x: change.position.x + delta.x,
+      y: change.position.y + delta.y,
+    },
+    positionAbsolute: change.positionAbsolute
+      ? {
+        x: change.positionAbsolute.x + delta.x,
+        y: change.positionAbsolute.y + delta.y,
+      }
+      : undefined,
+  };
+}
+
 function resolveNodeDimension(node: AlignableNode, dimension: NodeDimension): number | null {
   const measured = node.measured?.[dimension];
   if (typeof measured === 'number' && Number.isFinite(measured)) {
@@ -35,6 +56,33 @@ function resolveNodeDimension(node: AlignableNode, dimension: NodeDimension): nu
 
 function alignmentOffsets(size: number | null): number[] {
   return size === null ? [0] : [0, size / 2, size];
+}
+
+function intervalGap(startA: number, sizeA: number | null, startB: number, sizeB: number | null): number {
+  const endA = startA + (sizeA ?? 0);
+  const endB = startB + (sizeB ?? 0);
+  return Math.max(0, startB - endA, startA - endB);
+}
+
+function isAlignmentNeighbor(
+  position: XYPosition,
+  movingNode: AlignableNode,
+  siblingNode: AlignableNode,
+  range: number
+): boolean {
+  const gapX = intervalGap(
+    position.x,
+    resolveNodeDimension(movingNode, 'width'),
+    siblingNode.position.x,
+    resolveNodeDimension(siblingNode, 'width')
+  );
+  const gapY = intervalGap(
+    position.y,
+    resolveNodeDimension(movingNode, 'height'),
+    siblingNode.position.y,
+    resolveNodeDimension(siblingNode, 'height')
+  );
+  return gapX <= range && gapY <= range;
 }
 
 function closestAlignedCoordinate(
@@ -68,13 +116,15 @@ function closestAlignedCoordinate(
 
 /**
  * Makes a single dragged node magnetically align corresponding outer edges or
- * center lines with a sibling node. Grid snapping remains independent; this
- * also works when the grid is hidden and aligns directly to visible geometry.
+ * center lines with a nearby sibling node. Grid snapping remains independent;
+ * this also works when the grid is hidden and aligns directly to visible geometry.
+ * Thresholds are screen-space so the magnet feels the same at every zoom level,
+ * and only nearby siblings participate so distant nodes don't make drags stutter.
  */
 export function snapNodePositionChanges<NodeType extends AlignableNode>(
   changes: NodeChange<NodeType>[],
   nodes: NodeType[],
-  distance = NODE_ALIGNMENT_SNAP_DISTANCE
+  zoom = 1
 ): NodeChange<NodeType>[] {
   const positionChanges = changes.filter(isPositionChange);
   if (positionChanges.length !== 1) {
@@ -87,8 +137,13 @@ export function snapNodePositionChanges<NodeType extends AlignableNode>(
     return changes;
   }
 
+  const scale = Number.isFinite(zoom) && zoom > 0 ? zoom : 1;
+  const distance = NODE_ALIGNMENT_SNAP_DISTANCE / scale;
+  const neighborRange = NODE_ALIGNMENT_NEIGHBOR_RANGE / scale;
   const siblingNodes = nodes.filter(
-    (node) => node.id !== movingNode.id && node.parentId === movingNode.parentId
+    (node) => node.id !== movingNode.id
+      && node.parentId === movingNode.parentId
+      && isAlignmentNeighbor(positionChange.position, movingNode, node, neighborRange)
   );
   const alignedX = closestAlignedCoordinate(
     positionChange.position.x,
@@ -111,28 +166,48 @@ export function snapNodePositionChanges<NodeType extends AlignableNode>(
     return changes;
   }
 
-  const snappedPosition = {
-    x: alignedX ?? positionChange.position.x,
-    y: alignedY ?? positionChange.position.y,
-  };
   const delta = {
-    x: snappedPosition.x - positionChange.position.x,
-    y: snappedPosition.y - positionChange.position.y,
+    x: (alignedX ?? positionChange.position.x) - positionChange.position.x,
+    y: (alignedY ?? positionChange.position.y) - positionChange.position.y,
   };
 
-  return changes.map((change) => {
-    if (change !== positionChange) {
-      return change;
-    }
-    return {
-      ...change,
-      position: snappedPosition,
-      positionAbsolute: change.positionAbsolute
-        ? {
-          x: change.positionAbsolute.x + delta.x,
-          y: change.positionAbsolute.y + delta.y,
-        }
-        : undefined,
-    };
-  });
+  return changes.map((change) => (
+    change === positionChange ? offsetPositionChange(positionChange, delta) : change
+  ));
+}
+
+/**
+ * Snaps the final positions of a finished drag to the grid. Dragging itself
+ * stays free so it follows the pointer smoothly; multi-node drags share the
+ * offset of the first node to keep their relative layout intact.
+ */
+export function snapDragEndPositionsToGrid<NodeType extends NodeBase>(
+  changes: NodeChange<NodeType>[],
+  gridSize: number
+): NodeChange<NodeType>[] {
+  const dragEndChanges = changes.filter(
+    (change): change is NodePositionChange & { position: XYPosition } => (
+      isPositionChange(change) && change.dragging === false
+    )
+  );
+  const [referenceChange] = dragEndChanges;
+  const dragEndChangeSet = new Set<NodeChange<NodeType>>(dragEndChanges);
+  if (!referenceChange || !Number.isFinite(gridSize) || gridSize <= 0) {
+    return changes;
+  }
+
+  const { x, y } = referenceChange.position;
+  const delta = {
+    x: Math.round(x / gridSize) * gridSize - x,
+    y: Math.round(y / gridSize) * gridSize - y,
+  };
+  if (delta.x === 0 && delta.y === 0) {
+    return changes;
+  }
+
+  return changes.map((change) => (
+    isPositionChange(change) && dragEndChangeSet.has(change)
+      ? offsetPositionChange(change, delta)
+      : change
+  ));
 }
