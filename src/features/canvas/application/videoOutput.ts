@@ -4,7 +4,6 @@ import {
   VIDEO_RESULT_NODE_DEFAULT_WIDTH,
   VIDEO_RESULT_NODE_MIN_HEIGHT,
   VIDEO_RESULT_NODE_MIN_WIDTH,
-  type CanvasEdge,
   type CanvasNode,
   type CanvasNodeData,
   type ExportVideoNodeData,
@@ -30,7 +29,6 @@ interface CreateVideoOutputNodeInput {
   sourceNodeId: string;
   data: Partial<ExportVideoNodeData>;
   existingNodes: readonly CanvasNode[];
-  existingEdges: readonly CanvasEdge[];
   addNodeBatch: (nodes: Array<{
     type: typeof CANVAS_NODE_TYPES.exportVideo;
     position: { x: number; y: number };
@@ -46,7 +44,6 @@ export function createVideoOutputNode({
   sourceNodeId,
   data,
   existingNodes,
-  existingEdges,
   addNodeBatch,
   addEdge,
 }: CreateVideoOutputNodeInput): string | null {
@@ -54,28 +51,21 @@ export function createVideoOutputNode({
     ? data.aspectRatio
     : '16:9';
   const size = resolveVideoResultNodeSize(aspectRatio);
-  const placement = resolveImageResultBatchPositions({
+  const [position] = resolveImageResultBatchPositions({
     sourceNodeId,
     nodes: existingNodes,
-    edges: existingEdges,
     resultSize: size,
     resultCount: 1,
-    resultNodeType: CANVAS_NODE_TYPES.exportVideo,
-  })[0];
-
-  if (!placement) {
-    return null;
-  }
+  });
 
   const [nodeId] = addNodeBatch([{
     type: CANVAS_NODE_TYPES.exportVideo,
-    position: placement.position,
+    position,
     width: size.width,
     height: size.height,
     data: {
       ...data,
       aspectRatio,
-      generationLaneSlot: placement.laneSlot,
     },
   }]);
 

@@ -436,14 +436,23 @@ describe('shared image generation execution', () => {
     )).toBe(true);
   });
 
-  it('reuses one failed downstream result and creates only one additional output for count two', async () => {
+  it('reuses a failed downstream result in place when it can hold the whole rerun', async () => {
+    const { source, failed, success } = setupRetryFixture(1);
+    const result = await runImageGenerationNode(source.id, { reuseFailedResults: true });
+    expect(result.resultNodeIds).toEqual([failed.id]);
+    expect(useCanvasStore.getState().nodes).toHaveLength(3);
+    expect(useCanvasStore.getState().nodes.find((node) => node.id === failed.id)?.position).toEqual(failed.position);
+    expect(useCanvasStore.getState().nodes.find((node) => node.id === success.id)).toEqual(success);
+  });
+
+  it('creates a fresh batch instead of splitting a rerun across one failed result and new nodes', async () => {
     const { source, failed, success } = setupRetryFixture(2);
     const result = await runImageGenerationNode(source.id, { reuseFailedResults: true });
     expect(result.resultNodeIds).toHaveLength(2);
-    expect(result.resultNodeIds[0]).toBe(failed.id);
+    expect(result.resultNodeIds).not.toContain(failed.id);
     expect(result.resultNodeIds).not.toContain(success.id);
-    expect(useCanvasStore.getState().nodes).toHaveLength(4);
-    expect(useCanvasStore.getState().nodes.find((node) => node.id === failed.id)?.position).toEqual(failed.position);
+    expect(useCanvasStore.getState().nodes).toHaveLength(5);
+    expect(useCanvasStore.getState().nodes.find((node) => node.id === failed.id)).toEqual(failed);
     expect(useCanvasStore.getState().nodes.find((node) => node.id === success.id)).toEqual(success);
   });
 

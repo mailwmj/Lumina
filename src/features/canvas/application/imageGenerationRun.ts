@@ -26,6 +26,7 @@ import {
 import {
   createImageOutputBatchNodes,
   findReusableImageOutputs,
+  selectReusableImageOutputBatch,
   markImageOutputNodeFailed,
 } from '@/features/canvas/application/imageOutputBatch';
 import {
@@ -288,7 +289,9 @@ export async function runImageGenerationNode(
       }
       resultNodes = createImageOutputBatchNodes({
         targetResultNodeIds: options.targetResultNodeIds
-          ?? (options.reuseFailedResults ? reusableIds.slice(0, outputCount) : []),
+          ?? (options.reuseFailedResults
+            ? selectReusableImageOutputBatch(reusableIds, latestCanvas.nodes, outputCount)
+            : []),
         updateNodeData: latestCanvas.updateNodeData,
         sourceNodeId,
         outputCount,
@@ -300,7 +303,6 @@ export async function runImageGenerationNode(
         generationStartedAt,
         generationDurationMs,
         existingNodes: latestCanvas.nodes,
-        existingEdges: latestCanvas.edges,
         addNodeBatch: latestCanvas.addNodeBatch,
         addEdge: latestCanvas.addEdge,
       });

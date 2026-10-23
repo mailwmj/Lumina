@@ -17,7 +17,7 @@ describe('video output layout', () => {
     expect(resolveVideoResultNodeSize('9:16')).toEqual({ width: 320, height: 569 });
   });
 
-  it('uses the same upper-then-center result lane as image generation', () => {
+  it('places a later video result to the right of the earlier one, centered on the source', () => {
     type Input = Parameters<typeof createVideoOutputNode>[0];
     type AddedNode = Parameters<Input['addNodeBatch']>[0][number];
     const addedNodes: AddedNode[] = [];
@@ -43,7 +43,6 @@ describe('video output layout', () => {
       sourceNodeId: source.id,
       data: { aspectRatio: '16:9', isGenerating: true },
       existingNodes: [source],
-      existingEdges: [],
       addNodeBatch,
       addEdge,
     });
@@ -59,20 +58,18 @@ describe('video output layout', () => {
       sourceNodeId: source.id,
       data: { aspectRatio: '16:9', isGenerating: true },
       existingNodes: [source, first],
-      existingEdges: edges,
       addNodeBatch,
       addEdge,
     });
 
     expect([firstId, secondId]).toEqual(['video-result-1', 'video-result-2']);
-    expect(addedNodes.map(({ position, width, height, data }) => ({
+    expect(addedNodes.map(({ position, width, height }) => ({
       position,
       width,
       height,
-      laneSlot: data?.generationLaneSlot,
     }))).toEqual([
-      { position: { x: 448, y: -180 }, width: 560, height: 315, laneSlot: 0 },
-      { position: { x: 448, y: 163 }, width: 560, height: 315, laneSlot: 1 },
+      { position: { x: 492, y: 163 }, width: 560, height: 315 },
+      { position: { x: 1_100, y: 163 }, width: 560, height: 315 },
     ]);
   });
 });

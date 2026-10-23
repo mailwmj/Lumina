@@ -1,9 +1,6 @@
 import {
-  CANVAS_NODE_TYPES,
   DEFAULT_NODE_WIDTH,
-  type CanvasEdge,
   type CanvasNode,
-  type ExportImageNodeData,
 } from '@/features/canvas/domain/canvasNodes';
 
 export interface ImageResultBatchSize {
@@ -14,15 +11,8 @@ export interface ImageResultBatchSize {
 export interface ImageResultBatchPlacementInput {
   sourceNodeId: string;
   nodes: readonly CanvasNode[];
-  edges: readonly CanvasEdge[];
   resultSize: ImageResultBatchSize;
   resultCount: number;
-  resultNodeType?: typeof CANVAS_NODE_TYPES.exportImage | typeof CANVAS_NODE_TYPES.exportVideo;
-}
-
-export interface ImageResultBatchPlacement {
-  laneSlot: number;
-  position: { x: number; y: number };
 }
 
 interface CanvasRect {
@@ -32,9 +22,14 @@ interface CanvasRect {
   height: number;
 }
 
-export const IMAGE_RESULT_LANE_GAP = 28;
-export const IMAGE_RESULT_LANE_ROWS = 3;
-const MAX_LANE_SLOT_SEARCH = 1_000;
+/** Horizontal distance from the source node, leaving room for the visible connection. */
+export const IMAGE_RESULT_SOURCE_GAP = 72;
+/** Distance between results of one batch; smaller than the batch gap so a batch reads as a unit. */
+export const IMAGE_RESULT_ITEM_GAP = 16;
+/** Minimum clearance between a new batch and any existing node, including earlier batches. */
+export const IMAGE_RESULT_BATCH_GAP = 48;
+
+const FALLBACK_ORIGIN = { x: 100, centerY: 100 };
 
 function resolveNodeSize(node: CanvasNode): ImageResultBatchSize {
   const styleWidth = typeof node.style?.width === 'number' ? node.style.width : null;
@@ -82,158 +77,119 @@ function resolveNodeRect(
 
 function rectsCollide(left: CanvasRect, right: CanvasRect): boolean {
   return (
-    left.x < right.x + right.width + IMAGE_RESULT_LANE_GAP
-    && left.x + left.width + IMAGE_RESULT_LANE_GAP > right.x
-    && left.y < right.y + right.height + IMAGE_RESULT_LANE_GAP
-    && left.y + left.height + IMAGE_RESULT_LANE_GAP > right.y
+    left.x < right.x + right.width + IMAGE_RESULT_BATCH_GAP
+    && left.x + left.width + IMAGE_RESULT_BATCH_GAP > right.x
+    && left.y < right.y + right.height + IMAGE_RESULT_BATCH_GAP
+    && left.y + left.height + IMAGE_RESULT_BATCH_GAP > right.y
   );
 }
 
-function isTrackedResult(
-  node: CanvasNode,
-  resultNodeType: NonNullable<ImageResultBatchPlacementInput['resultNodeType']>
-): boolean {
-  if (node.type !== resultNodeType) {
-    return false;
-  }
-
-  if (resultNodeType === CANVAS_NODE_TYPES.exportVideo) {
-    return true;
-  }
-
-  const data = node.data as ExportImageNodeData;
-  return data.resultKind === undefined || data.resultKind === 'generic';
-}
-
-function getDirectTrackedResults(
-  sourceNodeId: string,
-  nodesById: ReadonlyMap<string, CanvasNode>,
-  edges: readonly CanvasEdge[],
-  resultNodeType: NonNullable<ImageResultBatchPlacementInput['resultNodeType']>
-): CanvasNode[] {
-  const targetIds = new Set(
-    edges
-      .filter((edge) => edge.source === sourceNodeId)
-      .map((edge) => edge.target)
-  );
-
-  return Array.from(targetIds)
-    .map((nodeId) => nodesById.get(nodeId))
-    .filter((node): node is CanvasNode => Boolean(node))
-    .filter((node) => isTrackedResult(node, resultNodeType));
-}
-
-function resolveNextLaneSlot(results: readonly CanvasNode[]): number {
-  const assignedSlots = results.flatMap((node) => {
-    const laneSlot = (node.data as { generationLaneSlot?: unknown }).generationLaneSlot;
-    return typeof laneSlot === 'number' && Number.isInteger(laneSlot) && laneSlot >= 0
-      ? [laneSlot]
-      : [];
-  });
-  const nextAssignedSlot = assignedSlots.length > 0
-    ? Math.max(...assignedSlots) + 1
-    : 0;
-  const legacyResultCount = results.length - assignedSlots.length;
-
-  return Math.max(nextAssignedSlot, legacyResultCount);
-}
-
-function resolveLanePosition(
-  laneSlot: number,
-  origin: { x: number; centerY: number },
-  resultSize: ImageResultBatchSize
-): { x: number; y: number } {
-  const column = Math.floor(laneSlot / IMAGE_RESULT_LANE_ROWS);
-  const row = laneSlot % IMAGE_RESULT_LANE_ROWS;
-
-  return {
-    x: Math.round(origin.x + column * (resultSize.width + IMAGE_RESULT_LANE_GAP)),
-    y: Math.round(
-      origin.centerY - resultSize.height / 2
-        + (row - 1) * (resultSize.height + IMAGE_RESULT_LANE_GAP)
-    ),
-  };
+function resolveBatchGrid(resultCount: number): { columns: number; rows: number } {
+  // 1 result: single slot; 2: vertical comparison strip; 3-4: 2x2 grid.
+  const columns = resultCount > 2 ? 2 : 1;
+  return { columns, rows: Math.ceil(resultCount / columns) };
 }
 
 /**
- * Reserves deterministic mind-map result slots to the right of one source node.
- * A source-local lane holds upper, center, then lower slots per column. Existing nodes
- * are never moved; unrelated obstacles only cause later slots to be selected.
+ * Finds the left-most free spot for the whole batch block, starting next to the source.
+ * Candidates are the origin and the right clearance edge of each nearby obstacle; for each
+ * one the block may shift vertically by at most half its height to stay visually attached.
+ */
+function resolveBatchBlockPosition(
+  origin: { x: number; centerY: number },
+  block: ImageResultBatchSize,
+  obstacles: readonly CanvasRect[]
+): { x: number; y: number } {
+  const centeredY = origin.centerY - block.height / 2;
+  const maxShift = block.height / 2;
+  const bandTop = centeredY - maxShift - IMAGE_RESULT_BATCH_GAP;
+  const bandBottom = centeredY + block.height + maxShift + IMAGE_RESULT_BATCH_GAP;
+  const bandObstacles = obstacles.filter((obstacle) => (
+    obstacle.y < bandBottom && obstacle.y + obstacle.height > bandTop
+  ));
+  const candidateXs = Array.from(new Set([
+    origin.x,
+    ...bandObstacles
+      .map((obstacle) => obstacle.x + obstacle.width + IMAGE_RESULT_BATCH_GAP)
+      .filter((x) => x > origin.x),
+  ])).sort((left, right) => left - right);
+
+  for (const x of candidateXs) {
+    const columnObstacles = bandObstacles.filter((obstacle) => (
+      obstacle.x < x + block.width + IMAGE_RESULT_BATCH_GAP
+      && obstacle.x + obstacle.width + IMAGE_RESULT_BATCH_GAP > x
+    ));
+    const candidateYs = [
+      centeredY,
+      ...columnObstacles.flatMap((obstacle) => [
+        obstacle.y + obstacle.height + IMAGE_RESULT_BATCH_GAP,
+        obstacle.y - IMAGE_RESULT_BATCH_GAP - block.height,
+      ]),
+    ]
+      .filter((y) => Math.abs(y - centeredY) <= maxShift)
+      .sort((left, right) => Math.abs(left - centeredY) - Math.abs(right - centeredY));
+    const y = candidateYs.find((candidateY) => !columnObstacles.some((obstacle) => (
+      rectsCollide({ x, y: candidateY, ...block }, obstacle)
+    )));
+    if (y !== undefined) {
+      return { x, y };
+    }
+  }
+
+  // Unreachable: the last candidate lies right of every band obstacle, so its centered row is free.
+  return { x: candidateXs[candidateXs.length - 1], y: centeredY };
+}
+
+/**
+ * Places one generation batch to the right of its source node as a single block:
+ * one result is centered on the source, two form a vertical strip, four form a 2x2 grid.
+ * The block takes the free spot closest to the source, so space left by deleted results is
+ * reused once the whole batch fits. Existing nodes, including groups, are obstacles and are
+ * never moved; the block never jumps to the left of the source.
  */
 export function resolveImageResultBatchPositions({
   sourceNodeId,
   nodes,
-  edges,
   resultSize,
   resultCount,
-  resultNodeType = CANVAS_NODE_TYPES.exportImage,
-}: ImageResultBatchPlacementInput): ImageResultBatchPlacement[] {
+}: ImageResultBatchPlacementInput): Array<{ x: number; y: number }> {
   const safeResultCount = Math.max(0, Math.floor(resultCount));
   if (safeResultCount === 0) {
     return [];
   }
 
-  const sourceNode = nodes.find((node) => node.id === sourceNodeId);
-  if (!sourceNode) {
-    return Array.from({ length: safeResultCount }, (_, laneSlot) => ({
-      laneSlot,
-      position: resolveLanePosition(laneSlot, { x: 100, centerY: 100 }, resultSize),
-    }));
-  }
-
-  const nodesById = new Map(nodes.map((node) => [node.id, node] as const));
-  const sourceRect = resolveNodeRect(sourceNode, nodesById);
-  const origin = {
-    x: sourceRect.x + sourceRect.width + IMAGE_RESULT_LANE_GAP,
-    centerY: sourceRect.y + sourceRect.height / 2,
+  const { columns, rows } = resolveBatchGrid(safeResultCount);
+  const block = {
+    width: columns * resultSize.width + (columns - 1) * IMAGE_RESULT_ITEM_GAP,
+    height: rows * resultSize.height + (rows - 1) * IMAGE_RESULT_ITEM_GAP,
   };
-  const directResults = getDirectTrackedResults(sourceNodeId, nodesById, edges, resultNodeType);
-  const ignoredNodeIds = new Set([sourceNodeId]);
-  const obstacleRects = nodes
-    .filter((node) => node.type !== CANVAS_NODE_TYPES.group && !ignoredNodeIds.has(node.id))
-    .map((node) => resolveNodeRect(node, nodesById));
-  const placements: ImageResultBatchPlacement[] = [];
-  const reservedRects: CanvasRect[] = [];
-  let nextLaneSlot = resolveNextLaneSlot(directResults);
+  const nodesById = new Map(nodes.map((node) => [node.id, node] as const));
+  const sourceNode = nodesById.get(sourceNodeId);
+  let blockPosition: { x: number; y: number };
 
-  for (let outputIndex = 0; outputIndex < safeResultCount; outputIndex += 1) {
-    let laneSlot = nextLaneSlot;
-    let candidate: CanvasRect | null = null;
-
-    for (let searchStep = 0; searchStep < MAX_LANE_SLOT_SEARCH; searchStep += 1) {
-      const position = resolveLanePosition(laneSlot, origin, resultSize);
-      const nextCandidate = { ...position, ...resultSize };
-      const collides = [...obstacleRects, ...reservedRects].some((obstacle) => (
-        rectsCollide(nextCandidate, obstacle)
-      ));
-      if (!collides) {
-        candidate = nextCandidate;
-        break;
-      }
-      laneSlot += 1;
-    }
-
-    if (!candidate) {
-      const rightmostObstacleEdge = obstacleRects.reduce((rightEdge, obstacle) => (
-        Math.max(rightEdge, obstacle.x + obstacle.width)
-      ), origin.x - IMAGE_RESULT_LANE_GAP);
-      const minimumColumn = Math.max(
-        Math.floor(laneSlot / IMAGE_RESULT_LANE_ROWS),
-        Math.ceil((rightmostObstacleEdge + IMAGE_RESULT_LANE_GAP - origin.x)
-          / (resultSize.width + IMAGE_RESULT_LANE_GAP))
-      );
-      laneSlot = minimumColumn * IMAGE_RESULT_LANE_ROWS;
-      const position = resolveLanePosition(laneSlot, origin, resultSize);
-      candidate = { ...position, ...resultSize };
-    }
-
-    placements.push({
-      laneSlot,
-      position: { x: Math.round(candidate.x), y: Math.round(candidate.y) },
-    });
-    reservedRects.push(candidate);
-    nextLaneSlot = laneSlot + 1;
+  if (sourceNode) {
+    const sourceRect = resolveNodeRect(sourceNode, nodesById);
+    const obstacles = nodes
+      .filter((node) => node.id !== sourceNodeId)
+      .map((node) => resolveNodeRect(node, nodesById));
+    blockPosition = resolveBatchBlockPosition(
+      {
+        x: sourceRect.x + sourceRect.width + IMAGE_RESULT_SOURCE_GAP,
+        centerY: sourceRect.y + sourceRect.height / 2,
+      },
+      block,
+      obstacles
+    );
+  } else {
+    blockPosition = { x: FALLBACK_ORIGIN.x, y: FALLBACK_ORIGIN.centerY - block.height / 2 };
   }
 
-  return placements;
+  return Array.from({ length: safeResultCount }, (_, index) => ({
+    x: Math.round(
+      blockPosition.x + (index % columns) * (resultSize.width + IMAGE_RESULT_ITEM_GAP)
+    ),
+    y: Math.round(
+      blockPosition.y + Math.floor(index / columns) * (resultSize.height + IMAGE_RESULT_ITEM_GAP)
+    ),
+  }));
 }

@@ -2,15 +2,15 @@ import { describe, expect, it } from 'vitest';
 
 import {
   CANVAS_NODE_TYPES,
-  type CanvasEdge,
   type CanvasNode,
 } from '@/features/canvas/domain/canvasNodes';
 import {
   createImageOutputBatchNodes,
+  selectReusableImageOutputBatch,
 } from './imageOutputBatch';
 
 describe('image output batch layout', () => {
-  it('creates four outputs in a three-row, column-first result lane', () => {
+  it('creates four outputs as one 2x2 batch centered right of the source', () => {
     type CreateBatchInput = Parameters<typeof createImageOutputBatchNodes>[0];
     type BatchNodeInput = Parameters<CreateBatchInput['addNodeBatch']>[0][number];
     const addedNodes: BatchNodeInput[] = [];
@@ -40,7 +40,6 @@ describe('image output batch layout', () => {
           data: {} as never,
         },
       ],
-      existingEdges: [],
       addNodeBatch,
       addEdge,
     });
@@ -52,10 +51,10 @@ describe('image output batch layout', () => {
       { nodeId: 'result-4', outputIndex: 3 },
     ]);
     expect(addedNodes.map(({ position }) => position)).toEqual([
-      { x: 640, y: -134 },
-      { x: 640, y: 182 },
-      { x: 640, y: 498 },
-      { x: 956, y: -134 },
+      { x: 684, y: 30 },
+      { x: 988, y: 30 },
+      { x: 684, y: 334 },
+      { x: 988, y: 334 },
     ]);
     expect(addedNodes.map(({ type }) => type)).toEqual(
       Array.from({ length: 4 }, () => CANVAS_NODE_TYPES.exportImage)
@@ -67,7 +66,6 @@ describe('image output batch layout', () => {
       'City at dusk · 4/4',
     ]);
     expect(addedNodes.map(({ data }) => data?.generationBatchIndex)).toEqual([0, 1, 2, 3]);
-    expect(addedNodes.map(({ data }) => data?.generationLaneSlot)).toEqual([0, 1, 2, 3]);
     expect(addedNodes.map(({ data }) => data?.generationBatchId)).toEqual(
       Array.from({ length: 4 }, () => 'source-1:generation:123')
     );
@@ -86,7 +84,7 @@ describe('image output batch layout', () => {
     ]);
   });
 
-  it('continues a source lane after existing direct results', () => {
+  it('places a new batch to the right of an earlier batch from the same source', () => {
     type CreateBatchInput = Parameters<typeof createImageOutputBatchNodes>[0];
     type BatchNodeInput = Parameters<CreateBatchInput['addNodeBatch']>[0][number];
     const addedNodes: BatchNodeInput[] = [];
@@ -106,13 +104,10 @@ describe('image output batch layout', () => {
     const existingResult: CanvasNode = {
       id: 'existing-result',
       type: CANVAS_NODE_TYPES.exportImage,
-      position: { x: 640, y: -134 },
+      position: { x: 684, y: 182 },
       width: 288,
       height: 288,
-      data: {
-        resultKind: 'generic',
-        generationLaneSlot: 0,
-      } as never,
+      data: { resultKind: 'generic' } as never,
     };
 
     createImageOutputBatchNodes({
@@ -123,19 +118,36 @@ describe('image output batch layout', () => {
       generationStartedAt: 456,
       generationDurationMs: 45_000,
       existingNodes: [source, existingResult],
-      existingEdges: [{
-        id: 'source-1-existing-result',
-        source: source.id,
-        target: existingResult.id,
-      } as CanvasEdge],
       addNodeBatch,
       addEdge,
     });
 
     expect(addedNodes.map(({ position }) => position)).toEqual([
-      { x: 640, y: 182 },
-      { x: 640, y: 498 },
+      { x: 1_020, y: 30 },
+      { x: 1_020, y: 334 },
     ]);
-    expect(addedNodes.map(({ data }) => data?.generationLaneSlot)).toEqual([1, 2]);
+  });
+});
+
+describe('failed image output reuse', () => {
+  const failed = (id: string, generationBatchId: string, generationBatchIndex: number): CanvasNode => ({
+    id,
+    type: CANVAS_NODE_TYPES.exportImage,
+    position: { x: 0, y: 0 },
+    data: { generationBatchId, generationBatchIndex } as never,
+  });
+
+  it('reuses failed placeholders only when one batch can hold the whole rerun', () => {
+    const nodes = [failed('a-2', 'a', 2), failed('a-0', 'a', 0)];
+
+    expect(selectReusableImageOutputBatch(['a-2', 'a-0'], nodes, 4)).toEqual([]);
+    expect(selectReusableImageOutputBatch(['a-2', 'a-0'], nodes, 2)).toEqual(['a-0', 'a-2']);
+  });
+
+  it('never combines failed placeholders from different batches and prefers the latest batch', () => {
+    const nodes = [failed('a-0', 'a', 0), failed('b-0', 'b', 0)];
+
+    expect(selectReusableImageOutputBatch(['a-0', 'b-0'], nodes, 2)).toEqual([]);
+    expect(selectReusableImageOutputBatch(['a-0', 'b-0'], nodes, 1)).toEqual(['b-0']);
   });
 });

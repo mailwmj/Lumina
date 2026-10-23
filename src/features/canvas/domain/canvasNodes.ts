@@ -109,8 +109,6 @@ export interface ExportImageNodeData extends NodeImageData {
   generationBatchId?: string;
   generationBatchIndex?: number;
   generationBatchSize?: ImageOutputCount;
-  /** Stable, source-local slot used to keep generated images in a predictable result lane. */
-  generationLaneSlot?: number;
   /** Provider display name snapshot used while persisting a generated image. */
   generationProviderName?: string | null;
   /** Model display name snapshot used while persisting a generated image. */
@@ -280,8 +278,6 @@ export interface ExportVideoNodeData extends NodeDisplayData {
   seed?: number;
   prompt?: string;
   resultKind?: 'videoGen';
-  /** Stable, source-local slot used to keep generated videos in a predictable result lane. */
-  generationLaneSlot?: number;
   // SD 2.0 新参数
   generateAudio?: boolean;
   draft?: boolean;

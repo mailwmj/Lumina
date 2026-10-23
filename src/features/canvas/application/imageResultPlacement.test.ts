@@ -2,12 +2,13 @@ import { describe, expect, it } from 'vitest';
 
 import {
   CANVAS_NODE_TYPES,
-  type CanvasEdge,
   type CanvasNode,
   type CanvasNodeType,
 } from '@/features/canvas/domain/canvasNodes';
 import {
-  IMAGE_RESULT_LANE_ROWS,
+  IMAGE_RESULT_BATCH_GAP,
+  IMAGE_RESULT_ITEM_GAP,
+  IMAGE_RESULT_SOURCE_GAP,
   resolveImageResultBatchPositions,
 } from './imageResultPlacement';
 
@@ -18,11 +19,7 @@ function node(
   y: number,
   width: number,
   height: number,
-  options: {
-    parentId?: string;
-    resultKind?: 'generic';
-    generationLaneSlot?: number;
-  } = {}
+  options: { parentId?: string } = {}
 ): CanvasNode {
   return {
     id,
@@ -31,146 +28,107 @@ function node(
     width,
     height,
     parentId: options.parentId,
-    data: {
-      ...(options.resultKind ? { resultKind: options.resultKind } : {}),
-      ...(options.generationLaneSlot === undefined
-        ? {}
-        : { generationLaneSlot: options.generationLaneSlot }),
-    },
+    data: {},
   } as CanvasNode;
 }
 
-function edge(source: string, target: string): CanvasEdge {
-  return {
-    id: `e-${source}-${target}`,
-    source,
-    target,
-  } as CanvasEdge;
+function result(id: string, x: number, y: number, width = 288, height = 288): CanvasNode {
+  return node(id, CANVAS_NODE_TYPES.exportImage, x, y, width, height);
 }
 
 describe('image result placement', () => {
   const resultSize = { width: 288, height: 288 };
-
-  it('uses upper, center, and lower slots before opening the next column', () => {
-    const source = node('source', CANVAS_NODE_TYPES.imageEdit, 100, 200, 320, 240);
-
-    expect(IMAGE_RESULT_LANE_ROWS).toBe(3);
-    expect(resolveImageResultBatchPositions({
+  // Source right edge 420, vertical center 320.
+  const source = node('source', CANVAS_NODE_TYPES.imageEdit, 100, 200, 320, 240);
+  const place = (nodes: CanvasNode[], resultCount: number, size = resultSize) => (
+    resolveImageResultBatchPositions({
       sourceNodeId: source.id,
-      nodes: [source],
-      edges: [],
-      resultSize,
-      resultCount: 4,
-    })).toEqual([
-      { laneSlot: 0, position: { x: 448, y: -140 } },
-      { laneSlot: 1, position: { x: 448, y: 176 } },
-      { laneSlot: 2, position: { x: 448, y: 492 } },
-      { laneSlot: 3, position: { x: 764, y: -140 } },
+      nodes: [source, ...nodes],
+      resultSize: size,
+      resultCount,
+    })
+  );
+
+  it('uses distinct source, item, and batch gaps so a batch reads as one unit', () => {
+    expect(IMAGE_RESULT_SOURCE_GAP).toBe(72);
+    expect(IMAGE_RESULT_ITEM_GAP).toBeLessThan(IMAGE_RESULT_BATCH_GAP);
+  });
+
+  it('centers a single result on the source', () => {
+    expect(place([], 1)).toEqual([{ x: 492, y: 176 }]);
+  });
+
+  it('stacks two results as a vertical strip centered on the source', () => {
+    expect(place([], 2)).toEqual([
+      { x: 492, y: 24 },
+      { x: 492, y: 328 },
     ]);
   });
 
-  it('continues a source-owned lane in the next column after its first three results', () => {
-    const source = node('source', CANVAS_NODE_TYPES.imageEdit, 100, 200, 320, 240);
-    const firstResult = node(
-      'result-1',
-      CANVAS_NODE_TYPES.exportImage,
-      448,
-      -140,
-      288,
-      288,
-      { resultKind: 'generic', generationLaneSlot: 0 }
-    );
-    const secondResult = node(
-      'result-2',
-      CANVAS_NODE_TYPES.exportImage,
-      448,
-      176,
-      288,
-      288,
-      { resultKind: 'generic', generationLaneSlot: 1 }
-    );
-    const thirdResult = node(
-      'result-3',
-      CANVAS_NODE_TYPES.exportImage,
-      448,
-      492,
-      288,
-      288,
-      { resultKind: 'generic', generationLaneSlot: 2 }
-    );
-
-    expect(resolveImageResultBatchPositions({
-      sourceNodeId: source.id,
-      nodes: [source, firstResult, secondResult, thirdResult],
-      edges: [
-        edge(source.id, firstResult.id),
-        edge(source.id, secondResult.id),
-        edge(source.id, thirdResult.id),
-      ],
-      resultSize,
-      resultCount: 1,
-    })).toEqual([
-      { laneSlot: 3, position: { x: 764, y: -140 } },
+  it('lays four results out as a centered 2x2 grid in reading order', () => {
+    expect(place([], 4)).toEqual([
+      { x: 492, y: 24 },
+      { x: 796, y: 24 },
+      { x: 492, y: 328 },
+      { x: 796, y: 328 },
     ]);
   });
 
-  it('uses direct legacy results to reserve earlier slots without moving them', () => {
-    const source = node('source', CANVAS_NODE_TYPES.imageEdit, 100, 200, 320, 240);
-    const result = node(
-      'result',
-      CANVAS_NODE_TYPES.exportImage,
-      448,
-      -140,
-      288,
-      288,
-      { resultKind: 'generic' }
-    );
+  it('places a later batch to the right of a kept earlier batch instead of mixing them', () => {
+    const firstBatch = place([], 4).map(({ x, y }, index) => result(`first-${index}`, x, y));
 
-    expect(resolveImageResultBatchPositions({
-      sourceNodeId: source.id,
-      nodes: [source, result],
-      edges: [edge(source.id, result.id)],
-      resultSize,
-      resultCount: 1,
-    })).toEqual([
-      { laneSlot: 1, position: { x: 448, y: 176 } },
+    expect(place(firstBatch, 4)).toEqual([
+      { x: 1_132, y: 24 },
+      { x: 1_436, y: 24 },
+      { x: 1_132, y: 328 },
+      { x: 1_436, y: 328 },
     ]);
   });
 
-  it('skips a blocked upper slot before choosing the center slot', () => {
-    const source = node('source', CANVAS_NODE_TYPES.imageEdit, 100, 200, 320, 240);
-    const blocker = node('blocker', CANVAS_NODE_TYPES.textGeneration, 448, -140, 288, 288);
+  it('refills the space of a deleted earlier batch when the whole batch fits', () => {
+    const keptLaterBatch = result('later', 828, 176);
 
-    expect(resolveImageResultBatchPositions({
-      sourceNodeId: source.id,
-      nodes: [source, blocker],
-      edges: [],
-      resultSize,
-      resultCount: 1,
-    })).toEqual([
-      { laneSlot: 1, position: { x: 448, y: 176 } },
+    expect(place([keptLaterBatch], 1)).toEqual([{ x: 492, y: 176 }]);
+  });
+
+  it('skips a gap that cannot hold the whole batch rather than splitting it', () => {
+    const keptLaterBatch = result('later', 828, 176);
+
+    expect(place([keptLaterBatch], 4)).toEqual([
+      { x: 1_164, y: 24 },
+      { x: 1_468, y: 24 },
+      { x: 1_164, y: 328 },
+      { x: 1_468, y: 328 },
     ]);
   });
 
-  it('moves to the next column when a blocker covers a complete result column', () => {
-    const source = node('source', CANVAS_NODE_TYPES.imageEdit, 100, 200, 320, 240);
-    const blocker = node('blocker', CANVAS_NODE_TYPES.textGeneration, 448, 0, 288, 2_000);
+  it('starts after the actual right edge of an earlier result with a different ratio', () => {
+    const wideResult = result('wide', 492, 176, 512, 288);
 
-    expect(resolveImageResultBatchPositions({
-      sourceNodeId: source.id,
-      nodes: [source, blocker],
-      edges: [],
-      resultSize,
-      resultCount: 1,
-    })).toEqual([
-      { laneSlot: 3, position: { x: 764, y: -140 } },
+    expect(place([wideResult], 1)).toEqual([{ x: 1_052, y: 176 }]);
+  });
+
+  it('shifts the batch slightly when an obstacle only clips its centered position', () => {
+    const note = node('note', CANVAS_NODE_TYPES.textAnnotation, 492, 0, 288, 150);
+
+    expect(place([note], 1)).toEqual([{ x: 492, y: 198 }]);
+  });
+
+  it('moves the whole batch past an obstacle that blocks the column', () => {
+    const blocker = node('blocker', CANVAS_NODE_TYPES.textGeneration, 492, -1_000, 288, 3_000);
+
+    expect(place([blocker], 4)).toEqual([
+      { x: 828, y: 24 },
+      { x: 1_132, y: 24 },
+      { x: 828, y: 328 },
+      { x: 1_132, y: 328 },
     ]);
   });
 
-  it('uses absolute source coordinates while ignoring its group container as an obstacle', () => {
+  it('places results outside the group that contains the source', () => {
     const group = node('group', CANVAS_NODE_TYPES.group, 1_000, 800, 900, 640);
-    const source = node(
-      'source',
+    const groupedSource = node(
+      'grouped-source',
       CANVAS_NODE_TYPES.imageEdit,
       100,
       50,
@@ -180,13 +138,10 @@ describe('image result placement', () => {
     );
 
     expect(resolveImageResultBatchPositions({
-      sourceNodeId: source.id,
-      nodes: [group, source],
-      edges: [],
+      sourceNodeId: groupedSource.id,
+      nodes: [group, groupedSource],
       resultSize,
       resultCount: 1,
-    })).toEqual([
-      { laneSlot: 0, position: { x: 1_448, y: 510 } },
-    ]);
+    })).toEqual([{ x: 1_948, y: 826 }]);
   });
 });

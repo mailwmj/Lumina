@@ -35,7 +35,6 @@ interface CreateImageOutputBatchInput {
   generationStartedAt: number;
   generationDurationMs: number;
   existingNodes: readonly CanvasNode[];
-  existingEdges: readonly CanvasEdge[];
   targetResultNodeIds?: readonly string[];
   updateNodeData?: (nodeId: string, data: Partial<CanvasNodeData>) => void;
   addNodeBatch: (
@@ -71,7 +70,6 @@ export function createImageOutputBatchNodes({
   generationDurationMs,
   aspectRatio = DEFAULT_ASPECT_RATIO,
   existingNodes,
-  existingEdges,
   addNodeBatch,
   addEdge,
   targetResultNodeIds = [],
@@ -92,10 +90,8 @@ export function createImageOutputBatchNodes({
   const placements = newCount > 0 ? resolveImageResultBatchPositions({
     sourceNodeId,
     nodes: existingNodes,
-    edges: existingEdges,
     resultSize: outputSize,
     resultCount: newCount,
-    resultNodeType: CANVAS_NODE_TYPES.exportImage,
   }) : [];
   const generationBatchId = `${sourceNodeId}:generation:${generationStartedAt}`;
 
@@ -128,12 +124,12 @@ export function createImageOutputBatchNodes({
     updateNodeData?.(nodeId, buildData(outputIndex));
   });
   const nodeIds = placements.length > 0 ? addNodeBatch(
-    placements.map(({ position, laneSlot }, index) => ({
+    placements.map((position, index) => ({
       type: CANVAS_NODE_TYPES.exportImage,
       width: outputSize.width,
       height: outputSize.height,
       position,
-      data: { ...buildData(targetResultNodeIds.length + index), generationLaneSlot: laneSlot },
+      data: buildData(targetResultNodeIds.length + index),
     }))
   ) : [];
   nodeIds.forEach((nodeId) => addEdge(sourceNodeId, nodeId));
@@ -189,4 +185,26 @@ export function findReusableImageOutputs(
 ): string[] {
   const targets = new Set(edges.filter((edge) => edge.source === sourceNodeId).map((edge) => edge.target));
   return nodes.filter((node) => targets.has(node.id) && isReusableFailedImageOutput(node)).map((node) => node.id);
+}
+
+/** Picks failed placeholders from a single earlier batch so one rerun never splits across two places. */
+export function selectReusableImageOutputBatch(
+  reusableIds: readonly string[],
+  nodes: readonly CanvasNode[],
+  outputCount: number
+): string[] {
+  const nodesById = new Map(nodes.map((node) => [node.id, node] as const));
+  const batches = new Map<string, CanvasNode[]>();
+  reusableIds.forEach((nodeId) => {
+    const node = nodesById.get(nodeId);
+    if (!node) return;
+    const batchId = (node.data as ExportImageNodeData).generationBatchId ?? nodeId;
+    batches.set(batchId, [...(batches.get(batchId) ?? []), node]);
+  });
+  // Later batches were added later, so prefer the most recent failure the user is looking at.
+  const batch = Array.from(batches.values()).reverse().find((members) => members.length >= outputCount);
+  if (!batch) return [];
+  const batchIndexOf = (node: CanvasNode) => (node.data as ExportImageNodeData).generationBatchIndex ?? 0;
+  return [...batch].sort((left, right) => batchIndexOf(left) - batchIndexOf(right))
+    .slice(0, outputCount).map((node) => node.id);
 }

@@ -24,8 +24,8 @@ export function continueFromImage(sourceNodeId: string): { nodeId: string; edgeI
   const source = state.nodes.find((node) => node.id === sourceNodeId);
   if (!source || !canContinueFromImage(source)) return null;
   const size = resolveTextGenerationLayout({ hasImageContext: true, hasResult: false });
-  const [{ position }] = resolveImageResultBatchPositions({
-    sourceNodeId, nodes: state.nodes, edges: state.edges, resultSize: size, resultCount: 1,
+  const [position] = resolveImageResultBatchPositions({
+    sourceNodeId, nodes: state.nodes, resultSize: size, resultCount: 1,
   });
   // addEdge and initialization do not add history; the batch snapshot covers the entire action.
   // addNodeBatch uses the same registry and remembered model/options as menu creation.
