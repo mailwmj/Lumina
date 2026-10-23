@@ -78,20 +78,14 @@
       "hide": "Hide canvas minimap"
     },
     "toolbar": {
-      "more": "More",
       "selectMode": "Select Tool (V)",
       "panMode": "Hand Tool (H)",
       "zoomIn": "Zoom In",
       "zoomOut": "Zoom Out",
       "fitView": "Fit View",
       "toggleGrid": "Show/Hide Grid",
-      "clear": "Clear Canvas",
       "lock": "Lock Canvas",
       "unlock": "Unlock Canvas"
-    },
-    "clearConfirm": {
-      "title": "Clear Canvas",
-      "message": "All nodes and connections will be deleted. You can restore them with Undo ({{shortcut}})."
     },
     "multiConnect": {
       "dragHandle": "Drag to connect selection",

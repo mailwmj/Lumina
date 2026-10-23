@@ -1,7 +1,7 @@
 import { useCallback, type ButtonHTMLAttributes, type ReactNode } from 'react';
 import { isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { Minus, X, Maximize2, Settings, ArrowLeft } from '@/components/ui/icons';
+import { Minus, X, Square, Settings, ArrowLeft } from '@/components/ui/icons';
 import { useTranslation } from 'react-i18next';
 import { Moon, Sun, Languages } from '@/components/ui/icons';
 import { useThemeStore } from '@/stores/themeStore';
@@ -232,7 +232,7 @@ export function TitleBar({ onSettingsClick, showBackButton, onBackClick, context
               label={t('titleBar.maximize')}
               onClick={handleMaximize}
             >
-              <Maximize2 className="h-4 w-4" />
+              <Square className="h-3.5 w-3.5" />
             </TitleBarButton>
 
             <TitleBarButton

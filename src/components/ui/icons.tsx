@@ -34,7 +34,6 @@ import {
   Maximize02Icon,
   MinusSignIcon,
   Moon02Icon,
-  MoreHorizontalIcon,
   MusicNote01Icon,
   PauseIcon,
   PencilIcon,
@@ -134,5 +133,3 @@ export const X = createNamedIcon(Cancel01Icon, 'X');
 export const Zap = createNamedIcon(ZapIcon, 'Zap');
 export const ZoomIn = createNamedIcon(ZoomInAreaIcon, 'ZoomIn');
 export const ZoomOut = createNamedIcon(ZoomOutAreaIcon, 'ZoomOut');
-
-export const MoreHorizontal = createNamedIcon(MoreHorizontalIcon, 'MoreHorizontal');

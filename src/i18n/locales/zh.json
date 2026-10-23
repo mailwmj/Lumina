@@ -78,20 +78,14 @@
       "hide": "隐藏画布小地图"
     },
     "toolbar": {
-      "more": "更多",
       "selectMode": "选择工具 (V)",
       "panMode": "托手工具 (H)",
       "zoomIn": "放大",
       "zoomOut": "缩小",
       "fitView": "适应视图",
       "toggleGrid": "显示/隐藏网格",
-      "clear": "清空画布",
       "lock": "锁定画布",
       "unlock": "解锁画布"
-    },
-    "clearConfirm": {
-      "title": "清空画布",
-      "message": "将删除所有节点和连线，可通过撤销（{{shortcut}}）恢复。"
     },
     "multiConnect": {
       "dragHandle": "拖动以批量连接",

@@ -282,7 +282,6 @@ interface CanvasState {
   undo: () => boolean;
   redo: () => boolean;
 
-  clearCanvas: () => void;
 }
 
 function normalizeHandleId(value: unknown): string | undefined {
@@ -2292,23 +2291,4 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     return true;
   },
 
-  clearCanvas: () => {
-    set((state) => {
-      if (state.nodes.length === 0 && state.edges.length === 0) {
-        return {};
-      }
-
-      return {
-        nodes: [],
-        edges: [],
-        selectedNodeId: null,
-        activeToolDialog: null,
-        history: {
-          past: pushSnapshot(state.history.past, createSnapshot(state.nodes, state.edges)),
-          future: [],
-        },
-        dragHistorySnapshot: null,
-      };
-    });
-  },
 }));
