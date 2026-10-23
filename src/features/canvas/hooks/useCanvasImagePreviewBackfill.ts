@@ -43,6 +43,11 @@ export function useCanvasImagePreviewBackfill({
   const pendingResultsRef = useRef(new Map<string, PendingPreviewResult>());
   const runningRef = useRef(false);
   const projectRunTokenRef = useRef(0);
+  // Applying a preview patch changes workflowNodes. The running loop reads the
+  // latest nodes from here instead of being cancelled by every re-render, which
+  // used to discard the in-flight preview and stall when it outlived the delay.
+  const workflowNodesRef = useRef(workflowNodes);
+  workflowNodesRef.current = workflowNodes;
 
   useEffect(() => {
     completedJobKeysRef.current.clear();
@@ -51,6 +56,9 @@ export function useCanvasImagePreviewBackfill({
     // A previous project can still be decoding in Tauri. Its token prevents it
     // from changing the current project's queue after it completes.
     runningRef.current = false;
+    return () => {
+      projectRunTokenRef.current += 1;
+    };
   }, [projectId]);
 
   useEffect(() => {
@@ -58,10 +66,9 @@ export function useCanvasImagePreviewBackfill({
       return;
     }
 
-    let cancelled = false;
     const timer = window.setTimeout(() => {
       const run = async () => {
-        if (runningRef.current || cancelled) {
+        if (runningRef.current) {
           return;
         }
         const runToken = projectRunTokenRef.current;
@@ -69,8 +76,7 @@ export function useCanvasImagePreviewBackfill({
 
         try {
           while (
-            !cancelled
-            && runToken === projectRunTokenRef.current
+            runToken === projectRunTokenRef.current
             && !useCanvasImageQualityStore.getState().isInteractionActive
           ) {
             for (const [key, pending] of pendingResultsRef.current) {
@@ -89,7 +95,7 @@ export function useCanvasImagePreviewBackfill({
               pendingResultsRef.current.delete(key);
             }
 
-            const jobs = collectCanvasImagePreviewJobs(workflowNodes);
+            const jobs = collectCanvasImagePreviewJobs(workflowNodesRef.current);
             const job = jobs.find((candidate) => !completedJobKeysRef.current.has(
               getCanvasImagePreviewJobKey(candidate)
             ));
@@ -104,7 +110,7 @@ export function useCanvasImagePreviewBackfill({
                 CANVAS_IMAGE_PREVIEW_MAX_DIMENSION,
                 projectId
               );
-              if (cancelled || runToken !== projectRunTokenRef.current) {
+              if (runToken !== projectRunTokenRef.current) {
                 return;
               }
               if (useCanvasImageQualityStore.getState().isInteractionActive) {
@@ -125,7 +131,7 @@ export function useCanvasImagePreviewBackfill({
               }
               completedJobKeysRef.current.add(key);
             } catch (error) {
-              if (cancelled || runToken !== projectRunTokenRef.current) {
+              if (runToken !== projectRunTokenRef.current) {
                 return;
               }
               completedJobKeysRef.current.add(key);
@@ -146,7 +152,6 @@ export function useCanvasImagePreviewBackfill({
     }, BACKFILL_IDLE_DELAY_MS);
 
     return () => {
-      cancelled = true;
       window.clearTimeout(timer);
     };
   }, [isInteractionActive, projectId, updateNodeDataWithoutHistory, workflowNodes]);

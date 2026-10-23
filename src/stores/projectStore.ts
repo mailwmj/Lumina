@@ -210,21 +210,38 @@ function trimHistoryForPersistence(history: CanvasHistoryState): CanvasHistorySt
   };
 }
 
-function encodeProject(project: Project): PersistedProject {
+interface EncodedHistory {
+  source: CanvasHistoryState;
+  pastJson: string;
+  futureJson: string;
+  imagePool: string[];
+  imageIndexMap: Map<string, number>;
+}
+
+// Typing and generation progress change nodes without pushing a history step,
+// so reuse the encoded history instead of re-serializing every snapshot.
+let encodedHistoryCache: EncodedHistory | null = null;
+
+function encodeHistoryForPersistence(history: CanvasHistoryState): EncodedHistory {
+  if (encodedHistoryCache?.source === history) {
+    return encodedHistoryCache;
+  }
+
   const imagePool: string[] = [];
   const imageIndexMap = new Map<string, number>();
-  const encode = (imageUrl: string | null | undefined) =>
-    encodeImageReference(imageUrl, imagePool, imageIndexMap);
-
-  return {
-    ...project,
-    nodes: mapNodeImageReferences(sanitizeProjectNodesForPersistence(project.nodes), encode),
-    history: mapHistoryImageReferences(
-      sanitizeProjectHistoryForPersistence(project.history),
-      encode
-    ),
+  // Trim before encoding so discarded snapshots do not retain images in the pool.
+  const encodedHistory = mapHistoryImageReferences(
+    sanitizeProjectHistoryForPersistence(trimHistoryForPersistence(history)),
+    (imageUrl) => encodeImageReference(imageUrl, imagePool, imageIndexMap)
+  );
+  encodedHistoryCache = {
+    source: history,
+    pastJson: JSON.stringify(encodedHistory.past),
+    futureJson: JSON.stringify(encodedHistory.future),
     imagePool,
+    imageIndexMap,
   };
+  return encodedHistoryCache;
 }
 
 function decodeProject(project: PersistedProject): Project {
@@ -322,28 +339,25 @@ function toProjectSummary(record: ProjectSummaryRecord): ProjectSummary {
 
 function toProjectRecord(project: Project): ProjectRecord {
   const thumbnailUrl = selectProjectThumbnail(project.nodes);
-  // Trim before encoding so discarded snapshots do not retain images in the pool.
-  const encodedProject = encodeProject({
-    ...project,
-    history: trimHistoryForPersistence(project.history),
-  });
-  const persistedNodes = encodedProject.nodes;
-  const persistedHistory = encodedProject.history;
+  const encodedHistory = encodeHistoryForPersistence(project.history);
+  const imagePool = [...encodedHistory.imagePool];
+  const imageIndexMap = new Map(encodedHistory.imageIndexMap);
+  const persistedNodes = mapNodeImageReferences(
+    sanitizeProjectNodesForPersistence(project.nodes),
+    (imageUrl) => encodeImageReference(imageUrl, imagePool, imageIndexMap)
+  );
 
   return {
-    id: encodedProject.id,
-    name: encodedProject.name,
-    createdAt: encodedProject.createdAt,
-    updatedAt: encodedProject.updatedAt,
-    nodeCount: encodedProject.nodeCount,
+    id: project.id,
+    name: project.name,
+    createdAt: project.createdAt,
+    updatedAt: project.updatedAt,
+    nodeCount: project.nodeCount,
     thumbnailUrl,
     nodesJson: JSON.stringify(persistedNodes),
-    edgesJson: JSON.stringify(encodedProject.edges),
-    viewportJson: JSON.stringify(encodedProject.viewport),
-    historyJson: JSON.stringify({
-      ...persistedHistory,
-      imagePool: encodedProject.imagePool ?? [],
-    }),
+    edgesJson: JSON.stringify(project.edges),
+    viewportJson: JSON.stringify(project.viewport),
+    historyJson: `{"past":${encodedHistory.pastJson},"future":${encodedHistory.futureJson},"imagePool":${JSON.stringify(imagePool)}}`,
   };
 }
 

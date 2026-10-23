@@ -803,7 +803,12 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
           return withManualSizeLock(node);
         });
       }
-      const hasMeaningfulChange = changes.some((change) => change.type !== 'select');
+      // React Flow measurements carry no `resizing` flag and repeat whenever a
+      // restored snapshot lacks `measured`, so recording them trapped undo.
+      const hasMeaningfulChange = changes.some((change) =>
+        change.type !== 'select'
+        && !(change.type === 'dimensions' && change.resizing === undefined)
+      );
       const hasDragMove = changes.some(
         (change) =>
           change.type === 'position' &&

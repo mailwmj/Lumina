@@ -448,6 +448,32 @@ describe('canvas store text generation sizing', () => {
   });
 });
 
+describe('canvas store measurement history', () => {
+  afterEach(() => {
+    useCanvasStore.getState().setCanvasData([], []);
+  });
+
+  it('lets undo remove a new node after React Flow measures it', () => {
+    useCanvasStore.getState().setCanvasData([], []);
+    useCanvasStore.getState().addNode(CANVAS_NODE_TYPES.upload, { x: 0, y: 0 });
+    const nodeId = useCanvasStore.getState().nodes[0].id;
+    // React Flow reports measured DOM size without a `resizing` flag, and
+    // measures again whenever a restored snapshot lacks `measured`.
+    const measure = () => useCanvasStore.getState().onNodesChange([{
+      id: nodeId,
+      type: 'dimensions',
+      dimensions: { width: 320, height: 240 },
+    }]);
+    measure();
+
+    expect(useCanvasStore.getState().history.past).toHaveLength(1);
+    expect(useCanvasStore.getState().undo()).toBe(true);
+    expect(useCanvasStore.getState().nodes).toHaveLength(0);
+    expect(useCanvasStore.getState().redo()).toBe(true);
+    expect(useCanvasStore.getState().nodes[0].measured).toEqual({ width: 320, height: 240 });
+  });
+});
+
 describe('new text generation node defaults', () => {
   afterEach(() => {
     useCanvasStore.getState().setCanvasData([], []);

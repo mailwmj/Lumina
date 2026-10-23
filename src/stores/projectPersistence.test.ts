@@ -85,6 +85,31 @@ describe('project persistence under slow storage', () => {
     expect(restored.history.past.map((snapshot) => snapshot.nodes[0].data.imageUrl)).toEqual(images.slice(-12));
   });
 
+  it('reuses the encoded history while only live nodes change and still restores every image', async () => {
+    const id = await createProject();
+    let historySerializations = 0;
+    const historyNode = node('shared.png');
+    historyNode.data = {
+      ...historyNode.data,
+      marker: { toJSON: () => { historySerializations += 1; return 'marker'; } },
+    } as CanvasNode['data'];
+    const history = { past: [{ nodes: [historyNode], edges: [] }], future: [] };
+
+    useProjectStore.getState().saveCurrentProject([node('shared.png')], [], undefined, history);
+    await vi.runAllTimersAsync();
+    useProjectStore.getState().saveCurrentProject([node('typed.png')], [], undefined, history);
+    await vi.runAllTimersAsync();
+
+    expect(commands.upsertProjectRecord).toHaveBeenCalledTimes(3);
+    expect(historySerializations).toBe(1);
+    expect(JSON.parse(records.get(id)!.historyJson).imagePool).toEqual(['shared.png', 'typed.png']);
+    useProjectStore.getState().openProject(id);
+    await vi.advanceTimersByTimeAsync(0);
+    const restored = useProjectStore.getState().currentProject!;
+    expect(restored.nodes[0].data.imageUrl).toBe('typed.png');
+    expect(restored.history.past[0].nodes[0].data.imageUrl).toBe('shared.png');
+  });
+
   it('does not overwrite a newer viewport when a full save waits for idle time', async () => {
     const id = await createProject();
     useProjectStore.getState().saveCurrentProject([node('image.png')], []);

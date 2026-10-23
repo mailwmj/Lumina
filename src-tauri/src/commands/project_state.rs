@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 use std::collections::HashSet;
+use std::sync::{Mutex, MutexGuard};
 use std::time::Duration;
 
 use rusqlite::{params, Connection};
@@ -106,12 +107,27 @@ fn ensure_projects_table(conn: &Connection) -> Result<(), String> {
     Ok(())
 }
 
-fn parse_image_pool(history_json: &str) -> Vec<String> {
-    let parsed: serde_json::Value = match serde_json::from_str(history_json) {
-        Ok(value) => value,
-        Err(_) => return Vec::new(),
-    };
+// Writes used to be serialized by running on the main thread; keep that guarantee
+// now that they run on the blocking pool, so a prune never races another upsert.
+static PROJECT_WRITE_LOCK: Mutex<()> = Mutex::new(());
 
+fn lock_project_writes() -> MutexGuard<'static, ()> {
+    PROJECT_WRITE_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+async fn run_blocking<T, F>(task_name: &str, task: F) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T, String> + Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(task)
+        .await
+        .map_err(|error| format!("{task_name} task failed: {error}"))?
+}
+
+fn parse_image_pool(parsed: &serde_json::Value) -> Vec<String> {
     parsed
         .get("imagePool")
         .and_then(|value| value.as_array())
@@ -177,7 +193,11 @@ fn collect_image_paths_from_nodes(
 }
 
 fn extract_project_image_paths(nodes_json: &str, history_json: &str) -> HashSet<String> {
-    let image_pool = parse_image_pool(history_json);
+    let parsed_history = serde_json::from_str::<serde_json::Value>(history_json).ok();
+    let image_pool = parsed_history
+        .as_ref()
+        .map(parse_image_pool)
+        .unwrap_or_default();
     let mut paths = HashSet::new();
 
     if let Ok(parsed_nodes) = serde_json::from_str::<serde_json::Value>(nodes_json) {
@@ -186,7 +206,7 @@ fn extract_project_image_paths(nodes_json: &str, history_json: &str) -> HashSet<
         }
     }
 
-    if let Ok(parsed_history) = serde_json::from_str::<serde_json::Value>(history_json) {
+    if let Some(parsed_history) = parsed_history {
         for timeline_key in ["past", "future"] {
             let Some(timeline) = parsed_history.get(timeline_key).and_then(|value| value.as_array()) else {
                 continue;
@@ -216,8 +236,22 @@ fn resolve_images_dir(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(images_dir)
 }
 
-fn prune_unreferenced_images(app: &AppHandle) -> Result<(), String> {
-    let conn = open_db(app)?;
+fn load_project_image_refs(conn: &Connection, project_id: &str) -> Result<HashSet<String>, String> {
+    let mut stmt = conn
+        .prepare("SELECT path FROM project_image_refs WHERE project_id = ?1")
+        .map_err(|e| format!("Failed to prepare project image refs query: {}", e))?;
+    let rows = stmt
+        .query_map(params![project_id], |row| row.get::<_, String>(0))
+        .map_err(|e| format!("Failed to query project image refs: {}", e))?;
+
+    let mut paths = HashSet::new();
+    for path_result in rows {
+        paths.insert(path_result.map_err(|e| format!("Failed to decode image ref row: {}", e))?);
+    }
+    Ok(paths)
+}
+
+fn prune_unreferenced_images(app: &AppHandle, conn: &Connection) -> Result<(), String> {
     let mut stmt = conn
         .prepare("SELECT DISTINCT path FROM project_image_refs")
         .map_err(|e| format!("Failed to prepare image refs query: {}", e))?;
@@ -271,8 +305,12 @@ fn open_db(app: &AppHandle) -> Result<Connection, String> {
 }
 
 #[tauri::command]
-pub fn list_project_summaries(app: AppHandle) -> Result<Vec<ProjectSummaryRecord>, String> {
-    let conn = open_db(&app)?;
+pub async fn list_project_summaries(app: AppHandle) -> Result<Vec<ProjectSummaryRecord>, String> {
+    run_blocking("List project summaries", move || list_project_summaries_sync(&app)).await
+}
+
+fn list_project_summaries_sync(app: &AppHandle) -> Result<Vec<ProjectSummaryRecord>, String> {
+    let conn = open_db(app)?;
     let mut stmt = conn
         .prepare(
             r#"
@@ -310,11 +348,15 @@ pub fn list_project_summaries(app: AppHandle) -> Result<Vec<ProjectSummaryRecord
 }
 
 #[tauri::command]
-pub fn get_project_record(
+pub async fn get_project_record(
     app: AppHandle,
     project_id: String,
 ) -> Result<Option<ProjectRecord>, String> {
-    let conn = open_db(&app)?;
+    run_blocking("Get project record", move || get_project_record_sync(&app, project_id)).await
+}
+
+fn get_project_record_sync(app: &AppHandle, project_id: String) -> Result<Option<ProjectRecord>, String> {
+    let conn = open_db(app)?;
     let mut stmt = conn
         .prepare(
             r#"
@@ -359,9 +401,14 @@ pub fn get_project_record(
 }
 
 #[tauri::command]
-pub fn upsert_project_record(app: AppHandle, record: ProjectRecord) -> Result<(), String> {
-    let mut conn = open_db(&app)?;
+pub async fn upsert_project_record(app: AppHandle, record: ProjectRecord) -> Result<(), String> {
+    run_blocking("Upsert project record", move || upsert_project_record_sync(&app, record)).await
+}
+
+fn upsert_project_record_sync(app: &AppHandle, record: ProjectRecord) -> Result<(), String> {
     let image_paths = extract_project_image_paths(&record.nodes_json, &record.history_json);
+    let _write_guard = lock_project_writes();
+    let mut conn = open_db(app)?;
     let tx = conn
         .transaction()
         .map_err(|e| format!("Failed to begin transaction: {}", e))?;
@@ -407,29 +454,43 @@ pub fn upsert_project_record(app: AppHandle, record: ProjectRecord) -> Result<()
     )
     .map_err(|e| format!("Failed to upsert project: {}", e))?;
 
-    tx.execute(
-        "DELETE FROM project_image_refs WHERE project_id = ?1",
-        params![record.id],
-    )
-    .map_err(|e| format!("Failed to clear project image refs: {}", e))?;
-
-    for path in image_paths {
+    // Most saves only move nodes or edit text; skip the ref rewrite and the
+    // images-dir scan unless this project's image set actually changed.
+    let image_refs_changed = load_project_image_refs(&tx, &record.id)? != image_paths;
+    if image_refs_changed {
         tx.execute(
-            "INSERT OR IGNORE INTO project_image_refs (project_id, path) VALUES (?1, ?2)",
-            params![record.id, path],
+            "DELETE FROM project_image_refs WHERE project_id = ?1",
+            params![record.id],
         )
-        .map_err(|e| format!("Failed to upsert project image ref: {}", e))?;
+        .map_err(|e| format!("Failed to clear project image refs: {}", e))?;
+
+        for path in image_paths {
+            tx.execute(
+                "INSERT OR IGNORE INTO project_image_refs (project_id, path) VALUES (?1, ?2)",
+                params![record.id, path],
+            )
+            .map_err(|e| format!("Failed to upsert project image ref: {}", e))?;
+        }
     }
 
     tx.commit()
         .map_err(|e| format!("Failed to commit upsert transaction: {}", e))?;
 
-    prune_unreferenced_images(&app)?;
+    if image_refs_changed {
+        prune_unreferenced_images(app, &conn)?;
+    }
     Ok(())
 }
 
 #[tauri::command]
-pub fn create_project_dirs(app: AppHandle, project_id: String, project_name: String) -> Result<(), String> {
+pub async fn create_project_dirs(app: AppHandle, project_id: String, project_name: String) -> Result<(), String> {
+    run_blocking("Create project dirs", move || {
+        create_project_dirs_sync(&app, project_id, project_name)
+    })
+    .await
+}
+
+fn create_project_dirs_sync(app: &AppHandle, project_id: String, project_name: String) -> Result<(), String> {
     let app_data_dir = app
         .path()
         .app_data_dir()
@@ -452,12 +513,23 @@ pub fn create_project_dirs(app: AppHandle, project_id: String, project_name: Str
 }
 
 #[tauri::command]
-pub fn update_project_viewport_record(
+pub async fn update_project_viewport_record(
     app: AppHandle,
     project_id: String,
     viewport_json: String,
 ) -> Result<(), String> {
-    let conn = open_db(&app)?;
+    run_blocking("Update project viewport", move || {
+        update_project_viewport_record_sync(&app, project_id, viewport_json)
+    })
+    .await
+}
+
+fn update_project_viewport_record_sync(
+    app: &AppHandle,
+    project_id: String,
+    viewport_json: String,
+) -> Result<(), String> {
+    let conn = open_db(app)?;
     conn.execute(
         "UPDATE projects SET viewport_json = ?1 WHERE id = ?2",
         params![viewport_json, project_id],
@@ -467,13 +539,25 @@ pub fn update_project_viewport_record(
 }
 
 #[tauri::command]
-pub fn rename_project_record(
+pub async fn rename_project_record(
     app: AppHandle,
     project_id: String,
     name: String,
     updated_at: i64,
 ) -> Result<(), String> {
-    let conn = open_db(&app)?;
+    run_blocking("Rename project", move || {
+        rename_project_record_sync(&app, project_id, name, updated_at)
+    })
+    .await
+}
+
+fn rename_project_record_sync(
+    app: &AppHandle,
+    project_id: String,
+    name: String,
+    updated_at: i64,
+) -> Result<(), String> {
+    let conn = open_db(app)?;
     conn.execute(
         "UPDATE projects SET name = ?1, updated_at = ?2 WHERE id = ?3",
         params![name, updated_at, project_id],
@@ -498,8 +582,13 @@ pub fn rename_project_record(
 }
 
 #[tauri::command]
-pub fn delete_project_record(app: AppHandle, project_id: String) -> Result<(), String> {
-    let mut conn = open_db(&app)?;
+pub async fn delete_project_record(app: AppHandle, project_id: String) -> Result<(), String> {
+    run_blocking("Delete project", move || delete_project_record_sync(&app, project_id)).await
+}
+
+fn delete_project_record_sync(app: &AppHandle, project_id: String) -> Result<(), String> {
+    let _write_guard = lock_project_writes();
+    let mut conn = open_db(app)?;
     let tx = conn
         .transaction()
         .map_err(|e| format!("Failed to begin delete transaction: {}", e))?;
@@ -531,7 +620,7 @@ pub fn delete_project_record(app: AppHandle, project_id: String) -> Result<(), S
         })?;
     }
 
-    prune_unreferenced_images(&app)?;
+    prune_unreferenced_images(app, &conn)?;
     Ok(())
 }
 
