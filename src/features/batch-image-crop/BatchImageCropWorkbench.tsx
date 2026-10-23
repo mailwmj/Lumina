@@ -671,6 +671,8 @@ export function BatchImageCropWorkbench({ onExit, backHandlerRef }: BatchImageCr
         onRequeryAi={() => void requerySelectedAi()}
         onCancelAi={cancelSelectedAi}
         onToast={showToast}
+        canChooseImages={Boolean(target)}
+        onChooseImages={() => void chooseImages()}
         onPrevious={() => setSelectedId(items[Math.max(0, selectedIndex - 1)]?.id ?? null)}
         onNext={() => setSelectedId(items[Math.min(items.length - 1, selectedIndex + 1)]?.id ?? null)}
       />

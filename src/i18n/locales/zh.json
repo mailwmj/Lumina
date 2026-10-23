@@ -475,7 +475,6 @@
     "deleteConfirmMessage": "确定要删除项目「{{name}}」吗？项目中的所有文件（上传图片、生成图片和视频）将被永久删除且无法恢复。",
     "deleteConfirmButton": "删除",
     "created": "创建时间",
-    "modified": "修改时间",
     "updatedAt": "更新时间",
     "sortBy": "排序字段",
     "sortDirection": "排序顺序",
@@ -488,7 +487,6 @@
     "noProjects": "暂无项目",
     "empty": "从第一个创作项目开始",
     "emptyHint": "把素材、提示词与生成结果放在同一张画布上，让创作过程随时可以继续。",
-    "subtitle": "继续最近的创作，或从一个新画布开始。",
     "search": "搜索项目名称",
     "clearSearch": "清空搜索",
     "openNamed": "打开项目：{{name}}",
@@ -811,15 +809,6 @@
       "files": "文件与下载",
       "integration": "集成",
       "advanced": "高级"
-    },
-    "categoryDesc": {
-      "overview": "查看各项功能当前是否可用",
-      "services": "配置图片、文本、视频服务的连接与可用模型",
-      "generation": "提示词润色与分镜生成规则",
-      "canvasAppearance": "主题、语言、强调色与画布交互",
-      "files": "上传与下载相关的设置",
-      "integration": "管理 Codex 等外部 Agent 对当前画布的访问",
-      "advanced": "实验功能、更新与日志"
     },
     "autosaveHint": "更改会自动保存",
     "overviewAllReady": "所有功能都已就绪。",

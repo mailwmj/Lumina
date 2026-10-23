@@ -6,6 +6,8 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  ImagePlus,
+  Plus,
   RefreshCw,
   RotateCcw,
 } from '@/components/ui/icons';
@@ -39,6 +41,8 @@ interface BatchCropEditorProps {
   onRequeryAi: () => void;
   onCancelAi: () => void;
   onToast: (message: string) => void;
+  canChooseImages: boolean;
+  onChooseImages: () => void;
   onPrevious: () => void;
   onNext: () => void;
 }
@@ -79,6 +83,8 @@ export function BatchCropEditor({
   onRequeryAi,
   onCancelAi,
   onToast,
+  canChooseImages,
+  onChooseImages,
   onPrevious,
   onNext,
 }: BatchCropEditorProps) {
@@ -139,7 +145,17 @@ export function BatchCropEditor({
     maxHeight: 'none',
   } : undefined;
 
-  if (!item) return <div className="h-full w-full bg-bg-dark" />;
+  if (!item) {
+    return (
+      <div className="flex h-full w-full flex-col items-center justify-center gap-5 bg-bg-dark">
+        <ImagePlus className="h-10 w-10 text-text-muted opacity-50" aria-hidden="true" />
+        <UiButton type="button" variant="primary" disabled={busy || !canChooseImages} onClick={onChooseImages} className="gap-2">
+          <Plus className="h-4 w-4" />
+          {t('batchCrop.addImages')}
+        </UiButton>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col bg-bg-dark">

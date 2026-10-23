@@ -475,7 +475,6 @@
     "deleteConfirmMessage": "Are you sure you want to delete project \"{{name}}\"? All project files (uploads, generated images and videos) will be permanently deleted and cannot be recovered.",
     "deleteConfirmButton": "Delete",
     "created": "Created",
-    "modified": "Modified",
     "updatedAt": "Updated",
     "sortBy": "Sort by",
     "sortDirection": "Sort order",
@@ -488,7 +487,6 @@
     "noProjects": "No Projects",
     "empty": "Start your first creative project",
     "emptyHint": "Keep references, prompts, and generated results together on a canvas you can return to.",
-    "subtitle": "Pick up a recent creation, or start with a new canvas.",
     "search": "Search projects by name",
     "clearSearch": "Clear search",
     "openNamed": "Open project: {{name}}",
@@ -815,15 +813,6 @@
       "files": "Files & downloads",
       "integration": "Integrations",
       "advanced": "Advanced"
-    },
-    "categoryDesc": {
-      "overview": "Check which features are ready to use",
-      "services": "Connections and available models for image, text and video services",
-      "generation": "Prompt polishing and storyboard generation rules",
-      "canvasAppearance": "Theme, language, accent color and canvas behavior",
-      "files": "Upload and download settings",
-      "integration": "Manage access to the current canvas for external agents such as Codex",
-      "advanced": "Experimental features, updates and logs"
     },
     "autosaveHint": "Changes save automatically",
     "overviewAllReady": "Everything is ready.",

@@ -136,12 +136,9 @@ export function ProjectManager({ onOpenBatchCrop }: ProjectManagerProps) {
 
   return (
     <div className="ui-scrollbar h-full w-full overflow-auto bg-bg-dark px-4 py-6 sm:px-6 sm:py-8">
-      <div className="mx-auto max-w-5xl">
+      <div className="mx-auto max-w-6xl">
         <header className="mb-6 flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight text-text-dark">{t('project.title')}</h1>
-            <p className="mt-1.5 text-sm text-text-muted">{t('project.subtitle')}</p>
-          </div>
+          <h1 className="text-2xl font-semibold tracking-tight text-text-dark">{t('project.title')}</h1>
           <div className="flex flex-wrap items-center gap-2">
             <UiButton type="button" disabled={isOpeningProject} onClick={onOpenBatchCrop} className="gap-2">
               <Crop className="h-4 w-4" />
@@ -188,9 +185,11 @@ export function ProjectManager({ onOpenBatchCrop }: ProjectManagerProps) {
                 <option value="asc">{t('project.sortAsc')}</option>
               </UiSelect>
             </div>
-            <p role="status" className="w-full text-xs text-text-muted tabular-nums">
-              {t('project.resultCount', { count: sortedProjects.length, total: projects.length })}
-            </p>
+            {query.trim() && (
+              <p role="status" className="w-full text-xs text-text-muted tabular-nums">
+                {t('project.resultCount', { count: sortedProjects.length, total: projects.length })}
+              </p>
+            )}
           </div>
         )}
 
@@ -219,7 +218,7 @@ export function ProjectManager({ onOpenBatchCrop }: ProjectManagerProps) {
             <UiButton className="mt-4" onClick={() => setQuery('')}>{t('project.clearSearch')}</UiButton>
           </section>
         ) : (
-          <div aria-busy={isOpeningProject} className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div aria-busy={isOpeningProject} className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {sortedProjects.map((project) => (
               <ProjectCard
                 key={project.id}

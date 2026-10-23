@@ -36,6 +36,8 @@ const fixedCanvasProps = {
   onRequeryAi: () => undefined,
   onCancelAi: () => undefined,
   onToast: () => undefined,
+  canChooseImages: true,
+  onChooseImages: () => undefined,
 };
 
 function editor(itemValue: BatchCropImageItem | null) {
@@ -105,6 +107,39 @@ describe('BatchCropEditor preview lifecycle', () => {
     expect(preview?.getAttribute('src')).toBe(item.previewPath);
     expect(preview?.style.width).toBe('427px');
     expect(preview?.style.height).toBe('640px');
+  });
+
+  it('offers adding images from the empty stage', async () => {
+    const onChooseImages = vi.fn();
+    const emptyStage = (canChooseImages: boolean) => (
+      <BatchCropEditor
+        {...fixedCanvasProps}
+        canChooseImages={canChooseImages}
+        item={null}
+        target={target}
+        index={0}
+        total={0}
+        busy={false}
+        onCropChange={() => undefined}
+        onRestore={() => undefined}
+        onConfirm={() => undefined}
+        onRotate={() => undefined}
+        onChooseImages={onChooseImages}
+        onPrevious={() => undefined}
+        onNext={() => undefined}
+      />
+    );
+    const addButton = () => Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === i18n.t('batchCrop.addImages')
+    )!;
+
+    await act(async () => root.render(emptyStage(false)));
+    expect(addButton().disabled).toBe(true);
+
+    await act(async () => root.render(emptyStage(true)));
+    await act(async () => addButton().click());
+
+    expect(onChooseImages).toHaveBeenCalledTimes(1);
   });
 
   it('switches only the current image mode without rendering the removed label', async () => {

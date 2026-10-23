@@ -125,15 +125,10 @@ export function SettingsDialog({
 
           <div className="flex min-w-0 flex-1 flex-col">
             {showHeader && (
-              <div className="flex items-end justify-between gap-4 border-b border-[var(--ui-border-soft)] py-4 pl-6 pr-14">
-                <div className="min-w-0">
-                  <h2 className="text-base font-semibold text-text-dark">
-                    {t(`settings.category.${activeCategory}`)}
-                  </h2>
-                  <p className="mt-1 text-sm text-text-muted">
-                    {t(`settings.categoryDesc.${activeCategory}`)}
-                  </p>
-                </div>
+              <div className="flex items-center justify-between gap-4 border-b border-[var(--ui-border-soft)] py-4 pl-6 pr-14">
+                <h2 className="min-w-0 text-base font-semibold text-text-dark">
+                  {t(`settings.category.${activeCategory}`)}
+                </h2>
                 <span className="shrink-0 text-xs text-text-muted">{t('settings.autosaveHint')}</span>
               </div>
             )}
