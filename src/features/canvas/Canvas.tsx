@@ -1,6 +1,7 @@
 import { copyCanvasSelection, handleCanvasPasteShortcut, handleCanvasImagePaste } from './application/canvasClipboard';
 import { CanvasImageClipboardSession, isCanvasTypingTarget } from './application/imageClipboard';
 import { completeImageGenerationResult } from './application/completeImageGenerationResult';
+import { registerCanvasPersistFlush } from './application/canvasPersistFlush';
 import { isGenerationJobCurrent } from './application/generationJobGuard';
 import {
   useState,
@@ -463,6 +464,20 @@ export function Canvas() {
       }, delayMs);
     },
     [persistCanvasSnapshot]
+  );
+
+  const flushScheduledCanvasPersist = useCallback(() => {
+    if (!saveTimerRef.current) {
+      return;
+    }
+    clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = null;
+    persistCanvasSnapshot();
+  }, [persistCanvasSnapshot]);
+
+  useEffect(
+    () => registerCanvasPersistFlush(flushScheduledCanvasPersist),
+    [flushScheduledCanvasPersist]
   );
 
   const scheduleCanvasImageFocus = useCallback((

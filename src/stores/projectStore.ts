@@ -49,12 +49,22 @@ const MAX_HISTORY_RESTORE_JSON_CHARS = 1_500_000;
 const queuedProjectUpserts = new Map<string, Project>();
 const projectUpsertTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const projectUpsertsInFlight = new Set<string>();
+const idleProjectFlushes = new Map<string, () => void>();
 const immediateProjectUpserts = new Set<string>();
 const queuedViewportUpserts = new Map<string, string>();
 const viewportUpsertTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const viewportUpsertsInFlight = new Set<string>();
 const deletingProjectIds = new Set<string>();
 const projectDeletesInFlight = new Set<string>();
+const activePersistencePromises = new Set<Promise<void>>();
+let persistenceFailureCount = 0;
+let pendingCloseFlushes = 0;
+const CLOSE_PERSIST_TIMEOUT_MS = 5000;
+
+function trackPersistence(promise: Promise<void>): void {
+  activePersistencePromises.add(promise);
+  void promise.finally(() => activePersistencePromises.delete(promise));
+}
 
 export interface ProjectSummary {
   id: string;
@@ -490,7 +500,9 @@ function flushProjectUpsert(projectId: string, options?: FlushProjectUpsertOptio
   }
 
   queuedProjectUpserts.delete(projectId);
-  const bypassIdle = immediateProjectUpserts.delete(projectId) || options?.bypassIdle;
+  const bypassIdle = immediateProjectUpserts.delete(projectId)
+    || options?.bypassIdle
+    || pendingCloseFlushes > 0;
   projectUpsertsInFlight.add(projectId);
 
   const settle = () => {
@@ -517,6 +529,7 @@ function flushProjectUpsert(projectId: string, options?: FlushProjectUpsertOptio
         }
       }
     } catch (error) {
+      persistenceFailureCount += 1;
       logger.error('Failed to persist project record', error);
       if (useProjectStore.getState().currentProjectId === projectId) {
         useProjectStore.setState({
@@ -529,11 +542,19 @@ function flushProjectUpsert(projectId: string, options?: FlushProjectUpsertOptio
   };
 
   if (bypassIdle) {
-    void executePersist();
+    trackPersistence(executePersist());
     return;
   }
 
-  scheduleIdlePersist(executePersist);
+  let started = false;
+  const runIdlePersist = () => {
+    if (started) return;
+    started = true;
+    idleProjectFlushes.delete(projectId);
+    trackPersistence(executePersist());
+  };
+  idleProjectFlushes.set(projectId, runIdlePersist);
+  scheduleIdlePersist(runIdlePersist);
 }
 
 function queueProjectUpsert(project: Project, options?: PersistProjectOptions): void {
@@ -588,8 +609,9 @@ function flushViewportUpsert(projectId: string): void {
   queuedViewportUpserts.delete(projectId);
   viewportUpsertsInFlight.add(projectId);
 
-  void updateProjectViewportRecord(projectId, viewportJson)
+  const persistPromise = updateProjectViewportRecord(projectId, viewportJson)
     .catch((error) => {
+      persistenceFailureCount += 1;
       logger.error('Failed to persist project viewport', error);
     })
     .finally(() => {
@@ -606,6 +628,75 @@ function flushViewportUpsert(projectId: string): void {
         flushViewportUpsert(projectId);
       }
     });
+  trackPersistence(persistPromise);
+}
+
+async function flushPendingWrites(): Promise<boolean> {
+  const failureCountAtStart = persistenceFailureCount;
+  const deadline = Date.now() + CLOSE_PERSIST_TIMEOUT_MS;
+
+  while (true) {
+    const projectIds = new Set([
+      ...queuedProjectUpserts.keys(),
+      ...queuedViewportUpserts.keys(),
+      ...projectUpsertsInFlight,
+      ...viewportUpsertsInFlight,
+      ...idleProjectFlushes.keys(),
+    ]);
+
+    for (const projectId of projectIds) {
+      const projectTimer = projectUpsertTimers.get(projectId);
+      if (projectTimer) {
+        clearTimeout(projectTimer);
+        projectUpsertTimers.delete(projectId);
+      }
+      const viewportTimer = viewportUpsertTimers.get(projectId);
+      if (viewportTimer) {
+        clearTimeout(viewportTimer);
+        viewportUpsertTimers.delete(projectId);
+      }
+
+      if (idleProjectFlushes.has(projectId)) {
+        idleProjectFlushes.get(projectId)?.();
+      } else if (queuedProjectUpserts.has(projectId)) {
+        flushProjectUpsert(projectId, { bypassIdle: true });
+      } else {
+        flushViewportUpsert(projectId);
+      }
+    }
+
+    const pendingPromises = [...activePersistencePromises];
+    const hasQueuedWrites = queuedProjectUpserts.size > 0 || queuedViewportUpserts.size > 0;
+    if (pendingPromises.length === 0 && !hasQueuedWrites) {
+      return persistenceFailureCount === failureCountAtStart;
+    }
+
+    const remainingMs = deadline - Date.now();
+    if (remainingMs <= 0) {
+      logger.error('Timed out while flushing pending project persistence');
+      return false;
+    }
+
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    const didTimeout = await Promise.race([
+      Promise.all(pendingPromises).then(() => false),
+      new Promise<boolean>((resolve) => {
+        timeoutId = setTimeout(() => resolve(true), remainingMs);
+      }),
+    ]);
+    if (timeoutId) clearTimeout(timeoutId);
+    if (didTimeout) {
+      logger.error('Timed out while flushing pending project persistence');
+      return false;
+    }
+  }
+}
+
+export function flushAllPendingPersists(): Promise<boolean> {
+  pendingCloseFlushes += 1;
+  return flushPendingWrites().finally(() => {
+    pendingCloseFlushes -= 1;
+  });
 }
 
 function queueViewportUpsert(

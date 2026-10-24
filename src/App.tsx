@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ReactFlowProvider } from '@xyflow/react';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke, isTauri } from '@tauri-apps/api/core';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Canvas } from './features/canvas/Canvas';
 import { TitleBar } from './components/TitleBar';
 import { LogPanel } from '@/lib/logger/LogPanel';
@@ -12,9 +13,11 @@ import { GlobalErrorDialog } from './components/GlobalErrorDialog';
 import { ProjectManager } from './features/project/ProjectManager';
 import { BatchImageCropWorkbench } from './features/batch-image-crop/BatchImageCropWorkbench';
 import { useThemeStore } from './stores/themeStore';
-import { useProjectStore } from './stores/projectStore';
+import { flushAllPendingPersists, useProjectStore } from './stores/projectStore';
 import { useSettingsStore } from './stores/settingsStore';
 import { logger } from '@/lib/logger';
+import { flushCanvasPersist } from '@/features/canvas/application/canvasPersistFlush';
+import { createWindowCloseHandler } from '@/application/windowClose';
 import {
   checkForUpdate,
   isUpdateVersionSuppressed,
@@ -50,6 +53,8 @@ function App() {
   const [globalError, setGlobalError] = useState<GlobalErrorDialogDetail | null>(null);
   const [activeHomeTool, setActiveHomeTool] = useState<'batch-crop' | null>(null);
   const homeToolBackHandlerRef = useRef<() => void>(() => undefined);
+  const activeHomeToolRef = useRef(activeHomeTool);
+  activeHomeToolRef.current = activeHomeTool;
 
   const isHydrated = useProjectStore((state) => state.isHydrated);
   const hydrate = useProjectStore((state) => state.hydrate);
@@ -93,6 +98,30 @@ function App() {
       setShowSettings(true);
     });
     return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    if (!isTauri()) return;
+
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    const appWindow = getCurrentWindow();
+    void appWindow.onCloseRequested(createWindowCloseHandler({
+      flush: async () => {
+        flushCanvasPersist();
+        return await flushAllPendingPersists();
+      },
+      destroy: () => appWindow.destroy(),
+      deferToOtherHandler: () => activeHomeToolRef.current === 'batch-crop',
+      onFlushFailure: () => logger.error('Window is closing after project persistence failed'),
+    })).then((dispose) => {
+      if (disposed) dispose();
+      else unlisten = dispose;
+    });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
   }, []);
 
   useEffect(() => {
