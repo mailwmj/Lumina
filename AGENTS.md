@@ -198,6 +198,7 @@ npm run release -- patch --notes-file docs/releases/v0.2.1.md
 说明：
 - 日常迭代不要求每次都完整打包，先走 `tsc --noEmit` + 关键路径手测。
 - 影响打包、依赖、入口、持久化、Tauri 命令时，再执行完整构建。
+- `@tauri-apps/*` npm 包与对应 Rust crate 必须同 major.minor，升级时一起升（`tauri build` 会校验，不一致直接失败）。
 - 发布说明优先落到 `docs/releases/vx.y.z.md`，再通过 `npm run release` 或“推送更新”口令触发发布。
 - `docs/releases/vx.y.z.md` 的默认格式同样只保留二级标题分组和列表正文，不写额外总标题、范围说明和完整提交清单。
 
