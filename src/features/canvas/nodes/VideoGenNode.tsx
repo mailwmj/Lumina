@@ -494,6 +494,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
     const newNodeId = createVideoOutputNode({
       sourceNodeId: id,
       existingNodes: currentCanvas.nodes,
+      existingEdges: currentCanvas.edges,
       addNodeBatch,
       addEdge,
       data: {

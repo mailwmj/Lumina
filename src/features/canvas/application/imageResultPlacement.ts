@@ -1,5 +1,6 @@
 import {
   DEFAULT_NODE_WIDTH,
+  type CanvasEdge,
   type CanvasNode,
 } from '@/features/canvas/domain/canvasNodes';
 
@@ -11,6 +12,8 @@ export interface ImageResultBatchSize {
 export interface ImageResultBatchPlacementInput {
   sourceNodeId: string;
   nodes: readonly CanvasNode[];
+  /** Identifies the source's earlier outputs, which a new batch may stack below. */
+  edges: readonly Pick<CanvasEdge, 'source' | 'target'>[];
   resultSize: ImageResultBatchSize;
   resultCount: number;
 }
@@ -90,22 +93,49 @@ function resolveBatchGrid(resultCount: number): { columns: number; rows: number 
   return { columns, rows: Math.ceil(resultCount / columns) };
 }
 
+interface PlacementObstacle extends CanvasRect {
+  /** Earlier outputs of the same source; a new batch may stack past them, never past others. */
+  owned: boolean;
+}
+
 /**
- * Finds the left-most free spot for the whole batch block, starting next to the source.
- * Candidates are the origin and the right clearance edge of each nearby obstacle; for each
- * one the block may shift vertically by at most half its height to stay visually attached.
+ * Lowest bottom edge a block in the column at `columnX` may reach: the top of the nearest
+ * foreign node below the source within the source-to-column span, i.e. the next workflow row.
+ */
+function resolveRowLimit(
+  source: CanvasRect,
+  columnX: number,
+  obstacles: readonly PlacementObstacle[]
+): number {
+  const sourceBottom = source.y + source.height;
+  return obstacles.reduce((limit, obstacle) => (
+    !obstacle.owned
+    && obstacle.y >= sourceBottom
+    && obstacle.x < columnX
+    && obstacle.x + obstacle.width > source.x
+      ? Math.min(limit, obstacle.y)
+      : limit
+  ), Number.POSITIVE_INFINITY);
+}
+
+/**
+ * Finds the free spot for the whole batch block in the source's result column.
+ * Repeated runs stack downward below the source's earlier outputs; the block never passes a
+ * foreign node or reaches beside the next workflow row. When the column is exhausted the block
+ * moves one column right. An obstacle that only clips the centered slot allows a shift of up to
+ * half the block height.
  */
 function resolveBatchBlockPosition(
+  source: CanvasRect,
   origin: { x: number; centerY: number },
   block: ImageResultBatchSize,
-  obstacles: readonly CanvasRect[]
+  obstacles: readonly PlacementObstacle[]
 ): { x: number; y: number } {
   const centeredY = origin.centerY - block.height / 2;
   const maxShift = block.height / 2;
-  const bandTop = centeredY - maxShift - IMAGE_RESULT_BATCH_GAP;
-  const bandBottom = centeredY + block.height + maxShift + IMAGE_RESULT_BATCH_GAP;
+  const top = centeredY - maxShift;
   const bandObstacles = obstacles.filter((obstacle) => (
-    obstacle.y < bandBottom && obstacle.y + obstacle.height > bandTop
+    obstacle.y + obstacle.height + IMAGE_RESULT_BATCH_GAP > top
   ));
   const candidateXs = Array.from(new Set([
     origin.x,
@@ -119,6 +149,15 @@ function resolveBatchBlockPosition(
       obstacle.x < x + block.width + IMAGE_RESULT_BATCH_GAP
       && obstacle.x + obstacle.width + IMAGE_RESULT_BATCH_GAP > x
     ));
+    // The centered slot is always allowed so the right-most column guarantees a result.
+    const bottomLimit = Math.max(
+      resolveRowLimit(source, x, obstacles),
+      centeredY + block.height + IMAGE_RESULT_BATCH_GAP
+    );
+    const passesForeignObstacle = (y: number) => columnObstacles.some((obstacle) => {
+      const clearance = obstacle.y + obstacle.height + IMAGE_RESULT_BATCH_GAP;
+      return !obstacle.owned && clearance <= y && clearance > centeredY + maxShift;
+    });
     const candidateYs = [
       centeredY,
       ...columnObstacles.flatMap((obstacle) => [
@@ -126,8 +165,15 @@ function resolveBatchBlockPosition(
         obstacle.y - IMAGE_RESULT_BATCH_GAP - block.height,
       ]),
     ]
-      .filter((y) => Math.abs(y - centeredY) <= maxShift)
-      .sort((left, right) => Math.abs(left - centeredY) - Math.abs(right - centeredY));
+      .filter((y) => (
+        y >= top
+        && y + block.height + IMAGE_RESULT_BATCH_GAP <= bottomLimit
+        && !passesForeignObstacle(y)
+      ))
+      // Nearest to the centered slot first; on a tie, growing downward reads as the next run.
+      .sort((left, right) => (
+        Math.abs(left - centeredY) - Math.abs(right - centeredY) || right - left
+      ));
     const y = candidateYs.find((candidateY) => !columnObstacles.some((obstacle) => (
       rectsCollide({ x, y: candidateY, ...block }, obstacle)
     )));
@@ -143,13 +189,15 @@ function resolveBatchBlockPosition(
 /**
  * Places one generation batch to the right of its source node as a single block:
  * one result is centered on the source, two form a vertical strip, four form a 2x2 grid.
- * The block takes the free spot closest to the source, so space left by deleted results is
- * reused once the whole batch fits. Existing nodes, including groups, are obstacles and are
- * never moved; the block never jumps to the left of the source.
+ * Later runs of the same source stack below its earlier outputs in one result column, so every
+ * connection fans out from the source without crossing earlier results. Space left by deleted
+ * results is reused once the whole batch fits. Existing nodes, including groups, are obstacles
+ * and are never moved; the block never jumps to the left of the source.
  */
 export function resolveImageResultBatchPositions({
   sourceNodeId,
   nodes,
+  edges,
   resultSize,
   resultCount,
 }: ImageResultBatchPlacementInput): Array<{ x: number; y: number }> {
@@ -169,10 +217,14 @@ export function resolveImageResultBatchPositions({
 
   if (sourceNode) {
     const sourceRect = resolveNodeRect(sourceNode, nodesById);
+    const ownedIds = new Set(
+      edges.filter((edge) => edge.source === sourceNodeId).map((edge) => edge.target)
+    );
     const obstacles = nodes
       .filter((node) => node.id !== sourceNodeId)
-      .map((node) => resolveNodeRect(node, nodesById));
+      .map((node) => ({ ...resolveNodeRect(node, nodesById), owned: ownedIds.has(node.id) }));
     blockPosition = resolveBatchBlockPosition(
+      sourceRect,
       {
         x: sourceRect.x + sourceRect.width + IMAGE_RESULT_SOURCE_GAP,
         centerY: sourceRect.y + sourceRect.height / 2,

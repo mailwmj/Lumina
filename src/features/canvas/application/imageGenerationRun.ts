@@ -94,6 +94,8 @@ export interface RunImageGenerationNodeOptions {
   providerSetup?: Map<string, Promise<void>>;
   assertCurrent?: (ownedResultNodeIds?: readonly string[]) => void;
   onSubmissionStarting?: () => void;
+  /** Fires once the batch's result nodes exist on the canvas, before the provider responds. */
+  onResultNodesCreated?: (resultNodeIds: readonly string[]) => void;
 }
 
 const inFlightSourceNodeIds = new Set<string>();
@@ -303,6 +305,7 @@ export async function runImageGenerationNode(
         generationStartedAt,
         generationDurationMs,
         existingNodes: latestCanvas.nodes,
+        existingEdges: latestCanvas.edges,
         addNodeBatch: latestCanvas.addNodeBatch,
         addEdge: latestCanvas.addEdge,
       });
@@ -319,6 +322,7 @@ export async function runImageGenerationNode(
         options.assertCurrent,
         resultNodes.map((resultNode) => resultNode.nodeId)
       );
+      options.onResultNodesCreated?.(resultNodes.map((resultNode) => resultNode.nodeId));
     };
     const prepareProviderSubmission = () => {
       ensureResultNodes();

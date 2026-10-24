@@ -17,7 +17,7 @@ describe('video output layout', () => {
     expect(resolveVideoResultNodeSize('9:16')).toEqual({ width: 320, height: 569 });
   });
 
-  it('places a later video result to the right of the earlier one, centered on the source', () => {
+  it('stacks a later video result below the earlier one in the same result column', () => {
     type Input = Parameters<typeof createVideoOutputNode>[0];
     type AddedNode = Parameters<Input['addNodeBatch']>[0][number];
     const addedNodes: AddedNode[] = [];
@@ -43,6 +43,7 @@ describe('video output layout', () => {
       sourceNodeId: source.id,
       data: { aspectRatio: '16:9', isGenerating: true },
       existingNodes: [source],
+      existingEdges: edges,
       addNodeBatch,
       addEdge,
     });
@@ -58,6 +59,7 @@ describe('video output layout', () => {
       sourceNodeId: source.id,
       data: { aspectRatio: '16:9', isGenerating: true },
       existingNodes: [source, first],
+      existingEdges: edges,
       addNodeBatch,
       addEdge,
     });
@@ -69,7 +71,7 @@ describe('video output layout', () => {
       height,
     }))).toEqual([
       { position: { x: 492, y: 163 }, width: 560, height: 315 },
-      { position: { x: 1_100, y: 163 }, width: 560, height: 315 },
+      { position: { x: 492, y: 526 }, width: 560, height: 315 },
     ]);
   });
 });

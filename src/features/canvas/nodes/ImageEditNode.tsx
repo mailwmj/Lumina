@@ -78,6 +78,7 @@ import { locateReferencedNode } from '@/features/canvas/application/referencedNo
 import { openSettingsDialog } from '@/features/settings/settingsEvents';
 import { TextGenerationUpstreamContext } from './TextGenerationUpstreamContext';
 import { usePreserveNodeCenterOnAutoResize } from '@/features/canvas/ui/usePreserveNodeCenterOnAutoResize';
+import { useRevealGeneratedResults } from '@/features/canvas/ui/useRevealGeneratedResults';
 import {
   ImageReferencePromptInput,
   type ImageReferencePromptInputHandle,
@@ -106,6 +107,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
   const generationSubmissionInFlightRef = useRef(false);
   const promptReferenceInputRef = useRef<ImageReferencePromptInputHandle | null>(null);
   useContinueFromImageFocus(id, promptReferenceInputRef);
+  const revealGeneratedResults = useRevealGeneratedResults(id);
   const [promptDraft, setPromptDraft] = useState(() => data.prompt ?? '');
   const promptCompositionStateRef = useRef(createCompositionInputState(data.prompt ?? ''));
 
@@ -350,6 +352,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
         reuseFailedResults: true,
         fallbackResultTitle: t('node.imageEdit.resultTitle'),
         fallbackErrorMessage: t('ai.error'),
+        onResultNodesCreated: revealGeneratedResults,
       });
     } catch (generationError) {
       let message = generationError instanceof Error
@@ -387,6 +390,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
   }, [
     hasConfiguredModel,
     id,
+    revealGeneratedResults,
     t,
     workflowInputs.imageInputs,
   ]);

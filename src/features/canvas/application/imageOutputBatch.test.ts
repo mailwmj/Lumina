@@ -40,6 +40,7 @@ describe('image output batch layout', () => {
           data: {} as never,
         },
       ],
+      existingEdges: [],
       addNodeBatch,
       addEdge,
     });
@@ -84,7 +85,7 @@ describe('image output batch layout', () => {
     ]);
   });
 
-  it('places a new batch to the right of an earlier batch from the same source', () => {
+  it('stacks a new batch below an earlier batch from the same source', () => {
     type CreateBatchInput = Parameters<typeof createImageOutputBatchNodes>[0];
     type BatchNodeInput = Parameters<CreateBatchInput['addNodeBatch']>[0][number];
     const addedNodes: BatchNodeInput[] = [];
@@ -118,13 +119,14 @@ describe('image output batch layout', () => {
       generationStartedAt: 456,
       generationDurationMs: 45_000,
       existingNodes: [source, existingResult],
+      existingEdges: [{ id: 'edge-1', source: source.id, target: existingResult.id }],
       addNodeBatch,
       addEdge,
     });
 
     expect(addedNodes.map(({ position }) => position)).toEqual([
-      { x: 1_020, y: 30 },
-      { x: 1_020, y: 334 },
+      { x: 684, y: 518 },
+      { x: 684, y: 822 },
     ]);
   });
 });

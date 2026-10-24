@@ -35,6 +35,7 @@ interface CreateImageOutputBatchInput {
   generationStartedAt: number;
   generationDurationMs: number;
   existingNodes: readonly CanvasNode[];
+  existingEdges: readonly CanvasEdge[];
   targetResultNodeIds?: readonly string[];
   updateNodeData?: (nodeId: string, data: Partial<CanvasNodeData>) => void;
   addNodeBatch: (
@@ -70,6 +71,7 @@ export function createImageOutputBatchNodes({
   generationDurationMs,
   aspectRatio = DEFAULT_ASPECT_RATIO,
   existingNodes,
+  existingEdges,
   addNodeBatch,
   addEdge,
   targetResultNodeIds = [],
@@ -90,6 +92,7 @@ export function createImageOutputBatchNodes({
   const placements = newCount > 0 ? resolveImageResultBatchPositions({
     sourceNodeId,
     nodes: existingNodes,
+    edges: existingEdges,
     resultSize: outputSize,
     resultCount: newCount,
   }) : [];

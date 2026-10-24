@@ -164,6 +164,46 @@ describe('shared image generation execution', () => {
     expect(reference.data.imageUrl).toBe('file:///original-8k.png');
   });
 
+  it('announces its result placeholders as soon as they are on the canvas, before any job settles', async () => {
+    const source = canvasNodeFactory.createNode(CANVAS_NODE_TYPES.imageEdit, { x: 0, y: 0 }, {
+      prompt: 'Create two product images.',
+      model: 'ai-media/gpt-image-2',
+      requestAspectRatio: '1:1',
+      outputCount: 2,
+    });
+    useCanvasStore.getState().setCanvasData([source], []);
+    useSettingsStore.setState({
+      openAiImageApi: {
+        apiKey: 'test-key',
+        baseUrl: 'https://example.test/v1',
+        modelCatalog: {
+          models: [{ id: 'ai-media/gpt-image-2' }],
+          refreshedAt: 1,
+        },
+        selectedModelIds: ['ai-media/gpt-image-2'],
+      },
+      lastImageModelSelection: {
+        providerId: 'ai-media',
+        modelId: 'ai-media/gpt-image-2',
+      },
+    });
+    const announced: Array<{ nodeIds: readonly string[]; pendingJobIds: unknown[] }> = [];
+
+    const result = await runImageGenerationNode(source.id, {
+      onResultNodesCreated: (nodeIds) => {
+        const nodesById = new Map(useCanvasStore.getState().nodes.map((node) => [node.id, node]));
+        announced.push({
+          nodeIds,
+          pendingJobIds: nodeIds.map((nodeId) => nodesById.get(nodeId)?.data.generationJobId),
+        });
+      },
+    });
+
+    // Placeholders exist (no job ID yet) when announced, so the view can follow them immediately.
+    expect(announced).toEqual([{ nodeIds: result.resultNodeIds, pendingJobIds: [null, null] }]);
+    expect(result.resultNodeIds).toHaveLength(2);
+  });
+
   it('registers its result nodes before revalidating the authorized canvas', async () => {
     const source = canvasNodeFactory.createNode(CANVAS_NODE_TYPES.imageEdit, { x: 0, y: 0 }, {
       prompt: 'Create one product image.',
