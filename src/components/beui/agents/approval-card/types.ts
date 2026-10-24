@@ -6,7 +6,8 @@ export type ApprovalCardStatus =
   | "approved"
   | "rejected"
   | "changes-requested"
-  | "answered";
+  | "answered"
+  | "skipped";
 
 export interface ApprovalCardOption {
   value: string;
@@ -22,7 +23,7 @@ export interface ApprovalCardQuestion {
   description?: ReactNode;
   options?: ApprovalCardOption[];
   multiple?: boolean;
-  autoAdvance?: boolean;
+  /** Adds a free-text entry after the options. Questions without options always get one. */
   allowCustom?: boolean;
   customPlaceholder?: string;
 }
@@ -40,6 +41,7 @@ export interface ApprovalCardLabels {
   dismiss: string;
   previousQuestion: string;
   nextQuestion: string;
+  customOption: string;
   customPlaceholder: string;
 }
 

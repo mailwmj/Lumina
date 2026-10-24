@@ -18,6 +18,8 @@ export const generateImageInputSchema = z.object({
 });
 export type GenerateImageInput = z.infer<typeof generateImageInputSchema>;
 
+export type GenerateImageRefusal = 'no_image_model' | 'budget_exhausted';
+
 export type AgentImageResult = Omit<AgentImageState, 'status'> & {
   status: AgentImageState['status'] | 'stopped_waiting' | 'timeout';
 };
@@ -32,7 +34,7 @@ export type GenerateImageOutput =
     results: AgentImageResult[];
     budget: AgentTurnBudget;
   }
-  | { status: 'refused'; grantedCount: 0; reason: string; budget: AgentTurnBudget }
+  | { status: 'refused'; grantedCount: 0; code: GenerateImageRefusal; reason: string; budget: AgentTurnBudget }
   | { status: 'failed'; grantedCount: 0; error: string; sourceNodeIds: string[]; budget: AgentTurnBudget };
 
 export const viewImagesInputSchema = z.object({
@@ -45,20 +47,30 @@ const askUserOptionSchema = z.object({
   description: z.string().optional(),
 });
 
+export const AGENT_MAX_QUESTIONS = 5;
+
 export const askUserInputSchema = z.object({
   questions: z.array(z.object({
     id: z.string().min(1),
     title: z.string().min(1),
     options: z.array(askUserOptionSchema).max(6).optional(),
     multiple: z.boolean().optional(),
-    allowCustom: z.boolean().optional(),
-  })).min(1).max(3),
+  })).min(1).max(AGENT_MAX_QUESTIONS),
 });
 export type AskUserInput = z.infer<typeof askUserInputSchema>;
 
 /** Filled in by the panel through `addToolOutput` once the user answers, keyed by question id. */
-export const askUserOutputSchema = z.record(z.string(), z.object({
+export const askUserAnswersSchema = z.record(z.string(), z.object({
   selected: z.array(z.string()),
   custom: z.string().optional(),
 }));
+export type AskUserAnswers = z.infer<typeof askUserAnswersSchema>;
+
+/** Model-only stand-in for questions the user moved past by sending a new message. */
+export const ASK_USER_UNANSWERED = { status: 'unanswered' } as const;
+
+export const askUserOutputSchema = z.union([
+  askUserAnswersSchema,
+  z.object({ status: z.literal(ASK_USER_UNANSWERED.status) }),
+]);
 export type AskUserOutput = z.infer<typeof askUserOutputSchema>;

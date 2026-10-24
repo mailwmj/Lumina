@@ -357,39 +357,6 @@ html[data-platform='macos'] #root {
   transition: opacity 130ms ease, transform 150ms ease;
 }
 
-.canvas-minimap {
-  border-radius: var(--ui-radius-panel);
-  overflow: hidden;
-  pointer-events: auto !important;
-}
-
-.canvas-minimap .react-flow__minimap-svg,
-.canvas-minimap .react-flow__minimap-mask,
-.canvas-minimap .react-flow__minimap-node {
-  pointer-events: all;
-}
-
-.react-flow__pane.selection .canvas-minimap {
-  pointer-events: auto !important;
-}
-
-.react-flow__pane.selection .canvas-minimap .react-flow__minimap-svg,
-.react-flow__pane.selection .canvas-minimap .react-flow__minimap-mask,
-.react-flow__pane.selection .canvas-minimap .react-flow__minimap-node {
-  pointer-events: all !important;
-}
-
-.canvas-minimap .react-flow__minimap-mask {
-  cursor: grab;
-  stroke: rgb(var(--text-muted-rgb) / 0.85);
-  stroke-width: 1.4px;
-  fill: rgb(var(--text-muted-rgb) / 0.16);
-}
-
-.canvas-minimap .react-flow__minimap-mask:active {
-  cursor: grabbing;
-}
-
 .canvas-mode-select .react-flow__pane {
   cursor: default;
 }

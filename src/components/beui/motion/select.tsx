@@ -263,10 +263,12 @@ export function Select({
 
 export interface SelectTriggerProps {
   className?: string;
+  /** Hide the chevron for compact ghost triggers whose leading icon already signals a menu. */
+  hideChevron?: boolean;
   children: ReactNode;
 }
 
-export function SelectTrigger({ className, children }: SelectTriggerProps) {
+export function SelectTrigger({ className, hideChevron = false, children }: SelectTriggerProps) {
   const ctx = useSelectContext("SelectTrigger");
   const isTop = ctx.placement === "top";
   // The edge facing the panel flattens while the panel is attached to it and
@@ -312,13 +314,15 @@ export function SelectTrigger({ className, children }: SelectTriggerProps) {
       )}
     >
       {children}
-      <motion.span
-        aria-hidden
-        style={{ rotate }}
-        className="text-muted-foreground"
-      >
-        <ChevronDown className="h-4 w-4" />
-      </motion.span>
+      {hideChevron ? null : (
+        <motion.span
+          aria-hidden
+          style={{ rotate }}
+          className="text-muted-foreground"
+        >
+          <ChevronDown className="h-4 w-4" />
+        </motion.span>
+      )}
     </motion.button>
   );
 }

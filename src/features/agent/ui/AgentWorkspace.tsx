@@ -1,28 +1,27 @@
-import { Sparkles } from 'lucide-react';
-import { AnimatePresence, motion } from 'motion/react';
+import { motion } from 'motion/react';
 import { type PointerEvent as ReactPointerEvent, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { SPRING_PANEL, SPRING_PRESS } from '@/components/beui/lib/ease';
-import { cn } from '@/components/beui/lib/utils';
+import { SPRING_PANEL } from '@/components/beui/lib/ease';
+import { cn, inertProps } from '@/components/beui/lib/utils';
+import { MessageCircle } from '@/components/ui/icons';
 import { AGENT_PANEL_DEFAULT_WIDTH, useAgentUiStore } from '@/features/agent/stores/agentUiStore';
 import { Canvas } from '@/features/canvas/Canvas';
+import { CanvasToolbarButton } from '@/features/canvas/CanvasToolbar';
 import { AgentPanel } from './AgentPanel';
 import { useAgentCanvasBridge } from './useAgentCanvasBridge';
 
-function ResizeHandle({ onResizingChange }: { onResizingChange: (resizing: boolean) => void }) {
+function ResizeHandle() {
   const [active, setActive] = useState(false);
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     event.preventDefault();
     const startX = event.clientX;
     const startWidth = useAgentUiStore.getState().panelWidth;
     setActive(true);
-    onResizingChange(true);
     document.body.style.cursor = 'col-resize';
     const move = (moveEvent: PointerEvent) => useAgentUiStore.getState().setPanelWidth(startWidth + startX - moveEvent.clientX);
     const up = () => {
       setActive(false);
-      onResizingChange(false);
       document.body.style.cursor = '';
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
@@ -47,44 +46,37 @@ export function AgentWorkspace({ projectId }: { projectId: string }) {
   const open = useAgentUiStore((state) => state.panelOpen);
   const width = useAgentUiStore((state) => state.panelWidth);
   const setPanelOpen = useAgentUiStore((state) => state.setPanelOpen);
-  const [resizing, setResizing] = useState(false);
   useAgentCanvasBridge(projectId);
 
   return (
-    <div className="flex h-full w-full">
-      <div className="relative h-full min-w-0 flex-1">
-        <Canvas />
-        <AnimatePresence>
-          {!open ? (
-            <motion.button
-              type="button"
-              aria-label={t('agent.panel.open')}
-              title={t('agent.panel.open')}
-              initial={{ opacity: 0, scale: 0.6, x: 12 }}
-              animate={{ opacity: 1, scale: 1, x: 0 }}
-              exit={{ opacity: 0, scale: 0.6, x: 12 }}
-              whileTap={{ scale: 0.94 }}
-              transition={SPRING_PRESS}
-              onClick={() => setPanelOpen(true)}
-              className="absolute right-4 top-4 z-20 flex size-10 items-center justify-center rounded-2xl bg-foreground text-background shadow-lg"
+    <div className="relative h-full w-full overflow-hidden">
+      <div className="absolute inset-y-0 left-0" style={{ right: open ? width : 0 }}>
+        <Canvas
+          toolbarActions={
+            <CanvasToolbarButton
+              label={t(open ? 'agent.panel.collapse' : 'agent.panel.open')}
+              active={open}
+              aria-pressed={open}
+              aria-expanded={open}
+              onClick={() => setPanelOpen(!open)}
             >
-              <Sparkles className="size-4" />
-            </motion.button>
-          ) : null}
-        </AnimatePresence>
+              <MessageCircle className="h-4 w-4" />
+            </CanvasToolbarButton>
+          }
+        />
       </div>
+      {/* Slides by transform only: animating width would re-lay out the canvas every frame. */}
       <motion.aside
         initial={false}
-        animate={{ width: open ? width : 0 }}
-        transition={resizing ? { duration: 0 } : SPRING_PANEL}
-        className="relative h-full shrink-0"
+        animate={open ? { x: 0, visibility: 'visible' } : { x: width, transitionEnd: { visibility: 'hidden' } }}
+        transition={SPRING_PANEL}
+        style={{ width }}
+        aria-hidden={!open}
+        {...inertProps(!open)}
+        className="absolute inset-y-0 right-0 z-10 will-change-transform"
       >
-        {open ? <ResizeHandle onResizingChange={setResizing} /> : null}
-        <div className="h-full overflow-hidden">
-          <div style={{ width }} className="h-full">
-            <AgentPanel />
-          </div>
-        </div>
+        {open ? <ResizeHandle /> : null}
+        <AgentPanel />
       </motion.aside>
     </div>
   );

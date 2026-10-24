@@ -10,6 +10,7 @@ import {
   useMemo,
   useRef,
   type CSSProperties,
+  type ReactNode,
   type MouseEvent as ReactMouseEvent,
   type DragEvent as ReactDragEvent,
   type WheelEvent as ReactWheelEvent,
@@ -106,7 +107,6 @@ import { edgeTypes } from './edges';
 import { NodeSelectionMenu } from './NodeSelectionMenu';
 import { SelectedNodeOverlay } from './ui/SelectedNodeOverlay';
 import { CanvasToolbar, type CanvasInteractionMode } from './CanvasToolbar';
-import { CanvasMinimapControl } from './CanvasMinimapControl';
 import { MultiSelectionConnector } from './ui/MultiSelectionConnector';
 import { CanvasGridBackground } from './ui/CanvasGridBackground';
 import { NodeToolDialog } from './ui/NodeToolDialog';
@@ -280,7 +280,11 @@ interface PreviewConnectionLine {
   handleType: HandleType;
 }
 
-export function Canvas() {
+interface CanvasProps {
+  toolbarActions?: ReactNode;
+}
+
+export function Canvas({ toolbarActions }: CanvasProps) {
   const { t } = useTranslation();
   const reactFlowInstance = useReactFlow();
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -2740,7 +2744,6 @@ export function Canvas() {
         className="canvas-surface"
       >
         {snapToGridEnabled && <CanvasGridBackground gap={snapGridSize} />}
-        <CanvasMinimapControl />
 
         <SelectedNodeOverlay />
       </ReactFlow>
@@ -2788,6 +2791,7 @@ export function Canvas() {
       <CanvasToolbar
         interactionMode={interactionMode}
         onInteractionModeChange={setInteractionMode}
+        trailingActions={toolbarActions}
       />
 
       {nodes.length === 0 && !showNodeMenu && <CanvasEmptyState onAddNode={handleAddFirstNode} />}

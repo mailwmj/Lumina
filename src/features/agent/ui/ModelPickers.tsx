@@ -9,7 +9,7 @@ import { listConfiguredTextModels } from '@/features/canvas/application/textMode
 import { listConfiguredImageModels } from '@/features/canvas/models/availableModels';
 import { useSettingsStore } from '@/stores/settingsStore';
 
-const TRIGGER_CLASS = 'h-8 w-auto min-w-0 max-w-[160px] rounded-xl border-0 bg-transparent px-2 py-0 text-xs hover:bg-muted focus-visible:ring-2';
+const TRIGGER_CLASS = 'h-8 w-auto min-w-0 max-w-[125px] rounded-xl border-0 bg-transparent px-2 py-0 text-xs hover:bg-muted focus-visible:ring-2';
 const SEPARATOR = '\u0000';
 
 export function threadModelChoice(thread: AgentThreadRecord): AgentModelChoice {
@@ -36,6 +36,12 @@ export function ModelPickers({ thread, disabled, onChange }: {
     () => listConfiguredImageModels({ openAiImageApi, chaomoImageApi, customImageApis }),
     [chaomoImageApi, customImageApis, openAiImageApi],
   );
+  const ambiguousModelIds = useMemo(() => {
+    const seen = new Set<string>();
+    const repeated = new Set<string>();
+    for (const model of textModels) (seen.has(model.modelId) ? repeated : seen).add(model.modelId);
+    return repeated;
+  }, [textModels]);
   const choice = threadModelChoice(thread);
   const llmValue = choice.llm ? `${choice.llm.apiId}${SEPARATOR}${choice.llm.modelId}` : '';
   const llmLabel = textModels.find((model) => model.apiId === choice.llm?.apiId && model.modelId === choice.llm?.modelId);
@@ -54,20 +60,21 @@ export function ModelPickers({ thread, disabled, onChange }: {
         onOpenChange={(open) => setOpenId(open ? 'llm' : null)}
         className="min-w-0"
       >
-        <SelectTrigger className={TRIGGER_CLASS}>
+        <SelectTrigger hideChevron className={TRIGGER_CLASS}>
           <span className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
             <BrainCircuit className="size-3.5 shrink-0" />
             <span className="truncate">{llmLabel?.modelId ?? t(textModels.length ? 'agent.models.chooseModel' : 'agent.models.noTextModel')}</span>
           </span>
         </SelectTrigger>
-        <SelectContent className="right-auto w-64 shadow-none">
+        <SelectContent className="right-auto w-56 shadow-none">
           {textModels.map((model) => {
             const noTools = capabilities[agentModelCapabilityKey(model)]?.tools === false;
+            const note = noTools ? t('agent.models.noToolSupport') : ambiguousModelIds.has(model.modelId) ? model.apiName : null;
             return (
               <SelectItem key={`${model.apiId}${SEPARATOR}${model.modelId}`} value={`${model.apiId}${SEPARATOR}${model.modelId}`} disabled={noTools} className="py-2">
                 <span className="flex min-w-0 items-baseline gap-1.5">
                   <span className="truncate text-sm text-foreground">{model.modelId}</span>
-                  <span className="shrink-0 text-xs text-muted-foreground">{noTools ? t('agent.models.noToolSupport') : model.apiName}</span>
+                  {note ? <span className="shrink-0 text-xs text-muted-foreground">{note}</span> : null}
                 </span>
               </SelectItem>
             );
@@ -82,7 +89,7 @@ export function ModelPickers({ thread, disabled, onChange }: {
         onOpenChange={(open) => setOpenId(open ? 'image' : null)}
         className="min-w-0"
       >
-        <SelectTrigger className={TRIGGER_CLASS}>
+        <SelectTrigger hideChevron className={TRIGGER_CLASS}>
           <span className="flex min-w-0 items-center gap-1.5 text-muted-foreground">
             <ImageIcon className="size-3.5 shrink-0" />
             <span className="truncate">{imageLabel?.displayName ?? t(imageModels.length ? 'agent.models.chooseModel' : 'agent.models.noImageModel')}</span>

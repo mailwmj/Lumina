@@ -60,6 +60,7 @@
       "summary_one": "Completed {{count}} step",
       "summary_other": "Completed {{count}} steps",
       "summaryWithImages": "{{steps}} steps · {{images}} images",
+      "awaitingAnswer": "Waiting for your answer",
       "generate_image": "Generate image",
       "view_images": "View images",
       "ask_user": "Ask you"
@@ -76,18 +77,21 @@
       "copyPrompt": "Copy prompt",
       "copied": "Copied",
       "resultName": "Result {{index}}",
-      "refused": "This turn's image limit is used up"
+      "refused": "This turn's image limit is used up",
+      "noImageModel": "No image model selected. Pick one below the input."
     },
     "ask": {
       "title": "Your input",
-      "submit": "Confirm",
+      "submit": "Continue",
       "pending": "Needs input",
       "submitting": "Submitting",
       "answered": "Answered",
+      "skipped": "Not answered",
       "dismiss": "Dismiss",
       "previous": "Previous question",
       "next": "Next question",
-      "customPlaceholder": "Something else…"
+      "customOption": "Custom…",
+      "customPlaceholder": "Type your answer"
     }
   },
   "logger": {
@@ -163,11 +167,6 @@
     "emptyHintTitle": "Start creating with a node",
     "emptyHintSubtitle": "Add references, write prompts, and connect nodes to create images and videos.",
     "disconnectEdge": "Disconnect Connection",
-    "minimap": {
-      "label": "Canvas minimap",
-      "show": "Show canvas minimap",
-      "hide": "Hide canvas minimap"
-    },
     "toolbar": {
       "selectMode": "Select Tool (V)",
       "panMode": "Hand Tool (H)",

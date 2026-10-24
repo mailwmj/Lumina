@@ -2,6 +2,7 @@ import { DirectChatTransport, type ChatTransport, type LanguageModel, type UIMes
 
 import { createAgentLanguageModel, type AgentModelSelection } from '@/features/agent/infrastructure/agentModelFactory';
 import { agentModelCapabilityKey, useAgentSettingsStore } from '@/features/agent/stores/agentSettingsStore';
+import { ASK_USER_UNANSWERED } from '@/features/agent/domain/agentTools';
 import type { AgentMessageMetadata } from '@/features/agent/domain/types';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useSettingsStore } from '@/stores/settingsStore';
@@ -21,14 +22,23 @@ const INCOMPLETE_TOOL_STATES = new Set(['input-streaming', 'input-available']);
 
 /**
  * A stopped run or an ask_user the user skipped leaves tool calls without results, which
- * providers reject. They are dropped from the model's copy of the transcript.
+ * providers reject. A skipped ask_user is closed as unanswered so the model still sees what
+ * it asked; other incomplete calls are dropped from the model's copy of the transcript.
  */
 export function withoutIncompleteToolCalls<M extends CanvasAgentUIMessage>(messages: readonly M[]): M[] {
   return messages.map((message) => {
-    const parts = message.parts.filter((part) => !(
-      part.type.startsWith('tool-') && INCOMPLETE_TOOL_STATES.has((part as { state?: string }).state ?? '')
-    ));
-    return parts.length === message.parts.length ? message : { ...message, parts };
+    let changed = false;
+    const parts = message.parts.flatMap((part) => {
+      if (!part.type.startsWith('tool-') || !INCOMPLETE_TOOL_STATES.has((part as { state?: string }).state ?? '')) {
+        return [part];
+      }
+      changed = true;
+      if (part.type === 'tool-ask_user' && part.state === 'input-available') {
+        return [{ ...part, state: 'output-available', output: ASK_USER_UNANSWERED } as typeof part];
+      }
+      return [];
+    });
+    return changed ? { ...message, parts } : message;
   });
 }
 

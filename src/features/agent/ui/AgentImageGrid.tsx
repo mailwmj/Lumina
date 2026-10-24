@@ -51,7 +51,10 @@ export function AgentImageGrid({ part, onLocate, onContinue }: {
   const prompt = part.input?.prompt ?? '';
 
   if (output && output.status !== 'completed') {
-    return <p className="text-xs text-muted-foreground">{output.status === 'refused' ? t('agent.image.refused') : output.error}</p>;
+    const message = output.status === 'failed'
+      ? output.error
+      : t(output.code === 'no_image_model' ? 'agent.image.noImageModel' : 'agent.image.refused');
+    return <p className="text-xs text-muted-foreground">{message}</p>;
   }
 
   const placeholders = Math.max(1, part.input?.count ?? 1);

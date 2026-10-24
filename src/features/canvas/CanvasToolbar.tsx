@@ -10,13 +10,14 @@ import {
 } from '@/components/ui/icons';
 import { useReactFlow } from '@xyflow/react';
 
-import { useSettingsStore } from '@/stores/settingsStore';
 import { UiTooltip } from '@/components/ui';
+import { useSettingsStore } from '@/stores/settingsStore';
 
 interface CanvasToolbarProps {
   isLocked?: boolean;
   interactionMode: CanvasInteractionMode;
   onInteractionModeChange: (mode: CanvasInteractionMode) => void;
+  trailingActions?: ReactNode;
 }
 
 export type CanvasInteractionMode = 'select' | 'pan';
@@ -28,7 +29,7 @@ interface CanvasToolbarButtonProps extends ButtonHTMLAttributes<HTMLButtonElemen
   children: ReactNode;
 }
 
-function CanvasToolbarButton({
+export function CanvasToolbarButton({
   label,
   active = false,
   danger = false,
@@ -61,6 +62,7 @@ export const CanvasToolbar = memo(({
   isLocked = false,
   interactionMode,
   onInteractionModeChange,
+  trailingActions,
 }: CanvasToolbarProps) => {
   const { t } = useTranslation();
   const { zoomIn, zoomOut, fitView } = useReactFlow();
@@ -113,8 +115,6 @@ export const CanvasToolbar = memo(({
         <Maximize2 className="h-4 w-4" />
       </CanvasToolbarButton>
 
-      <div className="mx-1 h-5 w-px shrink-0 bg-[var(--ui-border-soft)]" />
-
       <CanvasToolbarButton
         label={t('canvas.toolbar.toggleGrid')}
         onClick={() => setSnapToGridEnabled(!snapToGridEnabled)}
@@ -123,6 +123,13 @@ export const CanvasToolbar = memo(({
       >
         <Grid3X3 className="h-4 w-4" />
       </CanvasToolbarButton>
+
+      {trailingActions ? (
+        <>
+          <div className="mx-1 h-5 w-px shrink-0 bg-[var(--ui-border-soft)]" />
+          {trailingActions}
+        </>
+      ) : null}
     </div>
   );
 });

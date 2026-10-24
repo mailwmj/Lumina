@@ -57,6 +57,7 @@
       "thinking3": "整理参考",
       "summary": "完成 {{count}} 步",
       "summaryWithImages": "完成 {{steps}} 步 · 生成 {{images}} 张",
+      "awaitingAnswer": "等你回答",
       "generate_image": "生成图片",
       "view_images": "查看图片",
       "ask_user": "询问你的想法"
@@ -73,18 +74,21 @@
       "copyPrompt": "复制提示词",
       "copied": "已复制",
       "resultName": "结果 {{index}}",
-      "refused": "本轮额度已用完"
+      "refused": "本轮额度已用完",
+      "noImageModel": "未选择生图模型，请在输入框下方选择"
     },
     "ask": {
       "title": "需要你确认",
-      "submit": "确定",
+      "submit": "继续",
       "pending": "待回答",
       "submitting": "提交中",
       "answered": "已确认",
+      "skipped": "未回答",
       "dismiss": "关闭",
       "previous": "上一个问题",
       "next": "下一个问题",
-      "customPlaceholder": "其他想法…"
+      "customOption": "自定义…",
+      "customPlaceholder": "输入你的想法"
     }
   },
   "logger": {
@@ -160,11 +164,6 @@
     "emptyHintTitle": "从一个节点开始创作",
     "emptyHintSubtitle": "添加素材、编写提示词，连接节点完成图片与视频创作。",
     "disconnectEdge": "断开连线",
-    "minimap": {
-      "label": "画布小地图",
-      "show": "显示画布小地图",
-      "hide": "隐藏画布小地图"
-    },
     "toolbar": {
       "selectMode": "选择工具 (V)",
       "panMode": "托手工具 (H)",

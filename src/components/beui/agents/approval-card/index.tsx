@@ -7,15 +7,16 @@ import {
   CircleHelp,
   LoaderCircle,
   MessageSquareText,
+  Minus,
+  PencilLine,
   X,
 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { type KeyboardEvent, useCallback, useLayoutEffect, useRef, useState } from "react";
 import { AgentDisclosure } from "@/components/beui/agents/agent-disclosure";
 import { ActionSwapRollText } from "@/components/beui/motion/action-swap-roll";
 import { Button } from "@/components/beui/motion/button";
 import { Checkbox } from "@/components/beui/motion/checkbox";
-import { Input } from "@/components/beui/motion/input";
 import { RadioGroup, RadioGroupItem } from "@/components/beui/motion/radio";
 import { EASE_OUT, SPRING_SWAP } from "@/components/beui/lib/ease";
 import { cn } from "@/components/beui/lib/utils";
@@ -48,10 +49,12 @@ const DEFAULT_LABELS: ApprovalCardLabels = {
     rejected: "Rejected",
     "changes-requested": "Changes requested",
     answered: "Answered",
+    skipped: "Not answered",
   },
   dismiss: "Dismiss",
   previousQuestion: "Previous question",
   nextQuestion: "Next question",
+  customOption: "Custom…",
   customPlaceholder: "Add another response…",
 };
 
@@ -73,6 +76,9 @@ function getStatusBadgeClass(status: ApprovalCardStatus) {
   if (status === "submitting") {
     return "border-blue-500/30 bg-blue-500/10 text-blue-600 dark:text-blue-400";
   }
+  if (status === "skipped") {
+    return "border-border bg-background/60 text-muted-foreground";
+  }
   if (status === "approved" || status === "answered") {
     return "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400";
   }
@@ -83,29 +89,80 @@ function isAnswered(answer: ApprovalCardAnswer) {
   return answer.selected.length > 0 || Boolean(answer.custom?.trim());
 }
 
+function CustomAnswerField({
+  value,
+  disabled,
+  placeholder,
+  autoFocus,
+  onChange,
+  onEnter,
+}: {
+  value: string;
+  disabled: boolean;
+  placeholder: string;
+  autoFocus: boolean;
+  onChange: (value: string) => void;
+  onEnter: () => void;
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+
+  // Grows with the text up to the max height; the panel is too narrow for one long line.
+  useLayoutEffect(() => {
+    const field = ref.current;
+    if (!field) return;
+    field.style.height = "auto";
+    field.style.height = `${field.scrollHeight}px`;
+  }, [value]);
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
+    event.preventDefault();
+    onEnter();
+  };
+
+  return (
+    <textarea
+      ref={ref}
+      rows={2}
+      value={value}
+      disabled={disabled}
+      autoFocus={autoFocus}
+      placeholder={placeholder}
+      onChange={(event) => onChange(event.target.value)}
+      onKeyDown={handleKeyDown}
+      className="block max-h-40 w-full resize-none rounded-xl bg-background/70 px-3 py-2 text-sm leading-5 text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:bg-background focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+    />
+  );
+}
+
 function QuestionOptions({
   question,
   answer,
   disabled,
   onChange,
-  onSingleSelect,
+  onEnter,
+  customOption,
   customPlaceholder,
 }: {
   question: ApprovalCardQuestion;
   answer: ApprovalCardAnswer;
   disabled: boolean;
   onChange: (answer: ApprovalCardAnswer) => void;
-  onSingleSelect?: () => void;
+  onEnter: () => void;
+  customOption: string;
   customPlaceholder: string;
 }) {
   const custom = answer.custom ?? "";
+  const hasOptions = Boolean(question.options?.length);
+  const [customOpened, setCustomOpened] = useState(false);
+  const customVisible = !hasOptions || customOpened || Boolean(custom);
 
   return (
     <div className="mt-3">
-      {question.options?.length ? (
+      {hasOptions ? (
         question.multiple ? (
           <div className="grid gap-0.5">
-            {question.options.map((option) => (
+            {question.options!.map((option) => (
               <Checkbox
                 key={option.value}
                 checked={answer.selected.includes(option.value)}
@@ -127,13 +184,10 @@ function QuestionOptions({
         ) : (
           <RadioGroup
             value={answer.selected[0] ?? ""}
-            onValueChange={(value) => {
-              onChange({ selected: [value], custom: "" });
-              onSingleSelect?.();
-            }}
+            onValueChange={(value) => onChange({ ...answer, selected: [value] })}
             className="gap-0.5"
           >
-            {question.options.map((option) => (
+            {question.options!.map((option) => (
               <RadioGroupItem
                 key={option.value}
                 value={option.value}
@@ -147,24 +201,29 @@ function QuestionOptions({
         )
       ) : null}
 
-      {question.allowCustom ? (
-        <Input
-          value={custom}
+      {hasOptions && question.allowCustom && !customVisible ? (
+        <button
+          type="button"
           disabled={disabled}
-          placeholder={question.customPlaceholder ?? customPlaceholder}
-          onChange={(value) =>
-            onChange({
-              selected: question.multiple ? answer.selected : [],
-              custom: value,
-            })
-          }
-          className={cn("p-0.5", question.options?.length && "mt-1.5")}
-          classNames={{
-            field:
-              "h-10 rounded-xl border-0 bg-background/70 focus-within:bg-background",
-            input: "px-3 text-sm",
-          }}
-        />
+          onClick={() => setCustomOpened(true)}
+          className="flex min-h-9 w-full items-center gap-2.5 rounded-lg px-1.5 py-1 text-left text-sm text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+        >
+          <PencilLine className="size-4 shrink-0" />
+          {customOption}
+        </button>
+      ) : null}
+
+      {customVisible && (question.allowCustom || !hasOptions) ? (
+        <div className={cn(hasOptions && "mt-1.5")}>
+          <CustomAnswerField
+            value={custom}
+            disabled={disabled}
+            placeholder={question.customPlaceholder ?? customPlaceholder}
+            autoFocus={customOpened}
+            onChange={(value) => onChange({ ...answer, custom: value })}
+            onEnter={onEnter}
+          />
+        </div>
       ) : null}
     </div>
   );
@@ -223,7 +282,6 @@ export function ApprovalCard({
   const [internalAnswers, setInternalAnswers] =
     useState<ApprovalCardAnswers>(defaultAnswers);
   const [internalStep, setInternalStep] = useState(defaultStep);
-  const autoAdvanceTimer = useRef<number | undefined>(undefined);
   const currentAnswers = answers ?? internalAnswers;
   const currentStep = Math.min(
     Math.max(0, step ?? internalStep),
@@ -235,6 +293,8 @@ export function ApprovalCard({
   const pending = status === "pending";
   const busy = status === "submitting";
   const interactive = pending || busy;
+  // Questions nobody can submit any more stay visible but must not look answerable.
+  const locked = busy || (questionMode && !onSubmit);
   const currentAnswer = question
     ? (currentAnswers[question.id] ?? EMPTY_ANSWER)
     : EMPTY_ANSWER;
@@ -242,14 +302,6 @@ export function ApprovalCard({
   const titleKey = question?.id ?? String(status);
   const labels = { ...DEFAULT_LABELS, ...labelOverrides };
   const statusLabel = labels.status[status];
-
-  const clearAutoAdvance = useCallback(() => {
-    if (autoAdvanceTimer.current === undefined) return;
-    window.clearTimeout(autoAdvanceTimer.current);
-    autoAdvanceTimer.current = undefined;
-  }, []);
-
-  useEffect(() => clearAutoAdvance, [clearAutoAdvance]);
 
   const setAnswers = useCallback(
     (next: ApprovalCardAnswers) => {
@@ -260,7 +312,6 @@ export function ApprovalCard({
   );
 
   const setStep = (next: number) => {
-    clearAutoAdvance();
     if (step === undefined) setInternalStep(next);
     onStepChange?.(next);
   };
@@ -271,28 +322,12 @@ export function ApprovalCard({
   };
 
   const continueQuestion = () => {
+    if (locked || !isAnswered(currentAnswer)) return;
     if (currentStep < questions.length - 1) {
       setStep(currentStep + 1);
       return;
     }
     onSubmit?.(currentAnswers);
-  };
-
-  const queueAutoAdvance = () => {
-    if (
-      !question ||
-      question.multiple ||
-      question.autoAdvance === false ||
-      currentStep >= questions.length - 1 ||
-      busy
-    ) {
-      return;
-    }
-
-    clearAutoAdvance();
-    autoAdvanceTimer.current = window.setTimeout(() => {
-      setStep(currentStep + 1);
-    }, 240);
   };
 
   return (
@@ -322,6 +357,8 @@ export function ApprovalCard({
             )
           ) : status === "rejected" ? (
             <X className="size-4" />
+          ) : status === "skipped" ? (
+            <Minus className="size-4" />
           ) : (
             <Check className="size-4" />
           )}
@@ -380,9 +417,10 @@ export function ApprovalCard({
                   <QuestionOptions
                     question={question}
                     answer={currentAnswer}
-                    disabled={busy}
+                    disabled={locked}
                     onChange={updateCurrentAnswer}
-                    onSingleSelect={queueAutoAdvance}
+                    onEnter={continueQuestion}
+                    customOption={labels.customOption}
                     customPlaceholder={labels.customPlaceholder}
                   />
                 </motion.div>
@@ -406,7 +444,7 @@ export function ApprovalCard({
                       variant="ghost"
                       size="icon"
                       aria-label={labels.previousQuestion}
-                      disabled={busy || currentStep === 0}
+                      disabled={locked || currentStep === 0}
                       onClick={() => setStep(currentStep - 1)}
                       className="rounded-full"
                     >
@@ -425,7 +463,7 @@ export function ApprovalCard({
                       ? undefined
                       : labels.nextQuestion
                   }
-                  disabled={busy || !isAnswered(currentAnswer)}
+                  disabled={locked || !isAnswered(currentAnswer)}
                   onClick={continueQuestion}
                   className="ml-auto rounded-full"
                 >

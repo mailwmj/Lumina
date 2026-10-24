@@ -30,8 +30,8 @@ import {
   LayoutGridIcon,
   Loading03Icon,
   MagicWand02Icon,
-  MapsLocation01Icon,
   Maximize02Icon,
+  Message02Icon,
   MinusSignIcon,
   Moon02Icon,
   MusicNote01Icon,
@@ -100,8 +100,8 @@ export const ImagePlus = createNamedIcon(ImageAdd01Icon, 'ImagePlus');
 export const Languages = createNamedIcon(LanguageSquareIcon, 'Languages');
 export const LayoutGrid = createNamedIcon(LayoutGridIcon, 'LayoutGrid');
 export const Loader2 = createNamedIcon(Loading03Icon, 'Loader2');
-export const Map = createNamedIcon(MapsLocation01Icon, 'Map');
 export const Maximize2 = createNamedIcon(Maximize02Icon, 'Maximize2');
+export const MessageCircle = createNamedIcon(Message02Icon, 'MessageCircle');
 export const Minus = createNamedIcon(MinusSignIcon, 'Minus');
 export const Moon = createNamedIcon(Moon02Icon, 'Moon');
 export const MousePointer2 = createNamedIcon(CursorPointer02Icon, 'MousePointer2');

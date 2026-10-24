@@ -81,7 +81,13 @@ export async function executeGenerateImage(
 ): Promise<GenerateImageOutput> {
   const { budget } = context;
   if (!context.imageModelId) {
-    return { status: 'refused', grantedCount: 0, reason: 'No image model is selected.', budget: budget.snapshot() };
+    return {
+      status: 'refused',
+      grantedCount: 0,
+      code: 'no_image_model',
+      reason: 'No image model is selected. Stop and ask the user to pick an image model below the chat input.',
+      budget: budget.snapshot(),
+    };
   }
   // Without an explicit user count every call makes one image, whatever the model asks for.
   const requested = context.requestedImageCount === null ? 1 : input.count ?? 1;
@@ -90,6 +96,7 @@ export async function executeGenerateImage(
     return {
       status: 'refused',
       grantedCount: 0,
+      code: 'budget_exhausted',
       reason: `This turn's image limit (${budget.limit}) is used up. Stop and tell the user.`,
       budget: budget.snapshot(),
     };
