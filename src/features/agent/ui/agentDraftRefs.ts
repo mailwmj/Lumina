@@ -2,12 +2,14 @@ import { v4 as uuidv4 } from 'uuid';
 
 import type { AgentDraftRef } from '@/features/agent/domain/types';
 import { canAddNodeToAgentChat } from '@/features/canvas/application/agentCanvasIndex';
+import { resolveImageDisplayUrl } from '@/features/canvas/application/imageData';
 import type { CanvasNode } from '@/features/canvas/domain/canvasNodes';
 import { resolveNodeDisplayName } from '@/features/canvas/domain/nodeDisplay';
 
 export function nodeThumbnail(node: CanvasNode | undefined): string | null {
   const data = node?.data as { previewImageUrl?: string | null; imageUrl?: string | null } | undefined;
-  return data?.previewImageUrl || data?.imageUrl || null;
+  const source = data?.previewImageUrl || data?.imageUrl;
+  return source ? resolveImageDisplayUrl(source) : null;
 }
 
 export function draftRefFromNode(node: CanvasNode, name?: string): AgentDraftRef | null {
