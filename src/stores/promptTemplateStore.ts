@@ -18,6 +18,9 @@ interface PromptTemplateState {
   resetToDefaults: () => void;
 }
 
+let promptTemplateHydrationFailed = false;
+let markPromptTemplatesHydrated: (() => void) | undefined;
+
 export const usePromptTemplateStore = create<PromptTemplateState>()(
   persist(
     (set, get) => ({
@@ -61,10 +64,18 @@ export const usePromptTemplateStore = create<PromptTemplateState>()(
         return (_state, error) => {
           if (error) {
             logger.error('failed to hydrate prompt template storage', error);
+            promptTemplateHydrationFailed = true;
+            markPromptTemplatesHydrated?.();
           }
-          usePromptTemplateStore.setState({ isHydrated: true });
         };
       },
     }
   )
 );
+
+markPromptTemplatesHydrated = () => usePromptTemplateStore.setState({ isHydrated: true });
+const promptTemplatePersist = usePromptTemplateStore.persist;
+if (!promptTemplatePersist || promptTemplatePersist.hasHydrated() || promptTemplateHydrationFailed) {
+  markPromptTemplatesHydrated();
+}
+promptTemplatePersist?.onFinishHydration(markPromptTemplatesHydrated);
