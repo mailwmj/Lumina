@@ -1002,6 +1002,9 @@ export function migrateSettingsState(persistedState: unknown, persistedVersion: 
   };
 }
 
+let settingsHydrationFailed = false;
+let markSettingsHydrated: (() => void) | undefined;
+
 export const useSettingsStore = create<SettingsState>()(
   persist(
     (set) => ({
@@ -1133,11 +1136,19 @@ export const useSettingsStore = create<SettingsState>()(
         return (_state, error) => {
           if (error) {
             logger.error('failed to hydrate settings storage', error);
+            settingsHydrationFailed = true;
+            markSettingsHydrated?.();
           }
-          useSettingsStore.setState({ isHydrated: true });
         };
       },
       migrate: migrateSettingsState,
     }
   )
 );
+
+markSettingsHydrated = () => useSettingsStore.setState({ isHydrated: true });
+const settingsPersist = useSettingsStore.persist;
+if (!settingsPersist || settingsPersist.hasHydrated() || settingsHydrationFailed) {
+  markSettingsHydrated();
+}
+settingsPersist?.onFinishHydration(markSettingsHydrated);
