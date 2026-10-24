@@ -53,8 +53,7 @@ function App() {
   const [globalError, setGlobalError] = useState<GlobalErrorDialogDetail | null>(null);
   const [activeHomeTool, setActiveHomeTool] = useState<'batch-crop' | null>(null);
   const homeToolBackHandlerRef = useRef<() => void>(() => undefined);
-  const activeHomeToolRef = useRef(activeHomeTool);
-  activeHomeToolRef.current = activeHomeTool;
+  const beforeWindowCloseRef = useRef<(() => boolean) | null>(null);
 
   const isHydrated = useProjectStore((state) => state.isHydrated);
   const hydrate = useProjectStore((state) => state.hydrate);
@@ -112,7 +111,7 @@ function App() {
         return await flushAllPendingPersists();
       },
       destroy: () => appWindow.destroy(),
-      deferToOtherHandler: () => activeHomeToolRef.current === 'batch-crop',
+      beforeClose: () => beforeWindowCloseRef.current?.() ?? true,
       onFlushFailure: () => logger.error('Window is closing after project persistence failed'),
     })).then((dispose) => {
       if (disposed) dispose();
@@ -231,6 +230,7 @@ function App() {
             <Canvas />
           ) : activeHomeTool === 'batch-crop' ? (
             <BatchImageCropWorkbench
+              beforeWindowCloseRef={beforeWindowCloseRef}
               backHandlerRef={homeToolBackHandlerRef}
               onExit={() => setActiveHomeTool(null)}
             />

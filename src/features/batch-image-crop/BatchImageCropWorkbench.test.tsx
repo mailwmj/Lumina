@@ -5,6 +5,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import i18n from '@/i18n';
 import { open } from '@tauri-apps/plugin-dialog';
+import { createWindowCloseHandler } from '@/application/windowClose';
 import { BatchImageCropWorkbench } from './BatchImageCropWorkbench';
 import {
   cleanupBatchCropCache,
@@ -89,11 +90,13 @@ async function createCompletedBatch(container: HTMLElement): Promise<void> {
 describe('BatchImageCropWorkbench completed export', () => {
   let container: HTMLDivElement;
   let root: Root;
+  let beforeWindowCloseRef: { current: (() => boolean) | null };
 
   beforeEach(async () => {
     await i18n.changeLanguage('zh');
     vi.clearAllMocks();
     tauriWindowMocks.enabled = false;
+    beforeWindowCloseRef = { current: null };
     tauriWindowMocks.onCloseRequested.mockResolvedValue(() => undefined);
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
     vi.stubGlobal('ResizeObserver', class ResizeObserver {
@@ -121,7 +124,7 @@ describe('BatchImageCropWorkbench completed export', () => {
 
   it('keeps a fully exported batch after the user confirms the completion dialog', async () => {
     await act(async () => {
-      root.render(<BatchImageCropWorkbench onExit={() => undefined} backHandlerRef={{ current: () => undefined }} />);
+      root.render(<BatchImageCropWorkbench beforeWindowCloseRef={beforeWindowCloseRef} onExit={() => undefined} backHandlerRef={{ current: () => undefined }} />);
     });
     await createCompletedBatch(container);
 
@@ -136,7 +139,7 @@ describe('BatchImageCropWorkbench completed export', () => {
 
   it('clears the exported images only after the user starts a new batch', async () => {
     await act(async () => {
-      root.render(<BatchImageCropWorkbench onExit={() => undefined} backHandlerRef={{ current: () => undefined }} />);
+      root.render(<BatchImageCropWorkbench beforeWindowCloseRef={beforeWindowCloseRef} onExit={() => undefined} backHandlerRef={{ current: () => undefined }} />);
     });
     await createCompletedBatch(container);
 
@@ -172,7 +175,7 @@ describe('BatchImageCropWorkbench completed export', () => {
     }));
 
     await act(async () => {
-      root.render(<BatchImageCropWorkbench onExit={() => undefined} backHandlerRef={{ current: () => undefined }} />);
+      root.render(<BatchImageCropWorkbench beforeWindowCloseRef={beforeWindowCloseRef} onExit={() => undefined} backHandlerRef={{ current: () => undefined }} />);
     });
     await act(async () => {
       findButton(container, '1440×1920').click();
@@ -202,7 +205,7 @@ describe('BatchImageCropWorkbench completed export', () => {
     vi.mocked(prepareBatchCropImage).mockResolvedValue(preparedImage);
 
     await act(async () => {
-      root.render(<BatchImageCropWorkbench onExit={() => undefined} backHandlerRef={{ current: () => undefined }} />);
+      root.render(<BatchImageCropWorkbench beforeWindowCloseRef={beforeWindowCloseRef} onExit={() => undefined} backHandlerRef={{ current: () => undefined }} />);
     });
     await act(async () => findButton(container, '1440×1440').click());
     await act(async () => findButton(container, '添加图片').click());
@@ -224,7 +227,7 @@ describe('BatchImageCropWorkbench completed export', () => {
     vi.mocked(prepareBatchCropImage).mockResolvedValue(preparedImage);
 
     await act(async () => {
-      root.render(<BatchImageCropWorkbench onExit={() => undefined} backHandlerRef={{ current: () => undefined }} />);
+      root.render(<BatchImageCropWorkbench beforeWindowCloseRef={beforeWindowCloseRef} onExit={() => undefined} backHandlerRef={{ current: () => undefined }} />);
     });
     await act(async () => findButton(container, '1440×1440').click());
     await act(async () => findButton(container, '添加图片').click());
@@ -248,7 +251,7 @@ describe('BatchImageCropWorkbench completed export', () => {
     vi.mocked(prepareBatchCropImage).mockResolvedValue(preparedImage);
 
     await act(async () => {
-      root.render(<BatchImageCropWorkbench onExit={() => undefined} backHandlerRef={{ current: () => undefined }} />);
+      root.render(<BatchImageCropWorkbench beforeWindowCloseRef={beforeWindowCloseRef} onExit={() => undefined} backHandlerRef={{ current: () => undefined }} />);
     });
     await act(async () => findButton(container, '1440×1920').click());
     await act(async () => findButton(container, '添加图片').click());
@@ -268,7 +271,7 @@ describe('BatchImageCropWorkbench completed export', () => {
     vi.mocked(cleanupBatchCropCache).mockReturnValue(new Promise(() => undefined));
 
     await act(async () => {
-      root.render(<BatchImageCropWorkbench onExit={onExit} backHandlerRef={backHandlerRef} />);
+      root.render(<BatchImageCropWorkbench beforeWindowCloseRef={beforeWindowCloseRef} onExit={onExit} backHandlerRef={backHandlerRef} />);
     });
     await act(async () => {
       backHandlerRef.current();
@@ -279,26 +282,70 @@ describe('BatchImageCropWorkbench completed export', () => {
   });
 
   it('closes the app even when temporary cache cleanup does not settle', async () => {
-    let closeRequestedHandler: ((event: { preventDefault: () => void }) => void) | undefined;
     tauriWindowMocks.enabled = true;
-    tauriWindowMocks.onCloseRequested.mockImplementation(async (handler) => {
-      closeRequestedHandler = handler;
-      return () => undefined;
-    });
     vi.mocked(cleanupBatchCropCache).mockReturnValue(new Promise(() => undefined));
 
     await act(async () => {
-      root.render(<BatchImageCropWorkbench onExit={() => undefined} backHandlerRef={{ current: () => undefined }} />);
+      root.render(<BatchImageCropWorkbench beforeWindowCloseRef={beforeWindowCloseRef} onExit={() => undefined} backHandlerRef={{ current: () => undefined }} />);
     });
-    await vi.waitFor(() => expect(closeRequestedHandler).toBeTypeOf('function'));
+    expect(beforeWindowCloseRef.current).toBeTypeOf('function');
 
     const preventDefault = vi.fn();
     await act(async () => {
-      closeRequestedHandler?.({ preventDefault });
+      const handler = createWindowCloseHandler({
+        beforeClose: () => beforeWindowCloseRef.current?.() ?? true,
+        flush: async () => true,
+        destroy: vi.fn(),
+        onFlushFailure: vi.fn(),
+      });
+      handler({ preventDefault });
     });
 
     expect(preventDefault).toHaveBeenCalledTimes(1);
     expect(cleanupBatchCropCache).toHaveBeenCalledTimes(1);
     expect(tauriWindowMocks.close).toHaveBeenCalledTimes(1);
   });
+  it.each(['dirty', 'busy'])('guards a %s batch before Tauri can destroy the window', async (state) => {
+    tauriWindowMocks.enabled = true;
+    const flush = vi.fn(async () => true);
+    const destroy = vi.fn(async () => undefined);
+    const onClose = createWindowCloseHandler({
+      beforeClose: () => beforeWindowCloseRef.current?.() ?? true,
+      flush, destroy, onFlushFailure: vi.fn(),
+    });
+    // This is Tauri's onCloseRequested wrapper: every nonprevented callback destroys.
+    const requestClose = async () => {
+      let prevented = false;
+      onClose({ preventDefault: () => { prevented = true; } });
+      if (!prevented) await destroy();
+    };
+    tauriWindowMocks.close.mockImplementation(requestClose);
+    let finishPreparation!: (value: typeof preparedImage) => void;
+    vi.mocked(open).mockResolvedValueOnce(['/fixtures/source.jpg']);
+    vi.mocked(prepareBatchCropImage).mockImplementation(() => new Promise(resolve => {
+      finishPreparation = resolve;
+    }));
+    await act(async () => {
+      root.render(<BatchImageCropWorkbench beforeWindowCloseRef={beforeWindowCloseRef}
+        onExit={() => undefined} backHandlerRef={{ current: () => undefined }} />);
+    });
+    await act(async () => findButton(container, '1440×1920').click());
+    await act(async () => findButton(container, '添加图片').click());
+    if (state === 'dirty') await act(async () => finishPreparation(preparedImage));
+
+    await act(requestClose);
+    expect(container.textContent).toContain(i18n.t('batchCrop.exitTitle'));
+    expect(destroy).not.toHaveBeenCalled();
+    expect(flush).not.toHaveBeenCalled();
+    expect(tauriWindowMocks.onCloseRequested).not.toHaveBeenCalled();
+
+    await act(async () => findButton(container, i18n.t('batchCrop.continueEditing')).click());
+    expect(destroy).not.toHaveBeenCalled();
+    await act(requestClose);
+    await act(async () => findButton(container, i18n.t('batchCrop.exitDiscard')).click());
+    if (state === 'busy') await act(async () => finishPreparation(preparedImage));
+    expect(destroy).toHaveBeenCalledOnce();
+    expect(flush).toHaveBeenCalledOnce();
+  });
+
 });

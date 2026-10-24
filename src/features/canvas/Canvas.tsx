@@ -115,7 +115,8 @@ import { NodeContextMenu } from './ui/NodeContextMenu';
 import { resolveCanvasConnectionRadius } from './application/connectionSnap';
 import { useCanvasImagePreviewBackfill } from './hooks/useCanvasImagePreviewBackfill';
 import { logger } from '@/lib/logger';
-import { useExternalAgentBridge } from '@/features/canvas-agent/hooks/useExternalAgentBridge';
+import { CanvasExternalAgentBridge } from '@/features/canvas-agent/hooks/CanvasExternalAgentBridge';
+import { CanvasConnectionLine } from './ui/CanvasConnectionLine';
 
 const DEFAULT_VIEWPORT: Viewport = { x: 0, y: 0, zoom: 1 };
 const DEFAULT_EDGE_OPTIONS = { type: 'disconnectableEdge' };
@@ -370,7 +371,7 @@ export function Canvas() {
   const closeToolDialog = useCanvasStore((state) => state.closeToolDialog);
   const setViewportState = useCanvasStore((state) => state.setViewportState);
   const setCanvasViewportSize = useCanvasStore((state) => state.setCanvasViewportSize);
-  const currentViewport = useCanvasStore((state) => state.currentViewport);
+  const currentZoom = useCanvasStore((state) => state.currentViewport.zoom);
   const imageViewer = useCanvasStore((state) => state.imageViewer);
   const closeImageViewer = useCanvasStore((state) => state.closeImageViewer);
   const navigateImageViewer = useCanvasStore((state) => state.navigateImageViewer);
@@ -415,14 +416,6 @@ export function Canvas() {
   const setRequestedCanvasImageOriginals = useCanvasImageQualityStore(
     (state) => state.setRequestedOriginalNodes
   );
-  useExternalAgentBridge({
-    projectId: currentProjectId ?? '',
-    projectName: currentProjectName,
-    nodes,
-    edges,
-    selectedNodeIds,
-    viewport: currentViewport,
-  });
 
   useCanvasImagePreviewBackfill({
     projectId: currentProjectId,
@@ -1156,7 +1149,7 @@ export function Canvas() {
         }
       }
       const { nodes: currentNodes, currentViewport: viewport } = useCanvasStore.getState();
-      applyNodesChange(snapNodePositionChanges(nextChanges, currentNodes, viewport.zoom));
+      applyNodesChange(snapNodePositionChanges(nextChanges, currentNodes, viewport.zoom, snapToGridEnabled));
 
       const hasResizeMove = changes.some(
         (change) =>
@@ -2095,96 +2088,101 @@ export function Canvas() {
         }
       }
 
-      const idMap = new Map<string, string>();
-      const sizeMap = new Map<string, { width: number; height: number }>();
-      for (const sourceNode of sourceNodes) {
-        const data = cloneNodeData(sourceNode.data);
-        if ('isGenerating' in (data as Record<string, unknown>)) {
-          (data as { isGenerating?: boolean }).isGenerating = false;
-        }
-        if ('generationStartedAt' in (data as Record<string, unknown>)) {
-          (data as { generationStartedAt?: number | null }).generationStartedAt = null;
-        }
-        if ('generationJobId' in (data as Record<string, unknown>)) {
-          (data as { generationJobId?: string | null }).generationJobId = null;
-        }
-        if ('generationProviderId' in (data as Record<string, unknown>)) {
-          (data as { generationProviderId?: string | null }).generationProviderId = null;
-        }
-        if ('generationProviderName' in (data as Record<string, unknown>)) {
-          (data as { generationProviderName?: string | null }).generationProviderName = null;
-        }
-        if ('generationModelName' in (data as Record<string, unknown>)) {
-          (data as { generationModelName?: string | null }).generationModelName = null;
-        }
-        if ('generationClientSessionId' in (data as Record<string, unknown>)) {
-          (data as { generationClientSessionId?: string | null }).generationClientSessionId = null;
-        }
-        if ('generationStoryboardMetadata' in (data as Record<string, unknown>)) {
-          (data as { generationStoryboardMetadata?: unknown }).generationStoryboardMetadata = undefined;
-        }
-        if ('generationError' in (data as Record<string, unknown>)) {
-          (data as { generationError?: string | null }).generationError = null;
-        }
-        if ('generationErrorDetails' in (data as Record<string, unknown>)) {
-          (data as { generationErrorDetails?: string | null }).generationErrorDetails = null;
-        }
-        if ('generationDebugContext' in (data as Record<string, unknown>)) {
-          (data as { generationDebugContext?: unknown }).generationDebugContext = undefined;
-        }
-        if ('generationRecoveryState' in (data as Record<string, unknown>)) {
-          (data as { generationRecoveryState?: string | null }).generationRecoveryState = null;
-        }
-        if ('generationRetryCount' in (data as Record<string, unknown>)) {
-          (data as { generationRetryCount?: number }).generationRetryCount = 0;
-        }
-        if ('generationNextRetryAt' in (data as Record<string, unknown>)) {
-          (data as { generationNextRetryAt?: number | null }).generationNextRetryAt = null;
-        }
-        if ('generationRetryError' in (data as Record<string, unknown>)) {
-          (data as { generationRetryError?: string | null }).generationRetryError = null;
+      const history = useCanvasStore.getState();
+      history.beginHistoryBatch();
+      try {
+        const idMap = new Map<string, string>();
+        const sizeMap = new Map<string, { width: number; height: number }>();
+        for (const sourceNode of sourceNodes) {
+          const data = cloneNodeData(sourceNode.data);
+          if ('isGenerating' in (data as Record<string, unknown>)) {
+            (data as { isGenerating?: boolean }).isGenerating = false;
+          }
+          if ('generationStartedAt' in (data as Record<string, unknown>)) {
+            (data as { generationStartedAt?: number | null }).generationStartedAt = null;
+          }
+          if ('generationJobId' in (data as Record<string, unknown>)) {
+            (data as { generationJobId?: string | null }).generationJobId = null;
+          }
+          if ('generationProviderId' in (data as Record<string, unknown>)) {
+            (data as { generationProviderId?: string | null }).generationProviderId = null;
+          }
+          if ('generationProviderName' in (data as Record<string, unknown>)) {
+            (data as { generationProviderName?: string | null }).generationProviderName = null;
+          }
+          if ('generationModelName' in (data as Record<string, unknown>)) {
+            (data as { generationModelName?: string | null }).generationModelName = null;
+          }
+          if ('generationClientSessionId' in (data as Record<string, unknown>)) {
+            (data as { generationClientSessionId?: string | null }).generationClientSessionId = null;
+          }
+          if ('generationStoryboardMetadata' in (data as Record<string, unknown>)) {
+            (data as { generationStoryboardMetadata?: unknown }).generationStoryboardMetadata = undefined;
+          }
+          if ('generationError' in (data as Record<string, unknown>)) {
+            (data as { generationError?: string | null }).generationError = null;
+          }
+          if ('generationErrorDetails' in (data as Record<string, unknown>)) {
+            (data as { generationErrorDetails?: string | null }).generationErrorDetails = null;
+          }
+          if ('generationDebugContext' in (data as Record<string, unknown>)) {
+            (data as { generationDebugContext?: unknown }).generationDebugContext = undefined;
+          }
+          if ('generationRecoveryState' in (data as Record<string, unknown>)) {
+            (data as { generationRecoveryState?: string | null }).generationRecoveryState = null;
+          }
+          if ('generationRetryCount' in (data as Record<string, unknown>)) {
+            (data as { generationRetryCount?: number }).generationRetryCount = 0;
+          }
+          if ('generationNextRetryAt' in (data as Record<string, unknown>)) {
+            (data as { generationNextRetryAt?: number | null }).generationNextRetryAt = null;
+          }
+          if ('generationRetryError' in (data as Record<string, unknown>)) {
+            (data as { generationRetryError?: string | null }).generationRetryError = null;
+          }
+
+          const nodeInput = createCanvasDuplicationNodeInput(sourceNode, {
+              x: sourceNode.position.x + chosenOffset.x + offsetStep * 8,
+              y: sourceNode.position.y + chosenOffset.y + offsetStep * 6,
+            }, data);
+          const nextNodeId = addNode(nodeInput.type, nodeInput.position, nodeInput.data);
+          idMap.set(sourceNode.id, nextNodeId);
+          sizeMap.set(nextNodeId, getNodeSize(sourceNode));
         }
 
-        const nodeInput = createCanvasDuplicationNodeInput(sourceNode, {
-            x: sourceNode.position.x + chosenOffset.x + offsetStep * 8,
-            y: sourceNode.position.y + chosenOffset.y + offsetStep * 6,
-          }, data);
-        const nextNodeId = addNode(nodeInput.type, nodeInput.position, nodeInput.data);
-        idMap.set(sourceNode.id, nextNodeId);
-        sizeMap.set(nextNodeId, getNodeSize(sourceNode));
-      }
+        const sizeSyncChanges = Array.from(sizeMap.entries()).map(([nodeId, size]) => ({
+          id: nodeId,
+          type: 'dimensions' as const,
+          dimensions: { width: size.width, height: size.height },
+          setAttributes: true,
+        }));
+        if (sizeSyncChanges.length > 0) {
+          applyNodesChange(sizeSyncChanges);
+        }
 
-      const sizeSyncChanges = Array.from(sizeMap.entries()).map(([nodeId, size]) => ({
-        id: nodeId,
-        type: 'dimensions' as const,
-        dimensions: { width: size.width, height: size.height },
-        resizing: false,
-        setAttributes: true,
-      }));
-      if (sizeSyncChanges.length > 0) {
-        applyNodesChange(sizeSyncChanges);
-      }
+        for (const edge of remapCanvasDuplicationEdges(internalEdges, idMap)) {
+          connectNodes({
+            source: edge.source,
+            target: edge.target,
+            sourceHandle: edge.sourceHandle ?? 'source',
+            targetHandle: edge.targetHandle ?? 'target',
+          });
+        }
 
-      for (const edge of remapCanvasDuplicationEdges(internalEdges, idMap)) {
-        connectNodes({
-          source: edge.source,
-          target: edge.target,
-          sourceHandle: edge.sourceHandle ?? 'source',
-          targetHandle: edge.targetHandle ?? 'target',
-        });
+        if (!options.disableOffsetIteration) {
+          pasteIterationRef.current += 1;
+        }
+        const firstNodeId = idMap.get(sourceNodes[0].id) ?? null;
+        if (firstNodeId && !options.suppressSelect) {
+          setSelectedNode(firstNodeId);
+        }
+        if (!options.suppressPersist) {
+          scheduleCanvasPersist(0);
+        }
+        return { firstNodeId, idMap };
+      } finally {
+        history.endHistoryBatch();
       }
-
-      if (!options.disableOffsetIteration) {
-        pasteIterationRef.current += 1;
-      }
-      const firstNodeId = idMap.get(sourceNodes[0].id) ?? null;
-      if (firstNodeId && !options.suppressSelect) {
-        setSelectedNode(firstNodeId);
-      }
-      if (!options.suppressPersist) {
-        scheduleCanvasPersist(0);
-      }
-      return { firstNodeId, idMap };
     },
     [addNode, applyNodesChange, connectNodes, edges, nodes, scheduleCanvasPersist, setSelectedNode]
   );
@@ -2332,6 +2330,7 @@ export function Canvas() {
         return;
       }
 
+      useCanvasStore.getState().beginHistoryBatch();
       const duplicateResult = duplicateNodes(sourceNodeIds, {
         explicitOffset: { x: 0, y: 0 },
         disableOffsetIteration: true,
@@ -2339,6 +2338,7 @@ export function Canvas() {
         suppressSelect: true,
       });
       if (!duplicateResult) {
+        useCanvasStore.getState().endHistoryBatch();
         altDragCopyRef.current = null;
         return;
       }
@@ -2347,6 +2347,7 @@ export function Canvas() {
         .map((sourceId) => duplicateResult.idMap.get(sourceId))
         .filter((id): id is string => Boolean(id));
       if (copiedNodeIds.length === 0) {
+        useCanvasStore.getState().endHistoryBatch();
         altDragCopyRef.current = null;
         return;
       }
@@ -2454,6 +2455,7 @@ export function Canvas() {
 
       const startPosition = altCopyState.startPositions.get(node.id);
       if (!startPosition) {
+        useCanvasStore.getState().endHistoryBatch();
         return;
       }
 
@@ -2515,6 +2517,7 @@ export function Canvas() {
       if (altCopyState.copiedNodeIds.length > 0) {
         setSelectedNode(altCopyState.copiedNodeIds[0]);
       }
+      useCanvasStore.getState().endHistoryBatch();
       scheduleCanvasPersist(0);
     },
     [
@@ -2703,7 +2706,8 @@ export function Canvas() {
         onConnectStart={handleConnectStart}
         onConnectEnd={handleConnectEnd}
         isValidConnection={isValidConnection}
-        connectionRadius={resolveCanvasConnectionRadius(currentViewport.zoom)}
+        connectionLineComponent={CanvasConnectionLine}
+        connectionRadius={resolveCanvasConnectionRadius(currentZoom)}
         onNodeDragStart={handleNodeDragStart}
         onNodeDrag={handleNodeDrag}
         onNodeDragStop={handleNodeDragStop}
@@ -2741,12 +2745,18 @@ export function Canvas() {
         <SelectedNodeOverlay />
       </ReactFlow>
 
+      <CanvasExternalAgentBridge
+        projectId={currentProjectId ?? ''}
+        projectName={currentProjectName}
+        nodes={nodes}
+        edges={edges}
+        selectedNodeIds={selectedNodeIds}
+      />
+
       <MultiSelectionConnector
         enabled={hasMultiSelectionConnector}
-        nodes={nodes}
         selectedNodeIds={selectedNodeIds}
         sourceNodeIds={selectedConnectSourceNodeIds}
-        wrapperRef={wrapperRef}
         onConnectEnd={handleMultiConnectEnd}
       />
 

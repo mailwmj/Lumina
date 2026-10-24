@@ -40,7 +40,7 @@ describe('node position alignment', () => {
         type: 'position',
         position: { x: 110, y: 195 },
         positionAbsolute: { x: 510, y: 495 },
-        dragging: true,
+        dragging: false,
       },
     ], [
       node('target', 104, 200),
@@ -53,7 +53,7 @@ describe('node position alignment', () => {
         type: 'position',
         position: { x: 104, y: 200 },
         positionAbsolute: { x: 504, y: 500 },
-        dragging: true,
+        dragging: false,
       },
     ]);
   });
@@ -63,7 +63,7 @@ describe('node position alignment', () => {
       id: 'moving',
       type: 'position' as const,
       position: { x: 100 + NODE_ALIGNMENT_SNAP_DISTANCE + 1, y: 200 },
-      dragging: true,
+      dragging: false,
     };
     const changes = snapNodePositionChanges([change], [
       node('target', 100, 200, 'group-a'),
@@ -79,7 +79,7 @@ describe('node position alignment', () => {
         id: 'moving',
         type: 'position',
         position: { x: 500, y: 154 },
-        dragging: true,
+        dragging: false,
       },
     ], [
       node('target', 100, 200, undefined, { width: 520, height: 200 }),
@@ -95,7 +95,7 @@ describe('node position alignment', () => {
         id: 'moving',
         type: 'position',
         position: { x: 500, y: 104 },
-        dragging: true,
+        dragging: false,
       },
     ], [
       node('target', 100, 200, undefined, { width: 520, height: 200 }),
@@ -107,8 +107,8 @@ describe('node position alignment', () => {
 
   it('does not distort a multi-node drag', () => {
     const changes = snapNodePositionChanges([
-      { id: 'a', type: 'position', position: { x: 100, y: 100 }, dragging: true },
-      { id: 'b', type: 'position', position: { x: 200, y: 100 }, dragging: true },
+      { id: 'a', type: 'position', position: { x: 100, y: 100 }, dragging: false },
+      { id: 'b', type: 'position', position: { x: 200, y: 100 }, dragging: false },
     ], [node('a', 0, 0), node('b', 50, 0), node('target', 96, 96)]);
 
     expect(changes).toHaveLength(2);
@@ -121,7 +121,7 @@ describe('node position alignment', () => {
       id: 'moving',
       type: 'position' as const,
       position: { x: 100 + NODE_ALIGNMENT_SNAP_DISTANCE * 2, y: 500 },
-      dragging: true,
+      dragging: false,
     };
     const nodes = [node('target', 100, 200), node('moving', 20, 40)];
 
@@ -137,7 +137,7 @@ describe('node position alignment', () => {
       id: 'moving',
       type: 'position' as const,
       position: { x: 103, y: 100 + 100 + NODE_ALIGNMENT_NEIGHBOR_RANGE + 1 },
-      dragging: true,
+      dragging: false,
     };
 
     expect(snapNodePositionChanges([change], [
@@ -172,4 +172,13 @@ describe('node position alignment', () => {
     expect(changes[0]).toMatchObject({ position: { x: 72, y: 72 } });
     expect(changes[1]).toMatchObject({ position: { x: 102, y: 127 } });
   });
+  it('does not magnetically snap while dragging or when grid snapping is enabled', () => {
+    const change = { id: 'moving', type: 'position' as const, position: { x: 103, y: 200 }, dragging: true };
+    const nodes = [node('target', 100, 200), node('moving', 20, 40)];
+    expect(snapNodePositionChanges([change], nodes)).toEqual([change]);
+    const end = { ...change, dragging: false };
+    expect(snapNodePositionChanges([end], nodes, 1, true)).toEqual([end]);
+    expect(snapNodePositionChanges([end], nodes)[0]).toMatchObject({ position: { x: 100, y: 200 } });
+  });
+
 });

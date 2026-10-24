@@ -1,4 +1,5 @@
 import { memo, useEffect, useState } from 'react';
+import { getImageDimensions } from '../application/imageDimensions';
 
 type ImageDimensions = {
   width: number;
@@ -19,28 +20,12 @@ export const SelectedImageMetadata = memo(({
   useEffect(() => {
     setDimensions(null);
     let active = true;
-    const image = new Image();
-    image.onload = () => {
-      if (!active) {
-        return;
-      }
-      setDimensions({
-        width: image.naturalWidth,
-        height: image.naturalHeight,
-      });
-    };
-    image.onerror = () => {
-      if (active) {
-        setDimensions(null);
-      }
-    };
-    image.src = imageSource;
+    void getImageDimensions(imageSource).then((result) => {
+      if (active) setDimensions(result);
+    });
 
     return () => {
       active = false;
-      image.onload = null;
-      image.onerror = null;
-      image.src = '';
     };
   }, [imageSource]);
 

@@ -258,6 +258,7 @@ npm run release -- patch --notes-file docs/releases/v0.2.1.md
 项目目录通过 `create_project_dirs` 创建，删除项目时同步清理。
 
 - 项目数据通过 `projectStore` 自动持久化，不要求手动保存。
+- 窗口关闭只由 `App` 注册一个 `onCloseRequested` 监听器，始终拦截默认销毁；工作台通过关闭守卫决定是否继续，放行后统一 flush 持久化并销毁窗口，禁止工作台另行注册关闭监听器。
 - 重启默认进入项目页；进入项目时恢复上次 viewport。
 - 当前持久化后端为 SQLite，库文件位于 Tauri `app_data_dir/projects.db`。
 - `projects` 表核心字段：`nodes_json`、`edges_json`、`viewport_json`、`history_json`、`node_count`。

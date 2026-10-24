@@ -1,3 +1,4 @@
+import { CanvasHandle as Handle } from '../ui/CanvasHandle';
 import {
   type KeyboardEvent,
   memo,
@@ -8,7 +9,6 @@ import {
   useRef,
 } from 'react';
 import {
-  Handle,
   Position,
   useReactFlow,
   useUpdateNodeInternals,
@@ -31,7 +31,7 @@ import {
   runImageGenerationNode,
 } from '@/features/canvas/application/imageGenerationRun';
 import {
-  resolveTextGenerationInputs,
+  createTextGenerationInputsResolver,
 } from '@/features/canvas/application/textGenerationInputs';
 import {
   materializeImageReferencePrompt,
@@ -73,7 +73,7 @@ import { useCanvasStore } from '@/stores/canvasStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { polishText } from '@/features/canvas/infrastructure/textPolishService';
 import { resolveTextModelSelection } from '@/features/canvas/application/textModelSelection';
-import { selectWorkflowNodes } from '@/features/canvas/application/canvasNodeSelectors';
+import { createNodeInputGraphSelector } from '@/features/canvas/application/canvasNodeSelectors';
 import { locateReferencedNode } from '@/features/canvas/application/referencedNodeLocation';
 import { openSettingsDialog } from '@/features/settings/settingsEvents';
 import { TextGenerationUpstreamContext } from './TextGenerationUpstreamContext';
@@ -109,8 +109,9 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
   const [promptDraft, setPromptDraft] = useState(() => data.prompt ?? '');
   const promptCompositionStateRef = useRef(createCompositionInputState(data.prompt ?? ''));
 
-  const workflowNodes = useCanvasStore(selectWorkflowNodes);
-  const edges = useCanvasStore((state) => state.edges);
+  const inputGraphSelector = useMemo(() => createNodeInputGraphSelector(id), [id]);
+  const { workflowNodes, edges } = useCanvasStore(inputGraphSelector);
+  const resolveInputs = useMemo(() => createTextGenerationInputsResolver(id), [id]);
   const setSelectedNode = useCanvasStore((state) => state.setSelectedNode);
   const updateNodeData = useCanvasStore((state) => state.updateNodeData);
   const updateNodeDataCoalesced = useCanvasStore((state) => state.updateNodeDataCoalesced);
@@ -138,10 +139,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
     [imagePolishConfig.textApiId, imagePolishConfig.textModelId, textApis]
   );
 
-  const workflowInputs = useMemo(
-    () => resolveTextGenerationInputs(id, workflowNodes, edges),
-    [id, workflowNodes, edges]
-  );
+  const workflowInputs = resolveInputs(workflowNodes, edges);
 
   const imageModels = useMemo(
     () =>

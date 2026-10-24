@@ -5,6 +5,7 @@ import {
   getTextGenerationEffectiveText,
   resolveEffectivePromptForNode,
   resolveTextGenerationInputs,
+  createTextGenerationInputsResolver,
 } from './textGenerationInputs';
 import { createImageReferencePromptToken } from './imageReferencePrompt';
 import {
@@ -204,4 +205,16 @@ describe('text generation inputs', () => {
       edges
     )).toBe('generated upstream\n\nlocal image prompt');
   });
+  it('reuses resolved inputs until its subscribed input subgraph changes', () => {
+    const target = createNode(CANVAS_NODE_TYPES.textGeneration, 'target', { inputText: 'first' });
+    const nodes = [target];
+    const edges: CanvasEdge[] = [];
+    const resolve = createTextGenerationInputsResolver(target.id);
+    const first = resolve(nodes, edges);
+    expect(resolve(nodes, edges)).toBe(first);
+    const changed = resolve([{ ...target, data: { ...target.data, inputText: 'second' } }], edges);
+    expect(changed).not.toBe(first);
+    expect(changed.effectivePrompt).toBe('second');
+  });
+
 });

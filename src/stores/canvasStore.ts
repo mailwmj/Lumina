@@ -83,6 +83,8 @@ const MAX_HISTORY_STEPS = 50;
 const IMAGE_NODE_VISUAL_MIN_EDGE = 96;
 const COALESCED_EDIT_WINDOW_MS = 700;
 let activeCoalescedEdit: { key: string; expiresAt: number } | null = null;
+let historyBatchDepth = 0;
+let historyBatchSnapshot: CanvasHistorySnapshot | null = null;
 
 function clearCoalescedEdit(): void {
   activeCoalescedEdit = null;
@@ -179,6 +181,8 @@ interface CanvasState {
   selectedNodeId: string | null;
   activeToolDialog: ActiveToolDialog | null;
   history: CanvasHistoryState;
+  beginHistoryBatch: () => void;
+  endHistoryBatch: () => void;
   dragHistorySnapshot: CanvasHistorySnapshot | null;
   currentViewport: Viewport;
   canvasViewportSize: { width: number; height: number };
@@ -672,6 +676,7 @@ function pushSnapshot(
   snapshot: CanvasHistorySnapshot,
   preserveCoalescedEdit = false
 ): CanvasHistorySnapshot[] {
+  if (historyBatchDepth > 0) return snapshots;
   if (!preserveCoalescedEdit) {
     clearCoalescedEdit();
   }
@@ -1046,6 +1051,8 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   },
 
   setCanvasData: (nodes, edges, history) => {
+    historyBatchDepth = 0;
+    historyBatchSnapshot = null;
     clearCoalescedEdit();
     const normalizedNodes = normalizeNodes(nodes);
     const normalizedEdges = normalizeEdgesWithNodes(edges, normalizedNodes);
@@ -1062,6 +1069,29 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
 
   setViewportState: (viewport) => {
     set({ currentViewport: viewport });
+  },
+
+  beginHistoryBatch: () => {
+    if (historyBatchDepth === 0) {
+      clearCoalescedEdit();
+      const state = get();
+      historyBatchSnapshot = state.dragHistorySnapshot ?? createSnapshot(state.nodes, state.edges);
+    }
+    historyBatchDepth += 1;
+  },
+
+  endHistoryBatch: () => {
+    if (historyBatchDepth === 0) return;
+    historyBatchDepth -= 1;
+    if (historyBatchDepth > 0) return;
+    const snapshot = historyBatchSnapshot!;
+    historyBatchSnapshot = null;
+    const state = get();
+    if (state.nodes === snapshot.nodes && state.edges === snapshot.edges) return;
+    set({
+      history: { past: pushSnapshot(state.history.past, snapshot), future: [] },
+      dragHistorySnapshot: null,
+    });
   },
 
   setCanvasViewportSize: (size) => {

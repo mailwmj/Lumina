@@ -115,19 +115,18 @@ function closestAlignedCoordinate(
 }
 
 /**
- * Makes a single dragged node magnetically align corresponding outer edges or
- * center lines with a nearby sibling node. Grid snapping remains independent;
- * this also works when the grid is hidden and aligns directly to visible geometry.
+ * Aligns a single node on release, unless grid snapping owns its final position.
  * Thresholds are screen-space so the magnet feels the same at every zoom level,
  * and only nearby siblings participate so distant nodes don't make drags stutter.
  */
 export function snapNodePositionChanges<NodeType extends AlignableNode>(
   changes: NodeChange<NodeType>[],
   nodes: NodeType[],
-  zoom = 1
+  zoom = 1,
+  snapToGrid = false
 ): NodeChange<NodeType>[] {
   const positionChanges = changes.filter(isPositionChange);
-  if (positionChanges.length !== 1) {
+  if (snapToGrid || positionChanges.length !== 1 || positionChanges[0].dragging !== false) {
     return changes;
   }
 

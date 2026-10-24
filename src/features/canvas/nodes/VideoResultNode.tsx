@@ -1,6 +1,6 @@
+import { CanvasHandle as Handle } from '../ui/CanvasHandle';
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Handle,
   Position,
   useUpdateNodeInternals,
   type NodeProps,
@@ -257,7 +257,7 @@ export const VideoResultNode = memo(({ id, data, selected, width, height }: Vide
 
     const timer = window.setInterval(() => {
       setNow(Date.now());
-    }, 120);
+    }, 300);
 
     return () => {
       window.clearInterval(timer);
@@ -309,6 +309,7 @@ export const VideoResultNode = memo(({ id, data, selected, width, height }: Vide
             : resolveNodeSurfaceStateClass(selected)}
       `}
       style={{ width: `${resolvedWidth}px`, height: `${resolvedHeight}px` }}
+      aria-busy={isGenerating}
       onClick={() => setSelectedNode(id)}
     >
       {/* Details toggle button - positioned at top right of video area */}

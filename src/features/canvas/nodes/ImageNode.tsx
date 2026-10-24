@@ -1,7 +1,7 @@
+import { CanvasHandle as Handle } from '../ui/CanvasHandle';
 import { buildGenerationBatchViewerItems } from '../application/imageViewerState';
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Handle,
   Position,
   useUpdateNodeInternals,
   type NodeProps,
@@ -118,7 +118,7 @@ export const ImageNode = memo(({ id, data, selected, type, width, height }: Imag
 
     const timer = window.setInterval(() => {
       setNow(Date.now());
-    }, 120);
+    }, 300);
 
     return () => {
       window.clearInterval(timer);
@@ -186,6 +186,7 @@ export const ImageNode = memo(({ id, data, selected, type, width, height }: Imag
             : resolveNodeSurfaceStateClass(selected)}
       `}
       style={{ width: resolvedWidth, height: resolvedHeight }}
+      aria-busy={isGenerating}
       onClick={() => setSelectedNode(id)}
     >
       <div
