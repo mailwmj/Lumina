@@ -820,25 +820,15 @@ impl OpenAiProvider {
         base_url: &str,
         source: &str,
     ) -> Result<String, AIError> {
-        let endpoint = if source.starts_with("http://") || source.starts_with("https://") {
-            source.to_string()
+        let endpoint = Self::resolve_endpoint(base_url, source);
+        let builder = self.client.get(&endpoint);
+        // Protected assets live on the API origin; never send the key to other hosts.
+        let builder = if Self::same_origin(&endpoint, base_url) {
+            builder.bearer_auth(api_key)
         } else {
-            format!(
-                "{}{}",
-                base_url,
-                if source.starts_with('/') {
-                    source.to_string()
-                } else {
-                    format!("/{}", source)
-                }
-            )
+            builder
         };
-        let response = self
-            .client
-            .get(&endpoint)
-            .bearer_auth(api_key)
-            .send()
-            .await?;
+        let response = builder.send().await?;
         let status = response.status();
         if !status.is_success() {
             let details = response.text().await.unwrap_or_default();
@@ -863,28 +853,77 @@ impl OpenAiProvider {
         ))
     }
 
+    fn same_origin(endpoint: &str, base_url: &str) -> bool {
+        match (reqwest::Url::parse(endpoint), reqwest::Url::parse(base_url)) {
+            (Ok(endpoint), Ok(base_url)) => endpoint.origin() == base_url.origin(),
+            _ => false,
+        }
+    }
+
     async fn image_from_task_body(
         &self,
         body: &Value,
         api_key: &str,
         base_url: &str,
     ) -> Result<Option<String>, AIError> {
-        if let Some(source) = Self::response_image_source(body) {
-            return Ok(Some(source));
+        let asset_value = |key: &str| {
+            body.pointer(&format!("/assets/0/{key}"))
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+        };
+        // signed_url is public; url and download_url require the API key.
+        if let Some(signed_url) = asset_value("signed_url") {
+            return Ok(Some(signed_url.to_string()));
         }
-
-        let download_url = body
-            .pointer("/assets/0/download_url")
-            .and_then(Value::as_str)
-            .filter(|value| !value.trim().is_empty());
-        if let Some(download_url) = download_url {
+        if let Some(protected_url) = asset_value("download_url").or_else(|| asset_value("url")) {
             return self
-                .download_asset(api_key, base_url, download_url)
+                .download_asset(api_key, base_url, protected_url)
                 .await
                 .map(Some);
         }
 
-        Ok(None)
+        Ok(Self::response_image_source(body))
+    }
+
+    // A successful summary can omit assets; the full task result then carries data[].
+    async fn image_from_task_result(
+        &self,
+        handle: &ProviderTaskHandle,
+        api_key: &str,
+        base_url: &str,
+    ) -> Result<Option<String>, AIError> {
+        let result_url = Self::metadata_url(handle, "result_url").unwrap_or_else(|| {
+            format!(
+                "/v1/images/tasks/{}",
+                urlencoding::encode(handle.task_id.as_str())
+            )
+        });
+        let endpoint = Self::resolve_endpoint(base_url, &result_url);
+        let response = self.client.get(&endpoint).bearer_auth(api_key).send().await?;
+        let status = response.status();
+        let raw = response.text().await?;
+        if is_retryable_poll_status(status) {
+            return Err(AIError::Transient(format!(
+                "OpenAI-compatible image task result temporarily unavailable ({})",
+                status
+            )));
+        }
+        let body = serde_json::from_str::<Value>(&raw).map_err(|error| {
+            AIError::Provider(format!(
+                "OpenAI-compatible image task result returned invalid JSON ({}): {}; body={}",
+                status, error, raw
+            ))
+        })?;
+        if !status.is_success() {
+            return Err(AIError::Provider(format!(
+                "OpenAI-compatible image task result returned {}: {}",
+                status,
+                Self::response_error_message(&body)
+            )));
+        }
+
+        self.image_from_task_body(&body, api_key, base_url).await
     }
 
     fn metadata_base_url(&self, handle: &ProviderTaskHandle) -> String {
@@ -897,11 +936,19 @@ impl OpenAiProvider {
             .unwrap_or_else(|| self.normalize_base_url(None))
     }
 
-    fn metadata_status_url(handle: &ProviderTaskHandle) -> Option<String> {
+    fn metadata_url(handle: &ProviderTaskHandle, key: &str) -> Option<String> {
         handle
             .metadata
             .as_ref()
-            .and_then(|metadata| metadata.get("status_url"))
+            .and_then(|metadata| metadata.get(key))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+    }
+
+    fn task_result_url(body: &Value) -> Option<String> {
+        body.get("result_url")
             .and_then(Value::as_str)
             .map(str::trim)
             .filter(|value| !value.is_empty())
@@ -952,7 +999,7 @@ impl OpenAiProvider {
                     "Standard OpenAI image requests do not support task polling".to_string(),
                 ));
             }
-            OpenAiImageProtocol::AiMedia => Self::metadata_status_url(&handle)
+            OpenAiImageProtocol::AiMedia => Self::metadata_url(&handle, "status_url")
                 .map(|value| Self::resolve_endpoint(&base_url, &value))
                 .unwrap_or_else(|| {
                     format!(
@@ -1004,20 +1051,26 @@ impl OpenAiProvider {
             "queued" | "dispatching" | "running" | "pending_confirmation" => {
                 Ok(ProviderTaskPollResult::Running)
             }
-            "uncertain" => Ok(self
+            "uncertain" | "client_disconnected" => Ok(self
                 .image_from_task_body(&body, &api_key, &base_url)
                 .await?
                 .map(ProviderTaskPollResult::Succeeded)
                 .unwrap_or(ProviderTaskPollResult::Running)),
-            "success" | "succeeded" | "completed" => self
-                .image_from_task_body(&body, &api_key, &base_url)
-                .await?
-                .map(ProviderTaskPollResult::Succeeded)
-                .ok_or_else(|| {
+            "success" | "succeeded" | "completed" => {
+                let image = match self.image_from_task_body(&body, &api_key, &base_url).await? {
+                    Some(image) => Some(image),
+                    None if self.protocol == OpenAiImageProtocol::AiMedia => {
+                        self.image_from_task_result(&handle, &api_key, &base_url)
+                            .await?
+                    }
+                    None => None,
+                };
+                image.map(ProviderTaskPollResult::Succeeded).ok_or_else(|| {
                     AIError::Provider(
                         "Completed image task did not include an image asset".to_string(),
                     )
-                }),
+                })
+            }
             "failed" | "cancelled" | "canceled" => Ok(ProviderTaskPollResult::Failed(
                 Self::response_error_message(&body),
             )),
@@ -1101,6 +1154,7 @@ impl AIProvider for OpenAiProvider {
                 metadata: Some(json!({
                     "base_url": base_url,
                     "status_url": status_url,
+                    "result_url": Self::task_result_url(&body),
                 })),
             }));
         }
@@ -1126,6 +1180,7 @@ impl AIProvider for OpenAiProvider {
                 metadata: Some(json!({
                     "base_url": base_url,
                     "status_url": status_url,
+                    "result_url": Self::task_result_url(&body),
                 })),
             }));
         }
@@ -1497,6 +1552,154 @@ mod tests {
                 request_text.starts_with("GET /v1/images/tasks/imgtask-123?view=summary HTTP/1.1")
             );
         }
+    }
+
+    async fn write_png_response(socket: &mut TcpStream, body: &[u8]) {
+        socket
+            .write_all(
+                format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    body.len()
+                )
+                .as_bytes(),
+            )
+            .await
+            .unwrap();
+        socket.write_all(body).await.unwrap();
+    }
+
+    fn ai_media_handle(base_url: String) -> ProviderTaskHandle {
+        ProviderTaskHandle {
+            task_id: "imgtask-123".to_string(),
+            metadata: Some(json!({
+                "base_url": base_url,
+                "status_url": "/v1/images/tasks/imgtask-123?view=summary",
+                "result_url": "/v1/images/tasks/imgtask-123",
+            })),
+        }
+    }
+
+    #[tokio::test]
+    async fn ai_media_success_without_assets_reads_the_full_task_result() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut summary_socket, _) = listener.accept().await.unwrap();
+            let summary_request = read_http_request(&mut summary_socket).await;
+            write_json_response(
+                &mut summary_socket,
+                "200 OK",
+                r#"{"task_id":"imgtask-123","status":"success","assets":[]}"#,
+            )
+            .await;
+            drop(summary_socket);
+
+            let (mut result_socket, _) = listener.accept().await.unwrap();
+            let result_request = read_http_request(&mut result_socket).await;
+            write_json_response(
+                &mut result_socket,
+                "200 OK",
+                r#"{"data":[{"b64_json":"aW1hZ2U="}]}"#,
+            )
+            .await;
+
+            (summary_request, result_request)
+        });
+
+        let provider = OpenAiProvider::ai_media();
+        provider.set_api_key("test-key".to_string()).await.unwrap();
+        let result = provider
+            .poll_task(ai_media_handle(format!("http://{address}/v1")))
+            .await
+            .unwrap();
+        assert!(matches!(
+            result,
+            ProviderTaskPollResult::Succeeded(source) if source == "data:image/png;base64,aW1hZ2U="
+        ));
+
+        let (summary_request, result_request) = server.await.unwrap();
+        assert!(String::from_utf8_lossy(&summary_request)
+            .starts_with("GET /v1/images/tasks/imgtask-123?view=summary HTTP/1.1"));
+        let result_text = String::from_utf8_lossy(&result_request).to_ascii_lowercase();
+        assert!(result_text.starts_with("get /v1/images/tasks/imgtask-123 http/1.1"));
+        assert!(result_text.contains("authorization: bearer test-key"));
+    }
+
+    #[tokio::test]
+    async fn ai_media_downloads_protected_assets_with_the_key_on_the_api_origin() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut summary_socket, _) = listener.accept().await.unwrap();
+            read_http_request(&mut summary_socket).await;
+            write_json_response(
+                &mut summary_socket,
+                "200 OK",
+                r#"{"task_id":"imgtask-123","status":"client_disconnected","assets":[{"url":"/v1/images/tasks/imgtask-123/assets/result.png","url_requires_auth":true}]}"#,
+            )
+            .await;
+            drop(summary_socket);
+
+            let (mut asset_socket, _) = listener.accept().await.unwrap();
+            let asset_request = read_http_request(&mut asset_socket).await;
+            write_png_response(&mut asset_socket, b"png").await;
+            asset_request
+        });
+
+        let provider = OpenAiProvider::ai_media();
+        provider.set_api_key("test-key".to_string()).await.unwrap();
+        let result = provider
+            .poll_task(ai_media_handle(format!("http://{address}/v1")))
+            .await
+            .unwrap();
+        assert!(matches!(
+            result,
+            ProviderTaskPollResult::Succeeded(source)
+                if source == format!("data:image/png;base64,{}", STANDARD.encode(b"png"))
+        ));
+
+        let asset_request = server.await.unwrap();
+        let asset_text = String::from_utf8_lossy(&asset_request).to_ascii_lowercase();
+        assert!(asset_text.starts_with("get /v1/images/tasks/imgtask-123/assets/result.png http/1.1"));
+        assert!(asset_text.contains("authorization: bearer test-key"));
+    }
+
+    #[tokio::test]
+    async fn ai_media_does_not_send_the_key_to_third_party_asset_hosts() {
+        let api_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let api_address = api_listener.local_addr().unwrap();
+        let asset_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let asset_address = asset_listener.local_addr().unwrap();
+        let api_server = tokio::spawn(async move {
+            let (mut socket, _) = api_listener.accept().await.unwrap();
+            read_http_request(&mut socket).await;
+            let body = format!(
+                r#"{{"task_id":"imgtask-123","status":"success","assets":[{{"download_url":"http://{asset_address}/result.png"}}]}}"#
+            );
+            write_json_response(&mut socket, "200 OK", &body).await;
+        });
+        let asset_server = tokio::spawn(async move {
+            let (mut socket, _) = asset_listener.accept().await.unwrap();
+            let request = read_http_request(&mut socket).await;
+            write_png_response(&mut socket, b"png").await;
+            request
+        });
+
+        let provider = OpenAiProvider::ai_media();
+        provider.set_api_key("test-key".to_string()).await.unwrap();
+        assert!(matches!(
+            provider
+                .poll_task(ai_media_handle(format!("http://{api_address}/v1")))
+                .await
+                .unwrap(),
+            ProviderTaskPollResult::Succeeded(_)
+        ));
+
+        api_server.await.unwrap();
+        let asset_request = asset_server.await.unwrap();
+        assert!(!String::from_utf8_lossy(&asset_request)
+            .to_ascii_lowercase()
+            .contains("authorization"));
     }
 
     #[test]
