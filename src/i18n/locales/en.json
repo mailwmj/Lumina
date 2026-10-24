@@ -37,6 +37,7 @@
     },
     "models": {
       "chooseModel": "Choose model",
+      "resolution": "Resolution",
       "noToolSupport": "No tool calling",
       "visionUnsupported": "This model cannot see images, so the Agent cannot check results.",
       "noTextModel": "Configure a text API in Settings first",

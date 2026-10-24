@@ -14,6 +14,7 @@ export interface CanvasAgentConfig {
   model: LanguageModel;
   providerOptions: Record<string, Record<string, string>>;
   imageModelId: string | null;
+  imageResolution: string;
   budget: AgentTurnBudget;
   requestedImageCount: number | null;
   /** False for models whose capability probe rejected images. */
@@ -24,6 +25,7 @@ function createAgentTools(config: CanvasAgentConfig) {
   return {
     generate_image: createGenerateImageTool({
       imageModelId: config.imageModelId,
+      imageResolution: config.imageResolution,
       budget: new TurnBudgetCounter(config.budget.limit, config.budget.used),
       requestedImageCount: config.requestedImageCount,
     }),

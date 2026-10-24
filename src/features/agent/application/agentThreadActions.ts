@@ -26,6 +26,7 @@ export function resolveDefaultModelChoice(): AgentModelChoice {
   return {
     llm: llm ? { apiId: llm.apiId, modelId: llm.modelId } : null,
     imageModelId: image?.id ?? null,
+    imageResolution: last.imageResolution,
   };
 }
 
@@ -42,6 +43,7 @@ export function createAgentThread(projectId: string): AgentThreadRecord {
     llmApiId: choice.llm?.apiId ?? null,
     llmModelId: choice.llm?.modelId ?? null,
     imageModelId: choice.imageModelId,
+    imageResolution: choice.imageResolution,
   };
   const store = useAgentUiStore.getState();
   store.upsertThread(thread, { unsaved: true });
@@ -93,6 +95,7 @@ export async function updateAgentThreadModels(threadId: string, choice: AgentMod
     llmApiId: choice.llm?.apiId ?? null,
     llmModelId: choice.llm?.modelId ?? null,
     imageModelId: choice.imageModelId,
+    imageResolution: choice.imageResolution,
   });
 }
 

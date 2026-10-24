@@ -75,7 +75,7 @@ async function runTurn(transport: AgentChatTransport, messages: CanvasAgentUIMes
 
 function transportFor(model: MockLanguageModelV4) {
   return new AgentChatTransport(
-    () => ({ llm: { apiId: 'api', modelId: 'm' }, imageModelId: 'image-model' }),
+    () => ({ llm: { apiId: 'api', modelId: 'm' }, imageModelId: 'image-model', imageResolution: '4K' }),
     { resolveModel: () => ({ model, providerOptions: {} }) },
   );
 }
@@ -123,8 +123,28 @@ describe('AgentChatTransport', () => {
 
     expect(JSON.stringify(calls[1].prompt)).toContain('"ink"');
     const imageEdits = useCanvasStore.getState().nodes.filter((node) => node.type === CANVAS_NODE_TYPES.imageEdit);
-    expect(imageEdits.map((node) => node.data)).toEqual([expect.objectContaining({ prompt: '水墨风格的猫', outputCount: 1 })]);
+    expect(imageEdits.map((node) => node.data)).toEqual([expect.objectContaining({ prompt: '水墨风格的猫', size: '4K', outputCount: 1 })]);
     expect(finished.parts.some((part) => part.type === 'text' && part.text === '好了')).toBe(true);
+  });
+
+  it('uses the current conversation resolution on each send and defaults legacy conversations to 2K', async () => {
+    const { model, calls } = scriptedModel([
+      toolCallStep('generate_image', { prompt: 'cat' }), textStep('done'),
+      toolCallStep('generate_image', { prompt: 'dog' }), textStep('done'),
+    ]);
+    let imageResolution: string | null = null;
+    const transport = new AgentChatTransport(
+      () => ({ llm: { apiId: 'api', modelId: 'm' }, imageModelId: 'image-model', imageResolution }),
+      { resolveModel: () => ({ model, providerOptions: {} }) },
+    );
+    await runTurn(transport, [userMessage('cat')]);
+    imageResolution = '1K';
+    await runTurn(transport, [userMessage('dog')]);
+
+    const sources = useCanvasStore.getState().nodes.filter((node) => node.type === CANVAS_NODE_TYPES.imageEdit);
+    expect(sources.map((node) => (node.data as { size: string }).size)).toEqual(['2K', '1K']);
+    expect(JSON.stringify(calls[0].prompt)).toContain('2K');
+    expect(JSON.stringify(calls[2].prompt)).toContain('1K');
   });
 
   it('tells the model what it asked when the user replies with a new message instead', async () => {

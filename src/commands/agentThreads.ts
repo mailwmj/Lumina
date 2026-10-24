@@ -9,6 +9,7 @@ export interface AgentThreadRecord {
   llmApiId: string | null;
   llmModelId: string | null;
   imageModelId: string | null;
+  imageResolution: string | null;
 }
 
 export interface AgentMessageRecord {

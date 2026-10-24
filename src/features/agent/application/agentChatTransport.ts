@@ -6,6 +6,7 @@ import { ASK_USER_UNANSWERED } from '@/features/agent/domain/agentTools';
 import type { AgentMessageMetadata } from '@/features/agent/domain/types';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useSettingsStore } from '@/stores/settingsStore';
+import { resolveImageGenerationResolution } from '@/features/canvas/models/imageGenerationOptions';
 import { createCanvasAgent, type CanvasAgentUIMessage } from './canvasAgent';
 import { withReferenceContext } from './referenceContext';
 import { resolveTurnBudget } from './turnBudget';
@@ -14,6 +15,7 @@ import { resolveTurnBudget } from './turnBudget';
 export interface AgentThreadModels {
   llm: AgentModelSelection | null;
   imageModelId: string | null;
+  imageResolution: string | null;
 }
 
 type SendOptions = Parameters<ChatTransport<CanvasAgentUIMessage>['sendMessages']>[0];
@@ -70,7 +72,7 @@ export class AgentChatTransport implements ChatTransport<CanvasAgentUIMessage> {
   ) {}
 
   async sendMessages(options: SendOptions): Promise<ReadableStream<UIMessageChunk>> {
-    const { llm, imageModelId } = this.getThreadModels();
+    const { llm, imageModelId, imageResolution } = this.getThreadModels();
     if (!llm) {
       throw new Error('No text model is selected for this conversation.');
     }
@@ -87,6 +89,7 @@ export class AgentChatTransport implements ChatTransport<CanvasAgentUIMessage> {
       model,
       providerOptions,
       imageModelId,
+      imageResolution: resolveImageGenerationResolution(imageResolution ?? undefined).value,
       budget: resolveTurnBudget(options.messages, agentSettings.maxImagesPerTurn),
       requestedImageCount,
       // Unprobed models are assumed capable; the probe runs when a model is first picked.

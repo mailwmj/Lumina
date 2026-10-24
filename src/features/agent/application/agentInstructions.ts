@@ -5,9 +5,10 @@ export interface AgentInstructionsInput {
   /** Explicit image count from the user's latest message, or null. */
   requestedImageCount: number | null;
   vision: boolean;
+  imageResolution: string;
 }
 
-export function buildAgentInstructions({ budget, requestedImageCount, vision }: AgentInstructionsInput): string {
+export function buildAgentInstructions({ budget, requestedImageCount, vision, imageResolution }: AgentInstructionsInput): string {
   const remaining = Math.max(0, budget.limit - budget.used);
   const countRule = requestedImageCount === null
     ? '- 用户这轮没有说张数：每次 generate_image 只出 1 张，不要传 count。'
@@ -22,6 +23,7 @@ export function buildAgentInstructions({ budget, requestedImageCount, vision }: 
 - 用户说过的信息、已经引用的图片不要再问。用户说“你决定”“先做一版”时，普通偏好自己决定；但不要编造真实名称、日期等事实，缺失时画面里不放这些文字。
 - 回答里自定义文字和所选选项冲突时，以文字为准。ask_user 返回 unanswered 表示用户没有回答、直接发了新消息，以新消息为准。
 - 生成或修改图片一律调用 generate_image。修改已有图片时，把那张图的节点 ID 放进 referenceNodeIds，提示词写成完整、独立的描述，说明要改什么、保留什么。原图不会被修改。
+- 生图分辨率由面板配置为 ${imageResolution}，generate_image 会自动使用此配置，无需询问。
 ${countRule}
 - 用户引用了某张图就直接改它。上一轮出了多张图、用户又没说改哪一张时，先用 ask_user 让用户选，不要猜。
 - 用户消息末尾的 [Referenced images] 把 图片N 对应到节点 ID；[Current canvas state] 是画布的实时状态，用户可能手动改过或删掉了节点，以它为准。

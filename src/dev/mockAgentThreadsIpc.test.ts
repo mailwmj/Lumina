@@ -7,7 +7,7 @@ let storage: Map<string, string>;
 
 function thread(id: string, projectId = 'p', updatedAt = 1): AgentThreadRecord {
   return { id, projectId, title: id, createdAt: 1, updatedAt,
-    llmApiId: null, llmModelId: null, imageModelId: null };
+    llmApiId: null, llmModelId: null, imageModelId: null, imageResolution: null };
 }
 function message(id: string, threadId: string, seq = 1): AgentMessageRecord {
   return { id, threadId, seq, role: 'user', partsJson: ' opaque parts \n',
@@ -69,7 +69,7 @@ describe('browser Agent thread IPC', () => {
   it('updates all mutable thread fields by id while preserving createdAt', () => {
     handle('upsert_agent_thread', { thread: thread('t') });
     const updated: AgentThreadRecord = { ...thread('t', 'q', 9), title: 'Renamed',
-      createdAt: 99, llmApiId: 'api', llmModelId: 'llm', imageModelId: 'image' };
+      createdAt: 99, llmApiId: 'api', llmModelId: 'llm', imageModelId: 'image', imageResolution: '4K' };
     handle('upsert_agent_thread', { thread: updated });
     expect(threads()).toEqual([]);
     expect(threads('q')).toEqual([{ ...updated, createdAt: 1 }]);

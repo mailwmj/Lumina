@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
 import { TEXT_REASONING_EFFORTS, type TextReasoningEffort } from '@/features/canvas/models/types';
+import { resolveImageGenerationResolution } from '@/features/canvas/models/imageGenerationOptions';
 import type { AgentModelSelection } from '@/features/agent/infrastructure/agentModelFactory';
 
 export const AGENT_MAX_IMAGES_LIMIT = 8;
@@ -17,6 +18,7 @@ export interface AgentModelCapabilities {
 export interface AgentModelChoice {
   llm: AgentModelSelection | null;
   imageModelId: string | null;
+  imageResolution: string;
 }
 
 interface AgentSettingsState {
@@ -65,6 +67,7 @@ function normalizeModelChoice(value: unknown): AgentModelChoice {
   return {
     llm: normalizeSelection(record?.llm),
     imageModelId: typeof record?.imageModelId === 'string' && record.imageModelId ? record.imageModelId : null,
+    imageResolution: resolveImageGenerationResolution(record?.imageResolution).value,
   };
 }
 
@@ -73,7 +76,7 @@ export const useAgentSettingsStore = create<AgentSettingsState>()(
     (set) => ({
       maxImagesPerTurn: DEFAULT_AGENT_MAX_IMAGES_PER_TURN,
       reasoningEffort: DEFAULT_AGENT_REASONING_EFFORT,
-      lastModelChoice: { llm: null, imageModelId: null },
+      lastModelChoice: { llm: null, imageModelId: null, imageResolution: resolveImageGenerationResolution(undefined).value },
       modelCapabilities: {},
       setMaxImagesPerTurn: (value) => set({ maxImagesPerTurn: normalizeMaxImagesPerTurn(value) }),
       setReasoningEffort: (value) => set({ reasoningEffort: normalizeReasoningEffort(value) }),

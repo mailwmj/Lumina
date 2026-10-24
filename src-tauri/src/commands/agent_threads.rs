@@ -15,6 +15,7 @@ pub struct AgentThreadRecord {
     pub llm_api_id: Option<String>,
     pub llm_model_id: Option<String>,
     pub image_model_id: Option<String>,
+    pub image_resolution: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -43,7 +44,7 @@ pub(crate) fn ensure_agent_tables(conn: &Connection) -> Result<(), String> {
         CREATE TABLE IF NOT EXISTS agent_threads (
             id TEXT PRIMARY KEY, project_id TEXT NOT NULL, title TEXT NOT NULL,
             created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
-            llm_api_id TEXT, llm_model_id TEXT, image_model_id TEXT
+            llm_api_id TEXT, llm_model_id TEXT, image_model_id TEXT, image_resolution TEXT
         );
         CREATE INDEX IF NOT EXISTS idx_agent_threads_project ON agent_threads(project_id, updated_at DESC);
         CREATE TABLE IF NOT EXISTS agent_messages (
@@ -56,12 +57,23 @@ pub(crate) fn ensure_agent_tables(conn: &Connection) -> Result<(), String> {
         );
         CREATE INDEX IF NOT EXISTS idx_agent_node_origins_project ON agent_node_origins(project_id);
         CREATE INDEX IF NOT EXISTS idx_agent_node_origins_thread ON agent_node_origins(thread_id);
-    ").map_err(|e| format!("Failed to initialize agent tables: {}", e))
+    ").map_err(|e| format!("Failed to initialize agent tables: {}", e))?;
+    let mut stmt = conn.prepare("PRAGMA table_info(agent_threads)")
+        .map_err(|e| format!("Failed to inspect agent threads schema: {}", e))?;
+    let columns = stmt.query_map([], |row| row.get::<_, String>(1))
+        .map_err(|e| format!("Failed to inspect agent threads columns: {}", e))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Failed to read agent threads columns: {}", e))?;
+    if !columns.iter().any(|name| name == "image_resolution") {
+        conn.execute("ALTER TABLE agent_threads ADD COLUMN image_resolution TEXT", [])
+            .map_err(|e| format!("Failed to add agent image resolution column: {}", e))?;
+    }
+    Ok(())
 }
 
 fn list_agent_threads_sync(conn: &Connection, project_id: &str) -> Result<Vec<AgentThreadRecord>, String> {
     let mut stmt = conn.prepare("SELECT id, project_id, title, created_at, updated_at,
-        llm_api_id, llm_model_id, image_model_id FROM agent_threads WHERE project_id = ?1 ORDER BY updated_at DESC")
+        llm_api_id, llm_model_id, image_model_id, image_resolution FROM agent_threads WHERE project_id = ?1 ORDER BY updated_at DESC")
         .map_err(|e| format!("Failed to prepare agent threads query: {}", e))?;
     let rows = stmt.query_map([project_id], |row| Ok(AgentThreadRecord {
         id: row.get(0)?,
@@ -72,6 +84,7 @@ fn list_agent_threads_sync(conn: &Connection, project_id: &str) -> Result<Vec<Ag
         llm_api_id: row.get(5)?,
         llm_model_id: row.get(6)?,
         image_model_id: row.get(7)?,
+        image_resolution: row.get(8)?,
     })).map_err(|e| format!("Failed to query agent threads: {}", e))?;
     rows.collect::<Result<Vec<_>, _>>().map_err(|e| format!("Failed to read agent threads: {}", e))
 }
@@ -93,12 +106,13 @@ fn get_agent_thread_messages_sync(conn: &Connection, thread_id: &str) -> Result<
 }
 
 fn upsert_agent_thread_sync(conn: &Connection, thread: &AgentThreadRecord) -> Result<(), String> {
-    conn.execute("INSERT INTO agent_threads (id, project_id, title, created_at, updated_at, llm_api_id, llm_model_id, image_model_id)
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) ON CONFLICT(id) DO UPDATE SET
+    conn.execute("INSERT INTO agent_threads (id, project_id, title, created_at, updated_at, llm_api_id, llm_model_id, image_model_id, image_resolution)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) ON CONFLICT(id) DO UPDATE SET
         project_id = excluded.project_id, title = excluded.title, updated_at = excluded.updated_at,
-        llm_api_id = excluded.llm_api_id, llm_model_id = excluded.llm_model_id, image_model_id = excluded.image_model_id",
+        llm_api_id = excluded.llm_api_id, llm_model_id = excluded.llm_model_id, image_model_id = excluded.image_model_id,
+        image_resolution = excluded.image_resolution",
         params![thread.id, thread.project_id, thread.title, thread.created_at, thread.updated_at,
-            thread.llm_api_id, thread.llm_model_id, thread.image_model_id])
+            thread.llm_api_id, thread.llm_model_id, thread.image_model_id, thread.image_resolution])
         .map_err(|e| format!("Failed to upsert agent thread: {}", e))?;
     Ok(())
 }
@@ -231,7 +245,7 @@ mod tests {
     fn thread(id: &str, project: &str, updated_at: i64) -> AgentThreadRecord {
         AgentThreadRecord {
             id: id.into(), project_id: project.into(), title: id.into(), created_at: 1, updated_at,
-            llm_api_id: None, llm_model_id: None, image_model_id: None,
+            llm_api_id: None, llm_model_id: None, image_model_id: None, image_resolution: None,
         }
     }
 
@@ -270,6 +284,29 @@ mod tests {
             let exists: i64 = conn.query_row("SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?1", [table], |row| row.get(0)).unwrap();
             assert_eq!(exists, 1, "missing table {table}");
         }
+    }
+
+    #[test]
+    fn legacy_threads_gain_resolution_without_losing_conversation_data() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE agent_threads (
+            id TEXT PRIMARY KEY, project_id TEXT NOT NULL, title TEXT NOT NULL,
+            created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+            llm_api_id TEXT, llm_model_id TEXT, image_model_id TEXT);
+            INSERT INTO agent_threads VALUES ('t', 'p', 'Old conversation', 1, 2, 'api', 'llm', 'image');").unwrap();
+        ensure_agent_tables(&conn).unwrap();
+        upsert_agent_messages_sync(&conn, "t", &[message("m", "t", 1)]).unwrap();
+        let before = list_agent_threads_sync(&conn, "p").unwrap().remove(0);
+        assert_eq!(before.image_resolution, None);
+        assert_eq!(before.title, "Old conversation");
+        assert_eq!(before.image_model_id.as_deref(), Some("image"));
+
+        let mut updated = before;
+        updated.image_resolution = Some("1K".into());
+        upsert_agent_thread_sync(&conn, &updated).unwrap();
+        ensure_agent_tables(&conn).unwrap();
+        assert_eq!(list_agent_threads_sync(&conn, "p").unwrap(), vec![updated]);
+        assert_eq!(get_agent_thread_messages_sync(&conn, "t").unwrap(), vec![message("m", "t", 1)]);
     }
 
     #[test]
@@ -368,6 +405,7 @@ mod tests {
         updated.llm_api_id = Some("api".into());
         updated.llm_model_id = Some("llm".into());
         updated.image_model_id = Some("image".into());
+        updated.image_resolution = Some("4K".into());
         upsert_agent_thread_sync(&conn, &updated).unwrap();
         assert_eq!(list_agent_threads_sync(&conn, "p").unwrap(), vec![updated]);
         let origin = AgentNodeOriginRecord {

@@ -69,12 +69,12 @@ describe('executeGenerateImage', () => {
   it('creates one imageEdit node with the selected model, prompt and reference edges, and returns ready results', async () => {
     const output = await executeGenerateImage(
       { prompt: 'a red fox', aspectRatio: '3:4', referenceNodeIds: ['ref-1', 'ref-2'] },
-      { imageModelId: IMAGE_MODEL, budget: new TurnBudgetCounter(4, 0), requestedImageCount: null },
+      { imageModelId: IMAGE_MODEL, imageResolution: '4K', budget: new TurnBudgetCounter(4, 0), requestedImageCount: null },
     );
 
     const [node] = imageEditNodes();
     expect(imageEditNodes()).toHaveLength(1);
-    expect(node.data).toMatchObject({ prompt: 'a red fox', model: IMAGE_MODEL, outputCount: 1, requestAspectRatio: '3:4' });
+    expect(node.data).toMatchObject({ prompt: 'a red fox', model: IMAGE_MODEL, size: '4K', outputCount: 1, requestAspectRatio: '3:4' });
     expect(incomingSources(node.id)).toEqual(['ref-1', 'ref-2']);
     expect(run.runImageGenerationNodes).toHaveBeenCalledWith([node.id]);
     expect(output).toMatchObject({ status: 'completed', grantedCount: 1, sourceNodeIds: [node.id] });
@@ -84,7 +84,7 @@ describe('executeGenerateImage', () => {
   it('makes one image when the user gave no count, even if the model asks for more', async () => {
     const output = await executeGenerateImage(
       { prompt: 'cat', count: 4 },
-      { imageModelId: IMAGE_MODEL, budget: new TurnBudgetCounter(4, 0), requestedImageCount: null },
+      { imageModelId: IMAGE_MODEL, imageResolution: '4K', budget: new TurnBudgetCounter(4, 0), requestedImageCount: null },
     );
     expect(output.grantedCount).toBe(1);
     expect(imageEditNodes().map((node) => (node.data as { outputCount: number }).outputCount)).toEqual([1]);
@@ -93,11 +93,12 @@ describe('executeGenerateImage', () => {
   it('splits an explicit request for 3 images into a 2-output and a 1-output node with the same prompt and references', async () => {
     const output = await executeGenerateImage(
       { prompt: 'cat', count: 3, referenceNodeIds: ['ref-1'] },
-      { imageModelId: IMAGE_MODEL, budget: new TurnBudgetCounter(4, 0), requestedImageCount: 3 },
+      { imageModelId: IMAGE_MODEL, imageResolution: '4K', budget: new TurnBudgetCounter(4, 0), requestedImageCount: 3 },
     );
     const nodes = imageEditNodes();
     expect(nodes.map((node) => (node.data as { outputCount: number }).outputCount)).toEqual([2, 1]);
     expect(nodes.every((node) => (node.data as { prompt: string }).prompt === 'cat')).toBe(true);
+    expect(nodes.map((node) => (node.data as { size: string }).size)).toEqual(['4K', '4K']);
     expect(nodes.map((node) => incomingSources(node.id))).toEqual([['ref-1'], ['ref-1']]);
     expect(output.status === 'completed' && output.results).toHaveLength(3);
   });
@@ -105,7 +106,7 @@ describe('executeGenerateImage', () => {
   it('truncates a request that exceeds the remaining budget', async () => {
     const output = await executeGenerateImage(
       { prompt: 'cat', count: 4 },
-      { imageModelId: IMAGE_MODEL, budget: new TurnBudgetCounter(4, 2), requestedImageCount: 4 },
+      { imageModelId: IMAGE_MODEL, imageResolution: '4K', budget: new TurnBudgetCounter(4, 2), requestedImageCount: 4 },
     );
     expect(output).toMatchObject({ status: 'completed', grantedCount: 2, truncatedFrom: 4, budget: { limit: 4, used: 4 } });
   });
@@ -113,7 +114,7 @@ describe('executeGenerateImage', () => {
   it('refuses without touching the canvas once the budget is used up', async () => {
     const output = await executeGenerateImage(
       { prompt: 'cat' },
-      { imageModelId: IMAGE_MODEL, budget: new TurnBudgetCounter(4, 4), requestedImageCount: null },
+      { imageModelId: IMAGE_MODEL, imageResolution: '4K', budget: new TurnBudgetCounter(4, 4), requestedImageCount: null },
     );
     expect(output).toMatchObject({ status: 'refused', grantedCount: 0, code: 'budget_exhausted' });
     expect(imageEditNodes()).toHaveLength(0);
@@ -122,7 +123,7 @@ describe('executeGenerateImage', () => {
 
   it('reports a missing image model as its own refusal, without spending budget', async () => {
     const budget = new TurnBudgetCounter(4, 0);
-    const output = await executeGenerateImage({ prompt: 'cat' }, { imageModelId: null, budget, requestedImageCount: null });
+    const output = await executeGenerateImage({ prompt: 'cat' }, { imageModelId: null, imageResolution: '2K', budget, requestedImageCount: null });
     expect(output).toMatchObject({ status: 'refused', code: 'no_image_model', budget: { used: 0 } });
     expect(run.runImageGenerationNodes).not.toHaveBeenCalled();
   });
@@ -134,7 +135,7 @@ describe('executeGenerateImage', () => {
     const budget = new TurnBudgetCounter(4, 0);
     const output = await executeGenerateImage(
       { prompt: 'cat' },
-      { imageModelId: IMAGE_MODEL, budget, requestedImageCount: null },
+      { imageModelId: IMAGE_MODEL, imageResolution: '4K', budget, requestedImageCount: null },
     );
     expect(output).toMatchObject({ status: 'failed', grantedCount: 0, error: 'API key required' });
     expect(budget.remaining).toBe(4);
@@ -152,7 +153,7 @@ describe('executeGenerateImage', () => {
     const controller = new AbortController();
     const pending = executeGenerateImage(
       { prompt: 'cat' },
-      { imageModelId: IMAGE_MODEL, budget: new TurnBudgetCounter(4, 0), requestedImageCount: null },
+      { imageModelId: IMAGE_MODEL, imageResolution: '4K', budget: new TurnBudgetCounter(4, 0), requestedImageCount: null },
       controller.signal,
     );
     await vi.waitFor(() => expect(run.runImageGenerationNodes).toHaveBeenCalled());

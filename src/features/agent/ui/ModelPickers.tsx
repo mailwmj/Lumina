@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/b
 import { agentModelCapabilityKey, useAgentSettingsStore, type AgentModelChoice } from '@/features/agent/stores/agentSettingsStore';
 import { listConfiguredTextModels } from '@/features/canvas/application/textModelSelection';
 import { listConfiguredImageModels } from '@/features/canvas/models/availableModels';
+import { IMAGE_GENERATION_RESOLUTION_OPTIONS, resolveImageGenerationResolution } from '@/features/canvas/models/imageGenerationOptions';
 import { useSettingsStore } from '@/stores/settingsStore';
 
 const TRIGGER_CLASS = 'h-8 w-auto min-w-0 max-w-[125px] rounded-xl border-0 bg-transparent px-2 py-0 text-xs hover:bg-muted focus-visible:ring-2';
@@ -16,6 +17,7 @@ export function threadModelChoice(thread: AgentThreadRecord): AgentModelChoice {
   return {
     llm: thread.llmApiId && thread.llmModelId ? { apiId: thread.llmApiId, modelId: thread.llmModelId } : null,
     imageModelId: thread.imageModelId,
+    imageResolution: resolveImageGenerationResolution(thread.imageResolution ?? undefined).value,
   };
 }
 
@@ -25,7 +27,7 @@ export function ModelPickers({ thread, disabled, onChange }: {
   onChange: (choice: AgentModelChoice) => void;
 }) {
   const { t } = useTranslation();
-  const [openId, setOpenId] = useState<'llm' | 'image' | null>(null);
+  const [openId, setOpenId] = useState<'llm' | 'image' | 'resolution' | null>(null);
   const textApis = useSettingsStore((state) => state.textApis);
   const openAiImageApi = useSettingsStore((state) => state.openAiImageApi);
   const chaomoImageApi = useSettingsStore((state) => state.chaomoImageApi);
@@ -99,6 +101,26 @@ export function ModelPickers({ thread, disabled, onChange }: {
           {imageModels.map((model) => (
             <SelectItem key={model.id} value={model.id} className="py-2">
               <span className="truncate text-sm text-foreground">{model.displayName}</span>
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Select
+        value={choice.imageResolution}
+        onValueChange={(imageResolution) => onChange({ ...choice, imageResolution })}
+        disabled={disabled || !imageLabel}
+        open={openId === 'resolution'}
+        onOpenChange={(open) => setOpenId(open ? 'resolution' : null)}
+        className="shrink-0"
+      >
+        <SelectTrigger hideChevron className={TRIGGER_CLASS}>
+          <span className="sr-only">{t('agent.models.resolution')}</span>
+          <span className="text-muted-foreground">{choice.imageResolution}</span>
+        </SelectTrigger>
+        <SelectContent className="left-auto w-24 shadow-none">
+          {IMAGE_GENERATION_RESOLUTION_OPTIONS.map((option) => (
+            <SelectItem key={option.value} value={option.value} className="py-2">
+              {option.label}
             </SelectItem>
           ))}
         </SelectContent>

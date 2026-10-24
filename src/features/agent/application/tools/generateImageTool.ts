@@ -19,6 +19,7 @@ import { useProjectStore } from '@/stores/projectStore';
 
 export interface GenerateImageToolContext {
   imageModelId: string | null;
+  imageResolution: string;
   budget: TurnBudgetCounter;
   /** What the user explicitly asked for this turn; null means one image per call. */
   requestedImageCount: number | null;
@@ -38,7 +39,7 @@ export function splitIntoOutputCounts(count: number): ImageOutputCount[] {
   return chunks;
 }
 
-function createGenerationNodes(input: GenerateImageInput, model: string, outputCounts: ImageOutputCount[]): string[] {
+function createGenerationNodes(input: GenerateImageInput, model: string, size: string, outputCounts: ImageOutputCount[]): string[] {
   const projectId = useProjectStore.getState().getCurrentProject()?.id;
   if (!projectId) {
     throw new Error('No project is open.');
@@ -53,6 +54,7 @@ function createGenerationNodes(input: GenerateImageInput, model: string, outputC
         data: {
           prompt: input.prompt,
           model,
+          size,
           outputCount,
           ...(input.aspectRatio ? { requestAspectRatio: input.aspectRatio } : {}),
         },
@@ -109,7 +111,7 @@ export async function executeGenerateImage(
     return { status: 'failed', grantedCount: 0, error, sourceNodeIds, budget: budget.snapshot() };
   };
   try {
-    sourceNodeIds = createGenerationNodes(input, context.imageModelId, splitIntoOutputCounts(granted));
+    sourceNodeIds = createGenerationNodes(input, context.imageModelId, context.imageResolution, splitIntoOutputCounts(granted));
     const { runs } = await runImageGenerationNodes(sourceNodeIds);
     const resultNodeIds = runs.flatMap((run) => (run.status === 'started' ? run.resultNodeIds : []));
     const errors = runs.flatMap((run) => (run.status === 'failed' ? [run.error] : []));
@@ -132,7 +134,7 @@ export async function executeGenerateImage(
 export function createGenerateImageTool(context: GenerateImageToolContext) {
   return tool({
     description: [
-      'Create AI image generation node(s) on the canvas with the selected image model and run them.',
+      'Create AI image generation node(s) on the canvas with the image model and resolution selected in the panel and run them.',
       'For edits, pass the image to change in referenceNodeIds; originals are never modified.',
       'Returns result node IDs with their final status and the remaining turn budget.',
     ].join(' '),

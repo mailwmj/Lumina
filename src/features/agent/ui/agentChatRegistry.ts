@@ -21,6 +21,7 @@ function threadModels(threadId: string) {
   return {
     llm: thread?.llmApiId && thread.llmModelId ? { apiId: thread.llmApiId, modelId: thread.llmModelId } : null,
     imageModelId: thread?.imageModelId ?? null,
+    imageResolution: thread?.imageResolution ?? null,
   };
 }
 
