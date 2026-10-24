@@ -6,15 +6,6 @@
   <h3>基于节点画布的 AI 视频生成工具，支持 Seedance 系列模型，一站式完成素材上传、提示词生成与视频创作</h3>
 </div>
 
-## 基于项目
-
-本项目基于 [henjicc/Storyboard-Copilot](https://github.com/henjicc/Storyboard-Copilot) 修改，主要新增：
-
-- **Seedance 系列视频生成**：集成豆包 Seedance 2.0 / 2.0 Fast / 1.5 Pro 视频生成模型
-- **提示词润色**：支持图片和视频提示词的 AI 润色优化
-- **多模态参考**：支持图片、视频、音频多种素材参考输入
-- **交互优化**：改进节点交互和细节体验
-
 ## 下载
 
 <div align="center">
