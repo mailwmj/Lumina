@@ -77,7 +77,13 @@ import {
   getBatchConnectMenuNodeTypes,
   isCanvasConnectionValid,
 } from '@/features/canvas/application/canvasConnection';
-import { sortCanvasEdgesForDuplication } from '@/features/canvas/application/canvasDuplication';
+import {
+  cloneCanvasDuplicationSnapshot,
+  createCanvasDuplicationNodeInput,
+  remapCanvasDuplicationEdges,
+  selectCanvasDuplicationSource,
+  type CanvasDuplicationSnapshot,
+} from '@/features/canvas/application/canvasDuplication';
 import {
   getNodeSourceDataTypes,
   getNodeTargetDataTypes,
@@ -148,10 +154,7 @@ interface CanvasImageFocusIntent {
   focusPoint?: { x: number; y: number } | null;
 }
 
-interface ClipboardSnapshot {
-  nodes: CanvasNode[];
-  edges: CanvasEdge[];
-}
+type ClipboardSnapshot = CanvasDuplicationSnapshot;
 
 interface NodeContextMenuState {
   id: number;
@@ -160,6 +163,7 @@ interface NodeContextMenuState {
 }
 
 interface DuplicateOptions {
+  source?: ClipboardSnapshot;
   explicitOffset?: { x: number; y: number };
   disableOffsetIteration?: boolean;
   suppressSelect?: boolean;
@@ -317,7 +321,7 @@ export function Canvas() {
   // unmounts; otherwise reopening the project starts a second loop for the
   // same job and both save the result.
   const isCanvasMountedRef = useRef(true);
-  const duplicateNodesRef = useRef<((sourceNodeIds: string[]) => string | null) | null>(null);
+  const duplicateNodesRef = useRef<((sourceNodeIds: string[], options?: DuplicateOptions) => string | null) | null>(null);
   const nodeDragActiveRef = useRef(false);
   const altDragCopyRef = useRef<{
     sourceNodeIds: string[];
@@ -1555,12 +1559,12 @@ export function Canvas() {
     }
 
     imageClipboardSession.current.clear();
-    copiedSnapshotRef.current = {
+    copiedSnapshotRef.current = cloneCanvasDuplicationSnapshot({
       nodes: copiedNodes,
       edges: state.edges.filter(
         (edge) => sourceNodeIds.has(edge.source) && sourceNodeIds.has(edge.target)
       ),
-    };
+    });
     setHasCopiedNodes(true);
     return true;
   }, []);
@@ -1583,7 +1587,10 @@ export function Canvas() {
     const handlePaste = (event: ClipboardEvent) => handleCanvasImagePaste(event, imageClipboardSession.current, {
       selectedUploadNodeId, imageHandled: pasteImageHandledRef,
       hasCopiedNodes: () => Boolean(copiedSnapshotRef.current?.nodes.length),
-      pasteNodes: () => { void duplicateNodesRef.current?.(copiedSnapshotRef.current!.nodes.map((node) => node.id)); },
+      pasteNodes: () => {
+        const source = copiedSnapshotRef.current;
+        if (source) void duplicateNodesRef.current?.(source.nodes.map((node) => node.id), { source });
+      },
       pasteImage: (file) => canvasEventBus.publish('upload-node/paste-image', { nodeId: selectedUploadNodeId!, file }),
     });
 
@@ -1638,7 +1645,10 @@ export function Canvas() {
         handleCanvasPasteShortcut(event, {
           selectedUploadNodeId, imageHandled: pasteImageHandledRef,
           hasCopiedNodes: () => Boolean(copiedSnapshotRef.current?.nodes.length),
-          pasteNodes: () => { void duplicateNodesRef.current?.(copiedSnapshotRef.current!.nodes.map((node) => node.id)); },
+          pasteNodes: () => {
+            const source = copiedSnapshotRef.current;
+            if (source) void duplicateNodesRef.current?.(source.nodes.map((node) => node.id), { source });
+          },
         });
         return;
       }
@@ -2019,15 +2029,15 @@ export function Canvas() {
         return null as DuplicateResult | null;
       }
 
-      const sourceNodes = nodes.filter((node) => dedupedIds.includes(node.id));
+      const { nodes: sourceNodes, edges: internalEdges } = selectCanvasDuplicationSource(
+        dedupedIds,
+        nodes,
+        edges,
+        options.source
+      );
       if (sourceNodes.length === 0) {
         return null as DuplicateResult | null;
       }
-
-      const sourceIdSet = new Set(sourceNodes.map((node) => node.id));
-      const internalEdges = sortCanvasEdgesForDuplication(edges.filter(
-        (edge) => sourceIdSet.has(edge.source) && sourceIdSet.has(edge.target)
-      ));
 
       const baseOffsets = [
         { x: 44, y: 30 },
@@ -2120,14 +2130,11 @@ export function Canvas() {
           (data as { generationRetryError?: string | null }).generationRetryError = null;
         }
 
-        const nextNodeId = addNode(
-          sourceNode.type as CanvasNodeType,
-          {
+        const nodeInput = createCanvasDuplicationNodeInput(sourceNode, {
             x: sourceNode.position.x + chosenOffset.x + offsetStep * 8,
             y: sourceNode.position.y + chosenOffset.y + offsetStep * 6,
-          },
-          { ...data }
-        );
+          }, data);
+        const nextNodeId = addNode(nodeInput.type, nodeInput.position, nodeInput.data);
         idMap.set(sourceNode.id, nextNodeId);
         sizeMap.set(nextNodeId, getNodeSize(sourceNode));
       }
@@ -2143,15 +2150,10 @@ export function Canvas() {
         applyNodesChange(sizeSyncChanges);
       }
 
-      for (const edge of internalEdges) {
-        const nextSource = idMap.get(edge.source);
-        const nextTarget = idMap.get(edge.target);
-        if (!nextSource || !nextTarget) {
-          continue;
-        }
+      for (const edge of remapCanvasDuplicationEdges(internalEdges, idMap)) {
         connectNodes({
-          source: nextSource,
-          target: nextTarget,
+          source: edge.source,
+          target: edge.target,
           sourceHandle: edge.sourceHandle ?? 'source',
           targetHandle: edge.targetHandle ?? 'target',
         });
@@ -2173,7 +2175,8 @@ export function Canvas() {
   );
 
   useEffect(() => {
-    duplicateNodesRef.current = (sourceNodeIds: string[]) => duplicateNodes(sourceNodeIds)?.firstNodeId ?? null;
+    duplicateNodesRef.current = (sourceNodeIds: string[], options?: DuplicateOptions) =>
+      duplicateNodes(sourceNodeIds, options)?.firstNodeId ?? null;
   }, [duplicateNodes]);
 
   const closeNodeContextMenu = useCallback(() => {
@@ -2748,7 +2751,7 @@ export function Canvas() {
             if (!copiedSnapshot || copiedSnapshot.nodes.length === 0) {
               return;
             }
-            duplicateNodes(copiedSnapshot.nodes.map((node) => node.id));
+            duplicateNodes(copiedSnapshot.nodes.map((node) => node.id), { source: copiedSnapshot });
           }}
           onDelete={() => {
             deleteNodeIds(nodeContextMenu.nodeIds);
