@@ -626,6 +626,7 @@
   },
   "settings": {
     "title": "设置",
+    "services": "模型服务",
     "providers": "密钥",
     "providersDesc": "配置 AI 服务商的 API 密钥",
     "providerGuideText": "不同供应商在模型能力、队列速度和稳定性上可能有差异。建议按当前任务场景切换供应商，并优先使用对应官方文档中的推荐参数。",

@@ -630,6 +630,7 @@
   },
   "settings": {
     "title": "Settings",
+    "services": "Model services",
     "providers": "API Key",
     "providersDesc": "Configure AI provider API keys",
     "providerGuideText": "Different providers vary in model capability, queue speed, and stability. Switch providers based on your task, and follow each provider's recommended parameters.",
