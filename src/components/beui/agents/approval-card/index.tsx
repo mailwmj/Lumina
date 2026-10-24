@@ -39,7 +39,7 @@ export type {
   ApprovalCardStatus,
 } from "./types";
 
-const EMPTY_ANSWER: ApprovalCardAnswer = { selected: [], custom: "" };
+const EMPTY_ANSWER: ApprovalCardAnswer = { selected: [] };
 
 const DEFAULT_LABELS: ApprovalCardLabels = {
   status: {

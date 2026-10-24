@@ -138,7 +138,7 @@ export function AgentConversation({ chat, thread }: { chat: Chat<CanvasAgentUIMe
         {messages.length === 0 ? (
           <EmptyState onPick={(text) => void send(text, [])} />
         ) : (
-          <MessageScroller label={t('agent.panel.transcript')} className="h-full" viewportClassName="px-4 py-4" busy={busy}>
+          <MessageScroller label={t('agent.panel.transcript')} className="h-full" viewportClassName="ui-scrollbar-y px-4 py-4" busy={busy}>
             <MessageGroup spacing="default">
               {messages.map((message) => (message.role === 'user' ? (
                 <Message key={message.id} id={message.id} from="user" animateIn>

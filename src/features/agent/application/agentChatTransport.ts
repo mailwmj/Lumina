@@ -34,7 +34,7 @@ export function withoutIncompleteToolCalls<M extends CanvasAgentUIMessage>(messa
       }
       changed = true;
       if (part.type === 'tool-ask_user' && part.state === 'input-available') {
-        return [{ ...part, state: 'output-available', output: ASK_USER_UNANSWERED } as typeof part];
+        return [{ ...part, state: 'output-available', output: ASK_USER_UNANSWERED } as M['parts'][number]];
       }
       return [];
     });

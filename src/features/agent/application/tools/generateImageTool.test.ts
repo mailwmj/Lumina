@@ -115,8 +115,15 @@ describe('executeGenerateImage', () => {
       { prompt: 'cat' },
       { imageModelId: IMAGE_MODEL, budget: new TurnBudgetCounter(4, 4), requestedImageCount: null },
     );
-    expect(output).toMatchObject({ status: 'refused', grantedCount: 0 });
+    expect(output).toMatchObject({ status: 'refused', grantedCount: 0, code: 'budget_exhausted' });
     expect(imageEditNodes()).toHaveLength(0);
+    expect(run.runImageGenerationNodes).not.toHaveBeenCalled();
+  });
+
+  it('reports a missing image model as its own refusal, without spending budget', async () => {
+    const budget = new TurnBudgetCounter(4, 0);
+    const output = await executeGenerateImage({ prompt: 'cat' }, { imageModelId: null, budget, requestedImageCount: null });
+    expect(output).toMatchObject({ status: 'refused', code: 'no_image_model', budget: { used: 0 } });
     expect(run.runImageGenerationNodes).not.toHaveBeenCalled();
   });
 

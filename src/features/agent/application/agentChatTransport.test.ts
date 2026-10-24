@@ -127,6 +127,21 @@ describe('AgentChatTransport', () => {
     expect(finished.parts.some((part) => part.type === 'text' && part.text === '好了')).toBe(true);
   });
 
+  it('tells the model what it asked when the user replies with a new message instead', async () => {
+    const { model, calls } = scriptedModel([
+      toolCallStep('ask_user', { questions: [{ id: 'name', title: '店名是什么？' }] }),
+      textStep('好的'),
+    ]);
+    const transport = transportFor(model);
+    const paused = await runTurn(transport, [userMessage('做一张咖啡店海报')]);
+    await runTurn(transport, [userMessage('做一张咖啡店海报'), paused, userMessage('店名叫慢岛')]);
+
+    const prompt = JSON.stringify(calls[1].prompt);
+    expect(prompt).toContain('店名是什么？');
+    expect(prompt).toContain('unanswered');
+    expect(prompt.indexOf('unanswered')).toBeLessThan(prompt.indexOf('店名叫慢岛'));
+  });
+
   it('refuses generation when earlier runs in the same turn already used the budget', async () => {
     const { model } = scriptedModel([toolCallStep('generate_image', { prompt: 'cat' }), textStep('额度用完了')]);
     const transport = transportFor(model);
@@ -192,8 +207,10 @@ describe('resume and replay guards', () => {
     })).toBe(false);
   });
 
-  it('drops tool calls that never got a result from the model copy', () => {
-    const [, assistant] = withoutIncompleteToolCalls(assistantWith(generate('input-available'), ask('output-available')));
-    expect(assistant.parts.map((part) => part.type)).toEqual(['tool-ask_user']);
+  it('drops stopped tool calls but keeps a skipped question visible as unanswered', () => {
+    const [, assistant] = withoutIncompleteToolCalls(assistantWith(generate('input-available'), ask('input-available')));
+    expect(assistant.parts).toEqual([expect.objectContaining({
+      type: 'tool-ask_user', state: 'output-available', output: { status: 'unanswered' },
+    })]);
   });
 });
