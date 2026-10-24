@@ -5,6 +5,7 @@ import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import process from "node:process";
+import { selectReleaseBaseline } from "./releaseVersion.mjs";
 
 const VALID_BUMPS = new Set(["major", "minor", "patch"]);
 const VERSION_PATTERN =
@@ -103,6 +104,29 @@ function getPreviousTag() {
   } catch {
     return "";
   }
+}
+
+function getReleaseVersions() {
+  const localTags = execFileSync("git", ["tag", "-l", "v*"], { encoding: "utf8" })
+    .split(/\r?\n/)
+    .map((tag) => tag.match(/^v(\d+\.\d+\.\d+)$/)?.[1])
+    .filter(Boolean);
+
+  let remoteTags;
+  try {
+    remoteTags = execFileSync("git", ["ls-remote", "--tags", "origin", "v*"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    })
+      .split(/\r?\n/)
+      .map((line) => line.match(/\srefs\/tags\/v(\d+\.\d+\.\d+)$/)?.[1])
+      .filter(Boolean);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    fail(`Unable to read release tags from origin; refusing to use a stale version baseline. ${detail}`);
+  }
+
+  return [...localTags, ...remoteTags];
 }
 
 function listCommitSubjects(previousTag) {
@@ -216,7 +240,7 @@ const packageJson = JSON.parse(fs.readFileSync(path.join(repoRoot, "package.json
 const currentVersion = packageJson.version;
 
 const nextVersion = VALID_BUMPS.has(versionArg)
-  ? bumpVersion(currentVersion, versionArg)
+  ? bumpVersion(selectReleaseBaseline(getReleaseVersions(), currentVersion), versionArg)
   : versionArg;
 
 if (!VERSION_PATTERN.test(nextVersion)) {
