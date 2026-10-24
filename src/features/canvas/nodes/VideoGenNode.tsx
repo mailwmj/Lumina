@@ -116,6 +116,7 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
   const workflowNodes = useCanvasStore(selectWorkflowNodes);
   const edges = useCanvasStore((state) => state.edges);
   const updateNodeData = useCanvasStore((state) => state.updateNodeData);
+  const updateNodeDataCoalesced = useCanvasStore((state) => state.updateNodeDataCoalesced);
   const reorderNodeInput = useCanvasStore((state) => state.reorderNodeInput);
   const setSelectedNode = useCanvasStore((state) => state.setSelectedNode);
   const addNodeBatch = useCanvasStore((state) => state.addNodeBatch);
@@ -322,8 +323,8 @@ export const VideoGenNode = memo(({ id, data, selected, width, height }: VideoGe
 
   const commitPromptDraft = useCallback((nextPrompt: string) => {
     promptDraftRef.current = nextPrompt;
-    updateNodeData(id, { prompt: nextPrompt });
-  }, [id, updateNodeData]);
+    updateNodeDataCoalesced(id, { prompt: nextPrompt }, 'video-gen-prompt');
+  }, [id, updateNodeDataCoalesced]);
 
   const syncPromptHighlightScroll = useCallback(() => {
     if (!promptRef.current || !promptHighlightRef.current) {

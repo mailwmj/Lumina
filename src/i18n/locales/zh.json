@@ -173,7 +173,6 @@
     "outputCountOption_other": "{{count}}张",
     "enableWebSearch": "启用联网搜索",
     "otherParams": "其他参数",
-    "extraOptions": "额外参数",
     "thinkingLevel": "思考等级",
     "thinkingLevelDesc": "仅对 fal 的 Nano Banana 2 生效。",
     "thinkingDisabled": "关闭",

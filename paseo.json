@@ -1,0 +1,5 @@
+{
+  "worktree": {
+    "setup": "npm ci && npm ci --prefix canvas-agent"
+  }
+}

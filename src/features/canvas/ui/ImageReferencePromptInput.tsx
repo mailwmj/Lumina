@@ -14,22 +14,26 @@ import {
   type KeyboardEvent,
   type MouseEvent,
 } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 
+import { AlertTriangle } from '@/components/ui/icons';
 import {
-  DEFAULT_IMAGE_REFERENCE_PICKER_INDEX,
   findImageReferencePromptTokens,
   insertImageReferencePromptToken,
-  moveImageReferencePickerIndex,
   normalizeImageReferenceShortcuts,
   removeImageReferencePromptToken,
   type ImageReferencePromptInput as ImageReferencePromptValue,
 } from '@/features/canvas/application/imageReferencePrompt';
 import { resolveImageDisplayUrl } from '@/features/canvas/application/imageData';
 import {
-  resolveImageReferencePickerAnchor,
+  filterImageReferencePickerItems,
+  IMAGE_REFERENCE_PICKER_COLUMNS,
+  moveImageReferencePickerGridIndex,
+  resolveImageReferencePickerGeometry,
+  resolveImageReferencePickerQuery,
   shouldCloseImageReferencePickerOnPointerDown,
-  type ImageReferencePickerAnchor,
+  type ImageReferencePickerCaretRect,
 } from '@/features/canvas/application/imageReferencePicker';
 
 export interface ImageReferencePromptItem extends ImageReferencePromptValue {
@@ -127,6 +131,23 @@ function getSelectionOffsets(root: HTMLElement): { start: number; end: number } 
 }
 
 type ReferenceCaretAffinity = 'before' | 'after';
+
+// Where the `@` was typed and the digits typed after it.
+interface PickerSession {
+  start: number;
+  query: string;
+}
+
+function readCaretRect(root: HTMLElement): ImageReferencePickerCaretRect {
+  const selection = window.getSelection();
+  const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
+  const rect = range?.getClientRects()[0] ?? range?.getBoundingClientRect();
+  if (rect && (rect.left !== 0 || rect.top !== 0 || rect.height !== 0)) {
+    return { left: rect.left, top: rect.top, bottom: rect.bottom };
+  }
+  const rootRect = root.getBoundingClientRect();
+  return { left: rootRect.left + 12, top: rootRect.top + 8, bottom: rootRect.top + 32 };
+}
 
 function setSelectionOffset(
   root: HTMLElement,
@@ -288,20 +309,33 @@ export const ImageReferencePromptInput = forwardRef<ImageReferencePromptInputHan
   const pendingSelectionOffsetRef = useRef<number | null>(null);
   const pendingSelectionAffinityRef = useRef<ReferenceCaretAffinity | null>(null);
   const isComposingRef = useRef(false);
-  const pickerOpenRef = useRef(false);
-  const pickerActiveIndexRef = useRef(DEFAULT_IMAGE_REFERENCE_PICKER_INDEX);
-  const [showPicker, setShowPicker] = useState(false);
-  const [pickerActiveIndex, setPickerActiveIndex] = useState(
-    DEFAULT_IMAGE_REFERENCE_PICKER_INDEX
-  );
-  const [pickerAnchor, setPickerAnchor] = useState<ImageReferencePickerAnchor>({ left: 8, top: 24 });
-  const [pickerSelection, setPickerSelection] = useState<{ start: number; end: number } | null>(null);
+  const pickerSessionRef = useRef<PickerSession | null>(null);
+  const pickerActiveIndexRef = useRef(0);
+  const [pickerSession, setPickerSession] = useState<PickerSession | null>(null);
+  const [pickerActiveIndex, setPickerActiveIndex] = useState(0);
+  const [pickerCaret, setPickerCaret] = useState<ImageReferencePickerCaretRect | null>(null);
   const [isVisuallyEmpty, setIsVisuallyEmpty] = useState(value.length === 0);
 
   const setActivePickerIndex = useCallback((index: number) => {
     pickerActiveIndexRef.current = index;
     setPickerActiveIndex(index);
   }, []);
+
+  const updatePickerSession = useCallback((session: PickerSession | null) => {
+    pickerSessionRef.current = session;
+    setPickerSession(session);
+    setActivePickerIndex(0);
+    if (!session) {
+      setPickerCaret(null);
+    }
+  }, [setActivePickerIndex]);
+
+  const pickerIndices = useMemo(
+    () => pickerSession
+      ? filterImageReferencePickerItems(imageInputs.length, pickerSession.query)
+      : [],
+    [imageInputs.length, pickerSession]
+  );
 
   const imageInputsKey = useMemo(
     () => imageInputs.map((input, index) => [
@@ -402,11 +436,9 @@ export const ImageReferencePromptInput = forwardRef<ImageReferencePromptInputHan
       Math.min(pickerActiveIndexRef.current, Math.max(0, imageInputs.length - 1))
     );
     if (imageInputs.length === 0) {
-      pickerOpenRef.current = false;
-      setShowPicker(false);
-      setPickerSelection(null);
+      updatePickerSession(null);
     }
-  }, [imageInputs.length, setActivePickerIndex]);
+  }, [imageInputs.length, setActivePickerIndex, updatePickerSession]);
 
   const emitValue = useCallback((nextValue: string, nativeIsComposing: boolean) => {
     setIsVisuallyEmpty(nextValue.length === 0);
@@ -441,18 +473,16 @@ export const ImageReferencePromptInput = forwardRef<ImageReferencePromptInputHan
   }, [emitValue, imageInputs]);
 
   const closePicker = useCallback(() => {
-    pickerOpenRef.current = false;
-    setShowPicker(false);
-    setPickerSelection(null);
-    setActivePickerIndex(DEFAULT_IMAGE_REFERENCE_PICKER_INDEX);
-  }, [setActivePickerIndex]);
+    updatePickerSession(null);
+  }, [updatePickerSession]);
 
+  const isPickerOpen = pickerSession !== null;
   useEffect(() => {
-    if (!showPicker) {
+    if (!isPickerOpen) {
       return;
     }
 
-    const handleDocumentPointerDown = (event: PointerEvent) => {
+    const handleDocumentPointerDown = (event: Event) => {
       const target = event.target;
       const isPointerInsidePicker = target instanceof Node
         && pickerRef.current?.contains(target) === true;
@@ -461,9 +491,21 @@ export const ImageReferencePromptInput = forwardRef<ImageReferencePromptInputHan
       }
     };
 
+    // The picker is fixed to the viewport, so zooming or panning the canvas
+    // would leave it behind; close instead.
     document.addEventListener('pointerdown', handleDocumentPointerDown, true);
-    return () => document.removeEventListener('pointerdown', handleDocumentPointerDown, true);
-  }, [closePicker, showPicker]);
+    document.addEventListener('wheel', handleDocumentPointerDown, { capture: true, passive: true });
+    return () => {
+      document.removeEventListener('pointerdown', handleDocumentPointerDown, true);
+      document.removeEventListener('wheel', handleDocumentPointerDown, true);
+    };
+  }, [closePicker, isPickerOpen]);
+
+  useEffect(() => {
+    pickerRef.current
+      ?.querySelector('[data-active]')
+      ?.scrollIntoView({ block: 'nearest' });
+  }, [pickerActiveIndex]);
 
   const insertReference = useCallback((index: number) => {
     const root = rootRef.current;
@@ -471,7 +513,12 @@ export const ImageReferencePromptInput = forwardRef<ImageReferencePromptInputHan
     if (!root || !item || isComposingRef.current) {
       return;
     }
-    const selection = pickerSelection ?? (
+    // An open picker replaces the typed `@` and digits with the reference.
+    const session = pickerSessionRef.current;
+    const selection = (session
+      ? { start: session.start, end: session.start + 1 + session.query.length }
+      : null
+    ) ?? (
       document.activeElement === root ? getSelectionOffsets(root) : null
     ) ?? {
       start: value.length,
@@ -487,7 +534,7 @@ export const ImageReferencePromptInput = forwardRef<ImageReferencePromptInputHan
       root.focus();
       setSelectionOffset(root, result.nextOffset, 'after');
     });
-  }, [closePicker, emitValue, imageInputs, pickerSelection, value]);
+  }, [closePicker, emitValue, imageInputs, value]);
 
   useImperativeHandle(ref, () => ({
     insertReference: (edgeId: string, options?: { reuseExisting: boolean }) => {
@@ -504,31 +551,32 @@ export const ImageReferencePromptInput = forwardRef<ImageReferencePromptInputHan
     },
   }), [imageInputs, insertReference, value]);
 
-  const openPicker = useCallback((requestedOffset?: number) => {
+  // Opens the picker for an `@` at `triggerOffset`. Without an offset the `@`
+  // was intercepted before reaching the editor, so it is inserted here; either
+  // way it stays in the text and Escape simply leaves it there.
+  const openPicker = useCallback((triggerOffset?: number) => {
     const root = rootRef.current;
-    if (!root || imageInputs.length === 0 || isComposingRef.current || pickerOpenRef.current) {
+    if (!root || imageInputs.length === 0 || isComposingRef.current) {
       return;
     }
-    const selectionOffsets = getSelectionOffsets(root);
-    const cursor = requestedOffset ?? selectionOffsets?.start ?? value.length;
-    const selection = window.getSelection();
-    const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
-    const rootRect = root.getBoundingClientRect();
-    const rangeRect = range?.getBoundingClientRect();
-    pickerOpenRef.current = true;
-    setPickerAnchor(resolveImageReferencePickerAnchor(rootRect, rangeRect ?? null));
-    setPickerSelection({
-      start: cursor,
-      end: requestedOffset === undefined ? selectionOffsets?.end ?? cursor : cursor,
-    });
-    setActivePickerIndex(DEFAULT_IMAGE_REFERENCE_PICKER_INDEX);
-    setShowPicker(true);
+    let start = triggerOffset;
+    if (start === undefined) {
+      const selection = getSelectionOffsets(root) ?? { start: value.length, end: value.length };
+      start = selection.start;
+      pendingSelectionOffsetRef.current = start + 1;
+      emitValue(`${value.slice(0, selection.start)}@${value.slice(selection.end)}`, false);
+    }
+    const session = { start, query: '' };
+    updatePickerSession(session);
     requestAnimationFrame(() => {
-      if (pickerOpenRef.current) {
-        root.focus();
+      if (pickerSessionRef.current !== session) {
+        return;
       }
+      root.focus();
+      setSelectionOffset(root, session.start + 1);
+      setPickerCaret(readCaretRect(root));
     });
-  }, [imageInputs.length, setActivePickerIndex, value.length]);
+  }, [emitValue, imageInputs.length, updatePickerSession, value]);
 
   const handleBeforeInput = useCallback((event: FormEvent<HTMLDivElement>) => {
     const nativeEvent = event.nativeEvent as InputEvent;
@@ -547,30 +595,35 @@ export const ImageReferencePromptInput = forwardRef<ImageReferencePromptInputHan
   const handleInput = useCallback((event: FormEvent<HTMLDivElement>) => {
     const root = event.currentTarget;
     const nextValue = readEditorValue(root);
-    const nativeIsComposing = (event.nativeEvent as InputEvent).isComposing === true;
+    const nativeEvent = event.nativeEvent as InputEvent;
+    const nativeIsComposing = nativeEvent.isComposing === true;
     const cursor = getSelectionOffset(root);
+    const isTyping = !nativeIsComposing && !isComposingRef.current;
 
     // `beforeinput` is not consistently emitted by every keyboard/input-method
-    // combination. If a literal @ reached the editor, turn it into the picker
-    // here instead of leaving an inert character behind.
+    // combination. If a literal @ reached the editor, open the picker for it.
     if (
-      !nativeIsComposing
-      && !isComposingRef.current
+      isTyping
       && imageInputs.length > 0
       && cursor !== null
       && cursor > 0
       && nextValue[cursor - 1] === '@'
+      && (nativeEvent.inputType ?? '').startsWith('insert')
+      && pickerSessionRef.current?.start !== cursor - 1
     ) {
-      const triggerOffset = cursor - 1;
-      const valueWithoutTrigger = `${nextValue.slice(0, triggerOffset)}${nextValue.slice(cursor)}`;
-      pendingSelectionOffsetRef.current = triggerOffset;
-      emitValue(valueWithoutTrigger, false);
-      requestAnimationFrame(() => {
-        root.focus();
-        setSelectionOffset(root, triggerOffset);
-        openPicker(triggerOffset);
-      });
+      emitValue(nextValue, false);
+      openPicker(cursor - 1);
       return;
+    }
+
+    const session = pickerSessionRef.current;
+    if (session && isTyping) {
+      const query = resolveImageReferencePickerQuery(nextValue, session.start, cursor);
+      if (query === null || filterImageReferencePickerItems(imageInputs.length, query).length === 0) {
+        closePicker();
+      } else if (query !== session.query) {
+        updatePickerSession({ start: session.start, query });
+      }
     }
 
     if (!nativeIsComposing && !isComposingRef.current) {
@@ -581,7 +634,7 @@ export const ImageReferencePromptInput = forwardRef<ImageReferencePromptInputHan
     }
 
     emitValue(nextValue, nativeIsComposing);
-  }, [emitValue, imageInputs.length, normalizeReferenceShortcuts, openPicker]);
+  }, [closePicker, emitValue, imageInputs.length, normalizeReferenceShortcuts, openPicker, updatePickerSession]);
 
   const handleCompositionStart = useCallback(() => {
     isComposingRef.current = true;
@@ -672,37 +725,37 @@ export const ImageReferencePromptInput = forwardRef<ImageReferencePromptInputHan
       }
     }
 
-    const pickerIsOpen = pickerOpenRef.current;
-    if (pickerIsOpen) {
-      if (event.key === 'ArrowDown') {
+    const session = pickerSessionRef.current;
+    const pickerIsOpen = session !== null;
+    if (session) {
+      const indices = filterImageReferencePickerItems(imageInputs.length, session.query);
+      const gridDirection = ({
+        ArrowLeft: 'left',
+        ArrowRight: 'right',
+        ArrowUp: 'up',
+        ArrowDown: 'down',
+      } as const)[event.key as 'ArrowLeft' | 'ArrowRight' | 'ArrowUp' | 'ArrowDown'];
+      if (gridDirection) {
         event.preventDefault();
-        setActivePickerIndex(
-          moveImageReferencePickerIndex(
-            pickerActiveIndexRef.current,
-            imageInputs.length,
-            'next'
-          )
-        );
+        setActivePickerIndex(moveImageReferencePickerGridIndex(
+          pickerActiveIndexRef.current,
+          indices.length,
+          Math.min(IMAGE_REFERENCE_PICKER_COLUMNS, indices.length),
+          gridDirection
+        ));
         return;
       }
-      if (event.key === 'ArrowUp') {
-        event.preventDefault();
-        setActivePickerIndex(
-          moveImageReferencePickerIndex(
-            pickerActiveIndexRef.current,
-            imageInputs.length,
-            'previous'
-          )
-        );
-        return;
-      }
-      if (event.key === 'Enter') {
-        event.preventDefault();
-        insertReference(pickerActiveIndexRef.current);
-        return;
+      if (event.key === 'Enter' || event.key === 'Tab') {
+        const index = indices[pickerActiveIndexRef.current];
+        if (index !== undefined) {
+          event.preventDefault();
+          insertReference(index);
+          return;
+        }
       }
       if (event.key === 'Escape') {
         event.preventDefault();
+        event.stopPropagation();
         closePicker();
         return;
       }
@@ -738,6 +791,13 @@ export const ImageReferencePromptInput = forwardRef<ImageReferencePromptInputHan
     onKeyDown?.(event);
   }, [closePicker, emitValue, imageInputs.length, insertReference, onKeyDown, openPicker, setActivePickerIndex, value]);
 
+  const pickerGeometry = pickerCaret && pickerIndices.length > 0
+    ? resolveImageReferencePickerGeometry(pickerCaret, pickerIndices.length, {
+      width: window.innerWidth,
+      height: window.innerHeight,
+    })
+    : null;
+
   const stopPropagation = useCallback((event: MouseEvent<HTMLDivElement>) => {
     event.stopPropagation();
   }, []);
@@ -764,46 +824,61 @@ export const ImageReferencePromptInput = forwardRef<ImageReferencePromptInputHan
         className={`ui-scrollbar nodrag nowheel h-full min-h-0 w-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-words border-0 bg-transparent px-3 py-2 text-sm leading-6 text-text-dark outline-none empty:before:text-text-muted/65 before:pointer-events-none before:content-[attr(data-placeholder)] ${disabled ? 'cursor-default opacity-70' : ''} ${className}`}
       />
 
-      {showPicker && imageInputs.length > 0 && (
+      {pickerGeometry && typeof document !== 'undefined' && createPortal(
         <div
           ref={pickerRef}
-          className="nowheel absolute z-30 w-[172px] overflow-hidden rounded-[10px] border border-[var(--ui-border-soft)] bg-[var(--ui-surface-elevated)] shadow-[var(--ui-shadow-panel)]"
-          style={{ left: pickerAnchor.left, top: pickerAnchor.top }}
+          role="listbox"
+          aria-label={ariaLabel}
+          className="ui-scrollbar nodrag nowheel fixed z-[80] overflow-y-auto overflow-x-hidden rounded-[10px] border border-[var(--ui-border-soft)] bg-[var(--ui-surface-elevated)] p-1.5 shadow-[var(--ui-shadow-panel)]"
+          style={{ left: pickerGeometry.left, top: pickerGeometry.top, maxHeight: pickerGeometry.maxHeight }}
           onMouseDown={(event) => event.preventDefault()}
-          onWheelCapture={(event) => event.stopPropagation()}
         >
-          <div className="ui-scrollbar nowheel max-h-[180px] overflow-y-auto">
-            {imageInputs.map((item, index) => {
+          <div
+            className="grid gap-1"
+            style={{ gridTemplateColumns: `repeat(${pickerGeometry.columns}, 3rem)` }}
+          >
+            {pickerIndices.map((index, position) => {
+              const item = imageInputs[index];
               const label = t('node.imageReference.label', { index: index + 1 });
               const previewSource = item.previewImageUrl || item.imageUrl;
+              const active = pickerActiveIndex === position;
               return (
                 <button
                   key={item.edgeId}
                   type="button"
+                  role="option"
+                  aria-selected={active}
+                  aria-label={label}
+                  title={label}
+                  data-active={active || undefined}
                   onClick={() => insertReference(index)}
-                  onMouseEnter={() => setActivePickerIndex(index)}
-                  data-active={pickerActiveIndex === index || undefined}
-                  className={`relative flex w-full items-center gap-2 border-0 border-b border-[var(--ui-border-soft)] px-2 py-2 text-left text-sm text-text-dark transition-colors last:border-b-0 before:absolute before:bottom-2 before:left-0 before:top-2 before:w-0.5 before:rounded-full before:bg-accent before:opacity-0 before:transition-opacity ${pickerActiveIndex === index
-                    ? 'bg-[var(--ui-hover)] before:opacity-100'
-                    : 'bg-transparent hover:bg-[var(--ui-hover)]'
+                  onMouseEnter={() => setActivePickerIndex(position)}
+                  className={`relative h-12 w-12 overflow-hidden rounded-md border bg-bg-dark transition-[border-color,box-shadow] ${active
+                    ? 'border-accent ring-2 ring-accent/40'
+                    : 'border-[var(--ui-border-soft)] hover:border-[var(--ui-border-strong)]'
                   }`}
                 >
                   {previewSource ? (
                     <img
                       src={resolveImageDisplayUrl(previewSource)}
-                      alt={label}
-                      className="h-8 w-8 shrink-0 rounded object-cover"
+                      alt=""
+                      className="h-full w-full object-cover"
                       draggable={false}
                     />
                   ) : (
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-red-500/15 text-red-300">!</span>
+                    <span className="flex h-full w-full items-center justify-center text-red-300">
+                      <AlertTriangle className="h-4 w-4" />
+                    </span>
                   )}
-                  <span>{label}</span>
+                  <span className="pointer-events-none absolute bottom-0.5 right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full border border-white/25 bg-black/70 px-1 text-[10px] font-semibold leading-none text-white">
+                    {index + 1}
+                  </span>
                 </button>
               );
             })}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

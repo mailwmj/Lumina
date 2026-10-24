@@ -487,7 +487,7 @@ export function UiSelect({ className = '', children, menuMinWidth, compact = fal
                         option.disabled
                           ? 'cursor-not-allowed opacity-40'
                           : isSelected
-                            ? 'bg-accent text-[var(--accent-foreground)]'
+                            ? 'bg-accent/15 text-text-dark'
                             : 'text-text-dark hover:bg-[var(--ui-hover)]'
                       }`}
                       onClick={() => {

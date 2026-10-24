@@ -222,6 +222,7 @@ export const SD2VideoGenNode = memo(({ id, data, selected, width, height }: SD2V
   const { t } = useTranslation();
   const updateNodeInternals = useUpdateNodeInternals();
   const updateNodeData = useCanvasStore((state) => state.updateNodeData);
+  const updateNodeDataCoalesced = useCanvasStore((state) => state.updateNodeDataCoalesced);
   const workflowNodes = useCanvasStore(selectWorkflowNodes);
   const edges = useCanvasStore((state) => state.edges);
 
@@ -847,7 +848,7 @@ export const SD2VideoGenNode = memo(({ id, data, selected, width, height }: SD2V
               onChange={(e) => {
                 const nextValue = e.target.value;
                 setPromptDraft(nextValue);
-                updateNodeData(id, { prompt: nextValue });
+                updateNodeDataCoalesced(id, { prompt: nextValue }, 'sd2-video-prompt');
               }}
               onKeyDown={handlePromptKeyDown}
               onScroll={syncPromptHighlightScroll}

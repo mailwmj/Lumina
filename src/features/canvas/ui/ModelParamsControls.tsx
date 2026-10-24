@@ -1,7 +1,9 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { SlidersHorizontal, Zap } from '@/components/ui/icons';
+import { Check, SlidersHorizontal, Zap } from '@/components/ui/icons';
 import { useTranslation } from 'react-i18next';
+import { UI_POPOVER_TRANSITION_MS } from '@/components/ui/motion';
+import { useDialogTransition } from '@/components/ui/useDialogTransition';
 
 import {
   AUTO_REQUEST_ASPECT_RATIO,
@@ -59,30 +61,46 @@ interface PanelAnchor {
   bottom: number;
 }
 
+type PanelKind = 'model' | 'params' | 'otherParams';
+
 const OTHER_PARAMS_PANEL_CLASS_NAME = 'w-[280px] p-3';
-const DEFAULT_MODEL_PANEL_CLASS_NAME = 'w-full p-2';
-const DEFAULT_PROVIDER_OPTION_CLASS_NAME =
-  'w-full min-w-0 px-3 text-center';
-const DEFAULT_MODEL_OPTION_CLASS_NAME =
-  'min-h-9 w-full min-w-0 max-w-full justify-center px-3 py-2 text-center';
+const DEFAULT_MODEL_PANEL_CLASS_NAME = 'w-full p-1.5';
+const DEFAULT_PROVIDER_OPTION_CLASS_NAME = 'h-7 px-2.5';
+const DEFAULT_MODEL_OPTION_CLASS_NAME = 'h-8 px-2.5';
+const MODEL_PANEL_WIDTH = 300;
+const PARAMS_PANEL_WIDTH = 344;
+
+// One selected treatment for every option in these panels, matching the active
+// trigger chip, so the lime fill stays reserved for the generate button.
+const OPTION_ACTIVE_CLASS = 'bg-accent/15 text-text-dark ring-1 ring-inset ring-accent/50';
+const OPTION_IDLE_CLASS = 'text-text-muted hover:bg-[var(--ui-hover)] hover:text-text-dark';
+const SEGMENTED_GROUP_CLASS =
+  'flex gap-0.5 rounded-[10px] border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] p-0.5';
+
+function parseRatio(ratio: string): number | null {
+  const [rawW, rawH] = ratio.split(':').map((value) => Number(value));
+  return Number.isFinite(rawW) && Number.isFinite(rawH) && rawW > 0 && rawH > 0
+    ? rawW / rawH
+    : null;
+}
+
+// Auto first, then widest to tallest so landscape, square and portrait read as
+// a continuum regardless of the order a model declares them in.
+function sortAspectRatioOptions(options: AspectRatioOption[]): AspectRatioOption[] {
+  const rank = (option: AspectRatioOption) =>
+    option.value === AUTO_REQUEST_ASPECT_RATIO
+      ? Number.MAX_VALUE
+      : parseRatio(option.value) ?? -1;
+  return [...options].sort((left, right) => rank(right) - rank(left));
+}
 
 function getRatioPreviewStyle(ratio: string): { width: number; height: number } {
-  const [rawW, rawH] = ratio.split(':').map((value) => Number(value));
-  const width = Number.isFinite(rawW) && rawW > 0 ? rawW : 1;
-  const height = Number.isFinite(rawH) && rawH > 0 ? rawH : 1;
-
-  const box = 20;
-  if (width >= height) {
-    return {
-      width: box,
-      height: Math.max(8, Math.round((box * height) / width)),
-    };
+  const value = parseRatio(ratio) ?? 1;
+  const box = 18;
+  if (value >= 1) {
+    return { width: box, height: Math.max(7, Math.round(box / value)) };
   }
-
-  return {
-    width: Math.max(8, Math.round((box * width) / height)),
-    height: box,
-  };
+  return { width: Math.max(7, Math.round(box * value)), height: box };
 }
 
 function resolveTranslatedText(
@@ -144,10 +162,10 @@ export const ModelParamsControls = memo(({
   chipClassName = '',
   modelChipClassName = 'w-auto justify-start',
   paramsChipClassName = 'w-auto justify-start',
-  modelPanelAlign = 'center',
+  modelPanelAlign = 'start',
   paramsPanelAlign = 'center',
   modelPanelClassName = DEFAULT_MODEL_PANEL_CLASS_NAME,
-  paramsPanelClassName = 'w-[420px] p-3',
+  paramsPanelClassName = 'w-full p-2',
   providerOptionClassName = DEFAULT_PROVIDER_OPTION_CLASS_NAME,
   modelOptionClassName = DEFAULT_MODEL_OPTION_CLASS_NAME,
 }: ModelParamsControlsProps) => {
@@ -159,9 +177,14 @@ export const ModelParamsControls = memo(({
   const modelPanelRef = useRef<HTMLDivElement>(null);
   const paramsPanelRef = useRef<HTMLDivElement>(null);
   const otherParamsPanelRef = useRef<HTMLDivElement>(null);
-  const [openPanel, setOpenPanel] = useState<'model' | 'params' | 'otherParams' | null>(null);
-  const [renderPanel, setRenderPanel] = useState<'model' | 'params' | 'otherParams' | null>(null);
-  const [isPanelVisible, setIsPanelVisible] = useState(false);
+  const [openPanel, setOpenPanel] = useState<PanelKind | null>(null);
+  // Keeps the last panel mounted while it fades out; switching panels swaps instantly.
+  const [lastPanel, setLastPanel] = useState<PanelKind | null>(null);
+  const { shouldRender, isVisible: isPanelVisible } = useDialogTransition(
+    openPanel !== null,
+    UI_POPOVER_TRANSITION_MS
+  );
+  const renderPanel = shouldRender ? openPanel ?? lastPanel : null;
   const [modelPanelAnchor, setModelPanelAnchor] = useState<PanelAnchor | null>(null);
   const [paramsPanelAnchor, setParamsPanelAnchor] = useState<PanelAnchor | null>(null);
   const [otherParamsPanelAnchor, setOtherParamsPanelAnchor] = useState<PanelAnchor | null>(null);
@@ -179,6 +202,10 @@ export const ModelParamsControls = memo(({
     [selectedModel.displayName]
   );
   const selectedProviderName = selectedProvider.label || selectedProvider.name;
+  const sortedAspectRatioOptions = useMemo(
+    () => sortAspectRatioOptions(aspectRatioOptions),
+    [aspectRatioOptions]
+  );
   const providerOptions = useMemo(() => {
     const providerOrder = ['kie', 'ppio', 'fal', 'grsai', 'bltcy'];
     const providerIndex = new Map(providerOrder.map((id, index) => [id, index]));
@@ -239,96 +266,49 @@ export const ModelParamsControls = memo(({
   );
   const hasOtherParamsPanel = showWebSearchToggle || inlineExtraParamSchema.length > 0;
 
-  useEffect(() => {
-    const animationDurationMs = 200;
-    let enterRaf1: number | null = null;
-    let enterRaf2: number | null = null;
-    let switchTimer: ReturnType<typeof setTimeout> | null = null;
-
-    const startEnterAnimation = () => {
-      enterRaf1 = requestAnimationFrame(() => {
-        enterRaf2 = requestAnimationFrame(() => {
-          setIsPanelVisible(true);
-        });
-      });
-    };
-
-    if (!openPanel) {
-      setIsPanelVisible(false);
-      switchTimer = setTimeout(() => setRenderPanel(null), animationDurationMs);
-      return () => {
-        if (switchTimer) {
-          clearTimeout(switchTimer);
-        }
-        if (enterRaf1) {
-          cancelAnimationFrame(enterRaf1);
-        }
-        if (enterRaf2) {
-          cancelAnimationFrame(enterRaf2);
-        }
-      };
-    }
-
-    if (renderPanel && renderPanel !== openPanel) {
-      setIsPanelVisible(false);
-      switchTimer = setTimeout(() => {
-        setRenderPanel(openPanel);
-        startEnterAnimation();
-      }, animationDurationMs);
-      return () => {
-        if (switchTimer) {
-          clearTimeout(switchTimer);
-        }
-        if (enterRaf1) {
-          cancelAnimationFrame(enterRaf1);
-        }
-        if (enterRaf2) {
-          cancelAnimationFrame(enterRaf2);
-        }
-      };
-    }
-
-    if (!renderPanel) {
-      setRenderPanel(openPanel);
-    }
-    startEnterAnimation();
-
-    return () => {
-      if (switchTimer) {
-        clearTimeout(switchTimer);
-      }
-      if (enterRaf1) {
-        cancelAnimationFrame(enterRaf1);
-      }
-      if (enterRaf2) {
-        cancelAnimationFrame(enterRaf2);
-      }
-    };
-  }, [openPanel, renderPanel]);
-
-  useEffect(() => {
-    const handleOutside = (event: MouseEvent) => {
-      const target = event.target as globalThis.Node;
-      if (containerRef.current?.contains(target)) {
-        return;
-      }
-      if (modelPanelRef.current?.contains(target)) {
-        return;
-      }
-      if (paramsPanelRef.current?.contains(target)) {
-        return;
-      }
-      if (otherParamsPanelRef.current?.contains(target)) {
-        return;
-      }
+  const togglePanel = (panel: PanelKind) => {
+    if (openPanel === panel) {
       setOpenPanel(null);
+      return false;
+    }
+    setLastPanel(panel);
+    setOpenPanel(panel);
+    return true;
+  };
+
+  useEffect(() => {
+    if (!openPanel) {
+      return;
+    }
+
+    const isInside = (target: EventTarget | null) => {
+      const node = target as globalThis.Node | null;
+      return [containerRef, modelPanelRef, paramsPanelRef, otherParamsPanelRef].some(
+        (ref) => ref.current?.contains(node)
+      );
+    };
+    const handleOutside = (event: Event) => {
+      if (!isInside(event.target)) {
+        setOpenPanel(null);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setOpenPanel(null);
+      }
     };
 
+    // Panels are fixed to the viewport, so zooming the canvas would leave them
+    // detached from their node; close instead of following.
     document.addEventListener('mousedown', handleOutside, true);
+    document.addEventListener('wheel', handleOutside, { capture: true, passive: true });
+    document.addEventListener('keydown', handleKeyDown);
     return () => {
       document.removeEventListener('mousedown', handleOutside, true);
+      document.removeEventListener('wheel', handleOutside, true);
+      document.removeEventListener('keydown', handleKeyDown);
     };
-  }, []);
+  }, [openPanel]);
 
   const getPanelAnchor = (
     triggerElement: HTMLDivElement | null,
@@ -384,8 +364,7 @@ export const ModelParamsControls = memo(({
           className={`${chipClassName} ${modelChipClassName}`}
           onClick={(event) => {
             event.stopPropagation();
-            if (openPanel === 'model') {
-              setOpenPanel(null);
+            if (!togglePanel('model')) {
               return;
             }
             setPanelProviderId(selectedModel.providerId);
@@ -395,7 +374,6 @@ export const ModelParamsControls = memo(({
               setModelAnchorBaseWidth(triggerWidth);
             }
             setModelPanelAnchor(getPanelAnchor(modelTriggerRef.current, modelPanelAlign, nextBaseWidth));
-            setOpenPanel('model');
           }}
         >
           <span className={modelTextClassName}>{selectedModelName}</span>
@@ -411,8 +389,7 @@ export const ModelParamsControls = memo(({
           className={`${chipClassName} ${paramsChipClassName}`}
           onClick={(event) => {
             event.stopPropagation();
-            if (openPanel === 'params') {
-              setOpenPanel(null);
+            if (!togglePanel('params')) {
               return;
             }
             const triggerWidth = paramsTriggerRef.current?.getBoundingClientRect().width ?? null;
@@ -421,7 +398,6 @@ export const ModelParamsControls = memo(({
               setParamsAnchorBaseWidth(triggerWidth);
             }
             setParamsPanelAnchor(getPanelAnchor(paramsTriggerRef.current, paramsPanelAlign, nextBaseWidth));
-            setOpenPanel('params');
           }}
         >
           <SlidersHorizontal className={paramsIconClassName} />
@@ -437,8 +413,7 @@ export const ModelParamsControls = memo(({
             className={`${chipClassName} w-auto shrink-0 justify-center`}
             onClick={(event) => {
               event.stopPropagation();
-              if (openPanel === 'otherParams') {
-                setOpenPanel(null);
+              if (!togglePanel('otherParams')) {
                 return;
               }
               const triggerWidth = otherParamsTriggerRef.current?.getBoundingClientRect().width ?? null;
@@ -449,7 +424,6 @@ export const ModelParamsControls = memo(({
               setOtherParamsPanelAnchor(
                 getPanelAnchor(otherParamsTriggerRef.current, 'center', nextBaseWidth)
               );
-              setOpenPanel('otherParams');
             }}
           >
             <SlidersHorizontal className={paramsIconClassName} />
@@ -461,76 +435,76 @@ export const ModelParamsControls = memo(({
       {typeof document !== 'undefined' && renderPanel === 'model' && createPortal(
         <div
           ref={modelPanelRef}
-          className={`fixed z-[80] transition-opacity duration-200 ease-out ${isPanelVisible ? 'opacity-100' : 'pointer-events-none opacity-0'
+          className={`fixed z-[80] transition-opacity ease-out ${isPanelVisible ? 'opacity-100' : 'pointer-events-none opacity-0'
             }`}
-          style={buildPanelStyle(modelPanelAnchor, modelPanelAlign, 760, 400)}
+          style={{
+            ...buildPanelStyle(modelPanelAnchor, modelPanelAlign, MODEL_PANEL_WIDTH, 360),
+            transitionDuration: `${UI_POPOVER_TRANSITION_MS}ms`,
+          }}
         >
           <UiPanel
             className={modelPanelClassName}
             style={{ width: '100%', minWidth: 0, maxWidth: '100%' }}
           >
-            <div className="ui-scrollbar max-h-[min(420px,calc(100vh-24px))] space-y-4 overflow-x-hidden overflow-y-auto p-1">
-              <section>
-                <div className="mb-2 text-xs font-medium text-text-muted">
-                  {t('modelParams.provider')}
-                </div>
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
-                  {providerOptions.map((provider) => {
-                    const active = provider.id === panelProviderId;
-                    return (
-                      <button
-                        key={provider.id}
-                        className={`h-8 rounded-lg border text-xs transition-colors ${providerOptionClassName} ${active
-                          ? 'border-accent/50 bg-accent/15 text-text-dark'
-                          : 'border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] text-text-muted hover:border-[var(--ui-border-strong)]'
-                        }`}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          if (provider.id !== panelProviderId) {
-                            const firstModel = imageModels.find((model) => model.providerId === provider.id);
-                            if (firstModel) {
-                              onModelChange(firstModel.id);
-                            }
-                          }
-                          setPanelProviderId(provider.id);
-                        }}
-                      >
-                        {provider.label || provider.name}
-                      </button>
-                    );
-                  })}
-                </div>
-              </section>
+            {providerOptions.length > 1 && (
+              <div
+                role="tablist"
+                aria-label={t('modelParams.provider')}
+                className="mb-1 flex flex-wrap gap-1 border-b border-[var(--ui-border-soft)] p-0.5 pb-1.5"
+              >
+                {providerOptions.map((provider) => {
+                  const active = provider.id === panelProviderId;
+                  const holdsSelectedModel = provider.id === selectedModel.providerId;
+                  return (
+                    <button
+                      key={provider.id}
+                      type="button"
+                      role="tab"
+                      aria-selected={active}
+                      className={`inline-flex items-center gap-1.5 rounded-md text-xs transition-colors ${providerOptionClassName} ${active ? OPTION_ACTIVE_CLASS : OPTION_IDLE_CLASS}`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setPanelProviderId(provider.id);
+                      }}
+                    >
+                      {provider.label || provider.name}
+                      {holdsSelectedModel && !active && (
+                        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
 
-              <section>
-                <div className="mb-2 text-xs font-medium text-text-muted">
-                  {t('modelParams.model')}
-                </div>
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
-                  {modelGroups.map((group) => {
-                    const active = group.models.some((model) => model.id === selectedModel.id);
-                    const targetModel = group.models.find((model) => model.id === selectedModel.id)
-                      ?? group.models[0];
-                    return (
-                      <button
-                        key={group.name}
-                        className={`inline-flex w-full min-w-0 max-w-full items-center rounded-lg border text-xs leading-4 transition-colors ${modelOptionClassName} ${active
-                          ? 'border-accent/50 bg-accent/15 text-text-dark'
-                          : 'border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] text-text-muted hover:border-[var(--ui-border-strong)] hover:bg-[var(--ui-hover)]'
-                          }`}
-                        style={{ width: '100%', minWidth: 0, maxWidth: '100%' }}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          onModelChange(targetModel.id);
-                          setOpenPanel(null);
-                        }}
-                      >
-                        <span className="min-w-0 max-w-full break-words text-center font-mono">{group.name}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </section>
+            <div
+              role="listbox"
+              aria-label={t('modelParams.model')}
+              className="ui-scrollbar max-h-[min(320px,calc(100vh-120px))] space-y-0.5 overflow-y-auto overflow-x-hidden p-0.5"
+            >
+              {modelGroups.map((group) => {
+                const active = group.models.some((model) => model.id === selectedModel.id);
+                const targetModel = group.models.find((model) => model.id === selectedModel.id)
+                  ?? group.models[0];
+                return (
+                  <button
+                    key={group.name}
+                    type="button"
+                    role="option"
+                    aria-selected={active}
+                    title={group.name}
+                    className={`flex w-full min-w-0 items-center gap-2 rounded-md text-left text-xs transition-colors ${modelOptionClassName} ${active ? OPTION_ACTIVE_CLASS : OPTION_IDLE_CLASS}`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onModelChange(targetModel.id);
+                      setOpenPanel(null);
+                    }}
+                  >
+                    <span className="min-w-0 flex-1 truncate font-mono">{group.name}</span>
+                    {active && <Check className="h-3.5 w-3.5 shrink-0" />}
+                  </button>
+                );
+              })}
             </div>
           </UiPanel>
         </div>,
@@ -540,89 +514,96 @@ export const ModelParamsControls = memo(({
       {typeof document !== 'undefined' && renderPanel === 'params' && createPortal(
         <div
           ref={paramsPanelRef}
-          className={`fixed z-[80] transition-opacity duration-200 ease-out ${isPanelVisible ? 'opacity-100' : 'pointer-events-none opacity-0'
+          className={`fixed z-[80] transition-opacity ease-out ${isPanelVisible ? 'opacity-100' : 'pointer-events-none opacity-0'
             }`}
-          style={buildPanelStyle(paramsPanelAnchor, paramsPanelAlign, 420, 460)}
+          style={{
+            ...buildPanelStyle(paramsPanelAnchor, paramsPanelAlign, PARAMS_PANEL_WIDTH, 300),
+            transitionDuration: `${UI_POPOVER_TRANSITION_MS}ms`,
+          }}
         >
           <UiPanel
-            className={paramsPanelClassName}
+            className={`space-y-2 ${paramsPanelClassName}`}
             style={{ width: '100%', minWidth: 0, maxWidth: '100%' }}
           >
-            <div>
-              <div className="mb-2 text-xs text-text-muted">{t('modelParams.quality')}</div>
-              <div className="grid grid-cols-3 gap-1 rounded-[10px] border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] p-1">
+            <div
+              role="radiogroup"
+              aria-label={t('modelParams.aspectRatio')}
+              className="grid grid-cols-6 gap-0.5 rounded-[10px] border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] p-0.5"
+            >
+              {sortedAspectRatioOptions.map((item) => {
+                const active = item.value === selectedAspectRatio.value;
+                const isAuto = item.value === AUTO_REQUEST_ASPECT_RATIO;
+                return (
+                  <button
+                    key={item.value}
+                    type="button"
+                    role="radio"
+                    aria-checked={active}
+                    className={`flex flex-col items-center gap-1 rounded-lg px-1 pb-1.5 pt-2 transition-colors ${active ? OPTION_ACTIVE_CLASS : OPTION_IDLE_CLASS}`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onAspectRatioChange(item.value);
+                    }}
+                  >
+                    <span className="flex h-[18px] items-center justify-center">
+                      {isAuto ? (
+                        <Zap className="h-3.5 w-3.5" strokeWidth={2.2} />
+                      ) : (
+                        <span
+                          className="inline-block rounded-[3px] border-[1.5px] border-current"
+                          style={getRatioPreviewStyle(item.value)}
+                        />
+                      )}
+                    </span>
+                    <span className={`text-[11px] leading-none ${isAuto ? '' : 'font-mono'}`}>
+                      {item.label}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="flex gap-2">
+              <div
+                role="radiogroup"
+                aria-label={t('modelParams.quality')}
+                className={`min-w-0 flex-1 ${SEGMENTED_GROUP_CLASS}`}
+              >
                 {resolutionOptions.map((item) => {
                   const active = item.value === selectedResolution.value;
                   return (
                     <button
                       key={item.value}
-                      className={`h-8 rounded-lg text-sm transition-colors ${active
-                        ? 'bg-accent text-[var(--accent-foreground)]'
-                        : 'text-text-muted hover:bg-[var(--ui-hover)]'
-                        }`}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      className={`h-7 min-w-0 flex-1 rounded-lg font-mono text-xs transition-colors ${active ? OPTION_ACTIVE_CLASS : OPTION_IDLE_CLASS}`}
                       onClick={(event) => {
                         event.stopPropagation();
                         onResolutionChange(item.value);
                       }}
                     >
-                      <span className="font-mono">{item.label}</span>
+                      {item.label}
                     </button>
                   );
                 })}
               </div>
-            </div>
 
-            <div className="mt-3">
-              <div className="mb-2 text-xs text-text-muted">{t('modelParams.aspectRatio')}</div>
-              <div className="grid grid-cols-5 gap-1 rounded-[10px] border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] p-1">
-                {aspectRatioOptions.map((item) => {
-                  const active = item.value === selectedAspectRatio.value;
-                  const previewStyle = getRatioPreviewStyle(
-                    item.value === AUTO_REQUEST_ASPECT_RATIO ? '1:1' : item.value
-                  );
-
-                  return (
-                    <button
-                      key={item.value}
-                      className={`rounded-lg px-1 py-1.5 transition-colors ${active
-                        ? 'bg-accent text-[var(--accent-foreground)]'
-                        : 'text-text-muted hover:bg-[var(--ui-hover)]'
-                        }`}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onAspectRatioChange(item.value);
-                      }}
-                    >
-                      <div className="mb-1 flex h-6 items-center justify-center">
-                        {item.value === AUTO_REQUEST_ASPECT_RATIO ? (
-                          <Zap className="h-3 w-3" strokeWidth={2.4} />
-                        ) : (
-                          <span
-                            className="inline-block rounded-[3px] border border-current/60"
-                            style={previewStyle}
-                          />
-                        )}
-                      </div>
-                      <div className="font-mono text-[10px]">{item.label}</div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {outputCount !== undefined && onOutputCountChange && (
-              <div className="mt-3">
-                <div className="mb-2 text-xs text-text-muted">{t('modelParams.outputCount')}</div>
-                <div className="grid grid-cols-3 gap-1 rounded-[10px] border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] p-1">
+              {outputCount !== undefined && onOutputCountChange && (
+                <div
+                  role="radiogroup"
+                  aria-label={t('modelParams.outputCount')}
+                  className={`min-w-0 flex-1 ${SEGMENTED_GROUP_CLASS}`}
+                >
                   {IMAGE_OUTPUT_COUNTS.map((count) => {
                     const active = count === outputCount;
                     return (
                       <button
                         key={count}
-                        className={`h-8 rounded-lg text-sm transition-colors ${active
-                          ? 'bg-accent text-[var(--accent-foreground)]'
-                          : 'text-text-muted hover:bg-[var(--ui-hover)]'
-                          }`}
+                        type="button"
+                        role="radio"
+                        aria-checked={active}
+                        className={`h-7 min-w-0 flex-1 rounded-lg text-xs transition-colors ${active ? OPTION_ACTIVE_CLASS : OPTION_IDLE_CLASS}`}
                         onClick={(event) => {
                           event.stopPropagation();
                           onOutputCountChange(count);
@@ -633,12 +614,11 @@ export const ModelParamsControls = memo(({
                     );
                   })}
                 </div>
-              </div>
-            )}
+              )}
+            </div>
 
             {panelExtraParamSchema.length > 0 && (
-              <div className="mt-3">
-                <div className="mb-2 text-xs text-text-muted">{t('modelParams.extraOptions')}</div>
+              <div>
                 <div className="space-y-2 rounded-[10px] border border-[var(--ui-border-soft)] bg-[var(--ui-surface-field)] p-3">
                   {panelExtraParamSchema.map((definition) => {
                     const translatedLabel = resolveTranslatedText(
@@ -737,9 +717,12 @@ export const ModelParamsControls = memo(({
       {typeof document !== 'undefined' && renderPanel === 'otherParams' && createPortal(
         <div
           ref={otherParamsPanelRef}
-          className={`fixed z-[80] transition-opacity duration-200 ease-out ${isPanelVisible ? 'opacity-100' : 'pointer-events-none opacity-0'
+          className={`fixed z-[80] transition-opacity ease-out ${isPanelVisible ? 'opacity-100' : 'pointer-events-none opacity-0'
             }`}
-          style={buildPanelStyle(otherParamsPanelAnchor, 'center', 280, 260)}
+          style={{
+            ...buildPanelStyle(otherParamsPanelAnchor, 'center', 280, 260),
+            transitionDuration: `${UI_POPOVER_TRANSITION_MS}ms`,
+          }}
         >
           <UiPanel
             className={OTHER_PARAMS_PANEL_CLASS_NAME}

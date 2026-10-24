@@ -113,6 +113,7 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
   const edges = useCanvasStore((state) => state.edges);
   const setSelectedNode = useCanvasStore((state) => state.setSelectedNode);
   const updateNodeData = useCanvasStore((state) => state.updateNodeData);
+  const updateNodeDataCoalesced = useCanvasStore((state) => state.updateNodeDataCoalesced);
   const updateNodeDataWithoutHistory = useCanvasStore(
     (state) => state.updateNodeDataWithoutHistory
   );
@@ -224,8 +225,8 @@ export const ImageEditNode = memo(({ id, data, selected, width, height }: ImageE
     if (promptCompositionStateRef.current.isComposing) {
       return;
     }
-    updateNodeData(id, { prompt: nextPrompt });
-  }, [id, updateNodeData]);
+    updateNodeDataCoalesced(id, { prompt: nextPrompt }, 'image-edit-prompt');
+  }, [id, updateNodeDataCoalesced]);
 
   const applyPromptDraftTransition = useCallback((transition: ReturnType<typeof updateCompositionInputDraft>) => {
     promptCompositionStateRef.current = transition.state;
