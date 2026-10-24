@@ -6,6 +6,7 @@ import {
   type GenerateImageOutput,
 } from '@/features/agent/domain/agentTools';
 import { waitForImageResults } from '@/features/agent/application/agentImageState';
+import { resolveGenerationRowPositions } from '@/features/agent/application/generationRowLayout';
 import type { TurnBudgetCounter } from '@/features/agent/application/turnBudget';
 import type { CanvasChangeOperation } from '@/features/canvas-agent/domain/types';
 import { runImageGenerationNodes } from '@/features/canvas/application/imageGenerationRun';
@@ -23,6 +24,8 @@ export interface GenerateImageToolContext {
   budget: TurnBudgetCounter;
   /** What the user explicitly asked for this turn; null means one image per call. */
   requestedImageCount: number | null;
+  /** Nodes this conversation created so far; calls in the current run append to it. */
+  threadNodeIds: string[];
 }
 
 const OUTPUT_COUNTS_DESCENDING = [...IMAGE_OUTPUT_COUNTS].sort((a, b) => b - a);
@@ -39,11 +42,23 @@ export function splitIntoOutputCounts(count: number): ImageOutputCount[] {
   return chunks;
 }
 
-function createGenerationNodes(input: GenerateImageInput, model: string, size: string, outputCounts: ImageOutputCount[]): string[] {
+function createGenerationNodes(
+  input: GenerateImageInput,
+  model: string,
+  size: string,
+  outputCounts: ImageOutputCount[],
+  threadNodeIds: readonly string[],
+): string[] {
   const projectId = useProjectStore.getState().getCurrentProject()?.id;
   if (!projectId) {
     throw new Error('No project is open.');
   }
+  const positions = resolveGenerationRowPositions({
+    nodes: useCanvasStore.getState().nodes,
+    threadNodeIds,
+    referenceNodeIds: input.referenceNodeIds ?? [],
+    rows: outputCounts.map((outputCount) => ({ outputCount, aspectRatio: input.aspectRatio })),
+  });
   const operations: CanvasChangeOperation[] = outputCounts.flatMap((outputCount, index) => {
     const clientId = `agent-gen-${index}`;
     return [
@@ -51,6 +66,7 @@ function createGenerationNodes(input: GenerateImageInput, model: string, size: s
         type: 'create_node' as const,
         clientId,
         nodeType: CANVAS_NODE_TYPES.imageEdit,
+        position: positions[index],
         data: {
           prompt: input.prompt,
           model,
@@ -111,9 +127,18 @@ export async function executeGenerateImage(
     return { status: 'failed', grantedCount: 0, error, sourceNodeIds, budget: budget.snapshot() };
   };
   try {
-    sourceNodeIds = createGenerationNodes(input, context.imageModelId, context.imageResolution, splitIntoOutputCounts(granted));
+    sourceNodeIds = createGenerationNodes(
+      input,
+      context.imageModelId,
+      context.imageResolution,
+      splitIntoOutputCounts(granted),
+      context.threadNodeIds,
+    );
+    // Registered before awaiting so a parallel call in the same step lays out below these rows.
+    context.threadNodeIds.push(...sourceNodeIds);
     const { runs } = await runImageGenerationNodes(sourceNodeIds);
     const resultNodeIds = runs.flatMap((run) => (run.status === 'started' ? run.resultNodeIds : []));
+    context.threadNodeIds.push(...resultNodeIds);
     const errors = runs.flatMap((run) => (run.status === 'failed' ? [run.error] : []));
     if (resultNodeIds.length === 0) {
       return failBeforeSubmission(errors.join('; ') || 'Generation did not start.');

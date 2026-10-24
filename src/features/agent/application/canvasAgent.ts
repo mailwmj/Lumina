@@ -17,6 +17,8 @@ export interface CanvasAgentConfig {
   imageResolution: string;
   budget: AgentTurnBudget;
   requestedImageCount: number | null;
+  /** Nodes earlier generate_image calls of this conversation created. */
+  threadNodeIds: readonly string[];
   /** False for models whose capability probe rejected images. */
   vision: boolean;
 }
@@ -28,6 +30,7 @@ function createAgentTools(config: CanvasAgentConfig) {
       imageResolution: config.imageResolution,
       budget: new TurnBudgetCounter(config.budget.limit, config.budget.used),
       requestedImageCount: config.requestedImageCount,
+      threadNodeIds: [...config.threadNodeIds],
     }),
     view_images: createViewImagesTool(),
     ask_user: createAskUserTool(),

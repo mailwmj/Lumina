@@ -7,7 +7,7 @@ import { useCanvasStore } from '@/stores/canvasStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { resolveImageGenerationResolution } from '@/features/canvas/models/imageGenerationOptions';
 import { createCanvasAgent, type CanvasAgentUIMessage } from './canvasAgent';
-import { withReferenceContext } from './referenceContext';
+import { collectAgentNodeIds, withReferenceContext } from './referenceContext';
 import { resolveTurnBudget, resolveTurnImageCount } from './turnBudget';
 
 /** The thread's own model choice, read at send time so switching pickers applies to the next send. */
@@ -100,6 +100,7 @@ export class AgentChatTransport implements ChatTransport<CanvasAgentUIMessage> {
       imageResolution: resolveImageGenerationResolution(imageResolution ?? undefined).value,
       budget: resolveTurnBudget(options.messages, agentSettings.maxImagesPerTurn),
       requestedImageCount,
+      threadNodeIds: collectAgentNodeIds(options.messages),
       // Unprobed models are assumed capable; the probe runs when a model is first picked.
       vision: agentSettings.modelCapabilities[agentModelCapabilityKey(llm)]?.vision ?? true,
     });
