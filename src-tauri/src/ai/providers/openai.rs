@@ -21,12 +21,6 @@ const AI_MEDIA_PROVIDER_ID: &str = "ai-media";
 const AI_MEDIA_MODEL_ID: &str = "ai-media/gpt-image-2";
 const AI_MEDIA_DEFAULT_BASE_URL: &str = "https://api.ai-media.vip/v1";
 const AI_MEDIA_DEFAULT_MODEL: &str = "gpt-image-2";
-// Most ai-media gateway nodes truncate multipart bodies around 80 KiB. Target
-// a smaller total body and budget references after prompt and boundary overhead.
-const AI_MEDIA_MULTIPART_SAFE_BODY_BYTES: usize = 64 * 1_024;
-const AI_MEDIA_MULTIPART_FIXED_OVERHEAD_BYTES: usize = 4 * 1_024;
-const AI_MEDIA_MULTIPART_PER_IMAGE_OVERHEAD_BYTES: usize = 512;
-const AI_MEDIA_MIN_REFERENCE_BYTES: usize = 8 * 1_024;
 const DEFAULT_REFERENCE_MAX_BYTES: usize = 12 * 1_024 * 1_024;
 const CHAOMO_PROVIDER_ID: &str = "chaomo";
 const CHAOMO_GPT_IMAGE2_1K_MODEL_ID: &str = "chaomo/gpt-image2-1K";
@@ -229,6 +223,26 @@ impl OpenAiProvider {
         )
     }
 
+    // Unified zntcode entries (e.g. gpt-image-2.5-sunburst-hight) pick the tier from
+    // `size` and default to 1K when it is omitted. Fixed-tier model IDs keep their tier.
+    fn chaomo_tier_size(&self, request: &GenerateRequest, model: &str) -> Option<String> {
+        if self.protocol != OpenAiImageProtocol::Chaomo {
+            return None;
+        }
+
+        let model = model.to_ascii_lowercase();
+        let has_fixed_tier = model
+            .split('-')
+            .any(|segment| matches!(segment, "1k" | "2k" | "4k"))
+            || model.starts_with("gpt-image2-");
+        if !model.starts_with("gpt-image") || has_fixed_tier {
+            return None;
+        }
+
+        let size = request.size.trim().to_ascii_uppercase();
+        matches!(size.as_str(), "1K" | "2K" | "4K").then_some(size)
+    }
+
     fn chaomo_supports_reference_images(model: &str) -> bool {
         !matches!(
             model.strip_prefix("chaomo/").unwrap_or(model),
@@ -250,35 +264,6 @@ impl OpenAiProvider {
             OpenAiImageProtocol::Chaomo => None,
             OpenAiImageProtocol::Fhl => Some("auto".to_string()),
         }
-    }
-
-    fn reference_max_bytes(
-        &self,
-        request: &GenerateRequest,
-        reference_count: usize,
-    ) -> Result<usize, AIError> {
-        if self.protocol != OpenAiImageProtocol::AiMedia {
-            return Ok(DEFAULT_REFERENCE_MAX_BYTES);
-        }
-        if reference_count == 0 {
-            return Ok(0);
-        }
-
-        let reserved_bytes = AI_MEDIA_MULTIPART_FIXED_OVERHEAD_BYTES
-            .saturating_add(
-                AI_MEDIA_MULTIPART_PER_IMAGE_OVERHEAD_BYTES.saturating_mul(reference_count),
-            )
-            .saturating_add(request.prompt.len());
-        let available_bytes = AI_MEDIA_MULTIPART_SAFE_BODY_BYTES.saturating_sub(reserved_bytes);
-        let per_reference_bytes = available_bytes / reference_count;
-        if per_reference_bytes < AI_MEDIA_MIN_REFERENCE_BYTES {
-            return Err(AIError::InvalidRequest(
-                "AI Media prompt and reference images exceed the gateway multipart budget"
-                    .to_string(),
-            ));
-        }
-
-        Ok(per_reference_bytes)
     }
 
     fn resolve_image_size(resolution: &str, aspect_ratio: &str) -> String {
@@ -552,7 +537,6 @@ impl OpenAiProvider {
         &self,
         request: &GenerateRequest,
         model: &str,
-        async_mode: bool,
     ) -> Result<Form, AIError> {
         let is_fhl = self.protocol == OpenAiImageProtocol::Fhl;
         let mut form = if is_fhl {
@@ -575,21 +559,8 @@ impl OpenAiProvider {
                 }
                 form
             }
-            OpenAiImageProtocol::AiMedia => {
-                let mut form = form
-                    .text(
-                        "size",
-                        Self::resolve_image_size(&request.size, &request.aspect_ratio),
-                    )
-                    .text("response_format", "b64_json");
-                if let Some(quality) = self.request_quality(request) {
-                    form = form.text("quality", quality);
-                }
-                if async_mode {
-                    form = form.text("async", "true");
-                }
-                form
-            }
+            // AI Media edits are sent as JSON by build_ai_media_edit_body.
+            OpenAiImageProtocol::AiMedia => form,
             OpenAiImageProtocol::Chaomo => {
                 let mut form = form
                     .text("ratio", request.aspect_ratio.clone())
@@ -598,16 +569,18 @@ impl OpenAiProvider {
                 if let Some(quality) = self.request_quality(request) {
                     form = form.text("quality", quality);
                 }
+                if let Some(size) = self.chaomo_tier_size(request, model) {
+                    form = form.text("size", size);
+                }
                 form
             }
             OpenAiImageProtocol::Fhl => form,
         };
 
         let reference_images = request.reference_images.as_deref().unwrap_or(&[]);
-        let reference_max_bytes = self.reference_max_bytes(request, reference_images.len())?;
         for (index, source) in reference_images.iter().enumerate() {
             let image = load_reference_image(&self.client, source).await?;
-            let normalized = normalize_openai_reference_image(image, reference_max_bytes)?;
+            let normalized = normalize_openai_reference_image(image, DEFAULT_REFERENCE_MAX_BYTES)?;
             if normalized.original_dimensions != normalized.transmitted_dimensions {
                 info!(
                     original_width = normalized.original_dimensions.0,
@@ -702,6 +675,9 @@ impl OpenAiProvider {
                 if self.chaomo_uses_quality(request) {
                     body["quality"] = Value::String("high".to_string());
                 }
+                if let Some(size) = self.chaomo_tier_size(request, model) {
+                    body["size"] = Value::String(size);
+                }
                 body
             }
             OpenAiImageProtocol::Fhl => json!({
@@ -714,6 +690,32 @@ impl OpenAiProvider {
                 "response_format": "b64_json",
             }),
         }
+    }
+
+    // AI Media accepts JSON edits with Data URI references, which avoids the gateway's
+    // multipart body truncation and keeps references at full quality.
+    async fn build_ai_media_edit_body(
+        &self,
+        request: &GenerateRequest,
+        model: &str,
+        async_mode: bool,
+    ) -> Result<Value, AIError> {
+        let mut body = self.build_generation_body(request, model, async_mode);
+        let mut images = Vec::new();
+        for source in request.reference_images.as_deref().unwrap_or(&[]) {
+            let image = load_reference_image(&self.client, source).await?;
+            let image =
+                normalize_openai_reference_image(image, DEFAULT_REFERENCE_MAX_BYTES)?.image;
+            images.push(json!({
+                "image_url": format!(
+                    "data:{};base64,{}",
+                    image.mime_type,
+                    STANDARD.encode(image.bytes)
+                ),
+            }));
+        }
+        body["images"] = Value::Array(images);
+        Ok(body)
     }
 
     async fn submit_request(
@@ -758,18 +760,26 @@ impl OpenAiProvider {
             request.aspect_ratio
         );
 
-        let response = if has_reference_images {
-            let form = self.build_edit_form(request, &model, async_mode).await?;
-            let builder = self.client.post(&endpoint).bearer_auth(api_key);
-            let builder = if self.protocol == OpenAiImageProtocol::AiMedia {
-                builder.header(
+        let response = if has_reference_images && self.protocol == OpenAiImageProtocol::AiMedia {
+            let body = self.build_ai_media_edit_body(request, &model, async_mode).await?;
+            self.client
+                .post(&endpoint)
+                .bearer_auth(api_key)
+                .header(
                     "Idempotency-Key",
                     format!("opencanvas-image-{}", Uuid::new_v4()),
                 )
-            } else {
-                builder
-            };
-            builder.multipart(form).send().await?
+                .json(&body)
+                .send()
+                .await?
+        } else if has_reference_images {
+            let form = self.build_edit_form(request, &model).await?;
+            self.client
+                .post(&endpoint)
+                .bearer_auth(api_key)
+                .multipart(form)
+                .send()
+                .await?
         } else {
             let body = self.build_generation_body(request, &model, async_mode);
             let builder = self.client.post(&endpoint).bearer_auth(api_key);
@@ -1174,11 +1184,7 @@ impl AIProvider for OpenAiProvider {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        OpenAiProvider, AI_MEDIA_MIN_REFERENCE_BYTES, AI_MEDIA_MULTIPART_FIXED_OVERHEAD_BYTES,
-        AI_MEDIA_MULTIPART_PER_IMAGE_OVERHEAD_BYTES, AI_MEDIA_MULTIPART_SAFE_BODY_BYTES,
-        DEFAULT_REFERENCE_MAX_BYTES,
-    };
+    use super::OpenAiProvider;
     use crate::ai::providers::image_input::reference_image;
     use crate::ai::{AIProvider, GenerateRequest, ProviderTaskHandle, ProviderTaskPollResult};
     use base64::{engine::general_purpose::STANDARD, Engine};
@@ -1356,89 +1362,58 @@ mod tests {
         assert_eq!(OpenAiProvider::resolve_image_quality("1024x1024"), None);
     }
 
-    #[test]
-    fn ai_media_budgets_all_references_inside_the_safe_multipart_body() {
-        let mut request = generate_request("ai-media/gpt-image-2", "4K", "16:9");
-        request.prompt = "generate a model turnaround".to_string();
-        let expected_single_budget = AI_MEDIA_MULTIPART_SAFE_BODY_BYTES
-            - AI_MEDIA_MULTIPART_FIXED_OVERHEAD_BYTES
-            - AI_MEDIA_MULTIPART_PER_IMAGE_OVERHEAD_BYTES
-            - request.prompt.len();
-        assert_eq!(
-            OpenAiProvider::ai_media()
-                .reference_max_bytes(&request, 1)
-                .unwrap(),
-            expected_single_budget
-        );
-        assert_eq!(
-            OpenAiProvider::ai_media()
-                .reference_max_bytes(&request, 2)
-                .unwrap(),
-            (expected_single_budget - AI_MEDIA_MULTIPART_PER_IMAGE_OVERHEAD_BYTES) / 2
-        );
-        assert_eq!(
-            OpenAiProvider::chaomo()
-                .reference_max_bytes(&request, 2)
-                .unwrap(),
-            DEFAULT_REFERENCE_MAX_BYTES
-        );
-        assert_eq!(DEFAULT_REFERENCE_MAX_BYTES, 12 * 1_024 * 1_024);
-
-        request.prompt = "x".repeat(AI_MEDIA_MULTIPART_SAFE_BODY_BYTES);
-        assert!(OpenAiProvider::ai_media()
-            .reference_max_bytes(&request, 1)
-            .unwrap_err()
-            .to_string()
-            .contains("multipart budget"));
-        assert_eq!(AI_MEDIA_MIN_REFERENCE_BYTES, 8 * 1_024);
-    }
-
     #[tokio::test]
-    async fn ai_media_serializes_prompt_and_multiple_images_within_the_safe_body_limit() {
+    async fn ai_media_edits_post_json_with_full_quality_data_uri_references() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         let server = tokio::spawn(async move {
             let (mut socket, _) = listener.accept().await.unwrap();
             let request = read_http_request(&mut socket).await;
-            write_json_response(&mut socket, "200 OK", "{}").await;
+            write_json_response(
+                &mut socket,
+                "202 Accepted",
+                r#"{"task_id":"imgtask-123","status":"queued","status_url":"/v1/images/tasks/imgtask-123?view=summary"}"#,
+            )
+            .await;
             request
         });
 
-        let provider = OpenAiProvider::ai_media();
         let jpeg = noisy_jpeg_bytes(512, 512);
+        assert!(jpeg.len() > 64 * 1_024, "fixture should exceed the old multipart budget");
         let mut request = generate_request("ai-media/gpt-image-2", "4K", "16:9");
-        request.prompt = "model turnaround with front side and back views. ".repeat(480);
         request.reference_images = Some(vec![
             image_data_url("image/jpeg", &jpeg),
             image_data_url("image/jpeg", &jpeg),
         ]);
-        let form = provider
-            .build_edit_form(&request, "gpt-image-2", true)
+        request.provider_config = Some(HashMap::from([
+            ("api_key".to_string(), json!("test-key")),
+            ("base_url".to_string(), json!(format!("http://{address}/v1"))),
+        ]));
+
+        let (status, _) = OpenAiProvider::ai_media()
+            .submit_request(&request, true)
             .await
             .unwrap();
-        let response = provider
-            .client
-            .post(format!("http://{address}/v1/images/edits"))
-            .multipart(form)
-            .send()
-            .await
-            .unwrap();
-        assert!(response.status().is_success());
+        assert_eq!(status, reqwest::StatusCode::ACCEPTED);
 
         let request_bytes = server.await.unwrap();
-        let body = http_request_body(&request_bytes);
-        assert!(
-            body.len() <= AI_MEDIA_MULTIPART_SAFE_BODY_BYTES,
-            "multipart body was {} bytes, expected at most {}",
-            body.len(),
-            AI_MEDIA_MULTIPART_SAFE_BODY_BYTES
-        );
-        assert_eq!(
-            String::from_utf8_lossy(body)
-                .matches("name=\"image\"")
-                .count(),
-            2
-        );
+        let request_text = String::from_utf8_lossy(&request_bytes).to_ascii_lowercase();
+        assert!(request_text.starts_with("post /v1/images/edits http/1.1"));
+        assert!(request_text.contains("content-type: application/json"));
+        assert!(request_text.contains("idempotency-key: opencanvas-image-"));
+
+        let body: Value = serde_json::from_slice(http_request_body(&request_bytes)).unwrap();
+        assert_eq!(body["model"], "gpt-image-2");
+        assert_eq!(body["size"], "4096x2304");
+        assert_eq!(body["quality"], "high");
+        assert_eq!(body["async"], true);
+        let images = body["images"].as_array().unwrap();
+        assert_eq!(images.len(), 2);
+        for image in images {
+            let data_uri = image["image_url"].as_str().unwrap();
+            let payload = data_uri.strip_prefix("data:image/jpeg;base64,").unwrap();
+            assert_eq!(STANDARD.decode(payload).unwrap(), jpeg);
+        }
     }
 
     #[test]
@@ -1848,6 +1823,34 @@ mod tests {
     }
 
     #[test]
+    fn chaomo_unified_models_send_selected_tier_as_size() {
+        let provider = OpenAiProvider::chaomo();
+        let request = generate_request("chaomo/gpt-image-2.5-sunburst-hight", "4K", "3:4");
+        let model = provider.resolve_model(&request);
+        let body = provider.build_generation_body(&request, &model, true);
+
+        assert_eq!(body["model"], "gpt-image-2.5-sunburst-hight");
+        assert_eq!(body["ratio"], "3:4");
+        assert_eq!(body["size"], "4K");
+    }
+
+    #[test]
+    fn chaomo_fixed_tier_models_do_not_send_size() {
+        let provider = OpenAiProvider::chaomo();
+        for model in [
+            "chaomo/gpt-image-2.5-sunburst-1K-Hight",
+            "chaomo/gpt-image2-4K",
+            "chaomo/gpt-image2-1K-Hight",
+            "chaomo/nano-banana-pro",
+        ] {
+            let request = generate_request(model, "4K", "16:9");
+            let resolved = provider.resolve_model(&request);
+            let body = provider.build_generation_body(&request, &resolved, true);
+            assert!(body.get("size").is_none(), "{model} should not send size");
+        }
+    }
+
+    #[test]
     fn resolves_documented_relative_status_url_against_api_origin() {
         assert_eq!(
             OpenAiProvider::resolve_endpoint(
@@ -1870,58 +1873,25 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn edit_form_serializes_normalized_jpeg_with_matching_metadata() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let address = listener.local_addr().unwrap();
-        let server = tokio::spawn(async move {
-            let (mut socket, _) = listener.accept().await.unwrap();
-            let request = read_http_request(&mut socket).await;
-            write_json_response(&mut socket, "200 OK", "{}").await;
-            request
-        });
-
+    async fn ai_media_edit_body_normalizes_oversized_reference_with_matching_mime_type() {
         let provider = OpenAiProvider::ai_media();
         let jpeg = test_image_bytes(8_192, 64, ImageFormat::Jpeg);
-        let request = GenerateRequest {
-            prompt: "edit the image".to_string(),
-            model: "ai-media/gpt-image-2".to_string(),
-            provider_id: None,
-            size: "4K".to_string(),
-            aspect_ratio: "3:2".to_string(),
-            reference_images: Some(vec![image_data_url("image/png", &jpeg)]),
-            video_content: None,
-            extra_params: None,
-            provider_config: None,
-            draft_task_id: None,
-        };
-        let form = provider
-            .build_edit_form(&request, "gpt-image-2", true)
+        let mut request = generate_request("ai-media/gpt-image-2", "4K", "3:2");
+        request.reference_images = Some(vec![image_data_url("image/png", &jpeg)]);
+
+        let body = provider
+            .build_ai_media_edit_body(&request, "gpt-image-2", true)
             .await
             .unwrap();
-        let response = provider
-            .client
-            .post(format!("http://{address}/v1/images/edits"))
-            .multipart(form)
-            .send()
-            .await
-            .unwrap();
-        assert!(response.status().is_success());
 
-        let request_bytes = server.await.unwrap();
-        let serialized_request = String::from_utf8_lossy(&request_bytes);
-        assert!(serialized_request.contains("name=\"image\""));
-        assert!(serialized_request.contains("name=\"size\""));
-        assert!(serialized_request.contains("\r\n\r\n4096x2731\r\n"));
-        assert!(serialized_request.contains("name=\"quality\""));
-        assert!(serialized_request.contains("\r\n\r\nhigh\r\n"));
-
-        let (image_headers, image_bytes) = multipart_part(&request_bytes, "image");
-        assert!(image_headers.contains("filename=\"reference-1.jpg\""));
-        assert!(image_headers.contains("Content-Type: image/jpeg"));
-        assert!(image_bytes.starts_with(&[0xff, 0xd8, 0xff]));
+        assert_eq!(body["size"], "4096x2731");
+        assert_eq!(body["quality"], "high");
+        let data_uri = body["images"][0]["image_url"].as_str().unwrap();
+        let payload = data_uri.strip_prefix("data:image/jpeg;base64,").unwrap();
+        let image_bytes = STANDARD.decode(payload).unwrap();
         assert_ne!(image_bytes, jpeg);
         assert_eq!(
-            image::load_from_memory(image_bytes).unwrap().dimensions(),
+            image::load_from_memory(&image_bytes).unwrap().dimensions(),
             (4_096, 32)
         );
     }
