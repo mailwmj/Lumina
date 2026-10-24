@@ -5,7 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CANVAS_NODE_TYPES } from '@/features/canvas/domain/canvasNodes';
 import { useCanvasStore } from '@/stores/canvasStore';
-import { AgentChatTransport, shouldResumeAfterToolOutput, withoutIncompleteToolCalls } from './agentChatTransport';
+import {
+  AgentChatTransport,
+  pendingQuestionCallId,
+  shouldResumeAfterToolOutput,
+  withoutIncompleteToolCalls,
+} from './agentChatTransport';
 import type { CanvasAgentUIMessage } from './canvasAgent';
 
 const run = vi.hoisted(() => ({ runImageGenerationNodes: vi.fn() }));
@@ -162,6 +167,31 @@ describe('AgentChatTransport', () => {
     expect(prompt.indexOf('unanswered')).toBeLessThan(prompt.indexOf('店名叫慢岛'));
   });
 
+  it('continues the asked task when the user answers in chat, keeping what the turn already used', async () => {
+    const { model, calls } = scriptedModel([textStep('好的')]);
+    const asked = {
+      id: 'a-1',
+      role: 'assistant',
+      parts: [
+        {
+          type: 'tool-generate_image', toolCallId: 'g', state: 'output-available', input: { prompt: 'x' },
+          output: { status: 'completed', grantedCount: 2, sourceNodeIds: [], results: [], budget: { limit: 4, used: 2 } },
+        },
+        {
+          type: 'tool-ask_user', toolCallId: 'q', state: 'output-available',
+          input: { questions: [{ id: 'name', title: '店名是什么？' }] }, output: { status: 'answered_in_chat' },
+        },
+      ],
+    } as unknown as CanvasAgentUIMessage;
+
+    await runTurn(transportFor(model), [userMessage('做三张咖啡店海报', 3), asked, userMessage('店名叫慢岛，改成五张', 5)]);
+
+    const prompt = JSON.stringify(calls[0].prompt);
+    expect(prompt).toContain('answered_in_chat');
+    expect(prompt).toContain('本轮图片额度 5 张，已用 2 张');
+    expect(prompt).toContain('count=5');
+  });
+
   it('refuses generation when earlier runs in the same turn already used the budget', async () => {
     const { model } = scriptedModel([toolCallStep('generate_image', { prompt: 'cat' }), textStep('额度用完了')]);
     const transport = transportFor(model);
@@ -218,6 +248,19 @@ describe('resume and replay guards', () => {
   it('resumes only right after an answered ask_user', () => {
     expect(shouldResumeAfterToolOutput({ messages: assistantWith(ask('output-available')) })).toBe(true);
     expect(shouldResumeAfterToolOutput({ messages: assistantWith(ask('input-available')) })).toBe(false);
+  });
+
+  it('does not resume when the question was cancelled or answered in chat', () => {
+    for (const status of ['cancelled', 'answered_in_chat']) {
+      const closed = { ...ask('output-available'), output: { status } };
+      expect(shouldResumeAfterToolOutput({ messages: assistantWith(closed) })).toBe(false);
+    }
+  });
+
+  it('finds the question still waiting at the end of the conversation', () => {
+    expect(pendingQuestionCallId(assistantWith(ask('input-available')))).toBe('q');
+    expect(pendingQuestionCallId(assistantWith(ask('output-available')))).toBeNull();
+    expect(pendingQuestionCallId([...assistantWith(ask('input-available')), userMessage('y')])).toBeNull();
   });
 
   it('does not resume after a stopped generation or once the model replied to the answer', () => {

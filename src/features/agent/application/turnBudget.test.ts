@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseRequestedImageCount, resolveTurnBudget, TurnBudgetCounter } from './turnBudget';
+import { parseRequestedImageCount, resolveTurnBudget, resolveTurnImageCount, TurnBudgetCounter } from './turnBudget';
 
 describe('parseRequestedImageCount', () => {
   it('reads explicit counts in Chinese and English', () => {
@@ -59,6 +59,33 @@ describe('resolveTurnBudget', () => {
   it('ignores generate_image calls that have not produced output yet', () => {
     const pending = { role: 'assistant', parts: [{ type: 'tool-generate_image', state: 'input-available' }] };
     expect(resolveTurnBudget([user(), pending], 4).used).toBe(0);
+  });
+});
+
+function assistantAsked(output: unknown, ...grantedCounts: number[]) {
+  const generated = assistantGenerated(...grantedCounts).parts;
+  return { role: 'assistant', parts: [...generated, { type: 'tool-ask_user', state: 'output-available', output }] };
+}
+
+describe('turns across questions', () => {
+  it('continues the turn when the user answers the questions in chat', () => {
+    const messages = [user(3), assistantAsked({ status: 'answered_in_chat' }, 2), user(), assistantGenerated(1)];
+    expect(resolveTurnBudget(messages, 4)).toEqual({ limit: 4, used: 3 });
+    expect(resolveTurnImageCount(messages)).toBe(3);
+  });
+
+  it('lets a new count in the reply win without resetting what was used', () => {
+    const messages = [user(3), assistantAsked({ status: 'answered_in_chat' }, 2), user(5)];
+    expect(resolveTurnBudget(messages, 4)).toEqual({ limit: 5, used: 2 });
+    expect(resolveTurnImageCount(messages)).toBe(5);
+  });
+
+  it('starts a new turn after the user cancelled or answered on the card', () => {
+    for (const output of [{ status: 'cancelled' }, { style: { selected: ['ink'] } }]) {
+      const messages = [user(6), assistantAsked(output, 2), user()];
+      expect(resolveTurnBudget(messages, 4)).toEqual({ limit: 4, used: 0 });
+      expect(resolveTurnImageCount(messages)).toBeNull();
+    }
   });
 });
 

@@ -24,6 +24,7 @@
     },
     "composer": {
       "placeholder": "Describe what to create, @ to reference canvas images",
+      "answerPlaceholder": "Answer the questions, or add your thoughts",
       "upload": "Upload images",
       "pickFromCanvas": "Pick from canvas",
       "removeRef": "Remove",
@@ -88,10 +89,13 @@
       "submitting": "Submitting",
       "answered": "Answered",
       "skipped": "Not answered",
-      "dismiss": "Dismiss",
+      "cancelled": "Cancelled",
+      "answeredInChat": "Answered in chat",
+      "cancel": "Cancel this task",
       "previous": "Previous question",
       "next": "Next question",
       "customOption": "Custom…",
+      "delegate": "You decide",
       "customPlaceholder": "Type your answer"
     }
   },

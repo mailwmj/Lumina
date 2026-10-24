@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { CanvasAgentUIMessage } from '@/features/agent/application/canvasAgent';
 import { askUserInputSchema, type AskUserInput } from '@/features/agent/domain/agentTools';
+import { useAgentUiStore } from '@/features/agent/stores/agentUiStore';
 import i18n from '@/i18n';
 import { AgentMessageParts } from './AgentMessageParts';
 
@@ -14,11 +15,12 @@ const question = (id: string, options = ['a', 'b']) => ({
   options: options.map((value) => ({ value, label: `选项 ${value}` })),
 });
 
-function askMessage(input: AskUserInput): CanvasAgentUIMessage {
+function askMessage(input: AskUserInput, output?: unknown): CanvasAgentUIMessage {
+  const state = output === undefined ? 'input-available' : 'output-available';
   return {
     id: 'a-1',
     role: 'assistant',
-    parts: [{ type: 'tool-ask_user', toolCallId: 'q-1', state: 'input-available', input }],
+    parts: [{ type: 'tool-ask_user', toolCallId: 'q-1', state, input, output }],
   } as CanvasAgentUIMessage;
 }
 
@@ -39,12 +41,13 @@ describe('ask_user card', () => {
     await act(async () => root.unmount());
     container.remove();
     onAnswer.mockReset();
+    useAgentUiStore.setState({ questionDrafts: {} });
     vi.unstubAllGlobals();
   });
 
-  const render = (input: AskUserInput, { interactive = true, streaming = false } = {}) => act(async () => root.render(
+  const render = (input: AskUserInput, { interactive = true, streaming = false, output = undefined as unknown } = {}) => act(async () => root.render(
     <AgentMessageParts
-      message={askMessage(input)}
+      message={askMessage(input, output)}
       streaming={streaming}
       interactive={interactive}
       onAnswer={onAnswer}
@@ -115,5 +118,46 @@ describe('ask_user card', () => {
     expect(container.textContent).not.toContain('等你回答');
     const controls = container.querySelectorAll('[role="radio"]:not([disabled]), textarea:not([disabled])');
     expect(controls).toHaveLength(0);
+  });
+
+  it('hands unanswered questions to the agent when the user says "you decide"', async () => {
+    await render({ questions: [question('color'), { id: 'name', title: '店名？' }] });
+    await click(radio('选项 b'));
+    await click(buttonByText('你来决定'));
+    expect(onAnswer).toHaveBeenCalledWith('q-1', {
+      color: { selected: ['b'] },
+      name: { selected: [], delegated: true },
+    });
+  });
+
+  it('cancels the task without answering', async () => {
+    await render({ questions: [question('color')] });
+    await click(container.querySelector('[aria-label="取消本次操作"]')!);
+    expect(onAnswer).toHaveBeenCalledWith('q-1', { status: 'cancelled' });
+  });
+
+  it('keeps unsent answers and the current question when the card is remounted', async () => {
+    await render({ questions: [question('color'), question('ratio', ['v', 'h'])] });
+    await click(radio('选项 b'));
+    await click(container.querySelector('[aria-label="下一个问题"]')!);
+    await act(async () => root.unmount());
+    root = createRoot(container);
+
+    await render({ questions: [question('color'), question('ratio', ['v', 'h'])] });
+    expect(container.textContent).toContain('2/2');
+    await click(container.querySelector('[aria-label="上一个问题"]')!);
+    await settle();
+    expect(radio('选项 b')?.getAttribute('aria-checked')).toBe('true');
+  });
+
+  it.each([
+    [{ status: 'cancelled' }, '已取消'],
+    [{ status: 'answered_in_chat' }, '已在对话中回答'],
+    [{ color: { selected: [], delegated: true } }, '你来决定'],
+  ])('shows a closed question as read-only: %j', async (output, text) => {
+    await render({ questions: [question('color')] }, { output });
+    expect(container.textContent).toContain(text);
+    expect(container.querySelectorAll('[role="radio"]:not([disabled]), textarea:not([disabled])')).toHaveLength(0);
+    expect(buttonByText('你来决定')).toBeUndefined();
   });
 });

@@ -43,6 +43,14 @@ export function withoutIncompleteToolCalls<M extends CanvasAgentUIMessage>(messa
   });
 }
 
+/** The ask_user call still waiting for the user, if the conversation ends on one. */
+export function pendingQuestionCallId(messages: readonly CanvasAgentUIMessage[]): string | null {
+  const last = messages[messages.length - 1];
+  if (last?.role !== 'assistant') return null;
+  const pending = last.parts.find((part) => part.type === 'tool-ask_user' && part.state === 'input-available');
+  return pending && 'toolCallId' in pending ? pending.toolCallId : null;
+}
+
 /**
  * Resubmit only right after the user answered ask_user. Never after a stopped generation,
  * and never once the model already replied to the answer (that would loop).

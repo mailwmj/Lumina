@@ -13,7 +13,9 @@ import { EASE_OUT, SPRING_LAYOUT } from '@/components/beui/lib/ease';
 import { cn } from '@/components/beui/lib/utils';
 import { ensureAgentModelCapabilities } from '@/features/agent/application/agentModelCapabilities';
 import { prepareAgentMessage, updateAgentThreadModels } from '@/features/agent/application/agentThreadActions';
+import { pendingQuestionCallId } from '@/features/agent/application/agentChatTransport';
 import type { CanvasAgentUIMessage } from '@/features/agent/application/canvasAgent';
+import { ASK_USER_ANSWERED_IN_CHAT } from '@/features/agent/domain/agentTools';
 import { collectAgentNodeIds } from '@/features/agent/application/referenceContext';
 import type { AgentDraftRef } from '@/features/agent/domain/types';
 import { agentModelCapabilityKey, useAgentSettingsStore } from '@/features/agent/stores/agentSettingsStore';
@@ -113,6 +115,9 @@ export function AgentConversation({ chat, thread }: { chat: Chat<CanvasAgentUIMe
     setSendError(null);
     try {
       const prepared = await prepareAgentMessage(thread.id, text, refs);
+      // A reply while questions are open answers them; closing the call this way does not resume on its own.
+      const questionCallId = pendingQuestionCallId(chat.messages);
+      if (questionCallId) await addToolOutput({ tool: 'ask_user', toolCallId: questionCallId, output: ASK_USER_ANSWERED_IN_CHAT });
       // Not awaited: sendMessage resolves when the reply ends, the draft should clear now.
       void chat.sendMessage({ text: prepared.text, metadata: prepared.metadata });
       return true;
@@ -178,6 +183,7 @@ export function AgentConversation({ chat, thread }: { chat: Chat<CanvasAgentUIMe
       <AgentComposer
         thread={thread}
         busy={busy}
+        awaitingAnswer={!busy && pendingQuestionCallId(messages) !== null}
         onSend={send}
         onStop={() => void stop()}
         onModelChange={(next) => void updateAgentThreadModels(thread.id, next)}

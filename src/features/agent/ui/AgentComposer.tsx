@@ -14,9 +14,11 @@ import { DraftRefChips } from './AgentRefChips';
 import { CanvasImagePicker } from './CanvasImagePicker';
 import { ModelPickers } from './ModelPickers';
 
-export function AgentComposer({ thread, busy, onSend, onStop, onModelChange }: {
+export function AgentComposer({ thread, busy, awaitingAnswer, onSend, onStop, onModelChange }: {
   thread: AgentThreadRecord;
   busy: boolean;
+  /** The agent asked questions; a message sent now answers them. */
+  awaitingAnswer: boolean;
   /** Resolves true once sent; the draft is kept when sending fails. */
   onSend: (text: string, refs: AgentDraftRef[]) => Promise<boolean>;
   onStop: () => void;
@@ -29,6 +31,7 @@ export function AgentComposer({ thread, busy, onSend, onStop, onModelChange }: {
   const [pickerDismissed, setPickerDismissed] = useState(false);
   const pickerOpen = draft.text.endsWith('@') && !pickerDismissed;
   const full = draft.refs.length >= AGENT_MAX_DRAFT_REFS;
+  const placeholder = t(awaitingAnswer ? 'agent.composer.answerPlaceholder' : 'agent.composer.placeholder');
 
   const addFiles = async (files: Iterable<File>) => {
     addDraftRefs(thread.id, await readImageFiles(files, t('agent.composer.pastedImage')));
@@ -56,14 +59,14 @@ export function AgentComposer({ thread, busy, onSend, onStop, onModelChange }: {
           ) : null}
         </AnimatePresence>
         <PromptInput
-          placeholder={t('agent.composer.placeholder')}
+          placeholder={placeholder}
           labels={{
             addToPrompt: t('agent.composer.addToPrompt'),
             chooseModel: t('agent.models.chooseModel'),
             send: t('agent.composer.send'),
             stop: t('agent.composer.stop'),
           }}
-          aria-label={t('agent.composer.placeholder')}
+          aria-label={placeholder}
           value={draft.text}
           onValueChange={(text) => { setDraftText(thread.id, text); setPickerDismissed(false); }}
           loading={busy}
