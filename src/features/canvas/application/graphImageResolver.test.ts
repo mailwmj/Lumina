@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { DefaultGraphImageResolver } from './graphImageResolver';
 import { canvasNodeFactory } from './canvasServices';
 import { CANVAS_NODE_TYPES, type CanvasEdge, type CanvasNode } from '../domain/canvasNodes';
+import { logger } from '@/lib/logger';
 
 function createNode(type: CanvasNode['type'], id: string): CanvasNode {
   return {
@@ -12,6 +13,8 @@ function createNode(type: CanvasNode['type'], id: string): CanvasNode {
 }
 
 describe('DefaultGraphImageResolver', () => {
+  afterEach(() => vi.restoreAllMocks());
+
   it('prefers the reference image and falls back to the original image', () => {
     const target = createNode(CANVAS_NODE_TYPES.imageEdit, 'target');
     const withReference = createNode(CANVAS_NODE_TYPES.upload, 'with-reference');
@@ -51,5 +54,28 @@ describe('DefaultGraphImageResolver', () => {
       'file:///reference-4k.jpg',
       'file:///legacy-original.png',
     ]);
+  });
+
+  it('collects input images without logging during render-time resolution', () => {
+    const target = createNode(CANVAS_NODE_TYPES.imageEdit, 'target');
+    const source = createNode(CANVAS_NODE_TYPES.upload, 'source');
+    source.data = { ...source.data, imageUrl: 'file:///source.png' };
+    const edge: CanvasEdge = {
+      id: 'edge',
+      source: source.id,
+      target: target.id,
+      sourceHandle: 'source',
+      targetHandle: 'target',
+    };
+    const logSpies = [
+      vi.spyOn(logger, 'debug'),
+      vi.spyOn(logger, 'info'),
+      vi.spyOn(logger, 'warn'),
+      vi.spyOn(logger, 'error'),
+    ];
+
+    expect(new DefaultGraphImageResolver().collectInputImages(target.id, [target, source], [edge]))
+      .toEqual(['file:///source.png']);
+    expect(logSpies.every((spy) => spy.mock.calls.length === 0)).toBe(true);
   });
 });
