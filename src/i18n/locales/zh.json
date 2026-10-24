@@ -262,7 +262,8 @@
       "frames": "分镜格",
       "rows": "行数",
       "cols": "列数",
-      "frameIndex": "第 {{index}} 格"
+      "frameIndex": "第 {{index}} 格",
+      "emptyFrame": "空分镜"
     },
     "storyboardGen": {
       "modelRequired": "请先在设置中获取并选择生图模型",

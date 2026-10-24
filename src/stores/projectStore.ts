@@ -139,7 +139,11 @@ function mapNodeImageReferences(
         }
 
         const frameRecord = frame as Record<string, unknown>;
-        if (!('imageUrl' in frameRecord)) {
+        if (
+          !('imageUrl' in frameRecord)
+          && !('previewImageUrl' in frameRecord)
+          && !('referenceImageUrl' in frameRecord)
+        ) {
           return frame;
         }
 

@@ -262,7 +262,8 @@
       "frames": "Frames",
       "rows": "Rows",
       "cols": "Columns",
-      "frameIndex": "Frame {{index}}"
+      "frameIndex": "Frame {{index}}",
+      "emptyFrame": "Empty frame"
     },
     "storyboardGen": {
       "modelRequired": "Fetch and select an image model in Settings first",
