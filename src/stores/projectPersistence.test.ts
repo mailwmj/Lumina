@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ProjectRecord } from '@/commands/projectState';
 import type { CanvasNode } from './canvasStore';
 import { canvasNodeFactory } from '@/features/canvas/application/canvasServices';
+import { flushCanvasPersist, registerCanvasPersistFlush } from '@/features/canvas/application/canvasPersistFlush';
+import { createWindowCloseHandler } from '@/application/windowClose';
 import { CANVAS_NODE_TYPES } from '@/features/canvas/domain/canvasNodes';
 
 const commands = vi.hoisted(() => ({
@@ -16,6 +18,7 @@ const commands = vi.hoisted(() => ({
 vi.mock('@/commands/projectState', () => commands);
 
 let useProjectStore: typeof import('./projectStore').useProjectStore;
+let flushAllPendingPersists: typeof import('./projectStore').flushAllPendingPersists;
 const records = new Map<string, ProjectRecord>();
 const pending: Array<() => void> = [];
 
@@ -48,7 +51,7 @@ beforeEach(async () => {
   commands.deleteProjectRecord.mockImplementation(async (id: string) => { records.delete(id); });
   commands.getProjectRecord.mockImplementation(async (id: string) => records.get(id) ?? null);
   commands.createProjectDirs.mockResolvedValue(undefined);
-  ({ useProjectStore } = await import('./projectStore'));
+  ({ useProjectStore, flushAllPendingPersists } = await import('./projectStore'));
 });
 
 afterEach(async () => {
@@ -65,6 +68,86 @@ async function createProject() {
 }
 
 describe('project persistence under slow storage', () => {
+  it('invokes the registered canvas timer flush before store persistence is flushed', async () => {
+    const persistCanvasSnapshot = vi.fn(() => {
+      useProjectStore.getState().saveCurrentProject([node('newest-canvas-state.png')], []);
+    });
+    const unregister = registerCanvasPersistFlush(persistCanvasSnapshot);
+    const id = await createProject();
+
+    flushCanvasPersist();
+    await expect(flushAllPendingPersists()).resolves.toBe(true);
+
+    expect(persistCanvasSnapshot).toHaveBeenCalledOnce();
+    expect(JSON.parse(records.get(id)!.nodesJson)[0].data.imageUrl).toMatch(/^__img_ref__:/);
+    unregister();
+  });
+
+  it('allows the next close request through after a successful flush', async () => {
+    let finishFlush!: (success: boolean) => void;
+    const flush = vi.fn(() => new Promise<boolean>((resolve) => { finishFlush = resolve; }));
+    const destroy = vi.fn().mockResolvedValue(undefined);
+    const handleClose = createWindowCloseHandler({ flush, destroy, onFlushFailure: vi.fn() });
+    const first = { preventDefault: vi.fn() };
+    handleClose(first);
+    expect(first.preventDefault).toHaveBeenCalledOnce();
+
+    const duplicateWhileFlushing = { preventDefault: vi.fn() };
+    handleClose(duplicateWhileFlushing);
+    expect(duplicateWhileFlushing.preventDefault).toHaveBeenCalledOnce();
+    finishFlush(true);
+    await vi.waitFor(() => expect(destroy).toHaveBeenCalledOnce());
+
+    const afterFlush = { preventDefault: vi.fn() };
+    handleClose(afterFlush);
+    expect(afterFlush.preventDefault).not.toHaveBeenCalled();
+    expect(flush).toHaveBeenCalledOnce();
+  });
+
+  it('flushes a debounced project snapshot immediately', async () => {
+    const id = await createProject();
+    useProjectStore.getState().saveCurrentProject([node('latest.png')], []);
+
+    await expect(flushAllPendingPersists()).resolves.toBe(true);
+
+    expect(records.get(id)).toBeDefined();
+    expect(JSON.parse(records.get(id)!.nodesJson)[0].data.imageUrl).toMatch(/^__img_ref__:/);
+  });
+
+  it('wakes a project snapshot already waiting for idle time', async () => {
+    const id = await createProject();
+    useProjectStore.getState().saveCurrentProject([node('idle-waiting.png')], []);
+    await vi.advanceTimersByTimeAsync(300);
+    expect(commands.upsertProjectRecord).toHaveBeenCalledOnce();
+
+    await expect(flushAllPendingPersists()).resolves.toBe(true);
+
+    expect(records.get(id)).toBeDefined();
+    expect(commands.upsertProjectRecord).toHaveBeenCalledTimes(2);
+  });
+
+  it('flushes a viewport-only write immediately', async () => {
+    const id = await createProject();
+    useProjectStore.getState().saveCurrentProjectViewport({ x: 12, y: 34, zoom: 1.25 });
+
+    await expect(flushAllPendingPersists()).resolves.toBe(true);
+
+    expect(commands.updateProjectViewportRecord).toHaveBeenCalledWith(
+      id,
+      JSON.stringify({ x: 12, y: 34, zoom: 1.25 })
+    );
+  });
+
+  it('reports a failed queued write without blocking close', async () => {
+    const id = await createProject();
+    commands.upsertProjectRecord.mockRejectedValueOnce(new Error('disk full'));
+    useProjectStore.getState().saveCurrentProject([node('latest.png')], []);
+
+    await expect(flushAllPendingPersists()).resolves.toBe(false);
+
+    expect(useProjectStore.getState().persistError?.projectId).toBe(id);
+  });
+
   it('encodes only images reachable from the persisted history and restores them', async () => {
     const id = await createProject();
     const images = Array.from({ length: 50 }, (_, index) => `data:image/png;base64,${index}-${'a'.repeat(32768)}`);

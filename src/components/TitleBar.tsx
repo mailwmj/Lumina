@@ -1,6 +1,7 @@
 import { useCallback, type ButtonHTMLAttributes, type ReactNode } from 'react';
 import { isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { requestWindowClose } from '@/application/windowClose';
 import { Minus, X, Square, Settings, ArrowLeft } from '@/components/ui/icons';
 import { useTranslation } from 'react-i18next';
 import { Moon, Sun, Languages } from '@/components/ui/icons';
@@ -93,7 +94,7 @@ export function TitleBar({ onSettingsClick, showBackButton, onBackClick, context
 
   const handleClose = useCallback(async () => {
     if (!appWindow) return;
-    await appWindow.close();
+    await requestWindowClose(appWindow);
   }, [appWindow]);
 
   const handleDragStart = useCallback(async (e: React.MouseEvent) => {
