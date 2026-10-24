@@ -1,6 +1,7 @@
 import { copyCanvasSelection, handleCanvasPasteShortcut, handleCanvasImagePaste } from './application/canvasClipboard';
 import { CanvasImageClipboardSession, isCanvasTypingTarget } from './application/imageClipboard';
 import { completeImageGenerationResult } from './application/completeImageGenerationResult';
+import { isGenerationJobCurrent } from './application/generationJobGuard';
 import {
   useState,
   useCallback,
@@ -800,6 +801,10 @@ export function Canvas() {
                   return null;
                 });
 
+              if (!isGenerationJobCurrent(pendingNode.id, jobId)) {
+                break;
+              }
+
               completeImageGenerationResult(pendingNode.id, {
                 imageUrl: imageWithMetadata,
                 previewImageUrl: preview?.previewImageUrl ?? imageWithMetadata,
@@ -1054,6 +1059,9 @@ export function Canvas() {
               if (status.seed !== undefined && status.seed !== null) {
                 updateData.seed = status.seed;
                 logger.info('[VideoJob] Received seed from API:', status.seed);
+              }
+              if (!isGenerationJobCurrent(pendingNode.id, jobId)) {
+                break;
               }
               updateNodeData(pendingNode.id, updateData);
               break;
