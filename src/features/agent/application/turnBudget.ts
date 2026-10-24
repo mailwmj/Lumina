@@ -1,4 +1,4 @@
-import { AGENT_MAX_IMAGES_PER_CALL } from '@/features/agent/domain/agentTools';
+import { AGENT_MAX_IMAGES_PER_CALL, ASK_USER_ANSWERED_IN_CHAT, askUserClosedStatus } from '@/features/agent/domain/agentTools';
 import type { AgentMessageMetadata, AgentTurnBudget } from '@/features/agent/domain/types';
 
 const CHINESE_NUMBERS: Record<string, number> = {
@@ -46,19 +46,43 @@ function grantedCountOf(part: BudgetMessagePart): number {
   return typeof granted === 'number' && granted > 0 ? granted : 0;
 }
 
+function answeredInChat(message: BudgetMessage): boolean {
+  return message.role === 'assistant' && message.parts.some((part) => (
+    part.type === 'tool-ask_user' && askUserClosedStatus(part.output) === ASK_USER_ANSWERED_IN_CHAT.status
+  ));
+}
+
+/** A chat reply to pending questions continues their turn; any other user message starts one. */
+function turnStartIndex(messages: readonly BudgetMessage[]): number {
+  const roles = messages.map((message) => message.role);
+  let start = roles.lastIndexOf('user');
+  while (start > 0 && answeredInChat(messages[start - 1])) {
+    const previous = roles.lastIndexOf('user', start - 1);
+    if (previous < 0) break;
+    start = previous;
+  }
+  return start;
+}
+
+/** The latest explicit count the user gave in this turn, or null. */
+export function resolveTurnImageCount(messages: readonly BudgetMessage[]): number | null {
+  return messages
+    .slice(Math.max(0, turnStartIndex(messages)))
+    .filter((message) => message.role === 'user')
+    .reduce<number | null>((count, message) => (message.metadata as AgentMessageMetadata | undefined)?.requestedImageCount ?? count, null);
+}
+
 /**
- * Derived from the transcript, so an ask_user round-trip or an app restart inside a turn
- * resumes with the same budget. A turn starts at the last user message.
+ * Derived from the transcript, so an ask_user round-trip, a chat reply to the questions or an
+ * app restart inside a turn resumes with the same budget.
  */
 export function resolveTurnBudget(messages: readonly BudgetMessage[], maxImagesPerTurn: number): AgentTurnBudget {
-  const lastUserIndex = messages.map((message) => message.role).lastIndexOf('user');
-  const metadata = (messages[lastUserIndex]?.metadata ?? {}) as AgentMessageMetadata;
-  const requested = metadata.requestedImageCount ?? 0;
+  const start = turnStartIndex(messages);
   const used = messages
-    .slice(lastUserIndex + 1)
+    .slice(start + 1)
     .flatMap((message) => message.parts)
     .reduce((total, part) => total + grantedCountOf(part), 0);
-  return { limit: Math.max(maxImagesPerTurn, requested), used };
+  return { limit: Math.max(maxImagesPerTurn, resolveTurnImageCount(messages) ?? 0), used };
 }
 
 /** Hands out images within one agent run, starting from what the turn already used. */

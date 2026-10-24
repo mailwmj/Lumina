@@ -9,7 +9,17 @@ import { ReasoningText } from '@/components/beui/agents/loading-states';
 import { StreamingResponse } from '@/components/beui/agents/streaming-response';
 import { readAgentImageState } from '@/features/agent/application/agentImageState';
 import type { CanvasAgentUIMessage } from '@/features/agent/application/canvasAgent';
-import type { AskUserAnswers, AskUserInput, AskUserOutput, GenerateImageOutput } from '@/features/agent/domain/agentTools';
+import {
+  ASK_USER_ANSWERED_IN_CHAT,
+  ASK_USER_CANCELLED,
+  askUserClosedStatus,
+  isAskUserAnswers,
+  type AskUserAnswers,
+  type AskUserInput,
+  type AskUserOutput,
+  type GenerateImageOutput,
+} from '@/features/agent/domain/agentTools';
+import { type AgentQuestionDraft, useAgentUiStore } from '@/features/agent/stores/agentUiStore';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { AgentImageGrid } from './AgentImageGrid';
 
@@ -20,8 +30,6 @@ const isToolPart = (part: Part): part is ToolPart => part.type.startsWith('tool-
 const isRunning = (part: ToolPart) => part.state === 'input-streaming' || part.state === 'input-available';
 const isUnansweredQuestion = (part: ToolPart) => part.type === 'tool-ask_user' && part.state === 'input-available';
 
-const isAnswers = (output: AskUserOutput | undefined): output is AskUserAnswers => Boolean(output) && !('status' in output!);
-
 /** Counts results that are on the canvas now, so failures and later retries are reflected. */
 function useReadyImageCount(parts: ToolPart[]): number {
   const nodeIds = parts.flatMap((part) => {
@@ -31,34 +39,62 @@ function useReadyImageCount(parts: ToolPart[]): number {
   return useCanvasStore((state) => nodeIds.filter((nodeId) => readAgentImageState(state.nodes, nodeId).status === 'ready').length);
 }
 
-function AskUserCard({ part, interactive, stale, onAnswer }: {
+const NO_ANSWERS: AskUserAnswers = {};
+const hasAnswer = (answer: AskUserAnswers[string] | undefined) => Boolean(answer?.selected.length || answer?.custom?.trim());
+
+function AskUserCard({ part, draftKey, interactive, stale, onAnswer }: {
   part: ToolPart;
+  draftKey: string;
   interactive: boolean;
   /** The conversation moved on without an answer. */
   stale: boolean;
-  onAnswer: (toolCallId: string, answers: AskUserAnswers) => void;
+  onAnswer: (toolCallId: string, output: AskUserOutput) => void;
 }) {
   const { t } = useTranslation();
+  const draft = useAgentUiStore((state) => state.questionDrafts[draftKey]);
   const input = part.input as AskUserInput | undefined;
   if (!input?.questions?.length) return null;
-  const output = part.output as AskUserOutput | undefined;
-  const answers = part.state === 'output-available' && isAnswers(output) ? output : undefined;
-  const answered = Boolean(answers);
+  const done = part.state === 'output-available';
+  const answers = done && isAskUserAnswers(part.output) ? part.output : undefined;
+  const closed = done ? askUserClosedStatus(part.output) : null;
+  const open = interactive && !answers && !closed;
   const summary = answers
     ? input.questions.flatMap((question) => {
       const answer = answers[question.id];
+      if (answer?.delegated) return [t('agent.ask.delegate')];
       const labels = (answer?.selected ?? []).map((value) => question.options?.find((option) => option.value === value)?.label ?? value);
       return [...labels, ...(answer?.custom ? [answer.custom] : [])];
     }).join(' · ')
-    : undefined;
+    : closed === ASK_USER_ANSWERED_IN_CHAT.status ? t('agent.ask.answeredInChat') : undefined;
+
+  const saveDraft = (next: Partial<AgentQuestionDraft>) => {
+    const { questionDrafts, setQuestionDraft } = useAgentUiStore.getState();
+    setQuestionDraft(draftKey, { ...(questionDrafts[draftKey] ?? { answers: NO_ANSWERS, step: 0 }), ...next });
+  };
+  const resolve = (output: AskUserOutput) => {
+    useAgentUiStore.getState().clearQuestionDraft(draftKey);
+    onAnswer(part.toolCallId, output);
+  };
+  const delegate = (current: ApprovalCardAnswers) => resolve(Object.fromEntries(input.questions.map((question) => {
+    const answer = current[question.id];
+    return [question.id, answer && hasAnswer(answer) ? answer : { selected: [], delegated: true }];
+  })));
 
   return (
     <ApprovalCard
       title={t('agent.ask.title')}
       // Free text is always offered, whatever the model asked for.
       questions={input.questions.map((question) => ({ ...question, allowCustom: true }))}
-      status={answered ? 'answered' : stale ? 'skipped' : 'pending'}
-      onSubmit={interactive && !answered ? (answers: ApprovalCardAnswers) => onAnswer(part.toolCallId, answers) : undefined}
+      status={answers || closed === ASK_USER_ANSWERED_IN_CHAT.status
+        ? 'answered'
+        : closed === ASK_USER_CANCELLED.status ? 'cancelled' : stale ? 'skipped' : 'pending'}
+      answers={draft?.answers ?? NO_ANSWERS}
+      onAnswersChange={(next) => saveDraft({ answers: next })}
+      step={draft?.step ?? 0}
+      onStepChange={(step) => saveDraft({ step })}
+      onSubmit={open ? resolve : undefined}
+      onDelegate={open ? delegate : undefined}
+      onDismiss={open ? () => resolve(ASK_USER_CANCELLED) : undefined}
       submitLabel={t('agent.ask.submit')}
       result={summary}
       labels={{
@@ -70,11 +106,13 @@ function AskUserCard({ part, interactive, stale, onAnswer }: {
           rejected: t('agent.ask.answered'),
           'changes-requested': t('agent.ask.answered'),
           skipped: t('agent.ask.skipped'),
+          cancelled: t('agent.ask.cancelled'),
         },
-        dismiss: t('agent.ask.dismiss'),
+        dismiss: t('agent.ask.cancel'),
         previousQuestion: t('agent.ask.previous'),
         nextQuestion: t('agent.ask.next'),
         customOption: t('agent.ask.customOption'),
+        delegate: t('agent.ask.delegate'),
         customPlaceholder: t('agent.ask.customPlaceholder'),
       }}
     />
@@ -87,7 +125,7 @@ export function AgentMessageParts({ message, streaming, interactive, onAnswer, o
   streaming: boolean;
   /** ask_user can still be answered (last message, agent idle). */
   interactive: boolean;
-  onAnswer: (toolCallId: string, answers: AskUserAnswers) => void;
+  onAnswer: (toolCallId: string, output: AskUserOutput) => void;
   onLocate: (nodeId: string) => void;
   onContinue: (nodeId: string, index: number) => void;
 }) {
@@ -133,7 +171,7 @@ export function AgentMessageParts({ message, streaming, interactive, onAnswer, o
           return <AgentImageGrid key={key} part={part as never} onLocate={onLocate} onContinue={onContinue} />;
         }
         if (part.type === 'tool-ask_user') {
-          return <AskUserCard key={key} part={part as ToolPart} interactive={interactive} stale={!interactive && !streaming} onAnswer={onAnswer} />;
+          return <AskUserCard key={key} part={part as ToolPart} draftKey={`${message.id}/${(part as ToolPart).toolCallId}`} interactive={interactive} stale={!interactive && !streaming} onAnswer={onAnswer} />;
         }
         return null;
       })}

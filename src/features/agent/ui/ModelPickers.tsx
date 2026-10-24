@@ -10,7 +10,7 @@ import { listConfiguredImageModels } from '@/features/canvas/models/availableMod
 import { IMAGE_GENERATION_RESOLUTION_OPTIONS, resolveImageGenerationResolution } from '@/features/canvas/models/imageGenerationOptions';
 import { useSettingsStore } from '@/stores/settingsStore';
 
-const TRIGGER_CLASS = 'h-8 w-auto min-w-0 max-w-[125px] rounded-xl border-0 bg-transparent px-2 py-0 text-xs hover:bg-muted focus-visible:ring-2';
+const TRIGGER_CLASS = 'h-8 w-full min-w-0 max-w-[125px] rounded-xl border-0 bg-transparent px-2 py-0 text-xs hover:bg-muted focus-visible:ring-2';
 const SEPARATOR = '\u0000';
 
 export function threadModelChoice(thread: AgentThreadRecord): AgentModelChoice {

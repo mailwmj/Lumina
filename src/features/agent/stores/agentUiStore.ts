@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
 import type { AgentThreadRecord } from '@/commands/agentThreads';
+import type { AskUserAnswers } from '@/features/agent/domain/agentTools';
 import {
   AGENT_MAX_DRAFT_REFS,
   type AgentDraft,
@@ -14,6 +15,12 @@ export const AGENT_PANEL_MAX_WIDTH = 640;
 export const AGENT_PANEL_DEFAULT_WIDTH = 400;
 const EMPTY_DRAFT: AgentDraft = { text: '', refs: [] };
 
+/** Answers to an ask_user card that were not submitted yet. */
+export interface AgentQuestionDraft {
+  answers: AskUserAnswers;
+  step: number;
+}
+
 interface AgentUiState {
   panelOpen: boolean;
   panelWidth: number;
@@ -24,6 +31,8 @@ interface AgentUiState {
   activeThreadId: string | null;
   /** Unsent drafts survive thread switches. */
   drafts: Record<string, AgentDraft>;
+  /** Keyed by message ID and tool call ID, so half-answered questions survive thread switches. */
+  questionDrafts: Record<string, AgentQuestionDraft>;
   nodeOrigins: Record<string, AgentNodeOrigin>;
   focusRequest: (AgentNodeOrigin & { at: number }) | null;
   setPanelOpen: (open: boolean) => void;
@@ -36,6 +45,8 @@ interface AgentUiState {
   addDraftRefs: (threadId: string, refs: AgentDraftRef[]) => void;
   removeDraftRef: (threadId: string, refId: string) => void;
   clearDraft: (threadId: string) => void;
+  setQuestionDraft: (key: string, draft: AgentQuestionDraft) => void;
+  clearQuestionDraft: (key: string) => void;
   addNodeOrigins: (origins: Record<string, AgentNodeOrigin>) => void;
   requestFocus: (origin: AgentNodeOrigin) => void;
 }
@@ -58,6 +69,7 @@ export const useAgentUiStore = create<AgentUiState>()(
       unsavedThreadIds: [],
       activeThreadId: null,
       drafts: {},
+      questionDrafts: {},
       nodeOrigins: {},
       focusRequest: null,
       setPanelOpen: (panelOpen) => set({ panelOpen }),
@@ -69,6 +81,7 @@ export const useAgentUiStore = create<AgentUiState>()(
         unsavedThreadIds: [],
         activeThreadId: threads[0]?.id ?? null,
         drafts: {},
+        questionDrafts: {},
         focusRequest: null,
       }),
       upsertThread: (thread, options) => set((state) => ({
@@ -104,6 +117,11 @@ export const useAgentUiStore = create<AgentUiState>()(
         return { drafts: { ...state.drafts, [threadId]: { ...draft, refs: draft.refs.filter((ref) => ref.id !== refId) } } };
       }),
       clearDraft: (threadId) => set((state) => ({ drafts: { ...state.drafts, [threadId]: EMPTY_DRAFT } })),
+      setQuestionDraft: (key, draft) => set((state) => ({ questionDrafts: { ...state.questionDrafts, [key]: draft } })),
+      clearQuestionDraft: (key) => set((state) => {
+        const { [key]: _removed, ...questionDrafts } = state.questionDrafts;
+        return { questionDrafts };
+      }),
       addNodeOrigins: (origins) => set((state) => ({ nodeOrigins: { ...state.nodeOrigins, ...origins } })),
       requestFocus: (origin) => set({
         panelOpen: true,

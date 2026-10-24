@@ -7,7 +7,8 @@ export type ApprovalCardStatus =
   | "rejected"
   | "changes-requested"
   | "answered"
-  | "skipped";
+  | "skipped"
+  | "cancelled";
 
 export interface ApprovalCardOption {
   value: string;
@@ -42,6 +43,7 @@ export interface ApprovalCardLabels {
   previousQuestion: string;
   nextQuestion: string;
   customOption: string;
+  delegate: string;
   customPlaceholder: string;
 }
 
@@ -58,6 +60,8 @@ export interface ApprovalCardProps {
   defaultStep?: number;
   onStepChange?: (step: number) => void;
   onSubmit?: (answers: ApprovalCardAnswers) => void;
+  /** Hands the unanswered questions back to the caller instead of requiring an answer. */
+  onDelegate?: (answers: ApprovalCardAnswers) => void;
   onApprove?: () => void;
   onReject?: () => void;
   onRequestChanges?: () => void;

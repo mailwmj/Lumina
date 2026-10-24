@@ -2,14 +2,13 @@ import { DirectChatTransport, type ChatTransport, type LanguageModel, type UIMes
 
 import { createAgentLanguageModel, type AgentModelSelection } from '@/features/agent/infrastructure/agentModelFactory';
 import { agentModelCapabilityKey, useAgentSettingsStore } from '@/features/agent/stores/agentSettingsStore';
-import { ASK_USER_UNANSWERED } from '@/features/agent/domain/agentTools';
-import type { AgentMessageMetadata } from '@/features/agent/domain/types';
+import { ASK_USER_UNANSWERED, isAskUserAnswers } from '@/features/agent/domain/agentTools';
 import { useCanvasStore } from '@/stores/canvasStore';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { resolveImageGenerationResolution } from '@/features/canvas/models/imageGenerationOptions';
 import { createCanvasAgent, type CanvasAgentUIMessage } from './canvasAgent';
 import { withReferenceContext } from './referenceContext';
-import { resolveTurnBudget } from './turnBudget';
+import { resolveTurnBudget, resolveTurnImageCount } from './turnBudget';
 
 /** The thread's own model choice, read at send time so switching pickers applies to the next send. */
 export interface AgentThreadModels {
@@ -52,9 +51,11 @@ export function shouldResumeAfterToolOutput({ messages }: { messages: CanvasAgen
   const last = messages[messages.length - 1];
   if (last?.role !== 'assistant') return false;
   const lastToolIndex = last.parts.map((part) => part.type.startsWith('tool-')).lastIndexOf(true);
-  const lastTool = last.parts[lastToolIndex] as { type: string; state?: string } | undefined;
+  const lastTool = last.parts[lastToolIndex] as { type: string; state?: string; output?: unknown } | undefined;
   const repliedAfter = last.parts.slice(lastToolIndex + 1).some((part) => part.type === 'text');
-  return lastTool?.type === 'tool-ask_user' && lastTool.state === 'output-available' && !repliedAfter;
+  // A cancel or a chat reply also closes the question, but must not trigger a run of its own.
+  return lastTool?.type === 'tool-ask_user' && lastTool.state === 'output-available'
+    && isAskUserAnswers(lastTool.output) && !repliedAfter;
 }
 
 export interface AgentChatTransportDeps {
@@ -82,8 +83,7 @@ export class AgentChatTransport implements ChatTransport<CanvasAgentUIMessage> {
       llm,
       agentSettings.reasoningEffort,
     );
-    const lastUser = [...options.messages].reverse().find((message) => message.role === 'user');
-    const requestedImageCount = (lastUser?.metadata as AgentMessageMetadata | undefined)?.requestedImageCount ?? null;
+    const requestedImageCount = resolveTurnImageCount(options.messages);
 
     const agent = createCanvasAgent({
       model,

@@ -50,11 +50,13 @@ const DEFAULT_LABELS: ApprovalCardLabels = {
     "changes-requested": "Changes requested",
     answered: "Answered",
     skipped: "Not answered",
+    cancelled: "Cancelled",
   },
   dismiss: "Dismiss",
   previousQuestion: "Previous question",
   nextQuestion: "Next question",
   customOption: "Custom…",
+  delegate: "You decide",
   customPlaceholder: "Add another response…",
 };
 
@@ -76,7 +78,7 @@ function getStatusBadgeClass(status: ApprovalCardStatus) {
   if (status === "submitting") {
     return "border-blue-500/30 bg-blue-500/10 text-blue-600 dark:text-blue-400";
   }
-  if (status === "skipped") {
+  if (status === "skipped" || status === "cancelled") {
     return "border-border bg-background/60 text-muted-foreground";
   }
   if (status === "approved" || status === "answered") {
@@ -268,6 +270,7 @@ export function ApprovalCard({
   defaultStep = 0,
   onStepChange,
   onSubmit,
+  onDelegate,
   onApprove,
   onReject,
   onRequestChanges,
@@ -355,7 +358,7 @@ export function ApprovalCard({
             ) : (
               <MessageSquareText className="size-4" />
             )
-          ) : status === "rejected" ? (
+          ) : status === "rejected" || status === "cancelled" ? (
             <X className="size-4" />
           ) : status === "skipped" ? (
             <Minus className="size-4" />
@@ -456,6 +459,16 @@ export function ApprovalCard({
                     />
                   </>
                 ) : null}
+                {onDelegate && !locked ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => onDelegate(currentAnswers)}
+                    className="ml-auto rounded-full text-muted-foreground"
+                  >
+                    {labels.delegate}
+                  </Button>
+                ) : null}
                 <Button
                   size={currentStep === questions.length - 1 ? "sm" : "icon"}
                   aria-label={
@@ -465,7 +478,7 @@ export function ApprovalCard({
                   }
                   disabled={locked || !isAnswered(currentAnswer)}
                   onClick={continueQuestion}
-                  className="ml-auto rounded-full"
+                  className={cn("rounded-full", !(onDelegate && !locked) && "ml-auto")}
                 >
                   {busy ? (
                     <LoaderCircle className={cn("size-4", !reduce && "animate-spin")} />

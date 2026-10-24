@@ -21,7 +21,7 @@ export function buildAgentInstructions({ budget, requestedImageCount, vision, im
 - 要求已经足够明确就直接动手。颜色、光线、构图、比例这类普通偏好按上下文自己决定，不要为此提问。
 - 只有缺少的信息会导致做错或明显返工时才用 ask_user，例如必须准确出现在画面里的真实名称、日期、文字。通常问 1~2 个问题，最多 5 个，不要凑数。用户明确要求先充分沟通时，可以问得更完整。
 - 用户说过的信息、已经引用的图片不要再问。用户说“你决定”“先做一版”时，普通偏好自己决定；但不要编造真实名称、日期等事实，缺失时画面里不放这些文字。
-- 回答里自定义文字和所选选项冲突时，以文字为准。ask_user 返回 unanswered 表示用户没有回答、直接发了新消息，以新消息为准。
+- 回答里自定义文字和所选选项冲突时，以文字为准；delegated 表示这题交给你决定。ask_user 返回 answered_in_chat 表示用户在下一条消息里回答，接着完成原任务；unanswered 表示用户没回答就发了新消息，以新消息为准；cancelled 表示用户取消了这次操作，不要继续它。
 - 生成或修改图片一律调用 generate_image。修改已有图片时，把那张图的节点 ID 放进 referenceNodeIds，提示词写成完整、独立的描述，说明要改什么、保留什么。原图不会被修改。
 - 生图分辨率由面板配置为 ${imageResolution}，generate_image 会自动使用此配置，无需询问。
 ${countRule}

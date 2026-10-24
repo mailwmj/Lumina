@@ -63,14 +63,29 @@ export type AskUserInput = z.infer<typeof askUserInputSchema>;
 export const askUserAnswersSchema = z.record(z.string(), z.object({
   selected: z.array(z.string()),
   custom: z.string().optional(),
+  /** The user left this question to the agent. */
+  delegated: z.boolean().optional(),
 }));
 export type AskUserAnswers = z.infer<typeof askUserAnswersSchema>;
 
-/** Model-only stand-in for questions the user moved past by sending a new message. */
+/** The user moved past the questions by sending a new message. Only the model's copy carries it. */
 export const ASK_USER_UNANSWERED = { status: 'unanswered' } as const;
+/** The user's next chat message answers the questions and continues the same turn. */
+export const ASK_USER_ANSWERED_IN_CHAT = { status: 'answered_in_chat' } as const;
+/** The user called off the task; the agent does not resume. */
+export const ASK_USER_CANCELLED = { status: 'cancelled' } as const;
 
-export const askUserOutputSchema = z.union([
-  askUserAnswersSchema,
-  z.object({ status: z.literal(ASK_USER_UNANSWERED.status) }),
-]);
+const askUserClosedSchema = z.object({
+  status: z.enum([ASK_USER_UNANSWERED.status, ASK_USER_ANSWERED_IN_CHAT.status, ASK_USER_CANCELLED.status]),
+});
+
+export const askUserOutputSchema = z.union([askUserAnswersSchema, askUserClosedSchema]);
 export type AskUserOutput = z.infer<typeof askUserOutputSchema>;
+
+export function isAskUserAnswers(output: unknown): output is AskUserAnswers {
+  return typeof output === 'object' && output !== null && typeof (output as { status?: unknown }).status !== 'string';
+}
+
+export function askUserClosedStatus(output: unknown): z.infer<typeof askUserClosedSchema>['status'] | null {
+  return askUserClosedSchema.safeParse(output).data?.status ?? null;
+}
