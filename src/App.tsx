@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { ReactFlowProvider } from '@xyflow/react';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { Canvas } from './features/canvas/Canvas';
+import { AgentWorkspace } from './features/agent/ui/AgentWorkspace';
 import { TitleBar } from './components/TitleBar';
 import { LogPanel } from '@/lib/logger/LogPanel';
 import { useLogPanelHotkey } from '@/lib/logger/useLogPanelHotkey';
@@ -17,6 +17,7 @@ import { flushAllPendingPersists, useProjectStore } from './stores/projectStore'
 import { useSettingsStore } from './stores/settingsStore';
 import { logger } from '@/lib/logger';
 import { flushCanvasPersist } from '@/features/canvas/application/canvasPersistFlush';
+import { flushAgentThreadPersists } from '@/features/agent/application/agentThreadService';
 import { createWindowCloseHandler } from '@/application/windowClose';
 import {
   checkForUpdate,
@@ -108,7 +109,8 @@ function App() {
     void appWindow.onCloseRequested(createWindowCloseHandler({
       flush: async () => {
         flushCanvasPersist();
-        return await flushAllPendingPersists();
+        const results = await Promise.all([flushAllPendingPersists(), flushAgentThreadPersists()]);
+        return results.every(Boolean);
       },
       destroy: () => appWindow.destroy(),
       beforeClose: () => beforeWindowCloseRef.current?.() ?? true,
@@ -227,7 +229,7 @@ function App() {
 
         <main className="relative min-h-0 flex-1 overflow-hidden">
           {currentProjectId ? (
-            <Canvas />
+            <AgentWorkspace projectId={currentProjectId} />
           ) : activeHomeTool === 'batch-crop' ? (
             <BatchImageCropWorkbench
               beforeWindowCloseRef={beforeWindowCloseRef}

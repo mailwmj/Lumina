@@ -1,4 +1,92 @@
 {
+  "agent": {
+    "toolbar": {
+      "addToChat": "加入对话",
+      "addedToChat": "已加入对话",
+      "addToChatCount": "加入对话 · {{count}}",
+      "openConversation": "查看对话"
+    },
+    "panel": {
+      "open": "打开 Agent",
+      "collapse": "收起",
+      "newThread": "新对话",
+      "transcript": "对话",
+      "dropImages": "松开添加图片",
+      "untitled": "新对话",
+      "error": "出错了：{{message}}"
+    },
+    "empty": {
+      "prompt1": "帮我做一张咖啡店开业海报",
+      "prompt2": "画一只橘猫坐在窗台上",
+      "prompt3": "设计一个极简风格的品牌 Logo"
+    },
+    "composer": {
+      "placeholder": "描述你想创作的画面，@ 引用画布图片",
+      "upload": "上传图片",
+      "pickFromCanvas": "从画布选择",
+      "removeRef": "移除",
+      "refLabel": "图片{{index}} · {{name}}",
+      "noCanvasImages": "画布上还没有图片",
+      "send": "发送",
+      "stop": "停止生成",
+      "addToPrompt": "添加",
+      "pastedImage": "粘贴的图片",
+      "sendFailed": "发送失败：{{message}}"
+    },
+    "models": {
+      "chooseModel": "选择模型",
+      "noToolSupport": "不支持工具调用",
+      "visionUnsupported": "当前模型不能看图，Agent 无法查看生成结果。",
+      "noTextModel": "请先在设置中配置文本 API",
+      "noImageModel": "请先在设置中配置生图模型",
+      "probeFailed": "模型检测失败：{{message}}"
+    },
+    "thread": {
+      "rename": "重命名",
+      "delete": "删除",
+      "justNow": "刚刚",
+      "minutesAgo": "{{count}} 分钟前",
+      "hoursAgo": "{{count}} 小时前",
+      "daysAgo": "{{count}} 天前",
+      "confirmDelete": "确认删除"
+    },
+    "activity": {
+      "working": "正在创作",
+      "thinking1": "理解需求",
+      "thinking2": "构思画面",
+      "thinking3": "整理参考",
+      "summary": "完成 {{count}} 步",
+      "summaryWithImages": "完成 {{steps}} 步 · 生成 {{images}} 张",
+      "generate_image": "生成图片",
+      "view_images": "查看图片",
+      "ask_user": "询问你的想法"
+    },
+    "image": {
+      "generating": "生成中",
+      "ready": "已完成",
+      "failed": "生成失败",
+      "missing": "已从画布删除",
+      "stoppedWaiting": "已停止等待，画布上仍在生成",
+      "timeout": "等待超时，画布上仍在生成",
+      "continue": "继续修改",
+      "retry": "重试",
+      "copyPrompt": "复制提示词",
+      "copied": "已复制",
+      "resultName": "结果 {{index}}",
+      "refused": "本轮额度已用完"
+    },
+    "ask": {
+      "title": "需要你确认",
+      "submit": "确定",
+      "pending": "待回答",
+      "submitting": "提交中",
+      "answered": "已确认",
+      "dismiss": "关闭",
+      "previous": "上一个问题",
+      "next": "下一个问题",
+      "customPlaceholder": "其他想法…"
+    }
+  },
   "logger": {
     "panel": {
       "title": "日志面板",
@@ -869,6 +957,8 @@
     "videoApiEnabledDesc": "停用后视频节点无法使用此服务生成，配置会保留。",
     "videoPolishMovedHint": "视频提示词润色模板跟随各视频服务配置，请在 模型服务 › 视频 中编辑。",
     "sectionPromptPolish": "提示词润色",
+    "sectionAgent": "Agent",
+    "agentMaxImagesPerTurn": "每轮最多生成张数",
     "sectionStoryboard": "分镜",
     "sectionTextHandling": "文本处理",
     "sectionAppearance": "外观",

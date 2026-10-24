@@ -125,6 +125,20 @@
 - 不记录易变的具体 UI 操作步骤、临时交互文案或产品走查细节（这些应放在需求文档/设计稿/任务说明中）。
 - 当实现变化仅影响交互细节而不影响技术约束时，可不更新本文档。
 
+### 4.9 内置 Agent
+
+- 代码在 `src/features/agent/`（domain / application / infrastructure / stores / ui），决策见 `docs/adr/0002-built-in-agent-runs-in-webview-with-ai-sdk.md`。内置 Agent 在进程内调用画布应用层，不经过 `canvas-agent` 的 MCP 桥接。
+- 工具只调用画布应用层（`applyAgentChangeSet`、`runImageGenerationNodes`、`buildCanvasAgentNodeImages`、`importCanvasAgentImages` 等），不直接拼装节点或改写 store 字段；生成和修改始终产出新节点，原图不被覆盖。
+- 画布是图片状态的唯一真相源：消息只存节点 ID，图片卡片渲染时读节点实时状态。消息不保存任何 base64，持久化统一经过 `agentThreadRepository` 的序列化。
+- 画布不依赖 agent 模块：节点工具条只发布 `canvasEventBus` 事件（`agent/add-references`、`agent/open-origin`），引用和来源状态从 `canvas/application/agentCanvasIndex.ts` 读取。
+- 每轮额度从对话记录推导；用户明确要求的张数在发送时解析写入消息 metadata，不由模型自报。
+- 新增工具：
+  1. 在 `domain/agentTools.ts` 定义 zod 输入 schema 和输出类型。
+  2. 在 `application/tools/` 新建一个文件实现。需要用户作答的工具不写 `execute`，由面板通过 `addToolOutput` 回填。
+  3. 在 `application/canvasAgent.ts` 注册并按需加入 `activeTools`，在 `agentInstructions.ts` 写明使用时机。
+  4. 在 `ui/AgentMessageParts.tsx` 渲染对应的消息 part，文案放在 `agent.*`。
+  5. 用 `ai/test` 的 `MockLanguageModelV4` 写覆盖业务意图的测试，参考 `agentChatTransport.test.ts`。
+
 ## 5. UI/交互规范
 
 - 复用统一 UI 组件：`src/components/ui/primitives.tsx`。

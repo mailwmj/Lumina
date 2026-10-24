@@ -7,6 +7,7 @@ pub mod storage;
 use std::path::PathBuf;
 use std::time::Duration;
 
+use commands::agent_threads;
 use commands::ai as ai_commands;
 use commands::batch_image_crop;
 use commands::batch_image_composition;
@@ -178,6 +179,7 @@ pub fn run() {
         })
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_http::init())
         .invoke_handler(tauri::generate_handler![
             frontend_ready,
             canvas_agent::get_canvas_agent_runtime,
@@ -235,6 +237,13 @@ pub fn run() {
             project_state::rename_project_record,
             project_state::delete_project_record,
             project_state::create_project_dirs,
+            agent_threads::list_agent_threads,
+            agent_threads::get_agent_thread_messages,
+            agent_threads::upsert_agent_thread,
+            agent_threads::upsert_agent_messages,
+            agent_threads::delete_agent_thread,
+            agent_threads::upsert_agent_node_origins,
+            agent_threads::list_agent_node_origins,
             system::get_runtime_system_info,
             update::check_latest_release_tag,
             logging::append_frontend_log,

@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 
+import { AgentSettings } from '@/features/settings/AgentSettings';
 import { PromptPolishSettings } from '@/features/settings/PromptPolishSettings';
 import { SettingsCheckboxCard } from '@/features/settings/SettingsCheckboxCard';
 import { SettingsPageSection } from '@/features/settings/SettingsPageSection';
@@ -19,6 +20,10 @@ export function GenerationSettings() {
           onImagePolishConfigChange={settings.setImagePolishConfig}
           onTextPolishConfigChange={settings.setTextPolishConfig}
         />
+      </SettingsPageSection>
+
+      <SettingsPageSection title={t('settings.sectionAgent')}>
+        <AgentSettings />
       </SettingsPageSection>
 
       <SettingsPageSection title={t('settings.sectionStoryboard')}>

@@ -20,6 +20,7 @@ import {
   Sparkles,
   Unlink2,
 } from '@/components/ui/icons';
+import { Check, MessageSquarePlus, MessageSquareText } from 'lucide-react';
 import { save } from '@tauri-apps/plugin-dialog';
 import { dirname, downloadDir, join } from '@tauri-apps/api/path';
 import { useTranslation } from 'react-i18next';
@@ -37,6 +38,7 @@ import {
   type NodeToolType,
 } from '@/features/canvas/domain/canvasNodes';
 import { canContinueFromImage, continueFromImage } from '@/features/canvas/application/continueFromImage';
+import { canAddNodeToAgentChat, useAgentCanvasIndex } from '../application/agentCanvasIndex';
 import { canvasEventBus } from '@/features/canvas/application/canvasServices';
 import { getNodeToolPlugins } from '@/features/canvas/tools';
 import type { ToolIconKey } from '@/features/canvas/tools';
@@ -74,6 +76,8 @@ const TOOLBAR_NEUTRAL_BUTTON_CLASS =
 
 export const NodeActionToolbar = memo(({ node }: NodeActionToolbarProps) => {
   const { t, i18n } = useTranslation();
+  const isReferenced = useAgentCanvasIndex((state) => state.referencedNodeIds.has(node.id));
+  const hasOrigin = useAgentCanvasIndex((state) => state.originNodeIds.has(node.id));
   const isImageEdit = isImageEditNode(node);
   const isStoryboardGen = isStoryboardGenNode(node);
   const isStoryboardSplit = isStoryboardSplitNode(node);
@@ -346,6 +350,25 @@ export const NodeActionToolbar = memo(({ node }: NodeActionToolbarProps) => {
         {(isUploadNode(node) || isExportImageNode(node)) && node.data.imageUrl && (
           <ImageCopyButton source={node.data.imageUrl}
             className={`inline-flex h-8 items-center gap-1.5 ${TOOLBAR_BUTTON_RADIUS_CLASS} px-2.5 text-xs ${TOOLBAR_NEUTRAL_BUTTON_CLASS}`} />
+        )}
+        {canAddNodeToAgentChat(node) && (
+          <UiChipButton
+            className={`h-8 ${TOOLBAR_BUTTON_RADIUS_CLASS} px-2.5 text-xs ${TOOLBAR_NEUTRAL_BUTTON_CLASS}`}
+            disabled={isReferenced}
+            onClick={() => canvasEventBus.publish('agent/add-references', { nodeIds: [node.id] })}
+          >
+            {isReferenced ? <Check className="h-3.5 w-3.5" /> : <MessageSquarePlus className="h-3.5 w-3.5" />}
+            {t(isReferenced ? 'agent.toolbar.addedToChat' : 'agent.toolbar.addToChat')}
+          </UiChipButton>
+        )}
+        {hasOrigin && (
+          <UiChipButton
+            className={`h-8 ${TOOLBAR_BUTTON_RADIUS_CLASS} px-2.5 text-xs ${TOOLBAR_NEUTRAL_BUTTON_CLASS}`}
+            onClick={() => canvasEventBus.publish('agent/open-origin', { nodeId: node.id })}
+          >
+            <MessageSquareText className="h-3.5 w-3.5" />
+            {t('agent.toolbar.openConversation')}
+          </UiChipButton>
         )}
         {canContinueFromImage(node) && (
           <UiChipButton

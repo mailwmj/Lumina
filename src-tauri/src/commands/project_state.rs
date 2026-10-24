@@ -45,7 +45,7 @@ fn resolve_db_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(app_data_dir.join("projects.db"))
 }
 
-fn ensure_projects_table(conn: &Connection) -> Result<(), String> {
+pub(crate) fn ensure_projects_table(conn: &Connection) -> Result<(), String> {
     conn.execute_batch(
         r#"
         CREATE TABLE IF NOT EXISTS projects (
@@ -104,6 +104,7 @@ fn ensure_projects_table(conn: &Connection) -> Result<(), String> {
             .map_err(|e| format!("Failed to add thumbnail_url column: {}", e))?;
     }
 
+    super::agent_threads::ensure_agent_tables(conn)?;
     Ok(())
 }
 
@@ -111,13 +112,13 @@ fn ensure_projects_table(conn: &Connection) -> Result<(), String> {
 // now that they run on the blocking pool, so a prune never races another upsert.
 static PROJECT_WRITE_LOCK: Mutex<()> = Mutex::new(());
 
-fn lock_project_writes() -> MutexGuard<'static, ()> {
+pub(crate) fn lock_project_writes() -> MutexGuard<'static, ()> {
     PROJECT_WRITE_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-async fn run_blocking<T, F>(task_name: &str, task: F) -> Result<T, String>
+pub(crate) async fn run_blocking<T, F>(task_name: &str, task: F) -> Result<T, String>
 where
     T: Send + 'static,
     F: FnOnce() -> Result<T, String> + Send + 'static,
@@ -287,7 +288,7 @@ fn prune_unreferenced_images(app: &AppHandle, conn: &Connection) -> Result<(), S
     Ok(())
 }
 
-fn open_db(app: &AppHandle) -> Result<Connection, String> {
+pub(crate) fn open_db(app: &AppHandle) -> Result<Connection, String> {
     let db_path = resolve_db_path(app)?;
     let conn = Connection::open(db_path).map_err(|e| format!("Failed to open SQLite DB: {}", e))?;
 
@@ -601,6 +602,7 @@ fn delete_project_record_sync(app: &AppHandle, project_id: String) -> Result<(),
     )
     .map_err(|e| format!("Failed to delete project image refs: {}", e))?;
 
+    super::agent_threads::delete_project_agent_data(&tx, &project_id)?;
     tx.commit()
         .map_err(|e| format!("Failed to commit delete transaction: {}", e))?;
 

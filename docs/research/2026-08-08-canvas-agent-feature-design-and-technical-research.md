@@ -1,5 +1,7 @@
 # OpenCanvas 右侧画布 Agent 功能设计与技术调研
 
+> **部分已被 ADR 0002 取代**：画布右侧的内置 Agent 不走本文的网关 / MCP / 审批方案，而是在 WebView 内用 AI SDK 直接调用画布应用层、全自动生图，详见 `docs/adr/0002-built-in-agent-runs-in-webview-with-ai-sdk.md`。本文关于外部 Agent 与领域语言的内容仍可参考。
+
 > 状态：方案草案
 >
 > 调研日期：2026-08-08

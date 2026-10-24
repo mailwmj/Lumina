@@ -1,6 +1,7 @@
 // Dev-only: lets the canvas render in a plain browser (no Tauri runtime) for visual review.
 // Enabled by `?mockCanvas` in main.tsx; never imported in production builds.
 import { mockIPC } from '@tauri-apps/api/mocks';
+import { handleMockAgentThreadCommand } from './mockAgentThreadsIpc';
 
 import { canvasNodeFactory } from '@/features/canvas/application/canvasServices';
 import {
@@ -117,7 +118,9 @@ const projectRecord = {
   historyJson: '{"past":[],"future":[],"imagePool":[]}',
 };
 
-mockIPC((cmd) => {
+mockIPC((cmd, payload) => {
+  const agentResult = handleMockAgentThreadCommand(cmd, payload);
+  if (agentResult.handled) return agentResult.value;
   switch (cmd) {
     case 'list_project_summaries': {
       const { historyJson: _h, nodesJson: _n, edgesJson: _e, viewportJson: _v, ...summary } = projectRecord;

@@ -50,10 +50,14 @@
   --ui-radius-panel: 10px;
   --node-radius: 10px;
   --node-inner-radius: var(--node-radius);
+  --ui-muted-rgb: 244 244 245;
+  --foreground: rgb(var(--text-rgb));
+  --muted-foreground: rgb(var(--text-muted-rgb));
 }
 
 .dark {
   color-scheme: dark;
+  --ui-muted-rgb: 39 39 42;
   --bg: #0a0a0b;
   --bg-rgb: 10 10 11;
   --surface: #18181b;
@@ -439,3 +443,7 @@ html[data-platform='macos'] #root {
     animation: none;
   }
 }
+
+/* Vendored beUI helper (Tailwind v4 utility in upstream). */
+.scrollbar-hide { scrollbar-width: none; }
+.scrollbar-hide::-webkit-scrollbar { display: none; }

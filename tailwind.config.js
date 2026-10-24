@@ -31,6 +31,22 @@ export default {
           dark: withOpacity('--text-muted-rgb'),
         },
         accent: withOpacity('--accent-rgb'),
+        // shadcn-style tokens used by vendored beUI components, mapped onto Lumina's neutral palette.
+        background: withOpacity('--surface-rgb'),
+        foreground: withOpacity('--text-rgb'),
+        card: withOpacity('--bg-rgb'),
+        popover: withOpacity('--surface-rgb'),
+        muted: {
+          DEFAULT: withOpacity('--ui-muted-rgb'),
+          foreground: withOpacity('--text-muted-rgb'),
+        },
+        primary: {
+          DEFAULT: withOpacity('--text-rgb'),
+          foreground: withOpacity('--surface-rgb'),
+        },
+        destructive: withOpacity('--danger-rgb'),
+        ring: withOpacity('--text-muted-rgb'),
+        input: withOpacity('--border-rgb'),
         danger: withOpacity('--danger-rgb'),
         warning: withOpacity('--warning-rgb'),
         success: withOpacity('--success-rgb'),

@@ -3,6 +3,9 @@ import { NodeToolbar as ReactFlowNodeToolbar } from '@xyflow/react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useTranslation } from 'react-i18next';
 
+import { MessageSquarePlus, Check as AgentCheck } from 'lucide-react';
+import { canAddNodeToAgentChat, useAgentCanvasIndex } from '../application/agentCanvasIndex';
+import { canvasEventBus } from '../application/canvasServices';
 import { Check, Download, FolderOpen, Loader2 } from '@/components/ui/icons';
 import { UiChipButton, UiPanel } from '@/components/ui';
 import { UI_POPOVER_TRANSITION_MS } from '@/components/ui/motion';
@@ -34,6 +37,12 @@ export const MultiSelectionActionToolbar = memo(({
   selectedNodes,
 }: MultiSelectionActionToolbarProps) => {
   const { t } = useTranslation();
+  const referencedNodeIds = useAgentCanvasIndex((state) => state.referencedNodeIds);
+  const agentNodeIds = useMemo(
+    () => selectedNodes.filter(canAddNodeToAgentChat).map((node) => node.id),
+    [selectedNodes]
+  );
+  const allReferenced = agentNodeIds.every((id) => referencedNodeIds.has(id));
   const downloadPresetPaths = useSettingsStore((state) => state.downloadPresetPaths);
   const lastDownloadDirectory = useSettingsStore((state) => state.lastDownloadDirectory);
   const setLastDownloadDirectory = useSettingsStore((state) => state.setLastDownloadDirectory);
@@ -152,7 +161,7 @@ export const MultiSelectionActionToolbar = memo(({
     }
   }, []);
 
-  if (selectedNodes.length < 2 || downloadableImages.length === 0) {
+  if (selectedNodes.length < 2 || (downloadableImages.length === 0 && agentNodeIds.length === 0)) {
     return null;
   }
 
@@ -170,7 +179,17 @@ export const MultiSelectionActionToolbar = memo(({
       className={NODE_TOOLBAR_CLASS}
     >
       <UiPanel className="no-scrollbar flex h-12 max-w-[calc(100vw-24px)] items-center gap-0.5 overflow-x-auto rounded-full px-1.5 py-1 shadow-[var(--ui-shadow-toolbar)]">
-        <UiChipButton
+        {agentNodeIds.length > 0 && (
+          <UiChipButton
+            className={TOOLBAR_CHIP_CLASS}
+            disabled={allReferenced}
+            onClick={() => canvasEventBus.publish('agent/add-references', { nodeIds: agentNodeIds })}
+          >
+            {allReferenced ? <AgentCheck className="h-3.5 w-3.5" /> : <MessageSquarePlus className="h-3.5 w-3.5" />}
+            {allReferenced ? t('agent.toolbar.addedToChat') : t('agent.toolbar.addToChatCount', { count: agentNodeIds.length })}
+          </UiChipButton>
+        )}
+        {downloadableImages.length > 0 && <UiChipButton
           className={`${TOOLBAR_CHIP_CLASS} ${feedback === 'saved' ? '!bg-emerald-500/16 !text-emerald-500' : ''}`}
           disabled={feedback === 'saving'}
           onClick={(event) => {
@@ -191,7 +210,7 @@ export const MultiSelectionActionToolbar = memo(({
             <Download className="h-3.5 w-3.5" />
           )}
           {buttonLabel}
-        </UiChipButton>
+        </UiChipButton>}
       </UiPanel>
 
       {downloadMenu && (

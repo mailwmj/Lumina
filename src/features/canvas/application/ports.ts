@@ -152,6 +152,8 @@ export interface ToolProcessor {
 }
 
 export interface CanvasEventMap {
+  'agent/add-references': { nodeIds: string[] };
+  'agent/open-origin': { nodeId: string };
   'generation-record/open': { nodeId: string };
   'tool-dialog/open': {
     nodeId: string;

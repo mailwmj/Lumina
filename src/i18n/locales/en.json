@@ -1,4 +1,95 @@
 {
+  "agent": {
+    "toolbar": {
+      "addToChat": "Add to chat",
+      "addedToChat": "Added to chat",
+      "addToChatCount": "Add to chat · {{count}}",
+      "openConversation": "View conversation",
+      "addToChatCount_one": "Add to chat · {{count}}",
+      "addToChatCount_other": "Add to chat · {{count}}"
+    },
+    "panel": {
+      "open": "Open Agent",
+      "collapse": "Collapse",
+      "newThread": "New conversation",
+      "transcript": "Conversation",
+      "dropImages": "Drop to add images",
+      "untitled": "New conversation",
+      "error": "Something went wrong: {{message}}"
+    },
+    "empty": {
+      "prompt1": "Make a grand-opening poster for a coffee shop",
+      "prompt2": "Draw an orange cat sitting on a windowsill",
+      "prompt3": "Design a minimalist brand logo"
+    },
+    "composer": {
+      "placeholder": "Describe what to create, @ to reference canvas images",
+      "upload": "Upload images",
+      "pickFromCanvas": "Pick from canvas",
+      "removeRef": "Remove",
+      "refLabel": "Image {{index}} · {{name}}",
+      "noCanvasImages": "No images on the canvas yet",
+      "send": "Send",
+      "stop": "Stop generating",
+      "addToPrompt": "Add",
+      "pastedImage": "Pasted image",
+      "sendFailed": "Could not send: {{message}}"
+    },
+    "models": {
+      "chooseModel": "Choose model",
+      "noToolSupport": "No tool calling",
+      "visionUnsupported": "This model cannot see images, so the Agent cannot check results.",
+      "noTextModel": "Configure a text API in Settings first",
+      "noImageModel": "Configure an image model in Settings first",
+      "probeFailed": "Model check failed: {{message}}"
+    },
+    "thread": {
+      "rename": "Rename",
+      "delete": "Delete",
+      "justNow": "Just now",
+      "minutesAgo": "{{count}} min ago",
+      "hoursAgo": "{{count}} h ago",
+      "daysAgo": "{{count}} d ago",
+      "confirmDelete": "Confirm delete"
+    },
+    "activity": {
+      "working": "Creating",
+      "thinking1": "Understanding the request",
+      "thinking2": "Composing the image",
+      "thinking3": "Gathering references",
+      "summary_one": "Completed {{count}} step",
+      "summary_other": "Completed {{count}} steps",
+      "summaryWithImages": "{{steps}} steps · {{images}} images",
+      "generate_image": "Generate image",
+      "view_images": "View images",
+      "ask_user": "Ask you"
+    },
+    "image": {
+      "generating": "Generating",
+      "ready": "Ready",
+      "failed": "Generation failed",
+      "missing": "Removed from canvas",
+      "stoppedWaiting": "Stopped waiting; still generating on the canvas",
+      "timeout": "Timed out waiting; still generating on the canvas",
+      "continue": "Edit this",
+      "retry": "Retry",
+      "copyPrompt": "Copy prompt",
+      "copied": "Copied",
+      "resultName": "Result {{index}}",
+      "refused": "This turn's image limit is used up"
+    },
+    "ask": {
+      "title": "Your input",
+      "submit": "Confirm",
+      "pending": "Needs input",
+      "submitting": "Submitting",
+      "answered": "Answered",
+      "dismiss": "Dismiss",
+      "previous": "Previous question",
+      "next": "Next question",
+      "customPlaceholder": "Something else…"
+    }
+  },
   "logger": {
     "panel": {
       "title": "Log Panel",
@@ -874,6 +965,8 @@
     "videoApiEnabledDesc": "When disabled, video nodes can't generate with this provider. Its settings are kept.",
     "videoPolishMovedHint": "Video polish templates belong to each video provider. Edit them under Model services › Video.",
     "sectionPromptPolish": "Prompt polish",
+    "sectionAgent": "Agent",
+    "agentMaxImagesPerTurn": "Max images per turn",
     "sectionStoryboard": "Storyboard",
     "sectionTextHandling": "Text handling",
     "sectionAppearance": "Appearance",

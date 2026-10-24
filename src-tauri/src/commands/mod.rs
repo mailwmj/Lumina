@@ -1,3 +1,4 @@
+pub mod agent_threads;
 pub mod ai;
 pub mod batch_image_composition;
 pub mod batch_image_crop;
@@ -11,6 +12,7 @@ pub mod system;
 pub mod storage;
 pub mod update;
 
+pub use agent_threads::*;
 pub use ai::*;
 pub use cleanup::*;
 pub use image::*;
