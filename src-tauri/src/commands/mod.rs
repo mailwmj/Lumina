@@ -3,6 +3,7 @@ pub mod batch_image_composition;
 pub mod batch_image_crop;
 pub mod cleanup;
 pub mod image;
+pub mod image_metadata;
 pub mod logging;
 pub mod media;
 pub mod project_state;

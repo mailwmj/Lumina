@@ -1,3 +1,4 @@
+import { CanvasHandle as Handle } from '../ui/CanvasHandle';
 import {
   clamp, sanitizePathSegment, sanitizeExportLabel, toCssAspectRatio, resolveExportOptions,
   applyStoryboardTextOverlay, type IncomingImageItem, type PanelAnchor,
@@ -14,7 +15,6 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  Handle,
   Position,
   useUpdateNodeInternals,
   type NodeProps,

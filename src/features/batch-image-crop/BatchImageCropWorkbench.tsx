@@ -41,6 +41,7 @@ const BATCH_CROP_PREPARE_CONCURRENCY = 2;
 interface BatchImageCropWorkbenchProps {
   onExit: () => void;
   backHandlerRef: React.MutableRefObject<() => void>;
+  beforeWindowCloseRef: React.MutableRefObject<(() => boolean) | null>;
 }
 
 function errorCode(error: unknown): string {
@@ -58,7 +59,7 @@ function toErrorMessageKey(error: unknown): string {
   return 'batchCrop.error.invalidImage';
 }
 
-export function BatchImageCropWorkbench({ onExit, backHandlerRef }: BatchImageCropWorkbenchProps) {
+export function BatchImageCropWorkbench({ onExit, backHandlerRef, beforeWindowCloseRef }: BatchImageCropWorkbenchProps) {
   const { t } = useTranslation();
   const batchIdRef = useRef(crypto.randomUUID());
   const allowWindowCloseRef = useRef(false);
@@ -160,26 +161,20 @@ export function BatchImageCropWorkbench({ onExit, backHandlerRef }: BatchImageCr
       return () => window.removeEventListener('beforeunload', handleBeforeUnload);
     }
 
-    let disposed = false;
-    let unlisten: (() => void) | undefined;
-    void getCurrentWindow().onCloseRequested((event) => {
-      if (allowWindowCloseRef.current) return;
-      event.preventDefault();
+    beforeWindowCloseRef.current = () => {
+      if (allowWindowCloseRef.current) return true;
       closeRequestedRef.current = true;
       if (dirty || busy) {
         setDialog('exit');
-        return;
+        return false;
       }
       void exitWorkbench();
-    }).then((dispose) => {
-      if (disposed) dispose();
-      else unlisten = dispose;
-    });
-    return () => {
-      disposed = true;
-      unlisten?.();
+      return false;
     };
-  }, [busy, dirty, exitWorkbench]);
+    return () => {
+      beforeWindowCloseRef.current = null;
+    };
+  }, [beforeWindowCloseRef, busy, dirty, exitWorkbench]);
 
   useEffect(() => () => {
     if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);

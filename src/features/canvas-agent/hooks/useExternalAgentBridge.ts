@@ -54,6 +54,8 @@ interface UseExternalAgentBridgeInput {
 const RECONNECT_DELAY_MS = 1_200;
 const SNAPSHOT_PUBLISH_DELAY_MS = 100;
 const SNAPSHOT_HEARTBEAT_MS = 5_000;
+const EMPTY_NODES: CanvasNode[] = [];
+const EMPTY_NODE_IDS: string[] = [];
 const EMPTY_IMAGE_PREVIEWS: CanvasAgentImagePreview[] = [];
 
 export function useExternalAgentBridge({
@@ -91,8 +93,8 @@ export function useExternalAgentBridge({
     connectionConfig.enabled ? 'disconnected' : 'disabled'
   );
   const selectedImagePreviewSources = useStableSelectedImagePreviewSources(
-    nodes,
-    selectedNodeIds
+    connectionConfig.enabled ? nodes : EMPTY_NODES,
+    connectionConfig.enabled ? selectedNodeIds : EMPTY_NODE_IDS
   );
   const [imagePreviewState, setImagePreviewState] = useState<{
     sources: SelectedImagePreviewSource[];
@@ -101,23 +103,18 @@ export function useExternalAgentBridge({
   const selectedImagePreviews = imagePreviewState.sources === selectedImagePreviewSources
     ? imagePreviewState.previews
     : EMPTY_IMAGE_PREVIEWS;
-  // Building the snapshot hashes the whole canvas; skip it while no agent is connected.
-  const baseSnapshot = useMemo(
-    () => (endpoint
-      ? buildCanvasAgentSnapshot({
-        projectId,
-        projectName,
-        nodes,
-        edges,
-        selectedNodeIds,
-        viewport,
-        selectedImagePreviews,
-      })
-      : null),
-    [edges, endpoint, nodes, projectId, projectName, selectedImagePreviews, selectedNodeIds, viewport]
-  );
-  const snapshotRef = useRef<CanvasAgentSnapshot | null>(baseSnapshot);
-  snapshotRef.current = baseSnapshot;
+  // Serialize and hash only after the publication debounce.
+  const snapshotInput = useMemo(() => ({
+    projectId, projectName, nodes, edges, selectedNodeIds, viewport, selectedImagePreviews,
+  }), [projectId, projectName, nodes, edges, selectedNodeIds, viewport, selectedImagePreviews]);
+  const snapshotInputRef = useRef(snapshotInput);
+  snapshotInputRef.current = snapshotInput;
+  const enabledRef = useRef(connectionConfig.enabled);
+  enabledRef.current = connectionConfig.enabled;
+  const snapshotCacheRef = useRef<{
+    input: typeof snapshotInput;
+    snapshot: CanvasAgentSnapshot;
+  } | null>(null);
   const previewMarker = useMemo(() => ({
     selection: selectedImagePreviewSources,
     previews: selectedImagePreviews,
@@ -160,7 +157,7 @@ export function useExternalAgentBridge({
   }), []);
 
   useEffect(() => {
-    if (!managedByLumina) {
+    if (!managedByLumina || !connectionConfig.enabled) {
       setManagedRuntime(null);
       return;
     }
@@ -188,7 +185,7 @@ export function useExternalAgentBridge({
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [managedByLumina]);
+  }, [managedByLumina, connectionConfig.enabled]);
 
   useEffect(() => {
     let cancelled = false;
@@ -217,10 +214,12 @@ export function useExternalAgentBridge({
     activeEndpoint: CanvasAgentEndpoint,
     forcePreviews = false
   ) => {
-    const snapshot = snapshotRef.current;
-    if (!snapshot) {
-      return;
+    if (!enabledRef.current) return;
+    const input = snapshotInputRef.current;
+    if (snapshotCacheRef.current?.input !== input) {
+      snapshotCacheRef.current = { input, snapshot: buildCanvasAgentSnapshot(input) };
     }
+    const snapshot = snapshotCacheRef.current.snapshot;
     snapshotPublisherRef.current?.enqueue({
       endpoint: activeEndpoint,
       clientId: clientIdRef.current,
@@ -428,7 +427,7 @@ export function useExternalAgentBridge({
       queueSnapshotPublish(endpoint);
     }, SNAPSHOT_PUBLISH_DELAY_MS);
     return () => window.clearTimeout(timer);
-  }, [baseSnapshot, connectionStatus, endpoint, queueSnapshotPublish]);
+  }, [snapshotInput, connectionStatus, endpoint, queueSnapshotPublish]);
 
   useEffect(() => {
     if (!endpoint || connectionStatus !== 'connected') {

@@ -14,6 +14,7 @@ vi.mock('@xyflow/react', async (original) => ({
   ...await original<typeof import('@xyflow/react')>(), Handle: () => null,
   useReactFlow: () => flow, useUpdateNodeInternals: () => () => {},
 }));
+vi.mock('../ui/CanvasHandle', () => ({ CanvasHandle: () => null }));
 vi.mock('../ui/NodeResizeHandle', () => ({ NodeResizeHandle: () => null }));
 vi.mock('../ui/ModelParamsControls', () => ({ ModelParamsControls: () => null }));
 

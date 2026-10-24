@@ -19,6 +19,7 @@ vi.mock('@xyflow/react', async (importOriginal) => ({
   useReactFlow: () => ({}),
   useUpdateNodeInternals: () => mocks.updateInternals,
 }));
+vi.mock('../ui/CanvasHandle', () => ({ CanvasHandle: () => null }));
 vi.mock('../ui/NodeResizeHandle', () => ({ NodeResizeHandle: () => null }));
 vi.mock('../ui/ModelParamsControls', () => ({ ModelParamsControls: () => null }));
 vi.mock('../ui/ImageReferencePromptInput', () => ({ ImageReferencePromptInput: () => null }));

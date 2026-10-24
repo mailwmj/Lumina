@@ -250,6 +250,12 @@
       "polishInputRequired": "Enter a prompt before polishing.",
       "polishFailed": "Prompt polishing failed"
     },
+    "connection": {
+      "valid": "Release to connect",
+      "invalid": "Cannot connect: incompatible type, capacity or dependency",
+      "input": "Input: connect a source to reference its content",
+      "output": "Output: drag a connection to a downstream node"
+    },
     "imageReference": {
       "label": "Image {{index}}"
     },

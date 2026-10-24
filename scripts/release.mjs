@@ -5,7 +5,7 @@ import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import process from "node:process";
-import { selectReleaseBaseline } from "./releaseVersion.mjs";
+import { selectReleaseBaseline, validateReleaseVersion } from "./releaseVersion.mjs";
 
 const VALID_BUMPS = new Set(["major", "minor", "patch"]);
 const VERSION_PATTERN =
@@ -109,7 +109,8 @@ function getPreviousTag() {
 function getReleaseVersions() {
   const localTags = execFileSync("git", ["tag", "-l", "v*"], { encoding: "utf8" })
     .split(/\r?\n/)
-    .map((tag) => tag.match(/^v(\d+\.\d+\.\d+)$/)?.[1])
+    .filter((tag) => tag.startsWith("v") && VERSION_PATTERN.test(tag.slice(1)))
+    .map((tag) => tag.slice(1))
     .filter(Boolean);
 
   let remoteTags;
@@ -119,7 +120,8 @@ function getReleaseVersions() {
       stdio: ["ignore", "pipe", "pipe"],
     })
       .split(/\r?\n/)
-      .map((line) => line.match(/\srefs\/tags\/v(\d+\.\d+\.\d+)$/)?.[1])
+      .map((line) => line.match(/\srefs\/tags\/v([^\s^]+)$/)?.[1])
+      .filter((version) => version && VERSION_PATTERN.test(version))
       .filter(Boolean);
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
@@ -239,16 +241,19 @@ if (status) {
 const packageJson = JSON.parse(fs.readFileSync(path.join(repoRoot, "package.json"), "utf8"));
 const currentVersion = packageJson.version;
 
+const releaseVersions = getReleaseVersions();
 const nextVersion = VALID_BUMPS.has(versionArg)
-  ? bumpVersion(selectReleaseBaseline(getReleaseVersions(), currentVersion), versionArg)
+  ? bumpVersion(selectReleaseBaseline(releaseVersions, currentVersion), versionArg)
   : versionArg;
 
 if (!VERSION_PATTERN.test(nextVersion)) {
   fail(`Invalid target version: ${nextVersion}`);
 }
 
-if (nextVersion === currentVersion) {
-  fail(`Target version equals current version (${currentVersion}).`);
+try {
+  validateReleaseVersion(nextVersion, releaseVersions, currentVersion);
+} catch (error) {
+  fail(error.message);
 }
 
 const branch = run("git rev-parse --abbrev-ref HEAD");
@@ -260,13 +265,6 @@ const tag = `v${nextVersion}`;
 const rawNotes = rawNotesParts.join(" ");
 const notes = buildReleaseNotes({ rawNotes, notesFile, shouldGenerateNotes, tag });
 const tempNotesFile = path.join(repoRoot, ".release-notes.tmp.md");
-
-try {
-  run(`git rev-parse -q --verify refs/tags/${tag}`);
-  fail(`Tag ${tag} already exists.`);
-} catch {
-  // expected when tag does not exist
-}
 
 runStreaming(process.execPath, ["scripts/sync-version.mjs", nextVersion]);
 
@@ -285,8 +283,7 @@ try {
 } finally {
   fs.rmSync(tempNotesFile, { force: true });
 }
-runStreaming("git", ["push", "origin", branch]);
-runStreaming("git", ["push", "origin", tag]);
+runStreaming("git", ["push", "--atomic", "origin", branch, tag]);
 
 console.log(`Release triggered: ${tag}`);
 console.log("GitHub Actions will build artifacts and publish the Release automatically.");

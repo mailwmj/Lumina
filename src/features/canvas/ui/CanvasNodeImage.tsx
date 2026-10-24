@@ -1,3 +1,5 @@
+import { getImageDimensions } from '../application/imageDimensions';
+import { useViewportImage } from '../hooks/useViewportImage';
 import { normalizeViewerItems, type ImageViewerItem } from '../application/imageViewerState';
 import {
   memo,
@@ -23,16 +25,6 @@ export interface CanvasNodeImageProps extends ImgHTMLAttributes<HTMLImageElement
   resolutionOverride?: { width: number; height: number } | null;
 }
 
-/** Load image dimensions from a URL */
-function loadImageDimensions(url: string): Promise<{ width: number; height: number }> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
-    img.onerror = reject;
-    img.src = url;
-  });
-}
-
 export const CanvasNodeImage = memo(({
   viewerSourceUrl,
   viewerImageList,
@@ -47,6 +39,7 @@ export const CanvasNodeImage = memo(({
   src,
   ...props
 }: CanvasNodeImageProps) => {
+  const viewportImage = useViewportImage(props.loading === 'eager');
   const openImageViewer = useCanvasStore((state) => state.openImageViewer);
   const [resolutionHover, setResolutionHover] = useState<{
     width: number;
@@ -104,8 +97,8 @@ export const CanvasNodeImage = memo(({
       loadTimeoutRef.current = setTimeout(async () => {
         if (!isHoveringRef.current) return; // Mouse left before timeout fired
         try {
-          const dims = await loadImageDimensions(viewerSourceUrl.trim());
-          if (!isHoveringRef.current) return; // Mouse left during load
+          const dims = await getImageDimensions(viewerSourceUrl.trim());
+          if (!isHoveringRef.current || !dims) return; // Mouse left or metadata unavailable
           setResolutionHover({
             width: dims.width,
             height: dims.height,
@@ -120,7 +113,7 @@ export const CanvasNodeImage = memo(({
 
   const handleImageLoad = useCallback((event: SyntheticEvent<HTMLImageElement>) => {
     onLoad?.(event);
-    if (!showResolutionPreview) return;
+    if (!showResolutionPreview || !isHoveringRef.current) return;
     const img = event.currentTarget;
     const anchorRect = img.getBoundingClientRect();
 
@@ -171,7 +164,11 @@ export const CanvasNodeImage = memo(({
         // WebKit can retain the previous texture when a transformed canvas node
         // changes image URLs. A new element guarantees the decoded original repaints.
         key={typeof src === 'string' ? src : undefined}
-        src={src}
+        ref={viewportImage.ref}
+        src={viewportImage.visible ? src : undefined}
+        srcSet={viewportImage.visible ? props.srcSet : undefined}
+        loading={props.loading ?? 'lazy'}
+        decoding={props.decoding ?? 'async'}
         data-viewer-src={
           typeof viewerSourceUrl === 'string' && viewerSourceUrl.trim().length > 0
             ? viewerSourceUrl.trim()

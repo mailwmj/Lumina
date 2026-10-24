@@ -5,29 +5,25 @@ export interface CloseRequestedEvent {
 interface WindowCloseActions {
   flush: () => Promise<boolean>;
   destroy: () => Promise<void>;
-  deferToOtherHandler?: () => boolean;
+  beforeClose?: () => boolean;
   onFlushFailure: () => void;
 }
 
 export function createWindowCloseHandler({
   flush,
   destroy,
-  deferToOtherHandler = () => false,
+  beforeClose = () => true,
   onFlushFailure,
 }: WindowCloseActions): (event: CloseRequestedEvent) => void {
   let closing = false;
-  let allowClose = false;
 
   return (event) => {
-    if (allowClose || deferToOtherHandler()) {
-      return;
-    }
-    if (closing) {
-      event.preventDefault();
-      return;
-    }
-
+    // Tauri destroys the window after any listener that does not prevent it.
     event.preventDefault();
+    if (closing) {
+      return;
+    }
+    if (!beforeClose()) return;
     closing = true;
     void (async () => {
       try {
@@ -35,8 +31,6 @@ export function createWindowCloseHandler({
       } catch {
         onFlushFailure();
       } finally {
-        allowClose = true;
-        closing = false;
         await destroy();
       }
     })();

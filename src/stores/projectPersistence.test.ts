@@ -83,7 +83,7 @@ describe('project persistence under slow storage', () => {
     unregister();
   });
 
-  it('allows the next close request through after a successful flush', async () => {
+  it('prevents repeated close requests and destroys once after a successful flush', async () => {
     let finishFlush!: (success: boolean) => void;
     const flush = vi.fn(() => new Promise<boolean>((resolve) => { finishFlush = resolve; }));
     const destroy = vi.fn().mockResolvedValue(undefined);
@@ -100,8 +100,9 @@ describe('project persistence under slow storage', () => {
 
     const afterFlush = { preventDefault: vi.fn() };
     handleClose(afterFlush);
-    expect(afterFlush.preventDefault).not.toHaveBeenCalled();
+    expect(afterFlush.preventDefault).toHaveBeenCalledOnce();
     expect(flush).toHaveBeenCalledOnce();
+    expect(destroy).toHaveBeenCalledOnce();
   });
 
   it('flushes a debounced project snapshot immediately', async () => {

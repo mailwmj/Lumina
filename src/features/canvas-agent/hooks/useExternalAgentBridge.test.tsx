@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { canvasNodeFactory } from '@/features/canvas/application/canvasServices';
 import { CANVAS_NODE_TYPES } from '@/features/canvas/domain/canvasNodes';
+import * as snapshotModule from '@/features/canvas-agent/application/canvasAgentSnapshot';
 import { buildCanvasAgentSnapshot } from '@/features/canvas-agent/application/canvasAgentSnapshot';
 import type { CanvasAgentEvent } from '@/features/canvas-agent/infrastructure/canvasAgentBridge';
 import { useCanvasStore } from '@/stores/canvasStore';
@@ -318,4 +319,24 @@ describe('useExternalAgentBridge direct apply', () => {
       })
     ));
   });
+  it('debounces snapshot serialization during connected viewport changes', async () => {
+    vi.useFakeTimers();
+    const build = vi.spyOn(snapshotModule, 'buildCanvasAgentSnapshot');
+    try {
+      await act(async () => root.render(<BridgeHarness />));
+      build.mockClear();
+      for (let x = 1; x <= 30; x++) {
+        await act(async () => useCanvasStore.getState().setViewportState({ x, y: 0, zoom: 1 }));
+      }
+      expect(build).not.toHaveBeenCalled();
+      await act(async () => vi.advanceTimersByTimeAsync(100));
+      expect(build).toHaveBeenCalledOnce();
+      expect(build).toHaveBeenLastCalledWith(expect.objectContaining({ viewport: { x: 30, y: 0, zoom: 1 } }));
+      await act(async () => root.render(null));
+    } finally {
+      build.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
 });

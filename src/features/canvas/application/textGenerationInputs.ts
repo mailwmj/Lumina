@@ -1,3 +1,4 @@
+import { measureCanvasPhase } from './canvasPerformance';
 import {
   CANVAS_NODE_TYPES,
   isExportImageNode,
@@ -240,6 +241,22 @@ export function resolveTextGenerationInputs(
     blockingImageNodeIds: imageInputs.flatMap((input) => (
       input.referenceImageUrl || input.imageUrl ? [] : [input.nodeId]
     )),
+  };
+}
+
+/** Memoized resolver for a stable node subscription. */
+export function createTextGenerationInputsResolver(nodeId: string) {
+  let lastNodes: readonly CanvasWorkflowNode[] | null = null;
+  let lastEdges: readonly CanvasEdge[] | null = null;
+  let lastResult: ResolvedTextGenerationInputs | null = null;
+  return (nodes: readonly CanvasWorkflowNode[], edges: readonly CanvasEdge[]) => {
+    if (nodes === lastNodes && edges === lastEdges && lastResult) return lastResult;
+    lastNodes = nodes;
+    lastEdges = edges;
+    lastResult = measureCanvasPhase('text-input-resolution', () =>
+      resolveTextGenerationInputs(nodeId, nodes, edges)
+    );
+    return lastResult;
   };
 }
 

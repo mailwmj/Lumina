@@ -1,3 +1,4 @@
+import { CanvasHandle as Handle } from '../ui/CanvasHandle';
 import {
   memo,
   useCallback,
@@ -10,7 +11,6 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  Handle,
   Position,
   useReactFlow,
   useUpdateNodeInternals,
@@ -21,8 +21,7 @@ import { useTranslation } from 'react-i18next';
 import { UiButton, UiModal, UiTooltip } from '@/components/ui';
 import { AlertTriangle, Loader2, Sparkles, Square, Wand2, X } from '@/components/ui/icons';
 import {
-  resolveTextGenerationInputs,
-  type ResolvedTextGenerationInputs,
+  createTextGenerationInputsResolver,
 } from '@/features/canvas/application/textGenerationInputs';
 import { materializeImageReferencePrompt } from '@/features/canvas/application/imageReferencePrompt';
 import { textGenerationGateway } from '@/features/canvas/application/canvasServices';
@@ -46,7 +45,7 @@ import {
 } from '@/features/canvas/application/textGenerationLayout';
 import { locateReferencedNode } from '@/features/canvas/application/referencedNodeLocation';
 import { resolveTextModelSelection } from '@/features/canvas/application/textModelSelection';
-import { selectWorkflowNodes } from '@/features/canvas/application/canvasNodeSelectors';
+import { createNodeInputGraphSelector } from '@/features/canvas/application/canvasNodeSelectors';
 import { showErrorDialog } from '@/features/canvas/application/errorDialog';
 import { polishText } from '@/features/canvas/infrastructure/textPolishService';
 import type { TextGenerationNodeData } from '@/features/canvas/domain/canvasNodes';
@@ -114,8 +113,9 @@ export const TextGenerationNode = memo(({
   const { t } = useTranslation();
   const reactFlow = useReactFlow();
   const updateNodeInternals = useUpdateNodeInternals();
-  const workflowNodes = useCanvasStore(selectWorkflowNodes);
-  const edges = useCanvasStore((state) => state.edges);
+  const inputGraphSelector = useMemo(() => createNodeInputGraphSelector(id), [id]);
+  const { workflowNodes, edges } = useCanvasStore(inputGraphSelector);
+  const resolveInputs = useMemo(() => createTextGenerationInputsResolver(id), [id]);
   const setSelectedNode = useCanvasStore((state) => state.setSelectedNode);
   const deleteEdge = useCanvasStore((state) => state.deleteEdge);
   const reorderNodeInput = useCanvasStore((state) => state.reorderNodeInput);
@@ -142,10 +142,7 @@ export const TextGenerationNode = memo(({
   const generatedText = typeof data.generatedText === 'string' && data.generatedText.trim()
     ? data.generatedText
     : null;
-  const inputs = useMemo<ResolvedTextGenerationInputs>(
-    () => resolveTextGenerationInputs(id, workflowNodes, edges),
-    [edges, id, workflowNodes]
-  );
+  const inputs = resolveInputs(workflowNodes, edges);
   const selectedModel = useMemo(
     () => resolveTextModelSelection(textApis, data.textApiId, data.textModelId),
     [data.textApiId, data.textModelId, textApis]

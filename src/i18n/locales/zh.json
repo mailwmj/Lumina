@@ -250,6 +250,12 @@
       "polishInputRequired": "请填写提示词后再润色",
       "polishFailed": "润色失败"
     },
+    "connection": {
+      "valid": "松开以连接",
+      "invalid": "无法连接：类型、容量或依赖关系不兼容",
+      "input": "输入端口：拖入连线以引用内容",
+      "output": "输出端口：拖出连线以连接下游节点"
+    },
     "imageReference": {
       "label": "图片 {{index}}"
     },
