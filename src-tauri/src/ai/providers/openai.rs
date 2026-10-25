@@ -10,7 +10,9 @@ use tokio::time::{sleep, Duration};
 use tracing::info;
 use uuid::Uuid;
 
-use super::image_input::{load_reference_image, normalize_openai_reference_image};
+use super::image_input::{
+    load_reference_image, normalize_openai_reference_image_for_transport,
+};
 use crate::ai::error::AIError;
 use crate::ai::generation_recovery::is_retryable_poll_status;
 use crate::ai::{
@@ -392,6 +394,24 @@ impl OpenAiProvider {
             .to_string()
     }
 
+    fn response_error_message_with_raw(body: &Value, raw: &str) -> String {
+        let message = Self::response_error_message(body);
+        if message != "OpenAI-compatible image request failed" {
+            return message;
+        }
+
+        let raw = raw.trim();
+        if raw.is_empty() {
+            return message;
+        }
+        let excerpt = raw.chars().take(2_000).collect::<String>();
+        if excerpt == raw {
+            format!("{}; response_body={}", message, excerpt)
+        } else {
+            format!("{}; response_body={}…", message, excerpt)
+        }
+    }
+
     fn response_image_source(body: &Value) -> Option<String> {
         let mime_type = [
             "/data/0/media_type",
@@ -580,14 +600,17 @@ impl OpenAiProvider {
         let reference_images = request.reference_images.as_deref().unwrap_or(&[]);
         for (index, source) in reference_images.iter().enumerate() {
             let image = load_reference_image(&self.client, source).await?;
-            let normalized = normalize_openai_reference_image(image, DEFAULT_REFERENCE_MAX_BYTES)?;
+            let normalized = normalize_openai_reference_image_for_transport(
+                image,
+                DEFAULT_REFERENCE_MAX_BYTES,
+            )?;
             if normalized.original_dimensions != normalized.transmitted_dimensions {
                 info!(
                     original_width = normalized.original_dimensions.0,
                     original_height = normalized.original_dimensions.1,
                     transmitted_width = normalized.transmitted_dimensions.0,
                     transmitted_height = normalized.transmitted_dimensions.1,
-                    "normalized oversized OpenAI-compatible reference image"
+                    "normalized OpenAI-compatible reference image"
                 );
             }
             let image = normalized.image;
@@ -704,8 +727,11 @@ impl OpenAiProvider {
         let mut images = Vec::new();
         for source in request.reference_images.as_deref().unwrap_or(&[]) {
             let image = load_reference_image(&self.client, source).await?;
-            let image =
-                normalize_openai_reference_image(image, DEFAULT_REFERENCE_MAX_BYTES)?.image;
+            let image = normalize_openai_reference_image_for_transport(
+                image,
+                DEFAULT_REFERENCE_MAX_BYTES,
+            )?
+            .image;
             images.push(json!({
                 "image_url": format!(
                     "data:{};base64,{}",
@@ -807,7 +833,7 @@ impl OpenAiProvider {
             return Err(AIError::Provider(format!(
                 "OpenAI-compatible image API returned {}: {}",
                 status,
-                Self::response_error_message(&body)
+                Self::response_error_message_with_raw(&body, &raw)
             )));
         }
 
@@ -1467,7 +1493,10 @@ mod tests {
         for image in images {
             let data_uri = image["image_url"].as_str().unwrap();
             let payload = data_uri.strip_prefix("data:image/jpeg;base64,").unwrap();
-            assert_eq!(STANDARD.decode(payload).unwrap(), jpeg);
+            let normalized = STANDARD.decode(payload).unwrap();
+            assert_ne!(normalized, jpeg);
+            let decoded = image::load_from_memory(&normalized).unwrap();
+            assert_eq!(decoded.dimensions(), (512, 512));
         }
     }
 
@@ -2096,6 +2125,28 @@ mod tests {
         assert_eq!(
             image::load_from_memory(&image_bytes).unwrap().dimensions(),
             (4_096, 32)
+        );
+    }
+
+    #[tokio::test]
+    async fn ai_media_edit_body_reencodes_small_reference_images() {
+        let provider = OpenAiProvider::ai_media();
+        let png = test_image_bytes(32, 24, ImageFormat::Png);
+        let mut request = generate_request("ai-media/gpt-image-2.5-sunburst", "4K", "3:4");
+        request.reference_images = Some(vec![image_data_url("image/png", &png)]);
+
+        let body = provider
+            .build_ai_media_edit_body(&request, "gpt-image-2.5-sunburst", true)
+            .await
+            .unwrap();
+
+        let data_uri = body["images"][0]["image_url"].as_str().unwrap();
+        let payload = data_uri.strip_prefix("data:image/jpeg;base64,").unwrap();
+        let image_bytes = STANDARD.decode(payload).unwrap();
+        assert_ne!(image_bytes, png);
+        assert_eq!(
+            image::load_from_memory(&image_bytes).unwrap().dimensions(),
+            (32, 24)
         );
     }
 }

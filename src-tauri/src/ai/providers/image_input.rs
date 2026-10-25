@@ -200,9 +200,21 @@ pub(crate) async fn load_reference_image(
     Ok(reference_image(bytes, None, Some(&path)))
 }
 
-pub(crate) fn normalize_openai_reference_image(
+/// Normalize a reference image for providers whose edit endpoints only accept
+/// canonical static image files. This deliberately re-encodes even small
+/// images so WebP/animated containers and unusual metadata cannot pass through
+/// to a multipart endpoint unchanged.
+pub(crate) fn normalize_openai_reference_image_for_transport(
     image: ReferenceImage,
     max_bytes: usize,
+) -> Result<NormalizedReferenceImage, AIError> {
+    normalize_openai_reference_image_with_options(image, max_bytes, true)
+}
+
+fn normalize_openai_reference_image_with_options(
+    image: ReferenceImage,
+    max_bytes: usize,
+    force_reencode: bool,
 ) -> Result<NormalizedReferenceImage, AIError> {
     normalize_reference_image(
         image,
@@ -211,12 +223,14 @@ pub(crate) fn normalize_openai_reference_image(
             max_pixels: OPENAI_REFERENCE_MAX_PIXELS,
             max_bytes,
         },
+        force_reencode,
     )
 }
 
 fn normalize_reference_image(
     image: ReferenceImage,
     limits: ReferenceImageLimits,
+    force_reencode: bool,
 ) -> Result<NormalizedReferenceImage, AIError> {
     if limits.max_long_edge == 0 || limits.max_pixels == 0 || limits.max_bytes == 0 {
         return Err(AIError::InvalidRequest(
@@ -240,7 +254,10 @@ fn normalize_reference_image(
     let original_dimensions = decoder.dimensions();
     let target_dimensions = bounded_dimensions(original_dimensions, limits);
 
-    if target_dimensions == original_dimensions && image.bytes.len() <= limits.max_bytes {
+    if !force_reencode
+        && target_dimensions == original_dimensions
+        && image.bytes.len() <= limits.max_bytes
+    {
         drop(decoder);
         return Ok(NormalizedReferenceImage {
             image,
@@ -464,6 +481,7 @@ mod tests {
                 max_pixels: 2_400,
                 max_bytes: usize::MAX,
             },
+            false,
         )
         .unwrap();
 
@@ -487,6 +505,7 @@ mod tests {
                 max_pixels: 10_000,
                 max_bytes: usize::MAX,
             },
+            false,
         )
         .unwrap();
         let pixel_limited = normalize_reference_image(
@@ -496,6 +515,7 @@ mod tests {
                 max_pixels: 2_400,
                 max_bytes: usize::MAX,
             },
+            false,
         )
         .unwrap();
 
@@ -524,6 +544,7 @@ mod tests {
                 max_pixels: 4_096,
                 max_bytes: usize::MAX,
             },
+            false,
         )
         .unwrap();
 
@@ -543,6 +564,7 @@ mod tests {
                 max_pixels: 1_024,
                 max_bytes: usize::MAX,
             },
+            false,
         )
         .unwrap();
 
@@ -563,6 +585,7 @@ mod tests {
                 max_pixels: 16_384,
                 max_bytes,
             },
+            false,
         )
         .unwrap();
 
@@ -583,12 +606,29 @@ mod tests {
                 max_pixels: 65_536,
                 max_bytes: bytes.len() / 2,
             },
+            false,
         )
         .unwrap();
 
         assert_eq!(normalized.transmitted_dimensions, (256, 256));
         assert!(normalized.image.bytes.len() <= bytes.len() / 2);
         assert_eq!(normalized.image.mime_type, "image/jpeg");
+        assert!(image::load_from_memory(&normalized.image.bytes).is_ok());
+    }
+
+    #[test]
+    fn transport_normalization_reencodes_small_opaque_images() {
+        let bytes = opaque_png_bytes(32, 24);
+        let normalized = super::normalize_openai_reference_image_for_transport(
+            reference_image(bytes.clone(), Some("image/png"), None),
+            usize::MAX,
+        )
+        .unwrap();
+
+        assert_ne!(normalized.image.bytes, bytes);
+        assert_eq!(normalized.image.mime_type, "image/jpeg");
+        assert_eq!(normalized.image.extension, "jpg");
+        assert_eq!(normalized.transmitted_dimensions, (32, 24));
         assert!(image::load_from_memory(&normalized.image.bytes).is_ok());
     }
 }
